@@ -1,0 +1,23 @@
+[package]
+name = "rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name="rust"
+crate-type=["cdylib"]
+
+[dependencies]
+leodos-spacepacket = { path = "../../../crates/leodos-spacepacket" }
+leodos-libcfs = { path = "../../../crates/leodos-libcfs" }
+zerocopy = { version = "0.8.27", features = ["derive"], default-features = false }
+heapless = "0.9.1"
+
+[profile.release]
+lto = true
+panic = 'abort'
+strip = true
+opt-level = "z"
+
+[build-dependencies]
+bindgen = "0.72.1"
