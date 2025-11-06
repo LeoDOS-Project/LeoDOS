@@ -672,7 +672,9 @@ pub fn translate_path(
 ) -> Result<CString<{ ffi::OS_MAX_LOCAL_PATH_LEN as usize }>> {
     let c_virt = c_path_from_str(virtual_path)?;
     let mut buffer = [0u8; ffi::OS_MAX_LOCAL_PATH_LEN as usize];
-    check(unsafe { ffi::OS_TranslatePath(c_virt.as_ptr(), buffer.as_mut_ptr()) })?;
+    check(unsafe {
+        ffi::OS_TranslatePath(c_virt.as_ptr(), buffer.as_mut_ptr() as *mut libc::c_char)
+    })?;
     let len = buffer.iter().position(|&b| b == 0).unwrap_or(0);
     let mut s = CString::new();
     s.extend_from_bytes(&buffer[..len])
