@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  cfs-build:
+    build: .
+    image: cfs-build:latest
+    volumes:
+      - .:/cFS
+    working_dir: /cFS
+    stdin_open: true
+    tty: true
