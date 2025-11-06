@@ -6,16 +6,12 @@ docker compose build cfs-build
 docker compose run --rm cfs-build bash -c "make SIMULATION=native prep"
 echo "✅ Bindings prepared."
 
-# Define the crates to document
-# Note: Use an array to handle spaces and special characters correctly
 CRATES=(
     "apps/demo-rust-app/fsw"
     "crates/leodos-libcfs"
     "crates/leodos-spacepacket"
     "tools/leodos-cli"
 )
-
-# This is the final directory that will be deployed to GitHub Pages
 OUTPUT_DIR="gh-pages-docs"
 
 echo "--- Cleaning up old documentation ---"
@@ -23,21 +19,24 @@ rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 echo "✅ Output directory '$OUTPUT_DIR' is clean."
 
-echo "--- Building documentation for all crates ---"
+echo "--- Building documentation for all crates (inside Docker) ---"
 for crate_path in "${CRATES[@]}"; do
-    # Extract the crate's name for the subdirectory
     crate_name=$(basename "$crate_path")
     echo "Building docs for $crate_name..."
     
-    # Build the docs
-    $(cd $crate_path; cargo doc --no-deps --all-features)
+    docker compose run --rm cfs-build \
+      -e CFE_DIR=/cFS/cfe \
+      -e OSAL_DIR=/cFS/osal \
+      -e PSP_DIR=/cFS/psp \
+      -e BUILD_DIR=/cFS/build \
+      cargo doc --manifest-path "$crate_path/Cargo.toml" --no-deps --all-features
     
-    # Copy the generated docs to our final output directory
     cp -r "$crate_path/target/doc" "$OUTPUT_DIR/$crate_name"
 done
 echo "✅ All crate documentation built and collected."
 
 echo "--- Creating main index.html ---"
+# ... the rest of the script remains exactly the same ...
 cat > "$OUTPUT_DIR/index.html" <<EOF
 <!DOCTYPE html>
 <html>
@@ -59,7 +58,6 @@ cat > "$OUTPUT_DIR/index.html" <<EOF
   <ul>
 EOF
 
-# Add a link for each crate to the index file
 for crate_path in "${CRATES[@]}"; do
     crate_name=$(basename "$crate_path")
     echo "    <li><a href=\"./$crate_name/\">$crate_name</a></li>" >> "$OUTPUT_DIR/index.html"
