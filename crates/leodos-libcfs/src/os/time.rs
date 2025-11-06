@@ -15,7 +15,7 @@ use core::mem::MaybeUninit;
 /// distinct from cFE's mission time (`libcfs::time::SysTime`).
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub struct OsTime(pub ffi::OS_time_t);
+pub struct OsTime(pub(crate) ffi::OS_time_t);
 
 impl OsTime {
     /// Creates an `OsTime` instance from a relative duration in milliseconds.

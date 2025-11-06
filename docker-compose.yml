@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   cfs-build:
     build: .
@@ -9,8 +7,15 @@ services:
     working_dir: /cFS
     stdin_open: true
     tty: true
+    user: "root"
+    ports:
+      - "1234:1234/udp" # Port for incoming telecommands
+      - "1235:1235/udp" # Port for outgoing telemetry
+      - "1236:1236/udp" # Port for RUST_APP direct commands
     environment:
       - CFE_DIR=/cFS/cfe
       - OSAL_DIR=/cFS/osal
       - PSP_DIR=/cFS/psp
       - BUILD_DIR=/cFS/build
+    sysctls:
+      - fs.mqueue.msg_max=1000

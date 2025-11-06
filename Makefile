@@ -160,7 +160,7 @@ osalguide:
 # that is used to indicate the prep step has been done.  This way
 # the prep step does not need to be done explicitly by the user
 # as long as the default options are sufficient.
-$(filter-out prep distclean,$(LOCALTGTS)): $(O)/.prep
+$(filter-out prep distclean docker-build docker-prep docker-all docker-install docker-run docker-shell,$(LOCALTGTS)): $(O)/.prep
 
 # Docker targets for building on macOS
 docker-build:
@@ -176,7 +176,7 @@ docker-install:
 	docker compose run --rm cfs-build make install
 
 docker-run:
-	docker compose run --rm cfs-build bash -c "cd build/exe/cpu1 && ./core-cpu1"
+	docker compose run --service-ports --rm cfs-build bash -c "cd build/exe/cpu1 && ./core-cpu1"
 
 docker-shell:
 	docker compose run --rm cfs-build bash

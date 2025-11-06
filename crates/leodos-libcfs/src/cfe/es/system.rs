@@ -154,10 +154,6 @@ pub fn reset_cfe(reset_type: ResetType) -> ! {
 ///
 /// # Arguments
 /// * `timeout`: The maximum duration to wait.
-#[deprecated(
-    since = "0.1.0",
-    note = "Prefer using `wait_for_system_state` for more explicit control"
-)]
 pub fn wait_for_startup_sync(timeout: Duration) {
     let millis = timeout.as_millis();
     let millis_u32 = millis.try_into().unwrap_or(u32::MAX);

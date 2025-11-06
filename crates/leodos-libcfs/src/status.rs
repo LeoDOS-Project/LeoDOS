@@ -81,7 +81,6 @@ pub fn check(code: ffi::CFE_Status_t) -> Result<Status, Error> {
 
 impl TryFrom<ffi::CFE_Status_t> for Status {
     type Error = Error;
-    /// Converts a raw `CFE_Status_t` code into an `Error` enum.
     fn try_from(status: ffi::CFE_Status_t) -> Result<Self, Self::Error> {
         let ok = match status {
             ffi::CFE_SUCCESS => Status::Success,

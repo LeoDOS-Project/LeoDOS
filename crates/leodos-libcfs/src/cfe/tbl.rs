@@ -1,6 +1,7 @@
 //! TBL (Table Services) interface.
 
 use crate::cfe::sb::msg::MsgId;
+use crate::cfe::time::SysTime;
 use crate::error::{Error, Result};
 use crate::status::check;
 use crate::{ffi, status};
@@ -51,7 +52,72 @@ bitflags! {
 }
 
 /// Information about a cFE table.
-pub struct TableInfo(pub ffi::CFE_TBL_Info_t);
+pub struct TableInfo(pub(crate) ffi::CFE_TBL_Info_t);
+
+impl TableInfo {
+    /// Returns the size of the table in bytes.
+    pub fn size(&self) -> usize {
+        self.0.Size as usize
+    }
+
+    /// Returns the number of applications with access to the table.
+    pub fn num_users(&self) -> u32 {
+        self.0.NumUsers
+    }
+
+    /// Returns the file creation time from the last file loaded into the table.
+    pub fn file_time(&self) -> SysTime {
+        SysTime(self.0.FileTime)
+    }
+
+    /// Returns the most recently calculated CRC of the table contents.
+    pub fn crc(&self) -> u32 {
+        self.0.Crc
+    }
+
+    /// Returns the time when the table was last updated.
+    pub fn time_of_last_update(&self) -> SysTime {
+        SysTime(self.0.TimeOfLastUpdate)
+    }
+
+    /// Returns whether the table has been loaded at least once.
+    pub fn table_loaded_once(&self) -> bool {
+        self.0.TableLoadedOnce
+    }
+
+    /// Returns whether the table is marked as Dump Only.
+    pub fn dump_only(&self) -> bool {
+        self.0.DumpOnly
+    }
+
+    /// Returns whether the table is double-buffered.
+    pub fn double_buffered(&self) -> bool {
+        self.0.DoubleBuffered
+    }
+
+    /// Returns whether the table address was defined by the owner application.
+    pub fn user_def_addr(&self) -> bool {
+        self.0.UserDefAddr
+    }
+
+    /// Returns whether the table is critical (backed by the CDS).
+    pub fn critical(&self) -> bool {
+        self.0.Critical
+    }
+
+    /// Returns the filename of the last file loaded into the table.
+    pub fn last_file_loaded(&self) -> &str {
+        let len = self
+            .0
+            .LastFileLoaded
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(self.0.LastFileLoaded.len());
+        let bytes = &self.0.LastFileLoaded[..len];
+        let u8slice = unsafe { core::slice::from_raw_parts(bytes.as_ptr() as *const u8, len) };
+        core::str::from_utf8(u8slice).unwrap_or("")
+    }
+}
 
 impl<T: Sized> Table<T> {
     /// Registers a new table with cFE Table Services.

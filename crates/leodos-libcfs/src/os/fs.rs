@@ -13,8 +13,10 @@ use crate::os::util::c_path_from_str;
 use crate::status::{check, Status};
 use bitflags::bitflags;
 use core::ffi::CStr;
+use core::future::Future;
 use core::mem::MaybeUninit;
 use core::ops::Drop;
+use core::task::Poll;
 use heapless::CString;
 
 bitflags! {
@@ -50,13 +52,11 @@ pub enum FileCategory {
     Temp = ffi::CFE_FS_FileCategory_t_CFE_FS_FileCategory_TEMP,
 }
 
-// Add this struct at the top
 /// Metadata and state for a background file write operation.
 ///
 /// This struct should be stored in a persistent memory location (e.g., a `static`)
 /// for the duration of the asynchronous file write.
-#[repr(transparent)]
-pub struct FileWriteMetaData(pub ffi::CFE_FS_FileWriteMetaData_t);
+pub struct FileWriteMetaData(pub(crate) ffi::CFE_FS_FileWriteMetaData_t);
 
 /// A structure containing metadata about a file.
 #[derive(Debug, Clone, Copy)]
@@ -79,7 +79,7 @@ impl FileStat {
 /// A safe, idiomatic wrapper for a cFE file header.
 #[derive(Debug, Clone)]
 #[repr(transparent)]
-pub struct FsHeader(pub ffi::CFE_FS_Header_t);
+pub struct FsHeader(pub(crate) ffi::CFE_FS_Header_t);
 
 /// Statistics about the overall file system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -313,7 +313,7 @@ impl File {
     /// Reads some bytes from the file into the specified buffer.
     ///
     /// Returns the number of bytes read.
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+    pub fn sync_read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let bytes_read = unsafe { ffi::OS_read(self.id.0, buf.as_mut_ptr() as *mut _, buf.len()) };
         if bytes_read < 0 {
             Err(Error::from(bytes_read))
@@ -325,7 +325,7 @@ impl File {
     /// Writes a buffer to the file.
     ///
     /// Returns the number of bytes written.
-    pub fn write(&mut self, buf: &[u8]) -> Result<usize> {
+    pub fn sync_write(&mut self, buf: &[u8]) -> Result<usize> {
         let bytes_written =
             unsafe { ffi::OS_write(self.id.0, buf.as_ptr() as *const _, buf.len()) };
         if bytes_written < 0 {
@@ -775,4 +775,24 @@ pub fn check_fs(path: &str, repair: bool) -> Result<()> {
     let c_path = c_path_from_str(path)?;
     check(unsafe { ffi::OS_chkfs(c_path.as_ptr(), repair) })?;
     Ok(())
+}
+
+impl File {
+    /// Asynchronously reads from the file into the provided buffer.
+    pub fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> impl Future<Output = Result<usize>> + 'a {
+        core::future::poll_fn(|_| match self.timed_read(buf, 0) {
+            Ok(n) => core::task::Poll::Ready(Ok(n)),
+            Err(Error::OsErrorTimeout | Error::OsQueueEmpty) => Poll::Pending,
+            Err(e) => core::task::Poll::Ready(Err(e)),
+        })
+    }
+
+    /// Asynchronously writes the provided buffer to the file.
+    pub fn write<'a>(&'a mut self, buf: &'a [u8]) -> impl Future<Output = Result<usize>> + 'a {
+        core::future::poll_fn(|_| match self.timed_write(buf, 0) {
+            Ok(n) => core::task::Poll::Ready(Ok(n)),
+            Err(Error::OsErrorTimeout | Error::OsQueueFull) => Poll::Pending,
+            Err(e) => core::task::Poll::Ready(Err(e)),
+        })
+    }
 }

@@ -11,6 +11,8 @@ std = []
 libc = { version = "0.2", default-features = false }
 heapless = "0.9.1"
 bitflags = "2.10.0"
+pin-utils = "0.1.0"
+futures = { version = "0.3.28", features = ["async-await"], default-features = false }
 
 [build-dependencies]
 bindgen = "0.72.1"

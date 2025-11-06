@@ -20,9 +20,9 @@ add_custom_command(
     OUTPUT ${RUST_OUTPUT_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         # Pass necessary environment variables to the Rust build script (build.rs).
-        CFE_DIR=${CFE_DIR}
-        OSAL_DIR=${OSAL_DIR}
-        PSP_DIR=${PSP_DIR}
+        CFE_DIR=$ENV{CFE_DIR}
+        OSAL_DIR=$ENV{OSAL_DIR}
+        PSP_DIR=$ENV{PSP_DIR}
         BUILD_DIR=${CMAKE_BINARY_DIR}
         # Set the CARGO_TARGET_DIR to a location inside CMake's build directory.
         # This keeps all build artifacts in one place.

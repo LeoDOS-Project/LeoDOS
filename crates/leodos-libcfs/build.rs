@@ -193,6 +193,14 @@ fn main() {
     let osal_dir = get_path("OSAL_DIR");
     let psp_dir = get_path("PSP_DIR");
     let build_dir = get_path("BUILD_DIR");
+    let debug = env::var("DEBUG").as_deref() == Ok("1");
+
+    if debug {
+        println!("cargo::warning=CFE_DIR={}", cfe_dir.display());
+        println!("cargo::warning=OSAL_DIR={}", osal_dir.display());
+        println!("cargo::warning=PSP_DIR={}", psp_dir.display());
+        println!("cargo::warning=BUILD_DIR={}", build_dir.display());
+    }
 
     let macro_detector = MacroDetector::default();
 
@@ -233,6 +241,7 @@ fn main() {
         .header(header(&osal_dir, "src/os/inc/common_types.h"))
         .header(header(&osal_dir, "src/os/inc/osapi.h"))
         .header(header(&psp_dir, "fsw/inc/cfe_psp.h"))
+        .default_visibility(bindgen::FieldVisibilityKind::PublicCrate)
         .use_core()
         .ctypes_prefix("libc")
         .clang_arg("-D_LINUX_OS_")
@@ -329,5 +338,16 @@ fn main() {
 
     let final_content = format!("{}\n{}", comment, bindings_str);
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    fs::write(out_dir.join("bindings.rs"), final_content).expect("Couldn't write bindings");
+    let out_file = out_dir.join("bindings.rs");
+    fs::write(&out_file, final_content).expect("Couldn't write bindings");
+
+    let content = fs::read_to_string(&out_file).unwrap();
+    let content = content.replace("pub fn", "pub(crate) fn");
+    let content = content.replace("pub type", "pub(crate) type");
+    let content = content.replace("pub const", "pub(crate) const");
+    let content = content.replace("pub use", "pub(crate) use");
+    let content = content.replace("pub struct", "pub(crate) struct");
+    let content = content.replace("pub union", "pub(crate) union");
+    let content = content.replace("pub enum", "pub(crate) enum");
+    fs::write(&out_file, content).unwrap();
 }

@@ -1,11 +1,13 @@
 //! Software Bus pipe management for receiving messages.
-use crate::cfe::sb::msg::{MessageRef, MsgId};
+use crate::cfe::sb::msg::MsgId;
 use crate::error::{Error, Result};
 use crate::ffi::{self, CFE_SB_DEFAULT_QOS};
 use crate::status::check;
 use bitflags::bitflags;
+use core::future::Future;
 use core::mem::MaybeUninit;
 use core::slice;
+use core::task::Poll;
 use heapless::{CString, String};
 
 /// A type-safe, zero-cost wrapper for a cFE Software Bus Pipe ID.
@@ -42,7 +44,7 @@ bitflags! {
 /// Quality of Service options for a software bus subscription.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub struct Qos(pub ffi::CFE_SB_Qos_t);
+pub struct Qos(pub(crate) ffi::CFE_SB_Qos_t);
 
 impl Default for Qos {
     fn default() -> Self {
@@ -57,6 +59,16 @@ impl Qos {
             Priority: priority,
             Reliability: reliability,
         })
+    }
+
+    /// Gets the priority level.
+    pub fn priority(&self) -> u8 {
+        self.0.Priority
+    }
+
+    /// Gets the reliability level.
+    pub fn reliability(&self) -> u8 {
+        self.0.Reliability
     }
 }
 
@@ -151,7 +163,7 @@ impl Pipe {
     /// Returns `Error::SbTimeOut` or `Error::SbNoMessage` if no message is received within the timeout.
     /// Returns `Error::SbBadArgument` if the timeout value is invalid.
     /// Returns `Error::OsErrInvalidSize` if the received message is larger than `buf`.
-    pub fn receive<'a>(&self, timeout: Timeout, buf: &'a mut [u8]) -> Result<MessageRef<'a>> {
+    pub fn timed_recv(&mut self, buf: &mut [u8], timeout: Timeout) -> Result<usize> {
         let mut buf_ptr = MaybeUninit::uninit();
 
         let timeout = match timeout {
@@ -166,47 +178,36 @@ impl Pipe {
                 }
             }
         };
-        let status = unsafe { ffi::CFE_SB_ReceiveBuffer(buf_ptr.as_mut_ptr(), self.id.0, timeout) };
-
-        check(status)?;
+        check(unsafe { ffi::CFE_SB_ReceiveBuffer(buf_ptr.as_mut_ptr(), self.id.0, timeout) })?;
 
         let buf_ptr = unsafe { buf_ptr.assume_init() };
 
-        // Use the msg module to safely get the size from the received buffer.
-        let src_slice_for_size = unsafe {
-            // We don't know the size yet, so we have to assume a minimum header size.
-            // This is safe because CFE_MSG_GetSize only reads the header.
-            let min_header_size = core::mem::size_of::<ffi::CCSDS_PrimaryHeader_t>();
-            slice::from_raw_parts(buf_ptr as *const u8, min_header_size)
-        };
-        let total_size = MessageRef::new(src_slice_for_size).size()?;
+        let mut size = 0;
+        check(unsafe {
+            ffi::CFE_MSG_GetSize(buf_ptr as *const ffi::CFE_MSG_Message_t, &mut size)
+        })?;
 
-        if total_size > buf.len() {
+        if size > buf.len() {
             // We must release the buffer back to SB if we can't copy it, to prevent a leak.
             unsafe {
-                let _ = ffi::CFE_SB_ReleaseMessageBuffer(buf_ptr);
+                check(ffi::CFE_SB_ReleaseMessageBuffer(buf_ptr))?;
             }
             return Err(Error::OsErrInvalidSize);
         }
 
-        let src_slice = unsafe { slice::from_raw_parts(buf_ptr as *const u8, total_size) };
-        buf[..total_size].copy_from_slice(src_slice);
+        let src_slice = unsafe { slice::from_raw_parts(buf_ptr as *const u8, size) };
+        buf[..size].copy_from_slice(src_slice);
 
-        // Crucially, we MUST release the CFE-owned buffer now that we're done with it.
-        unsafe {
-            let _ = ffi::CFE_SB_ReleaseMessageBuffer(buf_ptr);
-        }
-
-        Ok(MessageRef::new(&buf[..total_size]))
+        Ok(size)
     }
 
-    /// Sets options on the pipe, such as `PipeOptions::IGNORE_MINE`.
+    /// Sets options for the pipe, see `PipeOptions` for the available options.
     pub fn set_opts(&self, opts: PipeOptions) -> Result<()> {
         check(unsafe { ffi::CFE_SB_SetPipeOpts(self.id.0, opts.bits()) })?;
         Ok(())
     }
 
-    /// Gets the current options for the pipe.
+    /// Gets the current options for the pipe, see `PipeOptions` for the available options.
     pub fn get_opts(&self) -> Result<PipeOptions> {
         let mut opts = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_SB_GetPipeOpts(self.id.0, opts.as_mut_ptr()) })?;
@@ -266,5 +267,22 @@ impl Drop for Pipe {
     /// goes out of scope.
     fn drop(&mut self) {
         let _ = unsafe { ffi::CFE_SB_DeletePipe(self.id.0) };
+    }
+}
+
+impl Pipe {
+    /// Asynchronously receives a single datagram message on the socket.
+    pub fn recv<'a>(
+        &'a mut self,
+        buf: &'a mut [u8],
+    ) -> impl Future<Output = Result<usize>> + use<'a> {
+        core::future::poll_fn(|_| {
+            let recv_future = self.timed_recv(buf, Timeout::Poll);
+            match recv_future {
+                Err(Error::OsErrorTimeout | Error::OsQueueEmpty) => Poll::Pending,
+                Ok(result) => Poll::Ready(Ok(result)),
+                Err(e) => Poll::Ready(Err(e)),
+            }
+        })
     }
 }

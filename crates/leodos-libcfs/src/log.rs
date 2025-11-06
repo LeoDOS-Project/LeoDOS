@@ -9,7 +9,10 @@
 //! for development and debugging, as its output typically goes to the console/terminal
 //! where the cFS instance is running.
 
+use crate::error::Error;
+use crate::error::Result;
 use crate::ffi;
+use crate::status::check;
 use heapless::CString;
 
 /// The maximum size of a single `OS_printf` message, from OSAL configuration.
@@ -83,25 +86,46 @@ pub fn printf_disable() {
 /// error if the message cannot be formatted (e.g., too long for the internal
 /// buffer) or if `CFE_ES_WriteToSysLog` returns an error.
 #[macro_export]
-macro_rules! syslog {
+macro_rules! log {
     // Match a single literal string with no format arguments.
     ($msg:literal) => {
-        $crate::es::app::App::syslog($msg)
+        $crate::log::syslog($msg)
     };
     // Match a format string plus arguments, like `println!`.
     ($($arg:tt)*) => {{
         use core::fmt::Write;
         // The temporary buffer size is determined by the CFE mission config.
-        let mut buffer: heapless::String<{ $crate::ffi::CFE_PLATFORM_ES_SYSTEM_LOG_SIZE as usize }> = heapless::String::new();
+        let mut buffer: heapless::String<{ $crate::log::SYSLOG_MAX_MSG_SIZE as usize }> = heapless::String::new();
 
         // Attempt to format the arguments into our heapless string.
         if write!(&mut buffer, $($arg)*).is_ok() {
-            $crate::cfe::es::app::App::syslog(&buffer)
+            $crate::log::syslog(&buffer)
         } else {
             // This error occurs if the formatted string is too large for the buffer.
-            Err($crate::error::Error::StatusValidationFailure)
+            Err($crate::error::Error::CfeStatusValidationFailure)
         }
     }};
+}
+
+/// The maximum size of a single cFE System Log message, from cFE configuration.
+pub const SYSLOG_MAX_MSG_SIZE: usize = ffi::CFE_PLATFORM_ES_SYSTEM_LOG_SIZE as usize;
+
+/// Writes a message to the cFE system log.
+///
+/// This is useful for logging critical events, especially during initialization
+/// before Event Services (EVS) are available, or in error paths where EVS
+/// might fail.
+///
+/// The `log!` macro provides a more convenient, `println!`-like interface
+/// for this functionality.
+pub fn syslog(message: &str) -> Result<()> {
+    let mut c_string = CString::<256>::new();
+    c_string
+        .extend_from_bytes(message.as_bytes())
+        .map_err(|_| Error::OsErrNameTooLong)?;
+
+    check(unsafe { ffi::CFE_ES_WriteToSysLog(c_string.as_ptr()) })?;
+    Ok(())
 }
 
 /// A macro to write a formatted string to the OSAL console (`OS_printf`).

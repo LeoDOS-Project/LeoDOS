@@ -160,13 +160,13 @@ pub enum Error {
     /// The SB routing table cannot accommodate another destination for a message ID.
     CfeSbMaxDestsMet,
     /// An internal SB index is out of range.
-    SbInternalErr,
+    CfeSbInternalErr,
     /// A message header operation was requested on a message of the wrong type.
-    SbWrongMsgType,
+    CfeSbWrongMsgType,
     /// A request to release or send a zero-copy buffer is invalid.
-    SbBufferInvalid,
+    CfeSbBufferInvalid,
     /// SB feature is not implemented.
-    SbNotImplemented,
+    CfeSbNotImplemented,
 
     // --- CFE TBL (Table Services) ---
     /// The provided table handle is not valid.
@@ -333,6 +333,14 @@ pub enum Error {
     // --- Other Errors ---
     /// A string passed to the API contained an interior null character.
     InvalidString,
+    /// The task pool is full and cannot accept new tasks.
+    TaskPoolFull,
+    /// The task's stack size exceeds the maximum allowed size.
+    TaskTooLarge,
+    /// The task's alignment requirement exceeds the maximum allowed alignment.
+    TaskAlignmentTooLarge,
+    /// An error occurred during a type conversion.
+    ConversionError(&'static str),
 
     /// An unhandled or unknown CFE/OSAL/PSP error code. This may indicate a
     /// new or platform-specific error code not yet included in this enum.
@@ -346,129 +354,129 @@ impl fmt::Display for Error {
         // or macro to automatically generate this from the doc comments.
         let desc = match self {
             // --- Generic CFE Status ---
-            Error::CfeStatusWrongMsgLength => "Generic: Wrong Message Length",
-            Error::CfeStatusUnknownMsgId => "Generic: Unknown Message ID",
-            Error::CfeStatusBadCommandCode => "Generic: Bad Command Code",
-            Error::CfeStatusExternalResourceFail => "Generic: External resource failure",
-            Error::CfeStatusRequestAlreadyPending => "Generic: Request already pending",
-            Error::CfeStatusValidationFailure => "Generic: Validation Failure",
-            Error::CfeStatusRangeError => "Generic: Input value out of range",
-            Error::CfeStatusIncorrectState => "Generic: Cannot process request in current state",
-            Error::CfeStatusNotImplemented => "Generic: Not Implemented",
+            Error::CfeStatusWrongMsgLength => "CFE: Wrong Message Length",
+            Error::CfeStatusUnknownMsgId => "CFE: Unknown Message ID",
+            Error::CfeStatusBadCommandCode => "CFE: Bad Command Code",
+            Error::CfeStatusExternalResourceFail => "CFE: External resource failure",
+            Error::CfeStatusRequestAlreadyPending => "CFE: Request already pending",
+            Error::CfeStatusValidationFailure => "CFE: Validation Failure",
+            Error::CfeStatusRangeError => "CFE: Input value out of range",
+            Error::CfeStatusIncorrectState => "CFE: Cannot process request in current state",
+            Error::CfeStatusNotImplemented => "CFE: Not Implemented",
 
             // --- CFE EVS (Event Services) ---
-            Error::CfeEvsUnknownFilter => "EVS: Unknown Filter scheme",
-            Error::CfeEvsAppNotRegistered => "EVS: Application not registered",
-            Error::CfeEvsAppIllegalAppId => "EVS: Illegal Application ID",
-            Error::CfeEvsAppFilterOverload => "EVS: Application filter overload",
-            Error::CfeEvsResetAreaPointer => "EVS: Reset Area Pointer Failure",
-            Error::CfeEvsEvtNotRegistered => "EVS: Event not registered for filtering",
-            Error::CfeEvsFileWriteError => "EVS: File write error",
-            Error::CfeEvsInvalidParameter => "EVS: Invalid parameter in command",
-            Error::CfeEvsAppSquelched => "EVS: Event squelched due to high rate",
-            Error::CfeEvsNotImplemented => "EVS: Not Implemented",
+            Error::CfeEvsUnknownFilter => "CFE-EVS: Unknown Filter scheme",
+            Error::CfeEvsAppNotRegistered => "CFE-EVS: Application not registered",
+            Error::CfeEvsAppIllegalAppId => "CFE-EVS: Illegal Application ID",
+            Error::CfeEvsAppFilterOverload => "CFE-EVS: Application filter overload",
+            Error::CfeEvsResetAreaPointer => "CFE-EVS: Reset Area Pointer Failure",
+            Error::CfeEvsEvtNotRegistered => "CFE-EVS: Event not registered for filtering",
+            Error::CfeEvsFileWriteError => "CFE-EVS: File write error",
+            Error::CfeEvsInvalidParameter => "CFE-EVS: Invalid parameter in command",
+            Error::CfeEvsAppSquelched => "CFE-EVS: Event squelched due to high rate",
+            Error::CfeEvsNotImplemented => "CFE-EVS: Not Implemented",
 
             // --- CFE ES (Executive Services) ---
-            Error::CfeEsErrResourceIdNotValid => "ES: Resource ID is not valid",
-            Error::CfeEsErrNameNotFound => "ES: Resource Name not found",
-            Error::CfeEsErrAppCreate => "ES: Application Create Error",
-            Error::CfeEsErrChildTaskCreate => "ES: Child Task Create Error",
-            Error::CfeEsErrSysLogFull => "ES: System Log Full",
-            Error::CfeEsErrMemBlockSize => "ES: Memory Block Size Error",
-            Error::CfeEsErrLoadLib => "ES: Load Library Error",
-            Error::CfeEsBadArgument => "ES: Bad Argument",
-            Error::CfeEsErrChildTaskRegister => "ES: Child Task Register Error",
-            Error::CfeEsCdsInsufficientMemory => "ES: CDS Insufficient Memory",
-            Error::CfeEsCdsInvalidName => "ES: CDS Invalid Name",
-            Error::CfeEsCdsInvalidSize => "ES: CDS Invalid Size",
-            Error::CfeEsCdsInvalid => "ES: CDS Invalid",
-            Error::CfeEsCdsAccessError => "ES: CDS Access Error",
-            Error::CfeEsFileIoErr => "ES: File IO Error",
-            Error::CfeEsRstAccessErr => "ES: Reset Area Access Error",
-            Error::CfeEsErrAppRegister => "ES: Application Register Error",
-            Error::CfeEsErrChildTaskDelete => "ES: Child Task Delete Error",
-            Error::CfeEsErrChildTaskDeleteMainTask => "ES: Attempted to delete a main task",
-            Error::CfeEsCdsBlockCrcErr => "ES: CDS Block CRC Error",
-            Error::CfeEsMutSemDeleteErr => "ES: Mutex Semaphore Delete Error",
-            Error::CfeEsBinSemDeleteErr => "ES: Binary Semaphore Delete Error",
-            Error::CfeEsCountSemDeleteErr => "ES: Counting Semaphore Delete Error",
-            Error::CfeEsQueueDeleteErr => "ES: Queue Delete Error",
-            Error::CfeEsFileCloseErr => "ES: File Close Error",
-            Error::CfeEsCdsWrongTypeErr => "ES: CDS Wrong Type Error",
-            Error::CfeEsCdsOwnerActiveErr => "ES: CDS Owner Active Error",
-            Error::CfeEsAppCleanupErr => "ES: Application Cleanup Error",
-            Error::CfeEsTimerDeleteErr => "ES: Timer Delete Error",
-            Error::CfeEsBufferNotInPool => "ES: Buffer Not In Pool",
-            Error::CfeEsTaskDeleteErr => "ES: Task Delete Error",
-            Error::CfeEsOperationTimedOut => "ES: Operation Timed Out",
-            Error::CfeEsNoResourceIdsAvailable => "ES: No Resource IDs Available",
-            Error::CfeEsPoolBlockInvalid => "ES: Invalid pool block",
-            Error::CfeEsErrDuplicateName => "ES: Duplicate Name Error",
-            Error::CfeEsNotImplemented => "ES: Not Implemented",
+            Error::CfeEsErrResourceIdNotValid => "CFE-ES: Resource ID is not valid",
+            Error::CfeEsErrNameNotFound => "CFE-ES: Resource Name not found",
+            Error::CfeEsErrAppCreate => "CFE-ES: Application Create Error",
+            Error::CfeEsErrChildTaskCreate => "CFE-ES: Child Task Create Error",
+            Error::CfeEsErrSysLogFull => "CFE-ES: System Log Full",
+            Error::CfeEsErrMemBlockSize => "CFE-ES: Memory Block Size Error",
+            Error::CfeEsErrLoadLib => "CFE-ES: Load Library Error",
+            Error::CfeEsBadArgument => "CFE-ES: Bad Argument",
+            Error::CfeEsErrChildTaskRegister => "CFE-ES: Child Task Register Error",
+            Error::CfeEsCdsInsufficientMemory => "CFE-ES: CDS Insufficient Memory",
+            Error::CfeEsCdsInvalidName => "CFE-ES: CDS Invalid Name",
+            Error::CfeEsCdsInvalidSize => "CFE-ES: CDS Invalid Size",
+            Error::CfeEsCdsInvalid => "CFE-ES: CDS Invalid",
+            Error::CfeEsCdsAccessError => "CFE-ES: CDS Access Error",
+            Error::CfeEsFileIoErr => "CFE-ES: File IO Error",
+            Error::CfeEsRstAccessErr => "CFE-ES: Reset Area Access Error",
+            Error::CfeEsErrAppRegister => "CFE-ES: Application Register Error",
+            Error::CfeEsErrChildTaskDelete => "CFE-ES: Child Task Delete Error",
+            Error::CfeEsErrChildTaskDeleteMainTask => "CFE-ES: Attempted to delete a main task",
+            Error::CfeEsCdsBlockCrcErr => "CFE-ES: CDS Block CRC Error",
+            Error::CfeEsMutSemDeleteErr => "CFE-ES: Mutex Semaphore Delete Error",
+            Error::CfeEsBinSemDeleteErr => "CFE-ES: Binary Semaphore Delete Error",
+            Error::CfeEsCountSemDeleteErr => "CFE-ES: Counting Semaphore Delete Error",
+            Error::CfeEsQueueDeleteErr => "CFE-ES: Queue Delete Error",
+            Error::CfeEsFileCloseErr => "CFE-ES: File Close Error",
+            Error::CfeEsCdsWrongTypeErr => "CFE-ES: CDS Wrong Type Error",
+            Error::CfeEsCdsOwnerActiveErr => "CFE-ES: CDS Owner Active Error",
+            Error::CfeEsAppCleanupErr => "CFE-ES: Application Cleanup Error",
+            Error::CfeEsTimerDeleteErr => "CFE-ES: Timer Delete Error",
+            Error::CfeEsBufferNotInPool => "CFE-ES: Buffer Not In Pool",
+            Error::CfeEsTaskDeleteErr => "CFE-ES: Task Delete Error",
+            Error::CfeEsOperationTimedOut => "CFE-ES: Operation Timed Out",
+            Error::CfeEsNoResourceIdsAvailable => "CFE-ES: No Resource IDs Available",
+            Error::CfeEsPoolBlockInvalid => "CFE-ES: Invalid pool block",
+            Error::CfeEsErrDuplicateName => "CFE-ES: Duplicate Name Error",
+            Error::CfeEsNotImplemented => "CFE-ES: Not Implemented",
 
             // --- CFE FS (File Services) ---
-            Error::CfeFsBadArgument => "FS: Bad Argument",
-            Error::CfeFsInvalidPath => "FS: Invalid Path",
-            Error::CfeFsFnameTooLong => "FS: Filename Too Long",
-            Error::CfeFsNotImplemented => "FS: Not Implemented",
+            Error::CfeFsBadArgument => "CFE-FS: Bad Argument",
+            Error::CfeFsInvalidPath => "CFE-FS: Invalid Path",
+            Error::CfeFsFnameTooLong => "CFE-FS: Filename Too Long",
+            Error::CfeFsNotImplemented => "CFE-FS: Not Implemented",
 
             // --- CFE SB (Software Bus) ---
-            Error::CfeSbTimeOut => "SB: Time Out",
-            Error::CfeSbNoMessage => "SB: No Message",
-            Error::CfeSbBadArgument => "SB: Bad Argument",
-            Error::CfeSbMaxPipesMet => "SB: Max Pipes Met",
-            Error::CfeSbPipeCrErr => "SB: Pipe Create Error",
-            Error::CfeSbPipeRdErr => "SB: Pipe Read Error",
-            Error::CfeSbMsgTooBig => "SB: Message Too Big",
-            Error::CfeSbBufAlocErr => "SB: Buffer Allocation Error",
-            Error::CfeSbMaxMsgsMet => "SB: Max Messages Met",
-            Error::CfeSbMaxDestsMet => "SB: Max Destinations Met",
-            Error::SbInternalErr => "SB: Internal Error",
-            Error::SbWrongMsgType => "SB: Wrong Message Type",
-            Error::SbBufferInvalid => "SB: Buffer Invalid",
-            Error::SbNotImplemented => "SB: Not Implemented",
+            Error::CfeSbTimeOut => "CFE-SB: Time Out",
+            Error::CfeSbNoMessage => "CFE-SB: No Message",
+            Error::CfeSbBadArgument => "CFE-SB: Bad Argument",
+            Error::CfeSbMaxPipesMet => "CFE-SB: Max Pipes Met",
+            Error::CfeSbPipeCrErr => "CFE-SB: Pipe Create Error",
+            Error::CfeSbPipeRdErr => "CFE-SB: Pipe Read Error",
+            Error::CfeSbMsgTooBig => "CFE-SB: Message Too Big",
+            Error::CfeSbBufAlocErr => "CFE-SB: Buffer Allocation Error",
+            Error::CfeSbMaxMsgsMet => "CFE-SB: Max Messages Met",
+            Error::CfeSbMaxDestsMet => "CFE-SB: Max Destinations Met",
+            Error::CfeSbInternalErr => "CFE-SB: CFE-Internal Error",
+            Error::CfeSbWrongMsgType => "CFE-SB: Wrong Message Type",
+            Error::CfeSbBufferInvalid => "CFE-SB: Buffer Invalid",
+            Error::CfeSbNotImplemented => "CFE-SB: Not Implemented",
 
             // --- CFE TBL (Table Services) ---
-            Error::CfeTblErrInvalidHandle => "TBL: Invalid Handle",
-            Error::CfeTblErrInvalidName => "TBL: Invalid Name",
-            Error::CfeTblErrInvalidSize => "TBL: Invalid Size",
-            Error::CfeTblErrNeverLoaded => "TBL: Never Loaded",
-            Error::CfeTblErrRegistryFull => "TBL: Registry Full",
-            Error::CfeTblErrNoAccess => "TBL: No Access",
-            Error::CfeTblErrUnregistered => "TBL: Unregistered",
-            Error::CfeTblErrHandlesFull => "TBL: Handles Full",
-            Error::CfeTblErrDuplicateDiffSize => "TBL: Duplicate Table With Different Size",
-            Error::CfeTblErrDuplicateNotOwned => "TBL: Duplicate Table And Not Owned",
-            Error::CfeTblErrNoBufferAvail => "TBL: No Buffer Available",
-            Error::CfeTblErrDumpOnly => "TBL: Dump Only Error",
-            Error::CfeTblErrIllegalSrcType => "TBL: Illegal Source Type",
-            Error::CfeTblErrLoadInProgress => "TBL: Load In Progress",
-            Error::CfeTblErrFileTooLarge => "TBL: File Too Large",
-            Error::CfeTblErrBadContentId => "TBL: Bad Content ID",
-            Error::CfeTblErrBadSubtypeId => "TBL: Bad Subtype ID",
-            Error::CfeTblErrFileSizeInconsistent => "TBL: File Size Inconsistent",
-            Error::CfeTblErrNoStdHeader => "TBL: No Standard Header",
-            Error::CfeTblErrNoTblHeader => "TBL: No Table Header",
-            Error::CfeTblErrFilenameTooLong => "TBL: Filename Too Long",
-            Error::CfeTblErrFileForWrongTable => "TBL: File For Wrong Table",
-            Error::CfeTblErrLoadIncomplete => "TBL: Load Incomplete",
-            Error::CfeTblErrPartialLoad => "TBL: Partial Load Error",
-            Error::CfeTblErrInvalidOptions => "TBL: Invalid Options",
-            Error::CfeTblErrBadSpacecraftId => "TBL: Bad Spacecraft ID",
-            Error::CfeTblErrBadProcessorId => "TBL: Bad Processor ID",
-            Error::CfeTblMessageError => "TBL: Message Error",
-            Error::CfeTblErrShortFile => "TBL: Short File",
-            Error::CfeTblErrAccess => "TBL: Access error",
-            Error::CfeTblBadArgument => "TBL: Bad Argument",
-            Error::CfeTblNotImplemented => "TBL: Not Implemented",
+            Error::CfeTblErrInvalidHandle => "CFE-TBL: Invalid Handle",
+            Error::CfeTblErrInvalidName => "CFE-TBL: Invalid Name",
+            Error::CfeTblErrInvalidSize => "CFE-TBL: Invalid Size",
+            Error::CfeTblErrNeverLoaded => "CFE-TBL: Never Loaded",
+            Error::CfeTblErrRegistryFull => "CFE-TBL: Registry Full",
+            Error::CfeTblErrNoAccess => "CFE-TBL: No Access",
+            Error::CfeTblErrUnregistered => "CFE-TBL: Unregistered",
+            Error::CfeTblErrHandlesFull => "CFE-TBL: Handles Full",
+            Error::CfeTblErrDuplicateDiffSize => "CFE-TBL: Duplicate Table With Different Size",
+            Error::CfeTblErrDuplicateNotOwned => "CFE-TBL: Duplicate Table And Not Owned",
+            Error::CfeTblErrNoBufferAvail => "CFE-TBL: No Buffer Available",
+            Error::CfeTblErrDumpOnly => "CFE-TBL: Dump Only Error",
+            Error::CfeTblErrIllegalSrcType => "CFE-TBL: Illegal Source Type",
+            Error::CfeTblErrLoadInProgress => "CFE-TBL: Load In Progress",
+            Error::CfeTblErrFileTooLarge => "CFE-TBL: File Too Large",
+            Error::CfeTblErrBadContentId => "CFE-TBL: Bad Content ID",
+            Error::CfeTblErrBadSubtypeId => "CFE-TBL: Bad Subtype ID",
+            Error::CfeTblErrFileSizeInconsistent => "CFE-TBL: File Size Inconsistent",
+            Error::CfeTblErrNoStdHeader => "CFE-TBL: No Standard Header",
+            Error::CfeTblErrNoTblHeader => "CFE-TBL: No Table Header",
+            Error::CfeTblErrFilenameTooLong => "CFE-TBL: Filename Too Long",
+            Error::CfeTblErrFileForWrongTable => "CFE-TBL: File For Wrong Table",
+            Error::CfeTblErrLoadIncomplete => "CFE-TBL: Load Incomplete",
+            Error::CfeTblErrPartialLoad => "CFE-TBL: Partial Load Error",
+            Error::CfeTblErrInvalidOptions => "CFE-TBL: Invalid Options",
+            Error::CfeTblErrBadSpacecraftId => "CFE-TBL: Bad Spacecraft ID",
+            Error::CfeTblErrBadProcessorId => "CFE-TBL: Bad Processor ID",
+            Error::CfeTblMessageError => "CFE-TBL: Message Error",
+            Error::CfeTblErrShortFile => "CFE-TBL: Short File",
+            Error::CfeTblErrAccess => "CFE-TBL: Access error",
+            Error::CfeTblBadArgument => "CFE-TBL: Bad Argument",
+            Error::CfeTblNotImplemented => "CFE-TBL: Not Implemented",
 
             // --- CFE TIME (Time Services) ---
-            Error::CfeTimeNotImplemented => "TIME: Not Implemented",
-            Error::CfeTimeInternalOnly => "TIME: Internal Only",
-            Error::CfeTimeOutOfRange => "TIME: Out Of Range",
-            Error::CfeTimeTooManySynchCallbacks => "TIME: Too Many Sync Callbacks",
-            Error::CfeTimeCallbackNotRegistered => "TIME: Callback Not Registered",
-            Error::CfeTimeBadArgument => "TIME: Bad Argument",
+            Error::CfeTimeNotImplemented => "CFE-TIME: Not Implemented",
+            Error::CfeTimeInternalOnly => "CFE-TIME: Internal Only",
+            Error::CfeTimeOutOfRange => "CFE-TIME: Out Of Range",
+            Error::CfeTimeTooManySynchCallbacks => "CFE-TIME: Too Many Sync Callbacks",
+            Error::CfeTimeCallbackNotRegistered => "CFE-TIME: Callback Not Registered",
+            Error::CfeTimeBadArgument => "CFE-TIME: Bad Argument",
 
             // --- OSAL Status Codes ---
             Error::OsError => "OSAL: Generic error",
@@ -514,7 +522,11 @@ impl fmt::Display for Error {
 
             // --- Other Errors ---
             Error::InvalidString => "String contains interior null character",
+            Error::TaskPoolFull => "Task pool is full",
+            Error::TaskTooLarge => "Task stack size exceeds maximum allowed",
+            Error::TaskAlignmentTooLarge => "Task alignment requirement exceeds maximum allowed",
             Error::Unhandled(_) => "Unhandled CFE/OSAL error code: 0x{:08x}",
+            Error::ConversionError(msg) => msg,
         };
 
         if !matches!(self, Error::InvalidString | Error::Unhandled(_)) {
@@ -607,10 +619,10 @@ impl From<ffi::CFE_Status_t> for Error {
             ffi::CFE_SB_BUF_ALOC_ERR => Error::CfeSbBufAlocErr,
             ffi::CFE_SB_MAX_MSGS_MET => Error::CfeSbMaxMsgsMet,
             ffi::CFE_SB_MAX_DESTS_MET => Error::CfeSbMaxDestsMet,
-            ffi::CFE_SB_INTERNAL_ERR => Error::SbInternalErr,
-            ffi::CFE_SB_WRONG_MSG_TYPE => Error::SbWrongMsgType,
-            ffi::CFE_SB_BUFFER_INVALID => Error::SbBufferInvalid,
-            ffi::CFE_SB_NOT_IMPLEMENTED => Error::SbNotImplemented,
+            ffi::CFE_SB_INTERNAL_ERR => Error::CfeSbInternalErr,
+            ffi::CFE_SB_WRONG_MSG_TYPE => Error::CfeSbWrongMsgType,
+            ffi::CFE_SB_BUFFER_INVALID => Error::CfeSbBufferInvalid,
+            ffi::CFE_SB_NOT_IMPLEMENTED => Error::CfeSbNotImplemented,
 
             // --- CFE TBL (Table Services) ---
             ffi::CFE_TBL_ERR_INVALID_HANDLE => Error::CfeTblErrInvalidHandle,
@@ -701,43 +713,49 @@ impl From<ffi::CFE_Status_t> for Error {
     }
 }
 
-/// Retrieves the symbolic name for an OSAL status code.
-pub fn get_error_name(error_num: i32) -> Result<CString<{ ffi::OS_ERROR_NAME_LENGTH as usize }>> {
-    let mut name_buf = [0 as libc::c_char; ffi::OS_ERROR_NAME_LENGTH as usize];
-    check(unsafe { ffi::OS_GetErrorName(error_num, &mut name_buf) })?;
+impl Error {
+    /// Retrieves the symbolic name for an OSAL status code.
+    pub fn name(error: i32) -> Result<CString<{ ffi::OS_ERROR_NAME_LENGTH as usize }>> {
+        const SIZE: usize = ffi::OS_ERROR_NAME_LENGTH as usize;
+        let mut name_buf = [0u8; SIZE];
+        check(unsafe {
+            ffi::OS_GetErrorName(error, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE])
+        })?;
 
-    // The result from OS_GetErrorName is null-terminated.
-    let c_str = unsafe { core::ffi::CStr::from_ptr(name_buf.as_ptr()) };
-    let mut s = CString::new();
-    s.extend_from_bytes(c_str.to_bytes())
-        .map_err(|_| Error::OsErrNameTooLong)?;
-    Ok(s)
+        // The result from OS_GetErrorName is null-terminated.
+        let mut s = CString::new();
+        s.extend_from_bytes(&name_buf)
+            .map_err(|_| Error::OsErrNameTooLong)?;
+        Ok(s)
+    }
 }
 
 /// Retrieves the symbolic name for a CFE status code.
 pub fn get_cfe_status_name(
-    status_code: i32,
+    status: i32,
 ) -> Result<CString<{ ffi::CFE_STATUS_STRING_LENGTH as usize }>> {
-    let mut name_buf = [0 as libc::c_char; ffi::CFE_STATUS_STRING_LENGTH as usize];
-    unsafe { ffi::CFE_ES_StatusToString(status_code, &mut name_buf) };
+    const SIZE: usize = ffi::CFE_STATUS_STRING_LENGTH as usize;
+    let mut name_buf = [0u8; SIZE];
+    unsafe {
+        ffi::CFE_ES_StatusToString(status, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE])
+    };
 
-    let c_str = unsafe { core::ffi::CStr::from_ptr(name_buf.as_ptr()) };
     let mut s = CString::new();
-    s.extend_from_bytes(c_str.to_bytes())
+    s.extend_from_bytes(&name_buf)
         .map_err(|_| Error::OsErrNameTooLong)?;
     Ok(s)
 }
 
 /// Converts an OSAL status code to its decimal or hex string representation.
 pub fn osal_status_to_string(
-    status_code: i32,
+    status: i32,
 ) -> Result<CString<{ ffi::OS_STATUS_STRING_LENGTH as usize }>> {
-    let mut name_buf = [0 as libc::c_char; ffi::OS_STATUS_STRING_LENGTH as usize];
-    unsafe { ffi::OS_StatusToString(status_code, &mut name_buf) };
+    const SIZE: usize = ffi::OS_STATUS_STRING_LENGTH as usize;
+    let mut name_buf = [0u8; SIZE];
+    unsafe { ffi::OS_StatusToString(status, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE]) };
 
-    let c_str = unsafe { core::ffi::CStr::from_ptr(name_buf.as_ptr()) };
     let mut s = CString::new();
-    s.extend_from_bytes(c_str.to_bytes())
+    s.extend_from_bytes(&name_buf)
         .map_err(|_| Error::OsErrNameTooLong)?;
     Ok(s)
 }

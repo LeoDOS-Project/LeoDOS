@@ -636,12 +636,12 @@ pub fn message_string_set(dest: &mut [i8], src: &str) -> Result<usize> {
 /// unterminated strings from the source buffer and ensures the destination is null-terminated.
 ///
 /// # Arguments
-/// * `dest`: The mutable Rust byte buffer to copy the string into.
-/// * `src`: The fixed-size C-style `i8` array from the message.
+/// * `dest`: The mutable byte buffer to copy the string into.
+/// * `src`: The fixed-size array from the message.
 /// * `default_src`: An optional default string to use if the source string is empty.
 pub fn message_string_get<'a>(
     dest: &'a mut [u8],
-    src: &[i8],
+    src: &[u8],
     default_src: Option<&str>,
 ) -> Result<&'a str> {
     let default_ptr = default_src.map_or(core::ptr::null(), |s| s.as_ptr() as *const libc::c_char);

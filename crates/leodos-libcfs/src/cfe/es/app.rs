@@ -12,12 +12,56 @@ use core::str;
 use heapless::CString;
 use heapless::String;
 
-use crate::cfe::evs::event;
 use crate::error::Error;
 use crate::error::Result;
 use crate::ffi;
-use crate::ffi::CFE_ES_RunStatus;
+use crate::log;
+use crate::log::syslog;
 use crate::status::check;
+
+/// Represents the possible run statuses returned by `CFE_ES_RunLoop`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum RunStatus {
+    /// The application run status is undefined.
+    Undefined = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_UNDEFINED,
+    /// The application should continue running.
+    Run = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_RUN,
+    /// The application should exit gracefully.
+    Exit = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_EXIT,
+    /// An error occurred; the application should handle it appropriately.
+    Error = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_ERROR,
+    /// The application encountered a system exception.
+    Exception = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_SYS_EXCEPTION,
+    /// The application should be restarted by the system.
+    Restart = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_SYS_RESTART,
+    /// The application should be reloaded by the system.
+    Reload = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_SYS_RELOAD,
+    /// The application should be deleted by the system.
+    Delete = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_SYS_DELETE,
+    /// The core application failed to initialize.
+    CoreAppInitError = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_CORE_APP_INIT_ERROR,
+    /// The core application encountered a runtime error.
+    CoreAppRuntimeError = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_CORE_APP_RUNTIME_ERROR,
+}
+
+impl From<u32> for RunStatus {
+    fn from(value: u32) -> Self {
+        match value {
+            x if x == RunStatus::Undefined as u32 => RunStatus::Undefined,
+            x if x == RunStatus::Run as u32 => RunStatus::Run,
+            x if x == RunStatus::Exit as u32 => RunStatus::Exit,
+            x if x == RunStatus::Error as u32 => RunStatus::Error,
+            x if x == RunStatus::Exception as u32 => RunStatus::Exception,
+            x if x == RunStatus::Restart as u32 => RunStatus::Restart,
+            x if x == RunStatus::Reload as u32 => RunStatus::Reload,
+            x if x == RunStatus::Delete as u32 => RunStatus::Delete,
+            x if x == RunStatus::CoreAppInitError as u32 => RunStatus::CoreAppInitError,
+            x if x == RunStatus::CoreAppRuntimeError as u32 => RunStatus::CoreAppRuntimeError,
+            _ => RunStatus::Undefined, // Default case
+        }
+    }
+}
 
 /// A type-safe, zero-cost wrapper for a cFE Application ID.
 ///
@@ -25,7 +69,7 @@ use crate::status::check;
 /// It can be used to query information about that specific application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct AppId(pub ffi::CFE_ES_AppId_t);
+pub struct AppId(pub(crate) ffi::CFE_ES_AppId_t);
 
 impl AppId {
     /// Retrieves detailed information about the application with this ID.
@@ -135,12 +179,6 @@ impl AppId {
     }
 }
 
-impl From<ffi::CFE_ES_AppId_t> for AppId {
-    fn from(id: ffi::CFE_ES_AppId_t) -> Self {
-        Self(id)
-    }
-}
-
 impl Deref for AppId {
     type Target = ffi::CFE_ES_AppId_t;
     fn deref(&self) -> &Self::Target {
@@ -155,7 +193,7 @@ impl Deref for AppId {
 #[derive(Debug, Clone)]
 pub struct AppInfo {
     /// The underlying FFI `CFE_ES_AppInfo_t` struct.
-    pub inner: ffi::CFE_ES_AppInfo_t,
+    pub(crate) inner: ffi::CFE_ES_AppInfo_t,
 }
 
 impl AppInfo {
@@ -270,24 +308,6 @@ impl App {
         })
     }
 
-    /// Writes a message to the cFE system log.
-    ///
-    /// This is useful for logging critical events, especially during initialization
-    /// before Event Services (EVS) are available, or in error paths where EVS
-    /// might fail.
-    ///
-    /// The `syslog!` macro provides a more convenient, `println!`-like interface
-    /// for this functionality.
-    pub fn syslog(message: &str) -> Result<()> {
-        let mut c_string = CString::<256>::new();
-        c_string
-            .extend_from_bytes(message.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
-
-        check(unsafe { ffi::CFE_ES_WriteToSysLog(c_string.as_ptr()) })?;
-        Ok(())
-    }
-
     /// Returns the application's unique cFE ID.
     pub fn id(&self) -> AppId {
         self.app_id
@@ -305,33 +325,33 @@ impl App {
 /// 4. Exits gracefully when `run_cycle` returns an error or when cFE commands an exit.
 pub fn start<T: AppMain>() {
     let Ok(mut state) = T::init() else {
-        App::syslog("Application initialization failed.").ok();
-        unsafe { ffi::CFE_ES_ExitApp(ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_ERROR as u32) };
+        syslog("Application initialization failed.").ok();
+        unsafe { ffi::CFE_ES_ExitApp(RunStatus::Error as u32) };
         return;
     };
 
     loop {
-        let mut run_status = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_RUN;
-        let should_run = unsafe { ffi::CFE_ES_RunLoop(&mut run_status) };
-
-        const RUN: CFE_ES_RunStatus = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_RUN;
-        const EXIT: CFE_ES_RunStatus = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_EXIT;
-        const DELETE: CFE_ES_RunStatus = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_SYS_DELETE;
-
-        if should_run && matches!(run_status, RUN) {
-            if let Err(_) = state.run_cycle() {
-                event::error(1, "Main loop returned an error, exiting.").ok();
+        let mut status = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_RUN;
+        let should_run = unsafe { ffi::CFE_ES_RunLoop(&mut status) };
+        match RunStatus::from(status) {
+            RunStatus::Run if should_run => {
+                if let Err(err) = state.run_cycle() {
+                    log!("Application error: {:?}", err).ok();
+                    break;
+                }
+            }
+            RunStatus::Exit | RunStatus::Delete => {
+                log!("Received exit/delete command, exiting application.").ok();
                 break;
             }
-        } else if matches!(run_status, EXIT | DELETE) {
-            break;
-        } else {
-            event::error(1, "CFE_ES_RunLoop failed, exiting.").ok();
-            break;
-        };
+            other_status => {
+                log!("Exiting application due to run status: {:?}", other_status).ok();
+                break;
+            }
+        }
     }
 
-    unsafe { ffi::CFE_ES_ExitApp(ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_EXIT as u32) };
+    unsafe { ffi::CFE_ES_ExitApp(RunStatus::Exit as u32) };
 }
 
 /// A macro to define the entry point for a cFS application.
@@ -350,7 +370,6 @@ pub fn start<T: AppMain>() {
 ///
 /// impl AppMain for MyAppState {
 ///     fn init(app: &mut App) -> Result<Self> {
-///         app.register_for_events()?;
 ///         // ...
 ///         Ok(Self { /* ... */ })
 ///     }
@@ -392,9 +411,9 @@ pub fn default_panic_handler(info: &core::panic::PanicInfo) -> ! {
         write!(message, " at {}:{}", location.file(), location.line()).ok();
     }
 
-    let _ = App::syslog(&message);
+    let _ = syslog(&message);
 
-    unsafe { ffi::CFE_ES_ExitApp(ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_ERROR as u32) };
+    unsafe { ffi::CFE_ES_ExitApp(RunStatus::Error as u32) };
 
     loop {}
 }

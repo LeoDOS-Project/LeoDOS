@@ -1,11 +1,14 @@
 //! Safe, idiomatic wrappers for OSAL networking APIs (sockets).
+
 use crate::error::{Error, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::time::OsTime;
 use crate::status::check;
 use core::ffi::CStr;
+use core::future::Future;
 use core::mem::MaybeUninit;
+use core::task::Poll;
 use heapless::{CString, String};
 
 /// A wrapper for a CFE/OSAL socket address.
@@ -26,35 +29,29 @@ pub enum SocketShutdownMode {
 }
 
 impl SocketAddr {
-    /// Creates a new IPv4 socket address.
+    /// Creates a new socket address.
     pub fn new_ipv4(ip_addr: &str, port: u16) -> Result<Self> {
         let mut addr_uninit = MaybeUninit::uninit();
 
         // 1. Initialize for the correct domain
-        let status = unsafe {
-            ffi::OS_SocketAddrInit(
-                addr_uninit.as_mut_ptr(),
-                ffi::OS_SocketDomain_t_OS_SocketDomain_INET,
-            )
-        };
-        check(status)?;
+        check(unsafe {
+            ffi::OS_SocketAddrInit(addr_uninit.as_mut_ptr(), SocketDomain::IPv4.into())
+        })?;
 
         // 2. Set the IP address from a string
         let mut c_ip: String<64> = String::new();
         c_ip.push_str(ip_addr)
             .map_err(|_| Error::OsErrNameTooLong)?;
         c_ip.push('\0').map_err(|_| Error::OsErrNameTooLong)?;
-        let status = unsafe {
+        check(unsafe {
             ffi::OS_SocketAddrFromString(
                 addr_uninit.as_mut_ptr(),
                 c_ip.as_ptr() as *const libc::c_char,
             )
-        };
-        check(status)?;
+        })?;
 
         // 3. Set the port
-        let status = unsafe { ffi::OS_SocketAddrSetPort(addr_uninit.as_mut_ptr(), port) };
-        check(status)?;
+        check(unsafe { ffi::OS_SocketAddrSetPort(addr_uninit.as_mut_ptr(), port) })?;
 
         Ok(Self(unsafe { addr_uninit.assume_init() }))
     }
@@ -109,6 +106,27 @@ impl Socket {
 #[repr(transparent)]
 pub struct UdpSocket(Socket);
 
+/// Timeout options for socket operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Timeout {
+    /// Wait indefinitely.
+    Pend,
+    /// Do not wait at all.
+    Poll,
+    /// Wait for the specified number of milliseconds.
+    Milliseconds(i32),
+}
+
+impl From<Timeout> for i32 {
+    fn from(timeout: Timeout) -> Self {
+        match timeout {
+            Timeout::Pend => ffi::OS_PEND,
+            Timeout::Poll => ffi::OS_CHECK as i32,
+            Timeout::Milliseconds(ms) => ms,
+        }
+    }
+}
+
 impl UdpSocket {
     /// Creates a new UDP socket bound to the specified address.
     pub fn bind(addr: SocketAddr) -> Result<UdpSocket> {
@@ -116,7 +134,7 @@ impl UdpSocket {
         check(unsafe {
             ffi::OS_SocketOpen(
                 sock_id.as_mut_ptr(),
-                ffi::OS_SocketDomain_t_OS_SocketDomain_INET,
+                SocketDomain::IPv4.into(),
                 ffi::OS_SocketType_t_OS_SocketType_DATAGRAM,
             )
         })?;
@@ -128,7 +146,11 @@ impl UdpSocket {
     }
 
     /// Receives a single datagram message on the socket.
-    pub fn recv_from<'a>(&self, buf: &'a mut [u8]) -> Result<(usize, SocketAddr)> {
+    pub fn recv_from<'a>(
+        &mut self,
+        buf: &'a mut [u8],
+        timeout: Timeout,
+    ) -> Result<(usize, SocketAddr)> {
         let mut remote_addr_uninit = MaybeUninit::<ffi::OS_SockAddr_t>::uninit();
 
         let num_bytes = unsafe {
@@ -137,11 +159,11 @@ impl UdpSocket {
                 buf.as_mut_ptr() as *mut _,
                 buf.len(),
                 remote_addr_uninit.as_mut_ptr(),
-                ffi::OS_PEND as i32,
+                timeout.into(),
             )
         };
 
-        if num_bytes >= 0 {
+        if num_bytes < 0 {
             Err(Error::from(num_bytes))
         } else {
             let remote_addr = unsafe { remote_addr_uninit.assume_init() };
@@ -152,7 +174,7 @@ impl UdpSocket {
     /// Sends data on the socket to the given address.
     pub fn send_to(&self, buf: &[u8], target: &SocketAddr) -> Result<usize> {
         let num_bytes = unsafe {
-            ffi::OS_SocketSendTo(self.0 .0, buf.as_ptr() as *const _, buf.len(), &target.0)
+            ffi::OS_SocketSendTo((self.0).0, buf.as_ptr() as *const _, buf.len(), &target.0)
         };
         if num_bytes < 0 {
             Err(Error::from(num_bytes))
@@ -170,7 +192,7 @@ impl UdpSocket {
         let mut remote_addr_uninit = MaybeUninit::<ffi::OS_SockAddr_t>::uninit();
         let num_bytes = unsafe {
             ffi::OS_SocketRecvFromAbs(
-                self.0 .0,
+                (self.0).0,
                 buf.as_mut_ptr() as *mut _,
                 buf.len(),
                 remote_addr_uninit.as_mut_ptr(),
@@ -192,6 +214,23 @@ impl UdpSocket {
 #[repr(transparent)]
 pub struct TcpListener(Socket);
 
+/// The domain of a socket.
+pub enum SocketDomain {
+    /// IPv4 (Inet)
+    IPv4,
+    /// IPv6 (Inet6)
+    IPv6,
+}
+
+impl Into<ffi::OS_SocketDomain_t> for SocketDomain {
+    fn into(self) -> ffi::OS_SocketDomain_t {
+        match self {
+            SocketDomain::IPv4 => ffi::OS_SocketDomain_t_OS_SocketDomain_INET,
+            SocketDomain::IPv6 => ffi::OS_SocketDomain_t_OS_SocketDomain_INET6,
+        }
+    }
+}
+
 impl TcpListener {
     /// Creates a new `TcpListener` which will be bound to the specified address.
     pub fn bind(addr: SocketAddr) -> Result<Self> {
@@ -199,7 +238,7 @@ impl TcpListener {
         check(unsafe {
             ffi::OS_SocketOpen(
                 sock_id.as_mut_ptr(),
-                ffi::OS_SocketDomain_t_OS_SocketDomain_INET,
+                SocketDomain::IPv4.into(),
                 ffi::OS_SocketType_t_OS_SocketType_STREAM,
             )
         })?;
@@ -212,15 +251,15 @@ impl TcpListener {
 
     /// Accepts a new incoming connection from this listener.
     /// This function will block until a new connection is established.
-    pub fn accept(&self) -> Result<(TcpStream, SocketAddr)> {
+    pub fn accept(&self, timeout: Timeout) -> Result<(TcpStream, SocketAddr)> {
         let mut remote_addr_uninit = MaybeUninit::<ffi::OS_SockAddr_t>::uninit();
         let mut conn_sock_id = MaybeUninit::uninit();
         check(unsafe {
             ffi::OS_SocketAccept(
-                self.0 .0,
+                (self.0).0,
                 conn_sock_id.as_mut_ptr(),
                 remote_addr_uninit.as_mut_ptr(),
-                ffi::OS_PEND as i32,
+                timeout.into(),
             )
         })?;
 
@@ -245,12 +284,12 @@ pub struct TcpStream(Socket);
 
 impl TcpStream {
     /// Opens a TCP connection to a remote host.
-    pub fn connect(addr: SocketAddr) -> Result<Self> {
+    pub fn connect(addr: SocketAddr, domain: SocketDomain) -> Result<Self> {
         let mut sock_id = MaybeUninit::uninit();
         check(unsafe {
             ffi::OS_SocketOpen(
                 sock_id.as_mut_ptr(),
-                ffi::OS_SocketDomain_t_OS_SocketDomain_INET,
+                domain.into(),
                 ffi::OS_SocketType_t_OS_SocketType_STREAM,
             )
         })?;
@@ -301,12 +340,12 @@ impl TcpStream {
     }
 
     /// Opens a TCP connection to a remote host with an absolute timeout.
-    pub fn connect_abs(addr: SocketAddr, abstime: OsTime) -> Result<Self> {
+    pub fn connect_abs(addr: SocketAddr, domain: SocketDomain, abstime: OsTime) -> Result<Self> {
         let mut sock_id = MaybeUninit::uninit();
         check(unsafe {
             ffi::OS_SocketOpen(
                 sock_id.as_mut_ptr(),
-                ffi::OS_SocketDomain_t_OS_SocketDomain_INET,
+                domain.into(),
                 ffi::OS_SocketType_t_OS_SocketType_STREAM,
             )
         })?;
@@ -421,7 +460,7 @@ pub fn select_multiple_abs(
 #[derive(Debug, Clone)]
 pub struct SocketProp {
     /// The registered name of the socket.
-    pub name: CString<{ ffi::OS_MAX_API_NAME as usize }>,
+    pub name: String<{ ffi::OS_MAX_API_NAME as usize }>,
     /// The OSAL ID of the task that created the socket.
     pub creator: OsalId,
 }
@@ -444,12 +483,28 @@ pub fn get_socket_info(sock_id: OsalId) -> Result<SocketProp> {
     let prop = unsafe { prop.assume_init() };
 
     let name_cstr = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
-    let mut name = CString::new();
-    name.extend_from_bytes(name_cstr.to_bytes())
-        .map_err(|_| Error::OsErrNameTooLong)?;
+    let name_str = name_cstr.to_str().map_err(|_| Error::InvalidString)?;
+    let name = String::try_from(name_str).map_err(|_| Error::OsErrNameTooLong)?;
 
     Ok(SocketProp {
         name,
         creator: OsalId(prop.creator),
     })
+}
+
+impl UdpSocket {
+    /// Asynchronously receives a single datagram message on the socket.
+    pub fn recv<'a>(
+        &'a mut self,
+        buf: &'a mut [u8],
+    ) -> impl Future<Output = Result<(usize, SocketAddr)>> + use<'a> {
+        core::future::poll_fn(|_| {
+            let recv_future = self.recv_from(buf, Timeout::Poll);
+            match recv_future {
+                Err(Error::OsErrorTimeout | Error::OsQueueEmpty) => Poll::Pending,
+                Ok(result) => Poll::Ready(Ok(result)),
+                Err(e) => Poll::Ready(Err(e)),
+            }
+        })
+    }
 }

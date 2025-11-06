@@ -21,10 +21,11 @@
 //!   and key OSAL/PSP functionalities.
 #![deny(missing_docs)]
 
+pub(crate) mod ffi;
 pub mod cfe;
 pub mod error;
-pub mod ffi;
 pub mod log;
 pub mod os;
 pub mod psp;
 pub mod status;
+pub mod runtime;

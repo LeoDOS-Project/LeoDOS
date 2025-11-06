@@ -1,0 +1,37 @@
+[package]
+name = "leodos-libwamr"
+version = "0.1.0"
+edition = "2024"
+include = [
+    "/build.rs",
+    "/src/lib.rs",
+    "/wasm-micro-runtime/build-scripts",
+    "/wasm-micro-runtime/CMakeLists.txt",
+    "/wasm-micro-runtime/core/iwasm",
+    "/wasm-micro-runtime/core/shared",
+    "/wasm-micro-runtime/core/config.h",
+    "/wasm-micro-runtime/core/version.h",
+]
+
+[features]
+thread-support = []
+std = []
+default = []
+
+[dependencies]
+heapless = { version = "0.9.0", default-features = false, features = ["alloc"] }
+
+[profile.dev]
+opt-level = "z"
+panic = "abort"
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+
+[build-dependencies]
+cmake = "0.1.54"
+bindgen = "0.72.1"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }

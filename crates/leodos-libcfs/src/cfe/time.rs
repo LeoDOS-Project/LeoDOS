@@ -4,6 +4,7 @@
 //! the primary source for mission-synchronized time in a cFS system. It handles
 //! spacecraft time, Mission Elapsed Time (MET), and conversions between them.
 
+use crate::cfe::duration::Duration;
 use crate::error::Result;
 use crate::ffi;
 use crate::status::check;
@@ -14,7 +15,7 @@ use core::str;
 /// A wrapper around `CFE_TIME_SysTime_t` representing a specific time.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub struct SysTime(pub ffi::CFE_TIME_SysTime_t);
+pub struct SysTime(pub(crate) ffi::CFE_TIME_SysTime_t);
 
 // Manual implementation of PartialEq because bindgen didn't derive it
 impl PartialEq for SysTime {
@@ -55,6 +56,16 @@ impl fmt::Display for SysTime {
         // CFE_TIME_Print is guaranteed to produce valid ASCII/UTF-8.
         let s = str::from_utf8(&buffer[..len]).map_err(|_| fmt::Error)?;
         f.write_str(s)
+    }
+}
+
+impl From<Duration> for SysTime {
+    fn from(duration: Duration) -> Self {
+        let subseconds = microseconds_to_subseconds(duration.nanos() / 1000);
+        SysTime(ffi::CFE_TIME_SysTime_t {
+            Seconds: duration.secs(),
+            Subseconds: subseconds,
+        })
     }
 }
 
