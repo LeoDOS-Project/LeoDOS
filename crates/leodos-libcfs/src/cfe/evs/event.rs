@@ -96,7 +96,7 @@ pub fn send(event_id: u16, event_type: EventType, message: &str) -> Result<()> {
         ffi::CFE_EVS_SendEvent(
             event_id,
             event_type as ffi::CFE_EVS_EventType_Enum_t,
-            "%s\0".as_ptr() as *const i8,
+            "%s\0".as_ptr() as *const libc::c_char,
             c_message.as_ptr(),
         )
     };
@@ -146,7 +146,7 @@ impl AppId {
                 event_id,
                 event_type as ffi::CFE_EVS_EventType_Enum_t,
                 self.0,
-                "%s\0".as_ptr() as *const i8,
+                "%s\0".as_ptr() as *const libc::c_char,
                 c_message.as_ptr(),
             )
         };
@@ -174,7 +174,7 @@ pub fn send_timed_event(
             time.0,
             event_id,
             event_type as ffi::CFE_EVS_EventType_Enum_t,
-            "%s\0".as_ptr() as *const i8,
+            "%s\0".as_ptr() as *const libc::c_char,
             c_message.as_ptr(),
         )
     };

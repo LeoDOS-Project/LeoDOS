@@ -45,7 +45,10 @@ impl SocketAddr {
             .map_err(|_| Error::OsErrNameTooLong)?;
         c_ip.push('\0').map_err(|_| Error::OsErrNameTooLong)?;
         let status = unsafe {
-            ffi::OS_SocketAddrFromString(addr_uninit.as_mut_ptr(), c_ip.as_ptr() as *const i8)
+            ffi::OS_SocketAddrFromString(
+                addr_uninit.as_mut_ptr(),
+                c_ip.as_ptr() as *const libc::c_char,
+            )
         };
         check(status)?;
 
@@ -67,7 +70,11 @@ impl SocketAddr {
     pub fn to_string(&self) -> Result<String<64>> {
         let mut buffer = [0u8; 64];
         check(unsafe {
-            ffi::OS_SocketAddrToString(buffer.as_mut_ptr() as *mut i8, buffer.len(), &self.0)
+            ffi::OS_SocketAddrToString(
+                buffer.as_mut_ptr() as *mut libc::c_char,
+                buffer.len(),
+                &self.0,
+            )
         })?;
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
         let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| Error::OsErrNameTooLong)?;
@@ -325,7 +332,9 @@ pub fn get_network_id() -> i32 {
 /// Gets the local machine's network host name.
 pub fn get_host_name() -> Result<String<64>> {
     let mut buffer = [0u8; 64];
-    check(unsafe { ffi::OS_NetworkGetHostName(buffer.as_mut_ptr() as *mut i8, buffer.len()) })?;
+    check(unsafe {
+        ffi::OS_NetworkGetHostName(buffer.as_mut_ptr() as *mut libc::c_char, buffer.len())
+    })?;
     let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
     let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| Error::OsErrNameTooLong)?;
     let s = String::from_utf8(vec).map_err(|_| Error::InvalidString)?;

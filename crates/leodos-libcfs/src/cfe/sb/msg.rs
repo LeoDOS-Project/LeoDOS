@@ -617,8 +617,8 @@ impl<'a> MessageMut<'a> {
 pub fn message_string_set(dest: &mut [i8], src: &str) -> Result<usize> {
     let bytes_copied = unsafe {
         ffi::CFE_SB_MessageStringSet(
-            dest.as_mut_ptr(),
-            src.as_ptr() as *const i8,
+            dest.as_mut_ptr() as *mut libc::c_char,
+            src.as_ptr() as *const libc::c_char,
             dest.len(),
             src.len(),
         )
@@ -644,12 +644,12 @@ pub fn message_string_get<'a>(
     src: &[i8],
     default_src: Option<&str>,
 ) -> Result<&'a str> {
-    let default_ptr = default_src.map_or(core::ptr::null(), |s| s.as_ptr() as *const i8);
+    let default_ptr = default_src.map_or(core::ptr::null(), |s| s.as_ptr() as *const libc::c_char);
     let bytes_copied = unsafe {
         ffi::CFE_SB_MessageStringGet(
-            dest.as_mut_ptr() as *mut i8,
-            src.as_ptr(),
-            default_ptr,
+            dest.as_mut_ptr() as *mut libc::c_char,
+            src.as_ptr() as *const libc::c_char,
+            default_ptr as *const libc::c_char,
             dest.len(),
             src.len(),
         )

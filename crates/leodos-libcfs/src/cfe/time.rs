@@ -47,7 +47,7 @@ impl fmt::Display for SysTime {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut buffer = [0u8; ffi::CFE_TIME_PRINTED_STRING_SIZE as usize];
         unsafe {
-            ffi::CFE_TIME_Print(buffer.as_mut_ptr() as *mut i8, self.0);
+            ffi::CFE_TIME_Print(buffer.as_mut_ptr() as *mut libc::c_char, self.0);
         }
         // Find the null terminator to determine string length
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(0);

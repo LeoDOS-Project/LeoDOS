@@ -544,11 +544,14 @@ pub fn extract_filename_from_path<'a>(
 ) -> Result<&'a str> {
     let c_path = c_path_from_str(original_path)?;
     let status = unsafe {
-        ffi::CFE_FS_ExtractFilenameFromPath(c_path.as_ptr(), filename_buf.as_mut_ptr() as *mut i8)
+        ffi::CFE_FS_ExtractFilenameFromPath(
+            c_path.as_ptr(),
+            filename_buf.as_mut_ptr() as *mut libc::c_char,
+        )
     };
     check(status)?;
 
-    let c_str = unsafe { CStr::from_ptr(filename_buf.as_ptr() as *const i8) };
+    let c_str = unsafe { CStr::from_ptr(filename_buf.as_ptr() as *const libc::c_char) };
     c_str.to_str().map_err(|_| Error::InvalidString)
 }
 
@@ -574,7 +577,7 @@ pub fn parse_input_filename<'a>(
     let c_input = c_path_from_str(input_name)?;
     let status = unsafe {
         ffi::CFE_FS_ParseInputFileName(
-            output_buf.as_mut_ptr() as *mut i8,
+            output_buf.as_mut_ptr() as *mut libc::c_char,
             c_input.as_ptr(),
             output_buf.len(),
             category as u32,
@@ -624,7 +627,7 @@ pub fn make_fs(
     let c_vol = c_path_from_str(volname)?;
     check(unsafe {
         ffi::OS_mkfs(
-            address as *mut i8,
+            address as *mut libc::c_char,
             c_dev.as_ptr(),
             c_vol.as_ptr(),
             blocksize,
@@ -652,9 +655,9 @@ pub fn unmount(mountpoint: &str) -> Result<()> {
 /// Gets the physical drive name associated with a virtual mount point.
 pub fn get_phys_drive_name(mountpoint: &str) -> Result<CString<{ ffi::OS_MAX_PATH_LEN as usize }>> {
     let c_mount = c_path_from_str(mountpoint)?;
-    let mut buffer = [0u8; ffi::OS_MAX_PATH_LEN as usize];
+    let mut buffer = [0 as libc::c_char; ffi::OS_MAX_PATH_LEN as usize];
     check(unsafe {
-        ffi::OS_FS_GetPhysDriveName(buffer.as_mut_ptr() as *mut i8, c_mount.as_ptr())
+        ffi::OS_FS_GetPhysDriveName(buffer.as_mut_ptr() as *mut libc::c_char, c_mount.as_ptr())
     })?;
     let len = buffer.iter().position(|&b| b == 0).unwrap_or(0);
     let mut s = CString::new();
@@ -668,8 +671,8 @@ pub fn translate_path(
     virtual_path: &str,
 ) -> Result<CString<{ ffi::OS_MAX_LOCAL_PATH_LEN as usize }>> {
     let c_virt = c_path_from_str(virtual_path)?;
-    let mut buffer = [0u8; ffi::OS_MAX_LOCAL_PATH_LEN as usize];
-    check(unsafe { ffi::OS_TranslatePath(c_virt.as_ptr(), buffer.as_mut_ptr() as *mut i8) })?;
+    let mut buffer = [0 as libc::c_char; ffi::OS_MAX_LOCAL_PATH_LEN as usize];
+    check(unsafe { ffi::OS_TranslatePath(c_virt.as_ptr(), buffer.as_mut_ptr()) })?;
     let len = buffer.iter().position(|&b| b == 0).unwrap_or(0);
     let mut s = CString::new();
     s.extend_from_bytes(&buffer[..len])
@@ -744,7 +747,7 @@ pub fn init_fs(
     let c_vol = c_path_from_str(volname)?;
     check(unsafe {
         ffi::OS_initfs(
-            address as *mut i8,
+            address as *mut libc::c_char,
             c_dev.as_ptr(),
             c_vol.as_ptr(),
             blocksize,

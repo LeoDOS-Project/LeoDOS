@@ -24,7 +24,11 @@ impl CdsHandle {
     pub fn name(&self) -> Result<String<{ ffi::CFE_MISSION_ES_CDS_MAX_FULL_NAME_LEN as usize }>> {
         let mut buffer = [0u8; ffi::CFE_MISSION_ES_CDS_MAX_FULL_NAME_LEN as usize];
         check(unsafe {
-            ffi::CFE_ES_GetCDSBlockName(buffer.as_mut_ptr() as *mut i8, self.0, buffer.len())
+            ffi::CFE_ES_GetCDSBlockName(
+                buffer.as_mut_ptr() as *mut libc::c_char,
+                self.0,
+                buffer.len(),
+            )
         })?;
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
         let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| Error::OsErrNameTooLong)?;

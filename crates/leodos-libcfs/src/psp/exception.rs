@@ -31,13 +31,13 @@ pub fn get_count() -> u32 {
 pub fn get_summary() -> Result<ExceptionSummary> {
     let mut context_id = MaybeUninit::uninit();
     let mut task_id = MaybeUninit::uninit();
-    let mut reason_buf = [0u8; ffi::OS_ERROR_NAME_LENGTH as usize];
+    let mut reason_buf = [0 as libc::c_char; ffi::OS_ERROR_NAME_LENGTH as usize];
 
     check(unsafe {
         ffi::CFE_PSP_Exception_GetSummary(
             context_id.as_mut_ptr(),
             task_id.as_mut_ptr(),
-            reason_buf.as_mut_ptr() as *mut i8,
+            reason_buf.as_mut_ptr() as *mut libc::c_char,
             reason_buf.len() as u32,
         )
     })?;

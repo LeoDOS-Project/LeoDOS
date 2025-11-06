@@ -30,7 +30,11 @@ impl OsalId {
     pub fn name(&self) -> Result<CString<{ ffi::OS_MAX_API_NAME as usize }>> {
         let mut buffer = [0u8; ffi::OS_MAX_API_NAME as usize];
         check(unsafe {
-            ffi::OS_GetResourceName(self.0, buffer.as_mut_ptr() as *mut i8, buffer.len())
+            ffi::OS_GetResourceName(
+                self.0,
+                buffer.as_mut_ptr() as *mut libc::c_char,
+                buffer.len(),
+            )
         })?;
 
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(0);
@@ -66,7 +70,9 @@ impl OsalId {
     /// specified `obj_type` or does not map to a valid index.
     pub fn to_index_as_type(&self, obj_type: ObjectType) -> Result<u32> {
         let mut index = MaybeUninit::uninit();
-        check(unsafe { ffi::OS_ObjectIdToArrayIndex(obj_type.into(), self.0, index.as_mut_ptr()) })?;
+        check(unsafe {
+            ffi::OS_ObjectIdToArrayIndex(obj_type.into(), self.0, index.as_mut_ptr())
+        })?;
         Ok(unsafe { index.assume_init() })
     }
 }

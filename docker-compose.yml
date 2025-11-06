@@ -9,3 +9,8 @@ services:
     working_dir: /cFS
     stdin_open: true
     tty: true
+    environment:
+      - CFE_DIR=/cFS/cfe
+      - OSAL_DIR=/cFS/osal
+      - PSP_DIR=/cFS/psp
+      - BUILD_DIR=/cFS/build

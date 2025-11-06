@@ -25,10 +25,6 @@ for crate_path in "${CRATES[@]}"; do
     echo "Building docs for $crate_name..."
     
     docker compose run --rm cfs-build \
-      -e CFE_DIR=/cFS/cfe \
-      -e OSAL_DIR=/cFS/osal \
-      -e PSP_DIR=/cFS/psp \
-      -e BUILD_DIR=/cFS/build \
       cargo doc --manifest-path "$crate_path/Cargo.toml" --no-deps --all-features
     
     cp -r "$crate_path/target/doc" "$OUTPUT_DIR/$crate_name"

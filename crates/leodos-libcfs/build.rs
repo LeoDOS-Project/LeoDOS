@@ -244,6 +244,10 @@ fn main() {
         .derive_default(true)
         .parse_callbacks(Box::new(macro_detector.clone()));
 
+    if let Ok(sysroot) = env::var("SYSROOT") {
+        builder = builder.clang_arg(format!("--sysroot={}", sysroot));
+    }
+
     for path in &include_paths {
         builder = builder.clang_arg(format!("-I{}", path.display()));
     }

@@ -150,7 +150,11 @@ impl TaskId {
     pub fn name(&self) -> Result<CString<{ ffi::OS_MAX_API_NAME as usize }>> {
         let mut buffer = [0u8; ffi::OS_MAX_API_NAME as usize];
         check(unsafe {
-            ffi::CFE_ES_GetTaskName(buffer.as_mut_ptr() as *mut i8, self.0, buffer.len())
+            ffi::CFE_ES_GetTaskName(
+                buffer.as_mut_ptr() as *mut libc::c_char,
+                self.0,
+                buffer.len(),
+            )
         })?;
 
         // Find the null terminator to determine the actual length.

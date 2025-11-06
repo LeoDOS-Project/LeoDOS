@@ -34,7 +34,7 @@ pub fn printf(message: &str) {
     unsafe {
         // We call the variadic C function by passing the fully formatted
         // Rust string as a single argument to a simple "%s" format specifier.
-        ffi::OS_printf("%s\0".as_ptr() as *const i8, c_message.as_ptr());
+        ffi::OS_printf("%s\0".as_ptr() as *const libc::c_char, c_message.as_ptr());
     }
 }
 

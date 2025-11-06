@@ -54,9 +54,9 @@ pub fn get_processor_name() -> &'static str {
 pub fn status_to_string(
     status: i32,
 ) -> Result<CString<{ ffi::CFE_PSP_STATUS_STRING_LENGTH as usize }>> {
-    let mut buf = [0i8; ffi::CFE_PSP_STATUS_STRING_LENGTH as usize];
+    let mut buf = [0 as libc::c_char; ffi::CFE_PSP_STATUS_STRING_LENGTH as usize];
     unsafe { ffi::CFE_PSP_StatusToString(status, &mut buf) };
-    let c_str = unsafe { CStr::from_ptr(buf.as_ptr()) };
+    let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const libc::c_char) };
     let mut s = CString::new();
     s.extend_from_bytes(c_str.to_bytes())
         .map_err(|_| Error::OsErrNameTooLong)?;

@@ -703,7 +703,7 @@ impl From<ffi::CFE_Status_t> for Error {
 
 /// Retrieves the symbolic name for an OSAL status code.
 pub fn get_error_name(error_num: i32) -> Result<CString<{ ffi::OS_ERROR_NAME_LENGTH as usize }>> {
-    let mut name_buf = [0i8; ffi::OS_ERROR_NAME_LENGTH as usize];
+    let mut name_buf = [0 as libc::c_char; ffi::OS_ERROR_NAME_LENGTH as usize];
     check(unsafe { ffi::OS_GetErrorName(error_num, &mut name_buf) })?;
 
     // The result from OS_GetErrorName is null-terminated.
@@ -718,7 +718,7 @@ pub fn get_error_name(error_num: i32) -> Result<CString<{ ffi::OS_ERROR_NAME_LEN
 pub fn get_cfe_status_name(
     status_code: i32,
 ) -> Result<CString<{ ffi::CFE_STATUS_STRING_LENGTH as usize }>> {
-    let mut name_buf = [0i8; ffi::CFE_STATUS_STRING_LENGTH as usize];
+    let mut name_buf = [0 as libc::c_char; ffi::CFE_STATUS_STRING_LENGTH as usize];
     unsafe { ffi::CFE_ES_StatusToString(status_code, &mut name_buf) };
 
     let c_str = unsafe { core::ffi::CStr::from_ptr(name_buf.as_ptr()) };
@@ -732,7 +732,7 @@ pub fn get_cfe_status_name(
 pub fn osal_status_to_string(
     status_code: i32,
 ) -> Result<CString<{ ffi::OS_STATUS_STRING_LENGTH as usize }>> {
-    let mut name_buf = [0i8; ffi::OS_STATUS_STRING_LENGTH as usize];
+    let mut name_buf = [0 as libc::c_char; ffi::OS_STATUS_STRING_LENGTH as usize];
     unsafe { ffi::OS_StatusToString(status_code, &mut name_buf) };
 
     let c_str = unsafe { core::ffi::CStr::from_ptr(name_buf.as_ptr()) };
