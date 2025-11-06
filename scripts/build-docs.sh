@@ -2,8 +2,8 @@
 set -e # Exit immediately if a command exits with a non-zero status.
 
 echo "--- Preparing cFS Bindings ---"
-docker compose build cfs-build
-docker compose run --rm cfs-build bash -c "make SIMULATION=native prep"
+docker compose -f docker-compose.yml build cfs-build
+docker compose -f docker-compose.yml run --rm cfs-build bash -c "make SIMULATION=native prep"
 echo "✅ Bindings prepared."
 
 # Define the crates to document
