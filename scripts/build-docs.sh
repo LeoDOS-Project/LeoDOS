@@ -3,9 +3,7 @@ set -e # Exit immediately if a command exits with a non-zero status.
 
 echo "--- Preparing cFS Bindings ---"
 docker compose build cfs-build
-docker compose run --rm \
-  --user "$(id -u):$(id -g)" \
-  cfs-build bash -c "make SIMULATION=native prep"
+docker compose run --rm cfs-build bash -c "make SIMULATION=native prep"
 echo "✅ Bindings prepared."
 
 CRATES=(
@@ -27,11 +25,10 @@ for crate_path in "${CRATES[@]}"; do
     echo "Building docs for $crate_name..."
     
     docker compose run --rm \
-      --user "$(id -u):$(id -g)" \
       cfs-build \
       cargo doc --manifest-path "$crate_path/Cargo.toml" --no-deps --all-features
     
-    cp -r "$crate_path/target/doc" "$OUTPUT_DIR/$crate_name"
+    rsync -a --exclude '.lock' "$crate_path/target/doc/" "$OUTPUT_DIR/$crate_name"
 done
 echo "✅ All crate documentation built and collected."
 
