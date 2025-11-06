@@ -1,5 +1,5 @@
-Makefile
+# Makefile
 build
-/sample_defs
+# /sample_defs
 .DS_Store
 target/
