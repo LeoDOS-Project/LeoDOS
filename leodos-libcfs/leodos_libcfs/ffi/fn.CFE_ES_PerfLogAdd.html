@@ -1,0 +1,27 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="/ /** \brief Adds a new entry to the data buffer"><title>CFE_ES_PerfLogAdd in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">CFE_ES_PerfLogAdd</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">CFE_<wbr>ES_<wbr>Perf<wbr>LogAdd</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#2921">Source</a> </span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn CFE_ES_PerfLogAdd(
+    Marker: <a class="type" href="type.uint32.html" title="type leodos_libcfs::ffi::uint32">uint32</a>,
+    EntryExit: <a class="type" href="type.uint32.html" title="type leodos_libcfs::ffi::uint32">uint32</a>,
+)</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>/
+/**
+\brief Adds a new entry to the data buffer</p>
+<p>Function called by #CFE_ES_PerfLogEntry and #CFE_ES_PerfLogExit macros</p>
+<p>\par Description
+This function logs the entry and exit marker for the specified
+\c id. This function is used by the Software Performance Analysis
+tool.</p>
+<p>\par Assumptions, External Events, and Notes:</p>
+<p>\c Marker limited to the range of 0 to
+#CFE_MISSION_ES_PERF_MAX_IDS - 1. Any performance ids outside of this
+range will be ignored and will be flagged as an error.</p>
+<p>This function implements a circular buffer using an array.
+DataStart points to first stored entry
+DataEnd points to next available entry
+if DataStart == DataEnd then the buffer is either empty or full
+depending on the value of the DataCount</p>
+<p>Time is stored as 2 32 bit integers, (TimerLower32, TimerUpper32):
+TimerLower32 is the current value of the hardware timer register.
+TimerUpper32 is the number of times the timer has rolled over.</p>
+<p>\param[in]   Marker          Identifier of the specific event or marker.
+\param[in]   EntryExit       Used to specify Entry(0) or Exit(1)</p>
+<p>\sa #CFE_ES_PerfLogEntry, #CFE_ES_PerfLogExit</p>
+</div></details></section></div></main></body></html>

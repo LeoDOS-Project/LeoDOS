@@ -1,0 +1,36 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="@brief Wait for events across multiple file handles"><title>OS_SelectMultipleAbs in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">OS_SelectMultipleAbs</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">OS_<wbr>Select<wbr>Multiple<wbr>Abs</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#1903-1907">Source</a> </span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn OS_SelectMultipleAbs(
+    ReadSet: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*mut </a><a class="struct" href="struct.OS_FdSet.html" title="struct leodos_libcfs::ffi::OS_FdSet">OS_FdSet</a>,
+    WriteSet: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*mut </a><a class="struct" href="struct.OS_FdSet.html" title="struct leodos_libcfs::ffi::OS_FdSet">OS_FdSet</a>,
+    abs_timeout: <a class="struct" href="struct.OS_time_t.html" title="struct leodos_libcfs::ffi::OS_time_t">OS_time_t</a>,
+) -&gt; <a class="type" href="type.int32.html" title="type leodos_libcfs::ffi::int32">int32</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>@brief Wait for events across multiple file handles</p>
+<p>Wait for any of the given sets of IDs to become readable or writable</p>
+<p>This function will block until any of the following occurs:</p>
+<ul>
+<li>At least one OSAL ID in the ReadSet is readable</li>
+<li>At least one OSAL ID in the WriteSet is writable</li>
+<li>The timeout has elapsed</li>
+</ul>
+<p>The sets are input/output parameters.  On entry, these indicate the
+file handle(s) to wait for.  On exit, these are set to the actual
+file handle(s) that have activity.</p>
+<p>If the timeout occurs this returns an error code and all output sets
+should be empty.</p>
+<p>This API is identical to OS_SelectMultiple() except for the timeout parameter.  In
+this call, timeout is expressed as an absolute value of the OS clock, in the same
+time domain as obtained via OS_GetLocalTime().  This allows for a more precise
+timeout than what is possible via the normal OS_SelectMultiple().</p>
+<p>@note This does not lock or otherwise protect the file handles in the
+given sets.  If a filehandle supplied via one of the FdSet arguments
+is closed or modified by another while this function is in progress,
+the results are undefined.  Because of this limitation, it is recommended
+to use OS_SelectSingle() whenever possible.</p>
+<p>@param[in,out] ReadSet     Set of handles to check/wait to become readable
+@param[in,out] WriteSet    Set of handles to check/wait to become writable
+@param[in]     abs_timeout The absolute time that the call may block until</p>
+<p>@sa OS_SelectMultiple()</p>
+<p>@return Execution status, see @ref OSReturnCodes
+@retval #OS_SUCCESS If any handle in the ReadSet or WriteSet is readable or writable, respectively
+@retval #OS_ERROR_TIMEOUT If no handles in the ReadSet or WriteSet became readable or writable within the timeout
+@retval #OS_ERR_OPERATION_NOT_SUPPORTED if a specified handle does not support select
+@retval #OS_ERR_INVALID_ID if no valid handles were contained in the ReadSet/WriteSet</p>
+</div></details></section></div></main></body></html>

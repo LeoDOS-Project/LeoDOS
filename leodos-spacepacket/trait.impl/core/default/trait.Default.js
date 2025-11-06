@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["leodos_spacepacket",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.91.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"enum\" href=\"leodos_spacepacket/enum.SecondaryHeaderFlag.html\" title=\"enum leodos_spacepacket::SecondaryHeaderFlag\">SecondaryHeaderFlag</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.91.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"enum\" href=\"leodos_spacepacket/enum.SequenceFlag.html\" title=\"enum leodos_spacepacket::SequenceFlag\">SequenceFlag</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.91.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"leodos_spacepacket/cfe/tc/struct.TelecommandSecondaryHeader.html\" title=\"struct leodos_spacepacket::cfe::tc::TelecommandSecondaryHeader\">TelecommandSecondaryHeader</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.91.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"leodos_spacepacket/cfe/tm/struct.TelemetrySecondaryHeader.html\" title=\"struct leodos_spacepacket::cfe::tm::TelemetrySecondaryHeader\">TelemetrySecondaryHeader</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.91.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"leodos_spacepacket/struct.PacketSequenceCount.html\" title=\"struct leodos_spacepacket::PacketSequenceCount\">PacketSequenceCount</a>"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[1649]}

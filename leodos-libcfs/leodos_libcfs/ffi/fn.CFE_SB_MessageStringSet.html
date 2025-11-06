@@ -1,0 +1,33 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="/ /** \brief Copies a string into a software bus message"><title>CFE_SB_MessageStringSet in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">CFE_SB_MessageStringSet</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">CFE_<wbr>SB_<wbr>Message<wbr>String<wbr>Set</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#3651-3656">Source</a> </span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn CFE_SB_MessageStringSet(
+    DestStringPtr: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*mut </a>c_char,
+    SourceStringPtr: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*const </a>c_char,
+    DestMaxSize: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.usize.html">usize</a>,
+    SourceMaxSize: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.usize.html">usize</a>,
+) -&gt; <a class="type" href="type.int32.html" title="type leodos_libcfs::ffi::int32">int32</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>/
+/**
+\brief Copies a string into a software bus message</p>
+<p>\par Description
+Strings within software bus messages have a defined/fixed maximum length, and
+may not necessarily be null terminated within the message.  This presents a possible
+issue when using the C library functions to copy strings out of a message.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>This performs a very similar function to <span class="string">"strncpy()" </span>except that the sizes
+of _both_ buffers are passed <span class="kw">in</span>.  Neither buffer is required to be null-terminated,
+but copying will stop after the first termination character is encountered.
+
+If the destination buffer is not completely filled by the source data (such <span class="kw">as if
+</span>the supplied string was shorter than the allotted length) the destination buffer
+will be padded with NUL characters up to the size of the buffer, similar to what
+strncpy() does.  This ensures that the entire destination buffer is set.</code></pre></div>
+<p>\note
+If the source string buffer is already guaranteed to be null terminated,
+then there is no difference between the C library “strncpy()” function and this
+implementation.  It is only necessary to use this when termination of the source
+buffer is not guaranteed.</p>
+<p>\param[out] DestStringPtr    Pointer to destination buffer (component of SB message definition) @nonnull
+\param[in]  SourceStringPtr  Pointer to source buffer @nonnull
+\param[in]  DestMaxSize      Size of destination buffer as defined by the message definition
+\param[in]  SourceMaxSize    Size of source buffer</p>
+<p>\return Number of characters copied or error code, see \ref CFEReturnCodes
+\retval #CFE_SB_BAD_ARGUMENT  \copybrief CFE_SB_BAD_ARGUMENT</p>
+</div></details></section></div></main></body></html>

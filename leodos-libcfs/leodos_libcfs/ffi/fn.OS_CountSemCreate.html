@@ -1,0 +1,29 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="@brief Creates a counting semaphore"><title>OS_CountSemCreate in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">OS_CountSemCreate</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">OS_<wbr>Count<wbr>SemCreate</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#1339-1344">Source</a> </span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn OS_CountSemCreate(
+    sem_id: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*mut </a><a class="type" href="type.osal_id_t.html" title="type leodos_libcfs::ffi::osal_id_t">osal_id_t</a>,
+    sem_name: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*const </a>c_char,
+    sem_initial_value: <a class="type" href="type.uint32.html" title="type leodos_libcfs::ffi::uint32">uint32</a>,
+    options: <a class="type" href="type.uint32.html" title="type leodos_libcfs::ffi::uint32">uint32</a>,
+) -&gt; <a class="type" href="type.int32.html" title="type leodos_libcfs::ffi::int32">int32</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>@brief Creates a counting semaphore</p>
+<p>Creates a counting semaphore with initial value specified by
+sem_initial_value and name specified by sem_name. sem_id will be
+returned to the caller.</p>
+<p>@note Underlying RTOS implementations may or may not impose a specific upper limit
+to the value of a counting semaphore.  If the OS has a specific limit and the
+sem_initial_value exceeds this limit, then #OS_INVALID_SEM_VALUE is returned.  On
+other implementations, any 32-bit integer value may be acceptable.  For maximum
+portability, it is recommended to keep counting semaphore values within the
+range of a “short int” (i.e. between 0 and 32767).  Many platforms do accept
+larger values, but may not be guaranteed.</p>
+<p>@param[out]  sem_id will be set to the non-zero ID of the newly-created resource @nonnull
+@param[in]   sem_name the name of the new resource to create @nonnull
+@param[in]   sem_initial_value the initial value of the counting semaphore
+@param[in]   options Reserved for future use, should be passed as 0.</p>
+<p>@return Execution status, see @ref OSReturnCodes
+@retval #OS_SUCCESS @copybrief OS_SUCCESS
+@retval #OS_INVALID_POINTER if sen name or sem_id are NULL
+@retval #OS_ERR_NAME_TOO_LONG name length including null terminator greater than #OS_MAX_API_NAME
+@retval #OS_ERR_NO_FREE_IDS if all of the semaphore ids are taken
+@retval #OS_ERR_NAME_TAKEN if this is already the name of a counting semaphore
+@retval #OS_INVALID_SEM_VALUE if the semaphore value is too high @covtest
+@retval #OS_SEM_FAILURE if an unspecified implementation error occurs @covtest</p>
+</div></details></section></div></main></body></html>

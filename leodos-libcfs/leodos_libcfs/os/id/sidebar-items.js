@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ObjectType"],"fn":["for_each_object","for_each_object_of_type"],"struct":["OsalId"]};

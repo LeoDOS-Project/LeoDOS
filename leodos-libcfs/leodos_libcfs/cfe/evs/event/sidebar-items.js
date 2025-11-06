@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["EventType"],"fn":["critical","debug","error","info","register","reset_all_filters","reset_filter","send","send_timed_event"],"struct":["BinFilter"]};

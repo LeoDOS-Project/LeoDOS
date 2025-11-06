@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["default_panic_handler","start"],"struct":["App","AppId","AppInfo"],"trait":["AppMain"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_build_number","get_version_code_name","get_version_number","get_version_string"]};

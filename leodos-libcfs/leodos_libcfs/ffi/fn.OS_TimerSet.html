@@ -1,0 +1,31 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="@brief Configures a periodic or one shot timer"><title>OS_TimerSet in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">OS_TimerSet</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">OS_<wbr>Timer<wbr>Set</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#2294">Source</a> </span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn OS_TimerSet(
+    timer_id: <a class="type" href="type.osal_id_t.html" title="type leodos_libcfs::ffi::osal_id_t">osal_id_t</a>,
+    start_time: <a class="type" href="type.uint32.html" title="type leodos_libcfs::ffi::uint32">uint32</a>,
+    interval_time: <a class="type" href="type.uint32.html" title="type leodos_libcfs::ffi::uint32">uint32</a>,
+) -&gt; <a class="type" href="type.int32.html" title="type leodos_libcfs::ffi::int32">int32</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>@brief Configures a periodic or one shot timer</p>
+<p>This function programs the timer with a start time and an optional interval time.
+The start time is the time in microseconds when the user callback function will be
+called. If the interval time is non-zero, the timer will be reprogrammed with that
+interval in microseconds to call the user callback function periodically. If the start
+time and interval time are zero, the function will return an error.</p>
+<p>For a “one-shot” timer, the start_time configures the
+expiration time, and the interval_time should be passed as
+zero to indicate the timer is not to be automatically reset.</p>
+<p>@note The resolution of the times specified is limited to the clock accuracy
+returned in the OS_TimerCreate call. If the times specified in the start_msec
+or interval_msec parameters are less than the accuracy, they will be rounded
+up to the accuracy of the timer.</p>
+<p>@note This configuration API must not be used from the context of a timer callback.
+Timers should only be configured from the context of normal OSAL tasks.</p>
+<p>@param[in] timer_id      The timer ID to operate on
+@param[in] start_time    Time in microseconds to the first expiration
+@param[in] interval_time Time in microseconds between subsequent intervals, value
+of zero will only call the user callback function once
+after the start_msec time.</p>
+<p>@return Execution status, see @ref OSReturnCodes
+@retval #OS_SUCCESS @copybrief OS_SUCCESS
+@retval #OS_ERR_INVALID_ID if the timer_id is not valid.
+@retval #OS_TIMER_ERR_INTERNAL if there was an error programming the OS timer @covtest
+@retval #OS_ERR_INCORRECT_OBJ_STATE if called from timer/timebase context
+@retval #OS_TIMER_ERR_INVALID_ARGS if the start_time or interval_time is out of range, or both 0</p>
+</div></details></section></div></main></body></html>

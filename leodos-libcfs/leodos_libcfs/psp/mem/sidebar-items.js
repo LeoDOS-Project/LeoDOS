@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_cfe_text_segment_info","get_kernel_text_segment_info","get_mem_range","get_mem_ranges","get_reset_area","get_user_reserved_area","get_volatile_disk_mem","mem_validate_range"],"struct":["MemRangeInfo"]};

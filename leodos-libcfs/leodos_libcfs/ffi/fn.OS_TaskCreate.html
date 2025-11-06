@@ -1,0 +1,37 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="@brief Creates a task and starts running it."><title>OS_TaskCreate in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">OS_TaskCreate</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">OS_<wbr>Task<wbr>Create</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#2162-2170">Source</a> </span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn OS_TaskCreate(
+    task_id: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*mut </a><a class="type" href="type.osal_id_t.html" title="type leodos_libcfs::ffi::osal_id_t">osal_id_t</a>,
+    task_name: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*const </a>c_char,
+    function_pointer: <a class="type" href="type.osal_task_entry.html" title="type leodos_libcfs::ffi::osal_task_entry">osal_task_entry</a>,
+    stack_pointer: <a class="type" href="type.osal_stackptr_t.html" title="type leodos_libcfs::ffi::osal_stackptr_t">osal_stackptr_t</a>,
+    stack_size: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.usize.html">usize</a>,
+    priority: <a class="type" href="type.osal_priority_t.html" title="type leodos_libcfs::ffi::osal_priority_t">osal_priority_t</a>,
+    flags: <a class="type" href="type.uint32.html" title="type leodos_libcfs::ffi::uint32">uint32</a>,
+) -&gt; <a class="type" href="type.int32.html" title="type leodos_libcfs::ffi::int32">int32</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>@brief Creates a task and starts running it.</p>
+<p>Creates a task and passes back the id of the task created. Task names must be unique;
+if the name already exists this function fails. Names cannot be NULL.</p>
+<p>Portable applications should always specify the actual stack size in the
+stack_size parameter, not 0.  This size value is not enforced/checked by OSAL,
+but is simply passed through to the RTOS for stack creation. Some RTOS
+implementations may assume 0 means a default stack size while others
+may actually create a task with no stack.</p>
+<p>Unlike stack_size, the stack_pointer is optional and can be specified as NULL.
+In that case, a stack of the requested size will be dynamically allocated from
+the system heap.</p>
+<p>@param[out]  task_id will be set to the non-zero ID of the newly-created resource @nonnull
+@param[in]   task_name the name of the new resource to create @nonnull
+@param[in]   function_pointer the entry point of the new task @nonnull
+@param[in]   stack_pointer pointer to the stack for the task, or NULL
+to allocate a stack from the system memory heap
+@param[in]   stack_size the size of the stack @nonzero
+@param[in]   priority initial priority of the new task
+@param[in]   flags initial options for the new task</p>
+<p>@return Execution status, see @ref OSReturnCodes
+@retval #OS_SUCCESS @copybrief OS_SUCCESS
+@retval #OS_INVALID_POINTER if any of the necessary pointers are NULL
+@retval #OS_ERR_INVALID_SIZE if the stack_size argument is zero
+@retval #OS_ERR_NAME_TOO_LONG name length including null terminator greater than #OS_MAX_API_NAME
+@retval #OS_ERR_INVALID_PRIORITY if the priority is bad @covtest
+@retval #OS_ERR_NO_FREE_IDS if there can be no more tasks created
+@retval #OS_ERR_NAME_TAKEN if the name specified is already used by a task
+@retval #OS_ERROR if an unspecified/other error occurs @covtest</p>
+</div></details></section></div></main></body></html>

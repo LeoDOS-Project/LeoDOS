@@ -1,0 +1,135 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="/ /** \brief Register a table with cFE to obtain Table Management Services"><title>CFE_TBL_Register in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">CFE_TBL_Register</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">CFE_<wbr>TBL_<wbr>Register</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#3896-3902">Source</a> </span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn CFE_TBL_Register(
+    TblHandlePtr: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*mut </a><a class="type" href="type.CFE_TBL_Handle_t.html" title="type leodos_libcfs::ffi::CFE_TBL_Handle_t">CFE_TBL_Handle_t</a>,
+    Name: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*const </a>c_char,
+    Size: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.usize.html">usize</a>,
+    TblOptionFlags: <a class="type" href="type.uint16.html" title="type leodos_libcfs::ffi::uint16">uint16</a>,
+    TblValidationFuncPtr: <a class="type" href="type.CFE_TBL_CallbackFuncPtr_t.html" title="type leodos_libcfs::ffi::CFE_TBL_CallbackFuncPtr_t">CFE_TBL_CallbackFuncPtr_t</a>,
+) -&gt; <a class="type" href="type.CFE_Status_t.html" title="type leodos_libcfs::ffi::CFE_Status_t">CFE_Status_t</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>/
+/**
+\brief Register a table with cFE to obtain Table Management Services</p>
+<p>\par Description
+When an application is created and initialized, it is responsible for creating its table images via
+the TBL API.  The application must inform the Table Service of the table name, table size and selection
+of optional table features.</p>
+<p>\par Assumptions, External Events, and Notes:
+Note: This function call can block.  Therefore, interrupt service routines should NOT create
+their own tables.  An application should create any table(s) and provide the handle(s)
+to the interrupt service routine.</p>
+<p>\param[out] TblHandlePtr    a pointer to a #CFE_TBL_Handle_t type variable @nonnull that will be assigned the table’s
+handle.  The table handle is required for other API calls when accessing the data
+contained in the table. *TblHandlePtr is the handle used to identify table to cFE
+when performing Table operations. This value is returned at address specified by
+TblHandlePtr.</p>
+<p>\param[in] Name                 The raw table name.  This name will be combined with the name of the
+application to produce a name of the form “AppName.RawTableName”.
+This application specific name will be used in commands
+for modifying or viewing the contents of the table.</p>
+<p>\param[in] Size                 The size, in bytes, of the table to be created @nonzero.  This is the size that will
+be
+allocated as a shared memory resource between the Table Management Service and
+the calling application.</p>
+<p>\param[in] TblOptionFlags       Flag bits indicating selected options for table.  A bitwise OR of the following
+option flags:
+\arg #CFE_TBL_OPT_DEFAULT     - The default setting for table options is a
+combination of #CFE_TBL_OPT_SNGL_BUFFER and
+#CFE_TBL_OPT_LOAD_DUMP.  See below for a
+description of these two options.  This option
+is mutually exclusive with the
+#CFE_TBL_OPT_DBL_BUFFER, #CFE_TBL_OPT_DUMP_ONLY
+and #CFE_TBL_OPT_USR_DEF_ADDR options.
+\arg #CFE_TBL_OPT_SNGL_BUFFER - When this option is selected, the table will use
+a shared session table for performing table
+modifications and a memory copy from the session
+table to the “active” table buffer will occur
+when the table is updated.  This is the preferred
+option since it will minimize memory usage.
+This option is mutually exclusive with the
+#CFE_TBL_OPT_DBL_BUFFER option
+\arg #CFE_TBL_OPT_DBL_BUFFER  - When this option is selected, two instances of
+the table are created.   One is considered the
+“active” table and the other the “inactive” table.
+Whenever table modifications occur, they do not
+require the use of a common session table.
+Modifications occur in the “inactive” buffer.
+Then, when it is time to update the table,
+the pointer to the “active” table is changed to
+point to the “inactive” buffer thus making it
+the new “active” buffer.  This feature is most
+useful for time critical applications (ie -
+interrupt service routines, etc).  This option is
+mutually exclusive with the
+#CFE_TBL_OPT_SNGL_BUFFER and #CFE_TBL_OPT_DEFAULT
+option.
+\arg #CFE_TBL_OPT_LOAD_DUMP   - When this option is selected, the Table Service
+is allowed to perform all operations on the
+specified table.  This option is mutually
+exclusive with the #CFE_TBL_OPT_DUMP_ONLY option.
+\arg #CFE_TBL_OPT_DUMP_ONLY   - When this option is selected, the Table Service
+will not perform table loads to this table.  This
+does not prevent, however, a task from writing
+to the table via an address obtained with the
+#CFE_TBL_GetAddress API function.  This option is
+mutually exclusive with the #CFE_TBL_OPT_LOAD_DUMP
+and #CFE_TBL_OPT_DEFAULT options. If the Application
+wishes to specify their own block of memory as the
+Dump Only table, they need to also include the
+#CFE_TBL_OPT_USR_DEF_ADDR option explained below.
+\arg #CFE_TBL_OPT_NOT_USR_DEF - When this option is selected, Table Services
+allocates memory for the table and, in the case of a
+double buffered table, it allocates the same amount
+of memory again for the second buffer.  This option
+is mutually exclusive with the
+#CFE_TBL_OPT_USR_DEF_ADDR option.
+\arg #CFE_TBL_OPT_USR_DEF_ADDR- When this option is selected, the Table Service
+will not allocate memory for the table.  Table
+Services will require the Application to identify
+the location of the active table buffer via the
+#CFE_TBL_Load function. This option implies the
+#CFE_TBL_OPT_DUMP_ONLY and the
+#CFE_TBL_OPT_SNGL_BUFFER options and is mutually
+exclusive of the #CFE_TBL_OPT_DBL_BUFFER option.
+\arg #CFE_TBL_OPT_CRITICAL-     When this option is selected, the Table Service
+will automatically allocate space in the Critical
+Data Store (CDS) for the table and ensure that the
+contents in the CDS are the same
+as the contents of the currently active buffer for
+the table. This option is mutually exclusive of the
+#CFE_TBL_OPT_USR_DEF_ADDR and #CFE_TBL_OPT_DUMP_ONLY
+options.  It should also be noted that the use of
+this option with double buffered tables will prevent
+the update of the double buffered table from being
+quick and it could be blocked.  Therefore, critical
+tables should not be updated by Interrupt Service
+Routines.</p>
+<p>\param[in] TblValidationFuncPtr is a pointer to a function that will be executed in the context of the Table
+Management Service when the contents of a table need to be validated.  If set
+to NULL, then the Table Management Service will assume any data is valid.  If
+the value is not NULL, it must be a pointer to a function with the following
+prototype: <BR>
+<B> int32 CallbackFunc(void *TblPtr);</B> <BR>
+where  <BR>
+<B>TblPtr </B> will be a pointer to the table data that is to be verified.  When the
+function returns #CFE_SUCCESS, the data is considered valid and ready for a commit.
+When the function returns a negative value, the data is considered invalid and an
+Event Message will be issued containing the returned value.  If the function should
+return a positive number, the table is considered invalid and the return code is
+considered invalid.  Validation functions \b must return either #CFE_SUCCESS or a
+negative number (whose value is at the developer’s discretion).  The validation
+function will be executed in the Application’s context so that Event Messages
+describing the validation failure are possible from within the function.</p>
+<p>\return Execution status, see \ref CFEReturnCodes
+\retval #CFE_SUCCESS                      \copybrief CFE_SUCCESS
+\retval #CFE_TBL_INFO_RECOVERED_TBL       \copybrief CFE_TBL_INFO_RECOVERED_TBL
+\retval #CFE_TBL_ERR_DUPLICATE_DIFF_SIZE  \copybrief CFE_TBL_ERR_DUPLICATE_DIFF_SIZE
+\retval #CFE_TBL_ERR_DUPLICATE_NOT_OWNED  \copybrief CFE_TBL_ERR_DUPLICATE_NOT_OWNED
+\retval #CFE_TBL_ERR_REGISTRY_FULL        \copybrief CFE_TBL_ERR_REGISTRY_FULL
+\retval #CFE_TBL_ERR_HANDLES_FULL         \copybrief CFE_TBL_ERR_HANDLES_FULL
+\retval #CFE_TBL_ERR_INVALID_SIZE         \copybrief CFE_TBL_ERR_INVALID_SIZE
+\retval #CFE_TBL_ERR_INVALID_NAME         \copybrief CFE_TBL_ERR_INVALID_NAME
+\retval #CFE_ES_ERR_RESOURCEID_NOT_VALID  \copybrief CFE_ES_ERR_RESOURCEID_NOT_VALID
+\retval #CFE_TBL_BAD_ARGUMENT             \copybrief CFE_TBL_BAD_ARGUMENT
+\retval #CFE_TBL_ERR_INVALID_OPTIONS      \copybrief CFE_TBL_ERR_INVALID_OPTIONS
+\retval #CFE_TBL_WARN_DUPLICATE           \copybrief CFE_TBL_WARN_DUPLICATE
+\retval #CFE_TBL_WARN_NOT_CRITICAL        \copybrief CFE_TBL_WARN_NOT_CRITICAL</p>
+<p>\sa #CFE_TBL_Unregister, #CFE_TBL_Share</p>
+</div></details></section></div></main></body></html>

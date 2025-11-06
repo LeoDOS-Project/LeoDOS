@@ -1,0 +1,36 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="/ /** \brief Creates a new task under an existing Application"><title>CFE_ES_CreateChildTask in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">CFE_ES_CreateChildTask</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">CFE_<wbr>ES_<wbr>Create<wbr>Child<wbr>Task</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#2771-2779">Source</a> </span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn CFE_ES_CreateChildTask(
+    TaskIdPtr: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*mut </a><a class="type" href="type.CFE_ES_TaskId_t.html" title="type leodos_libcfs::ffi::CFE_ES_TaskId_t">CFE_ES_TaskId_t</a>,
+    TaskName: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*const </a>c_char,
+    FunctionPtr: <a class="type" href="type.CFE_ES_ChildTaskMainFuncPtr_t.html" title="type leodos_libcfs::ffi::CFE_ES_ChildTaskMainFuncPtr_t">CFE_ES_ChildTaskMainFuncPtr_t</a>,
+    StackPtr: <a class="type" href="type.CFE_ES_StackPointer_t.html" title="type leodos_libcfs::ffi::CFE_ES_StackPointer_t">CFE_ES_StackPointer_t</a>,
+    StackSize: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.usize.html">usize</a>,
+    Priority: <a class="type" href="type.CFE_ES_TaskPriority_Atom_t.html" title="type leodos_libcfs::ffi::CFE_ES_TaskPriority_Atom_t">CFE_ES_TaskPriority_Atom_t</a>,
+    Flags: <a class="type" href="type.uint32.html" title="type leodos_libcfs::ffi::uint32">uint32</a>,
+) -&gt; <a class="type" href="type.CFE_Status_t.html" title="type leodos_libcfs::ffi::CFE_Status_t">CFE_Status_t</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>/
+/**
+\brief Creates a new task under an existing Application</p>
+<p>\par Description
+This routine creates a new task (a separate execution thread) owned by the calling Application.</p>
+<p>\par Assumptions, External Events, and Notes:
+None</p>
+<p>\param[out]   TaskIdPtr     A pointer to a variable that will be filled in with the new task’s ID @nonnull.
+TaskIdPtr is
+the Task ID of the newly created child task.</p>
+<p>\param[in]   TaskName      A pointer to a string containing the desired name of the new task @nonnull.
+This can be up to #OS_MAX_API_NAME characters, including the trailing null.</p>
+<p>\param[in]   FunctionPtr   A pointer to the function that will be spawned as a new task @nonnull.</p>
+<p>\param[in]   StackPtr      A pointer to the location where the child task’s stack pointer should start.
+NOTE: Not all underlying operating systems support this parameter.
+The CFE_ES_TASK_STACK_ALLOCATE constant may be passed to indicate that the
+stack should be dynamically allocated.</p>
+<p>\param[in]   StackSize     The number of bytes to allocate for the new task’s stack @nonzero.</p>
+<p>\param[in]   Priority      The priority for the new task.  Lower numbers are higher priority, with 0 being
+the highest priority.</p>
+<p>\param[in]   Flags         Reserved for future expansion.</p>
+<p>\return Execution status, see \ref CFEReturnCodes
+\retval #CFE_SUCCESS                      \copybrief CFE_SUCCESS
+\retval #CFE_ES_ERR_CHILD_TASK_CREATE     \copybrief CFE_ES_ERR_CHILD_TASK_CREATE
+\retval #CFE_ES_BAD_ARGUMENT              \copybrief CFE_ES_BAD_ARGUMENT
+\retval #CFE_ES_ERR_RESOURCEID_NOT_VALID  \copybrief CFE_ES_ERR_RESOURCEID_NOT_VALID</p>
+<p>\sa #CFE_ES_DeleteChildTask, #CFE_ES_ExitChildTask</p>
+</div></details></section></div></main></body></html>

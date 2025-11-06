@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_PRINTF_MSG_SIZE"],"fn":["printf","printf_disable","printf_enable"]};

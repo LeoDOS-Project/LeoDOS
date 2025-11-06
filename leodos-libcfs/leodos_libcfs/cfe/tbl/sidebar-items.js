@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["Table","TableAccessor","TableHandle","TableInfo","TableOptions"],"type":["ValidationFn"]};

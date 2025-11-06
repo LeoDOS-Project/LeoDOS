@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["external_gps","external_met","external_time","external_tone","get_clock_info","get_clock_state","get_leap_seconds","get_met_seconds","get_met_subseconds","microseconds_to_subseconds","register_synch_callback","subseconds_to_microseconds","unregister_synch_callback"],"struct":["SysTime"],"type":["SynchCallback"]};

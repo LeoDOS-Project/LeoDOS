@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["delay","exit","find_id_by_system_data","install_delete_handler"],"struct":["Task","TaskId","TaskProp"],"type":["TaskDeleteHandler"]};

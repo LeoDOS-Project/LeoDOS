@@ -1,0 +1,35 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="\cfeescfg CFE core application startup timeout *"><title>CFE_PLATFORM_CORE_MAX_STARTUP_MSEC in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc constant"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">CFE_PLATFORM_CORE_MAX_STARTUP_MSEC</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Constant <span class="constant">CFE_<wbr>PLATFORM_<wbr>CORE_<wbr>MAX_<wbr>STARTUP_<wbr>MSEC</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#756">Source</a> </span></div><pre class="rust item-decl"><code>pub const CFE_PLATFORM_CORE_MAX_STARTUP_MSEC: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.u32.html">u32</a> = 30000;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>\cfeescfg CFE core application startup timeout
+*</p>
+<ul>
+<li>\par Description:</li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> The upper limit <span class="kw">for </span>the amount of time that the cFE core applications</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> (ES, SB, EVS, TIME, TBL) are each allotted to reach their respective</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> <span class="string">"ready" </span>states.</code></pre></div></li>
+<li></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> The CFE <span class="string">"main" </span>thread starts individual tasks <span class="kw">for </span>each of the core applications</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> (except FS).  Each of these must perform some initialization work before the</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> next core application can be started, so the main thread waits to ensure that the</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> application has reached the <span class="string">"ready" </span>state before starting the next application.</code></pre></div></li>
+<li></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> If any core application fails to start, then it indicates a major problem with</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> the system and startup is aborted.</code></pre></div></li>
+<li></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> Units are <span class="kw">in </span>milliseconds</code></pre></div></li>
+<li></li>
+<li>\par Limits:</li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>  Must be defined <span class="kw">as </span>an integer value that is greater than</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>  or equal to zero.</code></pre></div></li>
+</ul>
+</div></details></section></div></main></body></html>

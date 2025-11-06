@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["power_down","power_up","write_disable","write_enable","write_u16","write_u32","write_u8"]};

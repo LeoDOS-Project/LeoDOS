@@ -1,0 +1,47 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="/ /** \brief Load a specified table with data from specified source"><title>CFE_TBL_Load in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">CFE_TBL_Load</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">CFE_<wbr>TBL_<wbr>Load</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#3917-3921">Source</a> </span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn CFE_TBL_Load(
+    TblHandle: <a class="type" href="type.CFE_TBL_Handle_t.html" title="type leodos_libcfs::ffi::CFE_TBL_Handle_t">CFE_TBL_Handle_t</a>,
+    SrcType: <a class="type" href="type.CFE_TBL_SrcEnum.html" title="type leodos_libcfs::ffi::CFE_TBL_SrcEnum">CFE_TBL_SrcEnum_t</a>,
+    SrcDataPtr: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*const </a><a class="enum" href="https://doc.rust-lang.org/1.91.0/core/ffi/enum.c_void.html" title="enum core::ffi::c_void">c_void</a>,
+) -&gt; <a class="type" href="type.CFE_Status_t.html" title="type leodos_libcfs::ffi::CFE_Status_t">CFE_Status_t</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>/
+/**
+\brief Load a specified table with data from specified source</p>
+<p>\par Description
+Once an application has created a table (#CFE_TBL_Register), it must
+provide the values that initialize the contents of that table.  The
+application accomplishes this with one of two different TBL API calls.
+This function call initializes the table with values that are held
+in a data structure.</p>
+<p>\par Assumptions, External Events, and Notes:
+This function call can block.  Therefore, interrupt service routines
+should NOT initialize their own tables.  An application should initialize
+any table(s) prior to providing the handle(s) to the interrupt service routine.</p>
+<p>\param[in] TblHandle  Handle, previously obtained from #CFE_TBL_Register or #CFE_TBL_Share, that
+identifies the Table to be loaded.</p>
+<p>\param[in] SrcType    Flag indicating the nature of the given \c SrcDataPtr below.
+This value can be any one of the following:
+\arg #CFE_TBL_SRC_FILE    - \copybrief CFE_TBL_SRC_FILE
+\arg #CFE_TBL_SRC_ADDRESS - \copybrief CFE_TBL_SRC_ADDRESS</p>
+<p>\param[in] SrcDataPtr Pointer @nonnull to either a character string specifying a filename or
+a memory address of a block of binary data to be loaded into a table or,
+if the table was registered with the #CFE_TBL_OPT_USR_DEF_ADDR option,
+the address of the active table buffer.</p>
+<p>\return Execution status, see \ref CFEReturnCodes
+\retval #CFE_SUCCESS                     \copybrief CFE_SUCCESS
+\retval #CFE_ES_ERR_RESOURCEID_NOT_VALID \copybrief CFE_ES_ERR_RESOURCEID_NOT_VALID
+\retval #CFE_TBL_ERR_NO_ACCESS           \copybrief CFE_TBL_ERR_NO_ACCESS
+\retval #CFE_TBL_ERR_INVALID_HANDLE      \copybrief CFE_TBL_ERR_INVALID_HANDLE
+\retval #CFE_TBL_ERR_DUMP_ONLY           \copybrief CFE_TBL_ERR_DUMP_ONLY
+\retval #CFE_TBL_ERR_ILLEGAL_SRC_TYPE    \copybrief CFE_TBL_ERR_ILLEGAL_SRC_TYPE
+\retval #CFE_TBL_ERR_LOAD_IN_PROGRESS    \copybrief CFE_TBL_ERR_LOAD_IN_PROGRESS
+\retval #CFE_TBL_ERR_LOAD_INCOMPLETE     \copybrief CFE_TBL_ERR_LOAD_INCOMPLETE
+\retval #CFE_TBL_ERR_NO_BUFFER_AVAIL     \copybrief CFE_TBL_ERR_NO_BUFFER_AVAIL
+\retval #CFE_TBL_ERR_ACCESS              \copybrief CFE_TBL_ERR_ACCESS
+\retval #CFE_TBL_ERR_FILE_TOO_LARGE      \copybrief CFE_TBL_ERR_FILE_TOO_LARGE
+\retval #CFE_TBL_ERR_BAD_CONTENT_ID      \copybrief CFE_TBL_ERR_BAD_CONTENT_ID
+\retval #CFE_TBL_ERR_BAD_SUBTYPE_ID      \copybrief CFE_TBL_ERR_BAD_SUBTYPE_ID
+\retval #CFE_TBL_ERR_NO_STD_HEADER       \copybrief CFE_TBL_ERR_NO_STD_HEADER
+\retval #CFE_TBL_ERR_NO_TBL_HEADER       \copybrief CFE_TBL_ERR_NO_TBL_HEADER
+\retval #CFE_TBL_ERR_PARTIAL_LOAD        \copybrief CFE_TBL_ERR_PARTIAL_LOAD
+\retval #CFE_TBL_BAD_ARGUMENT            \copybrief CFE_TBL_BAD_ARGUMENT</p>
+<p>\sa #CFE_TBL_Update, #CFE_TBL_Validate, #CFE_TBL_Manage</p>
+</div></details></section></div></main></body></html>

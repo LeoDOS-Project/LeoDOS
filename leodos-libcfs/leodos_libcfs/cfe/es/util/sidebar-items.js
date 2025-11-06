@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CrcType"],"fn":["calculate_crc"]};

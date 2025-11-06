@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["MsgType"],"fn":["get_next_sequence_count","message_string_get","message_string_set"],"struct":["CmdHeader","MessageMut","MessageRef","MsgId","TlmHeader"]};

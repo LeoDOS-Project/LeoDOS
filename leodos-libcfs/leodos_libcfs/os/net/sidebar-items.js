@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SocketShutdownMode"],"fn":["get_host_name","get_network_id","get_socket_id_by_name","get_socket_info","select_multiple","select_multiple_abs","select_single","select_single_abs"],"struct":["FdSet","Socket","SocketAddr","SocketProp","TcpListener","TcpStream","UdpSocket"]};

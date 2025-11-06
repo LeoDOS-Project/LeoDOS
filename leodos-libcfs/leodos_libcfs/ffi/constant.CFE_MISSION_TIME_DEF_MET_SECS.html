@@ -1,0 +1,40 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="\cfetimecfg Default Time Values\par Description:"><title>CFE_MISSION_TIME_DEF_MET_SECS in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc constant"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">CFE_MISSION_TIME_DEF_MET_SECS</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Constant <span class="constant">CFE_<wbr>MISSION_<wbr>TIME_<wbr>DEF_<wbr>MET_<wbr>SECS</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#703">Source</a> </span></div><pre class="rust item-decl"><code>pub const CFE_MISSION_TIME_DEF_MET_SECS: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.u32.html">u32</a> = 1000;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><ul>
+<li>\cfetimecfg Default Time Values</li>
+<li></li>
+<li>\par Description:</li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> Default time values are provided to avoid problems due to time</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> calculations performed after startup but before commands can be</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> processed.  For example, <span class="kw">if </span>the default time format is UTC then</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> it is important that the sum of MET and STCF always exceed the</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> value of Leap Seconds to prevent the UTC time calculation</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>&lt;tt&gt;(time = MET + STCF - Leap Seconds) &lt;/tt&gt; from resulting <span class="kw">in </span>a negative</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>(very large) number.&lt;BR&gt;&lt;BR&gt;</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="prelude-val">Some </span>past missions have also created known (albeit wrong) default</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>timestamps.  For example, assume the epoch is defined <span class="kw">as </span>Jan <span class="number">1</span>, <span class="number">1970</span></code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>and further assume the default time values are set to create a timestamp</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>of Jan <span class="number">1</span>, <span class="number">2000.  </span>Even though the year <span class="number">2000 </span>timestamps are wrong, it</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>may be of value to keep the time within some sort of bounds acceptable</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>to the software.&lt;BR&gt;&lt;BR&gt;</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>Note: Sub-second units are <span class="kw">in </span>micro-seconds (<span class="number">0 </span>to <span class="number">999</span>,<span class="number">999</span>) and</code></pre></div></li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>      all values must be defined</code></pre></div></li>
+<li></li>
+<li>\par Limits</li>
+<li>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>  Not Applicable</code></pre></div></li>
+</ul>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="@brief Create an abstract Time Base resource"><title>OS_TimeBaseCreate in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">OS_TimeBaseCreate</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">OS_<wbr>Time<wbr>Base<wbr>Create</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#2226-2230">Source</a> </span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn OS_TimeBaseCreate(
+    timebase_id: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*mut </a><a class="type" href="type.osal_id_t.html" title="type leodos_libcfs::ffi::osal_id_t">osal_id_t</a>,
+    timebase_name: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*const </a>c_char,
+    external_sync: <a class="type" href="type.OS_TimerSync_t.html" title="type leodos_libcfs::ffi::OS_TimerSync_t">OS_TimerSync_t</a>,
+) -&gt; <a class="type" href="type.int32.html" title="type leodos_libcfs::ffi::int32">int32</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>@brief Create an abstract Time Base resource</p>
+<p>An OSAL time base is an abstraction of a “timer tick” that can, in turn, be
+used for measurement of elapsed time between events.</p>
+<p>Time bases can be simulated by the operating system using the OS kernel-provided
+timing facilities, or based on a hardware timing source if provided by the BSP.</p>
+<p>A time base object has a servicing task associated with it, that runs at elevated
+priority and will thereby interrupt user-level tasks when timing ticks occur.</p>
+<p>If the external_sync function is passed as NULL, the operating system kernel
+timing resources will be utilized for a simulated timer tick.</p>
+<p>If the external_sync function is not NULL, this should point to a BSP-provided
+function that will block the calling task until the next tick occurs.  This
+can be used for synchronizing with hardware events.</p>
+<p>@note When provisioning a tunable RTOS kernel, such as RTEMS, the kernel should
+be configured to support at least (OS_MAX_TASKS + OS_MAX_TIMEBASES) threads,
+to account for the helper threads associated with time base objects.</p>
+<p>@note This configuration API must not be used from the context of a timer callback.
+Timers should only be configured from the context of normal OSAL tasks.</p>
+<p>@param[out]  timebase_id     will be set to the non-zero ID of the newly-created resource @nonnull
+@param[in]   timebase_name   The name of the time base @nonnull
+@param[in]   external_sync   A synchronization function for BSP hardware-based timer ticks</p>
+<p>@return Execution status, see @ref OSReturnCodes
+@retval #OS_SUCCESS @copybrief OS_SUCCESS
+@retval #OS_ERR_NAME_TAKEN if the name specified is already used
+@retval #OS_ERR_NO_FREE_IDS if there can be no more timebase resources created
+@retval #OS_ERR_INCORRECT_OBJ_STATE if called from timer/timebase context
+@retval #OS_ERR_NAME_TOO_LONG if the timebase_name is too long
+@retval #OS_INVALID_POINTER if a pointer argument is NULL</p>
+</div></details></section></div></main></body></html>

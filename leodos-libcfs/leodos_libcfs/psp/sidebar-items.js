@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["flush_caches","get_processor_name","status_to_string"],"mod":["cds","eeprom","exception","mem","restart","time","version","watchdog"]};

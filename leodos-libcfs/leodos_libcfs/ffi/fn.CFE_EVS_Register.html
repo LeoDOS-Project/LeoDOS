@@ -1,0 +1,44 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="\brief Register an application for receiving event services"><title>CFE_EVS_Register in leodos_libcfs::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="leodos_libcfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0 (f8297e351 2025-10-28)" data-channel="1.91.0" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">CFE_EVS_Register</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../leodos_libcfs/index.html">leodos_<wbr>libcfs</a><span class="version">0.1.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In leodos_<wbr>libcfs::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">leodos_libcfs</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">CFE_<wbr>EVS_<wbr>Register</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/leodos_libcfs/cFS/crates/leodos-libcfs/target/debug/build/leodos-libcfs-3849372d0e48dfec/out/bindings.rs.html#3121-3125">Source</a> </span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn CFE_EVS_Register(
+    Filters: <a class="primitive" href="https://doc.rust-lang.org/1.91.0/std/primitive.pointer.html">*const </a><a class="enum" href="https://doc.rust-lang.org/1.91.0/core/ffi/enum.c_void.html" title="enum core::ffi::c_void">c_void</a>,
+    NumEventFilters: <a class="type" href="type.uint16.html" title="type leodos_libcfs::ffi::uint16">uint16</a>,
+    FilterScheme: <a class="type" href="type.uint16.html" title="type leodos_libcfs::ffi::uint16">uint16</a>,
+) -&gt; <a class="type" href="type.CFE_Status_t.html" title="type leodos_libcfs::ffi::CFE_Status_t">CFE_Status_t</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>\brief Register an application for receiving event services</p>
+<p>\par Description
+This routine registers an application with event services and allocates/initializes
+the internal data structures used to support this application’s events.  An application
+may not send events unless it has called this routine.  The routine also accepts a filter
+array structure for applications requiring event filtering.  In the current implementation
+of the EVS, only the binary filtering scheme is supported.  See section TBD of the cFE
+Application Programmer’s Guide for a description of the behavior of binary filters.
+Applications may call #CFE_EVS_Register more than once, but each call will wipe out all
+filters registered by previous calls (filter registration is NOT cumulative).</p>
+<p>\par Assumptions, External Events, and Notes:
+Note: Event filters can be added, deleted or modified by ground commands.  All filtering
+schemes include a default setting that results in no filtering (such as #CFE_EVS_NO_FILTER
+for binary filters).</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>     &lt;b&gt; Filter Scheme: &lt;/b&gt; Binary &lt;BR&gt;
+     &lt;b&gt; Code: &lt;/b&gt; CFE_EVS_EventFilter_BINARY &lt;BR&gt;
+     &lt;b&gt; Filter Structure: &lt;/b&gt;
+     \code
+                typedef <span class="kw">struct </span>CFE_EVS_BinFilter {
+                      uint16  EventID,
+                      uint16  Mask ;
+                } CFE_EVS_BinFilter_t;
+     \endcode</code></pre></div>
+<p>\param[in] Filters            Pointer to an array of event message filters, or NULL if no filtering is desired.
+The structure of an event message filter depends on the FilterScheme selected.
+(see Filter Schemes mentioned above)</p>
+<p>\param[in] NumEventFilters    The number of event message filters included in this call.  This must be less than
+or equal to the maximum number of events allowed per application
+(#CFE_PLATFORM_EVS_MAX_EVENT_FILTERS).</p>
+<p>\param[in] FilterScheme       The event filtering scheme that this application will use.  For the first
+implementation of the event services, only filter type #CFE_EVS_EventFilter_BINARY
+will be supported.</p>
+<p>\return Execution status below or from #CFE_ES_GetAppID, see \ref CFEReturnCodes
+\retval #CFE_SUCCESS                 \copybrief CFE_SUCCESS
+\retval #CFE_EVS_APP_FILTER_OVERLOAD \copybrief CFE_EVS_APP_FILTER_OVERLOAD
+\retval #CFE_EVS_UNKNOWN_FILTER      \copybrief CFE_EVS_UNKNOWN_FILTER
+\retval #CFE_EVS_APP_ILLEGAL_APP_ID  \copybrief CFE_EVS_APP_ILLEGAL_APP_ID
+\retval #CFE_ES_BAD_ARGUMENT         \copybrief CFE_ES_BAD_ARGUMENT</p>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ResetSubtype","ResetType","SystemState"],"fn":["background_wakeup","get_processor_id","get_reset_type","get_spacecraft_id","process_async_event","reset_cfe","wait_for_startup_sync","wait_for_system_state"]};
