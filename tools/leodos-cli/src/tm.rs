@@ -1,22 +1,10 @@
 use anyhow::Result;
-use leodos_spacepacket::cfe::tm::Telemetry;
-use leodos_spacepacket::SpacePacket;
+use leodos_protocols::network::cfe::tm::Telemetry;
+use leodos_protocols::network::spp::SpacePacket;
 use std::net::UdpSocket;
 use zerocopy::FromBytes;
-use zerocopy::Immutable;
-use zerocopy::IntoBytes;
-use zerocopy::KnownLayout;
-use zerocopy::Unaligned;
 
 const RUST_HK_TLM_MID: u16 = 0x08FA;
-
-#[repr(C)]
-#[derive(IntoBytes, FromBytes, Unaligned, KnownLayout, Immutable, Default, Copy, Clone, Debug)]
-struct HouseKeepingTelemetryPayload {
-    command_count: u8,
-    command_error_count: u8,
-    padding: [u8; 2],
-}
 
 pub async fn listen(port: u16) -> Result<()> {
     let listen_addr = format!("0.0.0.0:{}", port);
@@ -44,9 +32,7 @@ pub async fn listen(port: u16) -> Result<()> {
                 match message_id {
                     RUST_HK_TLM_MID => {
                         println!("  -> Recognized as Housekeeping Telemetry");
-                        if let Ok(hk_packet) =
-                            Telemetry::<HouseKeepingTelemetryPayload>::ref_from_bytes(raw_bytes)
-                        {
+                        if let Ok(hk_packet) = Telemetry::ref_from_bytes(raw_bytes) {
                             println!("{:#?}", hk_packet);
                         } else {
                             println!(

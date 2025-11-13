@@ -370,6 +370,8 @@ impl<'a> MessageMut<'a> {
     }
 
     /// Transmits the message in this buffer.
+    /// The `is_origination` flag should be set to true if the message is being sent
+    /// as an original message from this application, or false if it is being relayed.
     pub fn send(self, is_origination: bool) -> Result<()> {
         let status = unsafe {
             ffi::CFE_SB_TransmitBuffer(self.slice.as_mut_ptr() as *mut _, is_origination)

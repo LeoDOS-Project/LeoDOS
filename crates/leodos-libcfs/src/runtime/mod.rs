@@ -30,11 +30,12 @@
 //! ```
 
 pub mod join;
-pub mod select;
+pub mod select_either;
 pub mod sync;
 mod task;
 pub mod time;
 pub mod scope;
+pub mod dyn_scope;
 
 use crate::cfe::es::app::RunStatus;
 use crate::error::Result;

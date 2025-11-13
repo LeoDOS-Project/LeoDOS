@@ -1,0 +1,2 @@
+[env]
+CSP_DIR = { value = "../../libs/libcsp/", relative = true }

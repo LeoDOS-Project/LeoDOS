@@ -1,9 +1,8 @@
-//! Task storage and management.
+use crate::comptime_assert_align_le;
+use crate::comptime_assert_size_le;
 use crate::error::Error;
 use core::future::Future;
 use core::marker::PhantomData;
-use core::mem;
-use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::task::Context;
 use core::task::Poll;
@@ -11,48 +10,24 @@ use core::task::Poll;
 pub type TaskResult = Result<(), Error>;
 pub const DEFAULT_MAX_TASK_SIZE: usize = 512;
 
+#[repr(align(16))]
+struct AlignedStorage<const N: usize>([u8; N]);
+
 pub(crate) struct Task<'a, const MAX_TASK_SIZE: usize = DEFAULT_MAX_TASK_SIZE> {
-    storage: [u8; MAX_TASK_SIZE],
-    aligned_offset: usize,
+    storage: AlignedStorage<MAX_TASK_SIZE>, // Changed from [u8; MAX_TASK_SIZE]
     poll_fn: Option<unsafe fn(*mut (), &mut Context<'_>) -> Poll<TaskResult>>,
     drop_fn: Option<unsafe fn(*mut ())>,
     is_done: bool,
     _phantom: PhantomData<&'a ()>,
 }
 
-pub const fn check_future_size<F, const MAX_TASK_SIZE: usize>() {
-    trait FutureSizeCheck {
-        const IS_TOO_LARGE: bool;
-        const TRIGGER_CHECK: ();
-    }
-
-    impl<T, const N: usize> FutureSizeCheck for (T, [(); N]) {
-        const IS_TOO_LARGE: bool = core::mem::size_of::<T>() > N;
-
-        const TRIGGER_CHECK: () = {
-            if Self::IS_TOO_LARGE {
-                panic!("Future is too large for task storage");
-            }
-        };
-    }
-
-    let _ = <(F, [(); MAX_TASK_SIZE]) as FutureSizeCheck>::TRIGGER_CHECK;
-}
-
 impl<'a, const MAX_TASK_SIZE: usize> Task<'a, MAX_TASK_SIZE> {
-    pub(crate) fn new<F>(future: F) -> Result<Self, Error>
+    pub(crate) fn new<F>(future: F) -> Self
     where
         F: Future<Output = TaskResult> + 'a,
     {
-        // Trigger compile-time check
-        check_future_size::<F, MAX_TASK_SIZE>();
-
-        let size = mem::size_of::<F>();
-        let align = mem::align_of::<F>();
-
-        if size + align - 1 > MAX_TASK_SIZE {
-            return Err(Error::TaskTooLarge);
-        }
+        comptime_assert_size_le!(F, MAX_TASK_SIZE);
+        comptime_assert_align_le!(F, 16);
 
         unsafe fn poll_fn<F: Future<Output = TaskResult>>(
             storage: *mut (),
@@ -65,29 +40,26 @@ impl<'a, const MAX_TASK_SIZE: usize> Task<'a, MAX_TASK_SIZE> {
             core::ptr::drop_in_place(storage as *mut F);
         }
 
-        let (storage, aligned_offset) = unsafe {
-            let mut storage_mu = MaybeUninit::<[u8; MAX_TASK_SIZE]>::uninit();
-            let base_ptr = storage_mu.as_mut_ptr() as *mut u8;
-            let base_addr = base_ptr as usize;
-            let aligned_addr = (base_addr + align - 1) & !(align - 1);
-            let offset = aligned_addr - base_addr;
-            let f_ptr = base_ptr.add(offset) as *mut F;
-            f_ptr.write(future);
-            (storage_mu.assume_init(), offset)
-        };
-
-        Ok(Self {
-            storage,
-            aligned_offset,
+        let mut task = Self {
+            storage: AlignedStorage([0; MAX_TASK_SIZE]),
             poll_fn: Some(poll_fn::<F>),
             drop_fn: Some(drop_fn::<F>),
             is_done: false,
             _phantom: PhantomData,
-        })
+        };
+
+        unsafe {
+            // Write to the beginning of the buffer.
+            // The compiler guarantees this pointer is 16-byte aligned.
+            let ptr = task.storage.0.as_mut_ptr() as *mut F;
+            ptr.write(future);
+        }
+
+        task
     }
 
     pub(crate) fn storage_ptr(&mut self) -> *mut () {
-        unsafe { self.storage.as_mut_ptr().add(self.aligned_offset) as *mut () }
+        self.storage.0.as_mut_ptr() as *mut ()
     }
 
     pub(crate) fn cleanup(&mut self) {

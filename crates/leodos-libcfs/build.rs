@@ -9,7 +9,10 @@ use std::rc::Rc;
 
 // Filter out public macros from the CFE/OSAL APIs.
 fn is_api_macro(name: &str) -> bool {
-    (name.starts_with("CFE_") || name.starts_with("OSAL_") || name.starts_with("OS_"))
+    (name.starts_with("CFE_")
+        || name.starts_with("OSAL_")
+        || name.starts_with("OS_")
+        || name.starts_with("CF_"))
         && name
             .chars()
             .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
@@ -193,6 +196,7 @@ fn main() {
     let osal_dir = get_path("OSAL_DIR");
     let psp_dir = get_path("PSP_DIR");
     let build_dir = get_path("BUILD_DIR");
+    let cf_dir = env::var("CF_DIR").ok().map(PathBuf::from);
     let debug = env::var("DEBUG").as_deref() == Ok("1");
 
     if debug {
@@ -200,11 +204,14 @@ fn main() {
         println!("cargo::warning=OSAL_DIR={}", osal_dir.display());
         println!("cargo::warning=PSP_DIR={}", psp_dir.display());
         println!("cargo::warning=BUILD_DIR={}", build_dir.display());
+        if let Some(ref cf) = cf_dir {
+            println!("cargo::warning=CF_DIR={}", cf.display());
+        }
     }
 
     let macro_detector = MacroDetector::default();
 
-    let include_paths = vec![
+    let mut include_paths = vec![
         build_dir.join("inc"),
         build_dir.join("native/default_cpu1/osal/inc"),
         build_dir.join("native/default_cpu1/psp/inc"),
@@ -235,6 +242,12 @@ fn main() {
         psp_dir.join("fsw/pc-linux/inc"),
     ];
 
+    if let Some(ref cf) = cf_dir {
+        include_paths.push(cf.join("fsw/src"));
+        include_paths.push(cf.join("fsw/inc"));
+        include_paths.push(cf.join("config"));
+    }
+
     let mut builder = bindgen::Builder::default()
         .header(header(&cfe_dir, "modules/core_api/fsw/inc/cfe.h"))
         .header(header(&cfe_dir, "modules/core_api/fsw/inc/cfe_error.h"))
@@ -246,9 +259,9 @@ fn main() {
         .ctypes_prefix("libc")
         .clang_arg("-D_LINUX_OS_")
         .clang_arg("-D_POSIX_OS_")
-        .allowlist_function("CFE_.*|OSAL_.*|OS_.*")
-        .allowlist_type("CFE_.*|OSAL_.*|OS_.*")
-        .allowlist_var("CFE_.*|OSAL_.*|OS_.*")
+        .allowlist_function("CFE_.*|OSAL_.*|OS_.*|CF_.*")
+        .allowlist_type("CFE_.*|OSAL_.*|OS_.*|CF_.*")
+        .allowlist_var("CFE_.*|OSAL_.*|OS_.*|CF_.*")
         .layout_tests(false)
         .derive_default(true)
         .parse_callbacks(Box::new(macro_detector.clone()));
@@ -259,6 +272,16 @@ fn main() {
 
     for path in &include_paths {
         builder = builder.clang_arg(format!("-I{}", path.display()));
+    }
+
+    if let Some(ref cf) = cf_dir {
+        builder = builder
+            .header(header(cf, "fsw/src/cf_cfdp_pdu.h"))
+            .header(header(cf, "fsw/src/cf_logical_pdu.h"))
+            .header(header(cf, "fsw/src/cf_codec.h"))
+            .header(header(cf, "fsw/src/cf_cfdp_types.h"))
+            .header(header(cf, "fsw/src/cf_cfdp.h"))
+            .header(header(cf, "fsw/src/cf_app.h"));
     }
 
     let bindings = builder.generate().expect("Unable to generate bindings!");

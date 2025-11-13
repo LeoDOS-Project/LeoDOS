@@ -1,0 +1,1 @@
+- Be sure to always run rustfmt, and afterwards check that the code looks good even after formatting

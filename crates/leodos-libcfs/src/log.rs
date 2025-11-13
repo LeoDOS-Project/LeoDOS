@@ -68,13 +68,13 @@ pub fn printf_disable() {
 ///
 /// fn my_function() -> Result<()> {
 ///     // Simple literal message
-///     syslog!("Starting task...")?;
+///     log!("Starting task...")?;
 ///
 ///     let event_count = 10;
 ///     let status = 0;
 ///
 ///     // Formatted message
-///     syslog!("Processed {} events with status {}", event_count, status)?;
+///     log!("Processed {} events with status {}", event_count, status)?;
 ///
 ///     Ok(())
 /// }

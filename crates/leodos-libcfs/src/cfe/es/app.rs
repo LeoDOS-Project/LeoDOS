@@ -1,4 +1,4 @@
-//! A safe, idiomatic application framework for cFS.
+//! Application management.
 //!
 //! This module provides the `App` struct as a handle to cFS services and the
 //! `AppMain` trait to define application behavior.

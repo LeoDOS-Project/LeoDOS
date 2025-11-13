@@ -5,7 +5,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-leodos-spacepacket = { path = "../../crates/leodos-spacepacket" }
+leodos-protocols = { path = "../../crates/leodos-protocols/" }
 zerocopy = { version = "0.8.27", features = ["derive"] }
 clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1.48.0", features = ["full"] }

@@ -1,11 +1,22 @@
 //! A simple duration struct similar to `core::time::Duration`.
 //! Uses 32-bit unsigned integers for seconds and nanoseconds instead of 64-bit.
 
+use crate::cfe::time::SysTime;
+
 /// A simple duration struct similar to `std::time::Duration`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Duration {
     secs: u32,
     nanos: u32,
+}
+
+impl From<SysTime> for Duration {
+    fn from(time: SysTime) -> Self {
+        Self {
+            secs: time.seconds(),
+            nanos: time.subseconds(),
+        }
+    }
 }
 
 impl Duration {
@@ -69,5 +80,10 @@ impl Duration {
     /// Returns the total duration in milliseconds.
     pub fn millis(&self) -> u32 {
         self.secs * 1_000 + self.nanos / 1_000_000
+    }
+
+    /// Returns a zero duration.
+    pub fn zero() -> Self {
+        Self { secs: 0, nanos: 0 }
     }
 }

@@ -1,55 +1,63 @@
-use anyhow::{anyhow, Result};
-use leodos_spacepacket::cfe::tc::Telecommand;
-use leodos_spacepacket::{Apid, PacketSequenceCount};
-use std::mem::size_of;
-use std::net::UdpSocket;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
-
-// Define the empty payload struct needed for no-argument commands
-#[repr(C)]
-#[derive(IntoBytes, FromBytes, Unaligned, KnownLayout, Immutable, Default, Copy, Clone)]
-struct NoArgsPayload {}
+use anyhow::anyhow;
+use anyhow::Result;
+use leodos_protocols::network::cfe::tc::Telecommand;
+use leodos_protocols::network::cfe::tm::Telemetry;
+use leodos_protocols::network::spp::Apid;
+use leodos_protocols::network::spp::SequenceCount;
+use tokio::net::UdpSocket;
+use zerocopy::IntoBytes;
 
 pub async fn send(
     host: &str,
     port: u16,
     mid: u16,
     fcn_code: u8,
-    params: &[String],
+    payload: &[u8],
+    expect_response: bool,
 ) -> Result<()> {
-    // For now, we assert that no parameters are given.
-    // A more advanced version would parse the `params` Vec here.
-    if !params.is_empty() {
-        return Err(anyhow!(
-            "This tool does not yet support command parameters."
-        ));
+    let apid = Apid::new(mid).expect("Should be a valid APID");
+    let mut buffer = [0u8; 256];
+
+    let packet = Telecommand::builder()
+        .buffer(&mut buffer)
+        .apid(apid)
+        .sequence_count(SequenceCount::new())
+        .function_code(fcn_code)
+        .payload_len(payload.len())
+        .build()
+        .expect("Should build Telecommand packet");
+
+    packet.payload_mut().copy_from_slice(payload);
+    packet.set_cfe_checksum();
+
+    let socket = UdpSocket::bind("0.0.0.0:0").await?;
+    let local_addr = socket.local_addr()?;
+
+    socket.send_to(packet.as_bytes(), (host, port)).await?;
+
+    println!("Successfully sent command (MID {mid:#06x}) from {local_addr}",);
+
+    if expect_response {
+        println!("Waiting for telemetry response...");
+
+        match socket.recv_from(&mut buffer).await {
+            Ok((num_bytes, src_addr)) => {
+                println!("\nResponse Received ({num_bytes} bytes from {src_addr})",);
+                match Telemetry::parse(&buffer[..num_bytes]) {
+                    Ok(packet) => {
+                        if let Ok(msg) = core::str::from_utf8(packet.payload()) {
+                            println!("Response Payload: '{msg}'");
+                        } else {
+                            println!("Response Payload: [Binary Data]");
+                        }
+                        Ok(())
+                    }
+                    Err(e) => Err(anyhow!("Failed to parse reseponse as Telemetry: {e:?}",)),
+                }
+            }
+            Err(e) => Err(anyhow!("Socket error while receiving response: {}", e)),
+        }
+    } else {
+        Ok(())
     }
-
-    // 1. Derive the APID from the Message ID (MID).
-    // This is a standard cFE convention. The APID is part of the MID.
-    let apid = Apid::new(mid & 0x07FF).expect("Should be a valid APID");
-
-    // 2. Define the payload for this specific command.
-    let payload = NoArgsPayload::default();
-
-    // 3. Allocate a buffer and build the packet using your packet library.
-    type NoArgsCommand = Telecommand<NoArgsPayload>;
-    let mut buffer = vec![0u8; size_of::<NoArgsCommand>()];
-
-    let _packet = Telecommand::new(
-        &mut buffer,
-        apid,
-        PacketSequenceCount::from(1), // A real tool would manage this count
-        fcn_code,
-        &payload,
-    )
-    .expect("Failed to build Telecommand packet");
-
-    // 4. Send the packet over UDP.
-    let socket = UdpSocket::bind("0.0.0.0:0")?; // Bind to any available local port
-    socket.send_to(&buffer, (host, port))?;
-
-    println!("Successfully sent command with MID {:#06x}", mid);
-
-    Ok(())
 }

@@ -1,0 +1,25 @@
+[package]
+name = "sample_rust_app"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name="sample_rust_app"
+crate-type=["cdylib"]
+
+[dependencies]
+leodos-protocols = { path = "../../../crates/leodos-protocols" }
+leodos-libcfs = { path = "../../../crates/leodos-libcfs" }
+zerocopy = { version = "0.8.27", features = ["derive"], default-features = false }
+heapless = "0.9.1"
+
+[profile.release]
+lto = true
+panic = 'abort'
+opt-level = "z"
+
+[profile.dev]
+panic = 'abort'
+
+[build-dependencies]
+bindgen = "0.72.1"

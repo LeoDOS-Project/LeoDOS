@@ -32,9 +32,12 @@ enum Commands {
         #[arg(long)]
         function_code: u8,
 
+        #[arg(long, default_value_t = false)]
+        expect_response: bool,
+
         /// (Future Use) List of parameters for the payload
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        params: Vec<String>,
+        payload: String,
     },
 
     /// Listen for and decode CFE Telemetry packets.
@@ -55,14 +58,22 @@ async fn main() -> Result<()> {
             port,
             message_id,
             function_code,
-            params,
+            expect_response,
+            payload,
         } => {
-            // Parse the Message ID from a string, allowing for "0x" prefix
             let mid_val = u16::from_str_radix(message_id.trim_start_matches("0x"), 16)?;
 
             println!("Sending command to {}:{}", host, port);
             println!("  MID: {:#06x}, Function Code: {}", mid_val, function_code);
-            tc::send(host, *port, mid_val, *function_code, params).await?;
+            tc::send(
+                host,
+                *port,
+                mid_val,
+                *function_code,
+                payload.as_bytes(),
+                *expect_response,
+            )
+            .await?;
         }
         Commands::Listen { port } => {
             println!("Listening for telemetry on port {}...", port);

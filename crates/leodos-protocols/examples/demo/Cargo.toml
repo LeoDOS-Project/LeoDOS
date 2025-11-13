@@ -1,0 +1,8 @@
+[package]
+name = "demo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+leodos-protocols = { path = "../.." }
+tokio = { version = "1.48.0", features = ["full"] }

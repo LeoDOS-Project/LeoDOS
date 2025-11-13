@@ -6,6 +6,7 @@ use crate::os::id::OsalId;
 use crate::os::time::OsTime;
 use crate::status::check;
 use core::ffi::CStr;
+use core::fmt::Write;
 use core::future::Future;
 use core::mem::MaybeUninit;
 use core::task::Poll;
@@ -39,7 +40,7 @@ impl SocketAddr {
         })?;
 
         // 2. Set the IP address from a string
-        let mut c_ip: String<64> = String::new();
+        let mut c_ip: String<{ ffi::OS_MAX_PATH_LEN as usize }> = String::new();
         c_ip.push_str(ip_addr)
             .map_err(|_| Error::OsErrNameTooLong)?;
         c_ip.push('\0').map_err(|_| Error::OsErrNameTooLong)?;
@@ -64,8 +65,8 @@ impl SocketAddr {
     }
 
     /// Gets a string representation of the host address (e.g., "127.0.0.1").
-    pub fn to_string(&self) -> Result<String<64>> {
-        let mut buffer = [0u8; 64];
+    pub fn to_string(&self) -> Result<String<{ ffi::OS_MAX_PATH_LEN as usize }>> {
+        let mut buffer = [0u8; { ffi::OS_MAX_PATH_LEN as usize }];
         check(unsafe {
             ffi::OS_SocketAddrToString(
                 buffer.as_mut_ptr() as *mut libc::c_char,
@@ -77,6 +78,37 @@ impl SocketAddr {
         let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| Error::OsErrNameTooLong)?;
         let s = String::from_utf8(vec).map_err(|_| Error::InvalidString)?;
         Ok(s)
+    }
+}
+
+impl TryFrom<core::net::SocketAddr> for SocketAddr {
+    type Error = Error;
+
+    fn try_from(addr: core::net::SocketAddr) -> Result<Self> {
+        let mut addr_uninit = MaybeUninit::uninit();
+
+        let domain = match addr {
+            core::net::SocketAddr::V4(_) => SocketDomain::IPv4,
+            core::net::SocketAddr::V6(_) => SocketDomain::IPv6,
+        };
+
+        check(unsafe { ffi::OS_SocketAddrInit(addr_uninit.as_mut_ptr(), domain.into()) })?;
+
+        // Format IP to C-String for OSAL
+        let mut c_ip: String<{ ffi::OS_MAX_PATH_LEN as usize }> = String::new();
+        write!(c_ip, "{}", addr.ip()).map_err(|_| Error::OsErrNameTooLong)?;
+        c_ip.push('\0').map_err(|_| Error::OsErrNameTooLong)?;
+
+        check(unsafe {
+            ffi::OS_SocketAddrFromString(
+                addr_uninit.as_mut_ptr(),
+                c_ip.as_ptr() as *const libc::c_char,
+            )
+        })?;
+
+        check(unsafe { ffi::OS_SocketAddrSetPort(addr_uninit.as_mut_ptr(), addr.port()) })?;
+
+        Ok(Self(unsafe { addr_uninit.assume_init() }))
     }
 }
 
@@ -147,7 +179,7 @@ impl UdpSocket {
 
     /// Receives a single datagram message on the socket.
     pub fn recv_from<'a>(
-        &mut self,
+        &self,
         buf: &'a mut [u8],
         timeout: Timeout,
     ) -> Result<(usize, SocketAddr)> {
@@ -369,8 +401,8 @@ pub fn get_network_id() -> i32 {
 }
 
 /// Gets the local machine's network host name.
-pub fn get_host_name() -> Result<String<64>> {
-    let mut buffer = [0u8; 64];
+pub fn get_host_name() -> Result<String<{ ffi::OS_MAX_PATH_LEN as usize }>> {
+    let mut buffer = [0u8; { ffi::OS_MAX_PATH_LEN as usize }];
     check(unsafe {
         ffi::OS_NetworkGetHostName(buffer.as_mut_ptr() as *mut libc::c_char, buffer.len())
     })?;
@@ -495,12 +527,28 @@ pub fn get_socket_info(sock_id: OsalId) -> Result<SocketProp> {
 impl UdpSocket {
     /// Asynchronously receives a single datagram message on the socket.
     pub fn recv<'a>(
-        &'a mut self,
+        &'a self,
         buf: &'a mut [u8],
     ) -> impl Future<Output = Result<(usize, SocketAddr)>> + use<'a> {
         core::future::poll_fn(|_| {
             let recv_future = self.recv_from(buf, Timeout::Poll);
             match recv_future {
+                Err(Error::OsErrorTimeout | Error::OsQueueEmpty) => Poll::Pending,
+                Ok(result) => Poll::Ready(Ok(result)),
+                Err(e) => Poll::Ready(Err(e)),
+            }
+        })
+    }
+
+    /// Asynchronously sends data on the socket to the given address.
+    pub fn send<'a>(
+        &'a self,
+        buf: &'a [u8],
+        target: &'a SocketAddr,
+    ) -> impl Future<Output = Result<usize>> + use<'a> {
+        core::future::poll_fn(|_| {
+            // send_to is typically non-blocking for UDP, but wrap it anyway
+            match self.send_to(buf, target) {
                 Err(Error::OsErrorTimeout | Error::OsQueueEmpty) => Poll::Pending,
                 Ok(result) => Poll::Ready(Ok(result)),
                 Err(e) => Poll::Ready(Err(e)),
