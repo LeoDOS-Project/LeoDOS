@@ -74,6 +74,7 @@ where
         packet: &'a IslGossipTelecommand,
     ) -> Vec<(Direction, &'a IslGossipTelecommand), 4> {
         let header = &packet.gossip_header;
+        let from_address = header.from_address();
         let mut gossips = Vec::new();
         for direction in [
             Direction::North,
@@ -81,15 +82,15 @@ where
             Direction::East,
             Direction::West,
         ] {
-            // Determine neighbor address using Torus logic directly
             let my_point = Point::from(self.my_address);
             let neighbor_point = self.torus.neighbor(my_point, direction);
             let to_address = Address::from(neighbor_point);
 
-            if to_address != header.from_address
-                && to_address
-                    .satellite_id
-                    .is_in_service_area(header.service_area_min, header.service_area_max)
+            if to_address != from_address
+                && to_address.is_in_service_area(
+                    header.service_area_min,
+                    header.service_area_max,
+                )
             {
                 gossips
                     .push((direction, packet))

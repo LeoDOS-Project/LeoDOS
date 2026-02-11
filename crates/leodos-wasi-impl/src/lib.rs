@@ -8,18 +8,24 @@ use heapless::Vec;
 use leodos_libcfs as cfs;
 use leodos_libwamr as wamr;
 
-mod api; // Private module containing the unsafe extern "C" bridge functions
+mod api;
 pub mod error;
 
 use error::{Result, WamrHostError};
 
-const MAX_WASM_SOCKETS: usize = 8;
+pub const MAX_UDP_SOCKETS: usize = 8;
+pub const MAX_TCP_STREAMS: usize = 16;
+pub const MAX_TCP_LISTENERS: usize = 4;
+pub const MAX_FILES: usize = 16;
+pub const MAX_DIRECTORIES: usize = 4;
 
-/// Manages the WAMR runtime and exposed cFS resources.
 pub struct WamrHost<'r> {
     runtime: wamr::Runtime,
-    // State for exposed services is managed here
-    pub(crate) sockets: Vec<Option<cfs::os::net::UdpSocket>, MAX_WASM_SOCKETS>,
+    pub(crate) udp_sockets: Vec<Option<cfs::os::net::UdpSocket>, MAX_UDP_SOCKETS>,
+    pub(crate) tcp_streams: Vec<Option<cfs::os::net::TcpStream>, MAX_TCP_STREAMS>,
+    pub(crate) tcp_listeners: Vec<Option<cfs::os::net::TcpListener>, MAX_TCP_LISTENERS>,
+    pub(crate) files: Vec<Option<cfs::os::fs::File>, MAX_FILES>,
+    pub(crate) directories: Vec<Option<cfs::os::fs::Directory>, MAX_DIRECTORIES>,
     _phantom: PhantomData<&'r ()>,
 }
 
@@ -45,9 +51,8 @@ impl<'r> WamrHost<'r> {
     }
 }
 
-/// A builder for configuring and creating a `WamrHost`.
 pub struct WamrHostBuilder<'r> {
-    native_symbols: Vec<wamr::NativeSymbol, 16>, // Pre-allocate for common symbols
+    native_symbols: Vec<wamr::NativeSymbol, 64>,
     _phantom: PhantomData<&'r ()>,
 }
 
@@ -59,7 +64,6 @@ impl<'r> WamrHostBuilder<'r> {
         }
     }
 
-    /// Exposes a stateful UDP socket API to the Wasm guest.
     pub fn with_udp_sockets(mut self) -> Result<Self> {
         self.native_symbols
             .push(api::udp::socket_open())
@@ -70,15 +74,100 @@ impl<'r> WamrHostBuilder<'r> {
         self.native_symbols
             .push(api::udp::socket_sendto())
             .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
-        // Add recvfrom etc. here
+        self.native_symbols
+            .push(api::udp::socket_recvfrom())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
         Ok(self)
     }
 
-    /// Builds and initializes the `WamrHost`.
-    ///
-    /// # Safety
-    /// This function must only be called once per cFS application, as it
-    /// initializes the global WAMR runtime.
+    pub fn with_tcp_sockets(mut self) -> Result<Self> {
+        self.native_symbols
+            .push(api::tcp::tcp_listen())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::tcp::tcp_accept())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::tcp::tcp_listener_close())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::tcp::tcp_connect())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::tcp::tcp_read())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::tcp::tcp_write())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::tcp::tcp_close())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        Ok(self)
+    }
+
+    pub fn with_filesystem(mut self) -> Result<Self> {
+        self.native_symbols
+            .push(api::fs::file_open())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::fs::file_create())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::fs::file_close())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::fs::file_read())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::fs::file_write())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::fs::file_seek())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::fs::file_stat())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::fs::fs_stat())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::fs::fs_mkdir())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::fs::fs_rmdir())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::fs::fs_remove())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::fs::fs_rename())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        Ok(self)
+    }
+
+    pub fn with_directories(mut self) -> Result<Self> {
+        self.native_symbols
+            .push(api::dir::dir_open())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::dir::dir_close())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::dir::dir_read())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        self.native_symbols
+            .push(api::dir::dir_rewind())
+            .map_err(|_| WamrHostError::BuilderCapacityExceeded)?;
+        Ok(self)
+    }
+
+    pub fn with_all(self) -> Result<Self> {
+        self.with_udp_sockets()?
+            .with_tcp_sockets()?
+            .with_filesystem()?
+            .with_directories()
+    }
+
     pub unsafe fn build(mut self) -> wamr::Result<WamrHost<'r>> {
         let runtime = wamr::RuntimeBuilder::new()
             .with_native_symbols("env", &mut self.native_symbols)
@@ -86,7 +175,11 @@ impl<'r> WamrHostBuilder<'r> {
 
         Ok(WamrHost {
             runtime,
-            sockets: Vec::new(),
+            udp_sockets: Vec::new(),
+            tcp_streams: Vec::new(),
+            tcp_listeners: Vec::new(),
+            files: Vec::new(),
+            directories: Vec::new(),
             _phantom: PhantomData,
         })
     }

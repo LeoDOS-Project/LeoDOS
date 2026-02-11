@@ -1,10 +1,11 @@
-//! Sender state machine for SRSP.
+//! Sender state machine for SRSPP.
 //!
 //! Handles segmentation, buffering, and retransmission of messages.
 //! Completely synchronous - no I/O, no async.
 
+use crate::network::isl::address::Address;
 use crate::network::spp::{Apid, SequenceCount, SequenceFlag};
-use crate::transport::srspp::packet::{SrspDataPacket, SrspPacketError};
+use crate::transport::srspp::packet::{SrsppDataPacket, SrsppPacketError};
 use heapless::Vec;
 
 /// Maximum number of actions that can be emitted per event.
@@ -104,7 +105,7 @@ pub enum SenderError {
     BufferFull,
     /// Packet build error.
     #[error("packet build error: {0}")]
-    PacketError(#[from] SrspPacketError),
+    PacketError(#[from] SrsppPacketError),
     /// Window full (too many unacked packets).
     #[error("send window full")]
     WindowFull,
@@ -113,6 +114,8 @@ pub enum SenderError {
 /// Configuration for the sender.
 #[derive(Debug, Clone)]
 pub struct SenderConfig {
+    /// Source address for outgoing packets.
+    pub source_address: Address,
     /// APID to use for outgoing packets.
     pub apid: Apid,
     /// Retransmission timeout in ticks.
@@ -182,7 +185,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
 
     /// Maximum payload size per packet.
     pub const fn max_payload_per_packet() -> usize {
-        SrspDataPacket::max_payload_size(MTU)
+        SrsppDataPacket::max_payload_size(MTU)
     }
 
     /// Available space in the send buffer (bytes).
@@ -288,8 +291,9 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         actions: &mut SenderActions,
     ) -> Result<(), SenderError> {
         // Build packet in tx_buffer
-        let packet = SrspDataPacket::builder()
+        let packet = SrsppDataPacket::builder()
             .buffer(&mut self.tx_buffer)
+            .source_address(self.config.source_address)
             .apid(self.config.apid)
             .sequence_count(SequenceCount::from(self.next_seq))
             .sequence_flag(flags)
@@ -299,7 +303,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
 
         packet.payload.copy_from_slice(payload);
 
-        let packet_len = SrspDataPacket::HEADER_SIZE + payload.len();
+        let packet_len = SrsppDataPacket::HEADER_SIZE + payload.len();
 
         // Find free slot
         let slot_idx = self
@@ -499,6 +503,7 @@ mod tests {
 
     fn make_config() -> SenderConfig {
         SenderConfig {
+            source_address: Address::satellite(1, 5),
             apid: Apid::new(0x42).unwrap(),
             rto_ticks: 100,
             max_retransmits: 3,

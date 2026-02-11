@@ -9,9 +9,7 @@ use crate::network::cfe::tc::Telecommand;
 use crate::network::cfe::tc::TelecommandError;
 use crate::network::cfe::tc::TelecommandSecondaryHeader;
 use crate::network::isl::address::Address;
-use crate::network::isl::address::OrbitId;
-use crate::network::isl::address::SatelliteId;
-use crate::network::isl::address::SpacecraftId;
+use crate::network::isl::address::RawAddress;
 use crate::network::spp::Apid;
 use crate::network::spp::PrimaryHeader;
 use crate::network::spp::SequenceCount;
@@ -22,7 +20,7 @@ use crate::utils::validate_checksum_u8;
 ///
 /// This is a specialized `Telecommand` where the payload contains a `GossipHeader`
 /// that provides information for duplicate detection (`epoch`) and sender
-/// identification (`from_orb`/`from_sat`), followed by the actual data being gossiped.
+/// identification, followed by the actual data being gossiped.
 ///
 /// ```text
 /// +---------------------------------+-----------+
@@ -35,9 +33,8 @@ use crate::utils::validate_checksum_u8;
 /// |                                 |           |
 /// + -- Gossip Header -------------- | --------- |
 /// |                                 |           |
-/// | Spacecraft ID                   | 1 byte    |
-/// | From OrbitID                    | 1 byte    |
-/// | From SatelliteID                | 1 byte    |
+/// | Originator Address              | 2 bytes   |
+/// | From Address                    | 2 bytes   |
 /// | Service Area Min                | 1 byte    |
 /// | Service Area Max                | 1 byte    |
 /// | Epoch                           | 2 bytes   |
@@ -45,7 +42,7 @@ use crate::utils::validate_checksum_u8;
 /// |                                 |           |
 /// | -- Gossip Payload (Variable) -- | --------- |
 /// |                                 |           |
-/// | Data being Gossiped             | 0-65525 B |
+/// | Data being Gossiped             | 0-65524 B |
 /// +---------------------------------+-----------+
 /// ```
 #[repr(C)]
@@ -76,14 +73,14 @@ pub struct Epoch(pub U16);
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
 pub struct IslGossipHeader {
-    /// ID of the spacecraft that originated the gossip packet.
-    pub spacecraft_id: SpacecraftId,
-    /// Address of the immediate sender (for routing).
-    pub from_address: Address,
+    /// Address of the node that originated this gossip.
+    pub originator: RawAddress,
+    /// Address of the immediate sender (for routing - don't echo back).
+    pub from_address: RawAddress,
     /// The minimum satellite ID in the target service area for this gossip.
-    pub service_area_min: SatelliteId,
+    pub service_area_min: u8,
     /// The maximum satellite ID in the target service area for this gossip.
-    pub service_area_max: SatelliteId,
+    pub service_area_max: u8,
     /// The unique sequence number for this piece of gossip, used for duplicate detection.
     pub epoch: Epoch,
     /// The application-specific action code for the gossip message.
@@ -104,17 +101,26 @@ impl From<TelecommandError> for GossipMessageError {
     }
 }
 
+impl IslGossipHeader {
+    pub fn originator(&self) -> Address {
+        self.originator.parse()
+    }
+
+    pub fn from_address(&self) -> Address {
+        self.from_address.parse()
+    }
+}
+
 impl IslGossipTelecommand {
     /// Builder for creating a complete ISL Gossip message.
     pub fn new<'a>(
         buffer: &'a mut [u8],
         apid: Apid,
         function_code: u8,
-        spacecraft_id: SpacecraftId,
-        from_orb: OrbitId,
-        from_sat: SatelliteId,
-        service_area_min: SatelliteId,
-        service_area_max: SatelliteId,
+        originator: Address,
+        from_address: Address,
+        service_area_min: u8,
+        service_area_max: u8,
         epoch: Epoch,
         action_code: u8,
         payload_len: usize,
@@ -148,15 +154,13 @@ impl IslGossipTelecommand {
             })
         })?;
 
-        // Copy the provided header and payload into place.
-        gossip_tc.gossip_header.spacecraft_id = spacecraft_id;
-        gossip_tc.gossip_header.from_address = Address::new(from_orb, from_sat);
+        gossip_tc.gossip_header.originator = RawAddress::from(originator);
+        gossip_tc.gossip_header.from_address = RawAddress::from(from_address);
         gossip_tc.gossip_header.service_area_min = service_area_min;
         gossip_tc.gossip_header.service_area_max = service_area_max;
         gossip_tc.gossip_header.epoch = epoch;
         gossip_tc.gossip_header.action_code = action_code;
 
-        // Calculate the final checksum.
         gossip_tc.set_cfe_checksum();
 
         Ok(gossip_tc)

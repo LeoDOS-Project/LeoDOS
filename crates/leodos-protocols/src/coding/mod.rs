@@ -1,8 +1,9 @@
-pub mod randomizer;
-pub mod crc;
-pub mod cltu;
-pub mod checksum;
 pub mod cadu;
+pub mod checksum;
+pub mod cltu;
+pub mod crc;
+pub mod physical;
+pub mod randomizer;
 
 /// Interface for the Physical Layer (Radio/Serial).
 pub trait PhysicalWriter {

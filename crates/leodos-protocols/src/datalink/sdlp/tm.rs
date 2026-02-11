@@ -182,11 +182,17 @@ impl TelemetryTransferFrame {
             return Err(BuildError::InvalidVcid(vcid));
         }
 
-        let required_len = Self::HEADER_SIZE;
         let provided_len = buffer.len();
-        let (frame, _) = TelemetryTransferFrame::mut_from_prefix_with_elems(buffer, required_len)
+        if provided_len < Self::HEADER_SIZE {
+            return Err(BuildError::BufferTooSmall {
+                required_len: Self::HEADER_SIZE,
+                provided_len,
+            });
+        }
+        let data_field_len = provided_len - Self::HEADER_SIZE;
+        let (frame, _) = TelemetryTransferFrame::mut_from_prefix_with_elems(buffer, data_field_len)
             .map_err(|_| BuildError::BufferTooSmall {
-            required_len,
+            required_len: Self::HEADER_SIZE,
             provided_len,
         })?;
 

@@ -1,0 +1,160 @@
+#![no_std]
+
+use leodos_libcfs::cfe::evs::event;
+use leodos_libcfs::cfe::sb::msg::MsgId;
+use leodos_libcfs::cfe::sb::pipe::Pipe;
+use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
+use leodos_libcfs::error::Error;
+use leodos_libcfs::error::Result;
+use leodos_libcfs::runtime::Runtime;
+use leodos_libcfs::runtime::join::join;
+use leodos_protocols::network::NetworkLayer;
+use leodos_protocols::network::isl::address::Address;
+use leodos_protocols::network::spp::Apid;
+use leodos_protocols::transport::srspp::api::cfs::SrsppReceiver;
+use leodos_protocols::transport::srspp::api::cfs::SrsppSender;
+use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
+use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
+
+type SrsppError = leodos_protocols::transport::srspp::api::cfs::Error<Error>;
+
+const RX_APID: u16 = 0x42;
+const TX_APID: u16 = 0x43;
+const WIN: usize = 8;
+const BUF: usize = 4096;
+const MTU: usize = 512;
+const REASM: usize = 8192;
+const MAX_STREAMS: usize = 4;
+const RTO_MS: u32 = 1000;
+const MAX_RETRANSMITS: u8 = 3;
+const ACK_DELAY_MS: u32 = 100;
+
+const RX_TOPIC_ID: u16 = 0x100;
+const TX_TOPIC_ID: u16 = 0x101;
+
+struct SbRxLink {
+    pipe: Pipe,
+}
+
+impl SbRxLink {
+    fn new(topic_id: u16) -> Result<Self> {
+        let pipe = Pipe::new("SRSPP_ECHO_RX", 16)?;
+        let msg_id = MsgId::from_local_tlm(topic_id);
+        pipe.subscribe(msg_id)?;
+        Ok(Self { pipe })
+    }
+}
+
+impl NetworkLayer for SbRxLink {
+    type Error = Error;
+
+    async fn send(&mut self, _data: &[u8]) -> core::result::Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn recv(&mut self, buffer: &mut [u8]) -> core::result::Result<usize, Self::Error> {
+        self.pipe.recv(buffer).await
+    }
+}
+
+struct SbTxLink {
+    msg_id: MsgId,
+}
+
+impl SbTxLink {
+    fn new(topic_id: u16) -> Self {
+        Self {
+            msg_id: MsgId::from_local_tlm(topic_id),
+        }
+    }
+}
+
+impl NetworkLayer for SbTxLink {
+    type Error = Error;
+
+    async fn send(&mut self, data: &[u8]) -> core::result::Result<(), Self::Error> {
+        let mut buf = SendBuffer::new(data.len())?;
+        buf.as_mut_slice().copy_from_slice(data);
+        buf.view().init(self.msg_id, data.len())?;
+        buf.send(true)
+    }
+
+    async fn recv(&mut self, _buffer: &mut [u8]) -> core::result::Result<usize, Self::Error> {
+        core::future::pending().await
+    }
+}
+
+fn rx_config() -> ReceiverConfig {
+    ReceiverConfig {
+        local_address: Address::ground(1),
+        apid: Apid::new(RX_APID).unwrap(),
+        immediate_ack: false,
+        ack_delay_ticks: ACK_DELAY_MS,
+    }
+}
+
+fn tx_config() -> SenderConfig {
+    SenderConfig {
+        source_address: Address::ground(1),
+        apid: Apid::new(TX_APID).unwrap(),
+        rto_ticks: RTO_MS,
+        max_retransmits: MAX_RETRANSMITS,
+    }
+}
+
+async fn echo_loop<'a>(
+    rx_handle: &mut leodos_protocols::transport::srspp::api::cfs::SrsppReceiverHandle<
+        'a,
+        Error,
+        WIN,
+        BUF,
+        REASM,
+        MAX_STREAMS,
+    >,
+    tx_handle: &mut leodos_protocols::transport::srspp::api::cfs::SrsppSenderHandle<
+        'a,
+        Error,
+        WIN,
+        BUF,
+        MTU,
+    >,
+) -> core::result::Result<(), SrsppError> {
+    loop {
+        let msg = rx_handle.recv().await?;
+        event::info(1, "Echo: received message").ok();
+        tx_handle.send(&msg.data).await?;
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn CFE_ES_Main() {
+    Runtime::new().run(async {
+        event::register(&[])?;
+        event::info(0, "SRSPP Echo starting")?;
+
+        let rx_link = SbRxLink::new(RX_TOPIC_ID)?;
+        let tx_link = SbTxLink::new(TX_TOPIC_ID);
+
+        let receiver: SrsppReceiver<Error, WIN, BUF, REASM, MAX_STREAMS> =
+            SrsppReceiver::new(rx_config());
+        let sender: SrsppSender<Error, WIN, BUF, MTU> =
+            SrsppSender::new(tx_config());
+
+        let (mut rx_handle, mut rx_driver) = receiver.split::<_, MTU>(rx_link);
+        let (mut tx_handle, mut tx_driver) = sender.split(tx_link);
+
+        let echo_task = echo_loop(&mut rx_handle, &mut tx_handle);
+        let rx_task = rx_driver.run();
+        let tx_task = tx_driver.run();
+
+        let _ = join(echo_task, join(rx_task, tx_task)).await;
+
+        Ok(())
+    });
+}
+
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    leodos_libcfs::cfe::es::app::default_panic_handler(info)
+}

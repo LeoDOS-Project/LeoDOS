@@ -1,0 +1,23 @@
+[package]
+name = "srspp_receiver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "srspp_receiver"
+crate-type = ["cdylib"]
+
+[dependencies]
+leodos-protocols = { path = "../../../crates/leodos-protocols", features = ["cfs"] }
+leodos-libcfs = { path = "../../../crates/leodos-libcfs" }
+
+[profile.release]
+lto = true
+panic = "abort"
+opt-level = "z"
+
+[profile.dev]
+panic = "abort"
+
+[build-dependencies]
+bindgen = "0.72.1"

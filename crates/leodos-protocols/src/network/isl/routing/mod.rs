@@ -1,4 +1,5 @@
 pub mod algorithm;
+pub mod local;
 pub mod packet;
 
 use futures::FutureExt as _;
@@ -169,7 +170,7 @@ where
     ) -> Result<(), Error<N::Error, S::Error, E::Error, W::Error, G::Error, L::Error>> {
         let packet =
             IslRoutingTelecommand::parse(&buffer[..len]).map_err(Error::IslMessageError)?;
-        let target = packet.isl_header.target;
+        let target = packet.isl_header.target();
         let packet = packet.as_bytes();
         match self.next_hop(target) {
             Direction::North => self.north.send(&packet).await.map_err(Error::North)?,

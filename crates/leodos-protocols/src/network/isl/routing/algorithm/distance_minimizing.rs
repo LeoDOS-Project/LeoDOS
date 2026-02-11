@@ -19,14 +19,16 @@ impl DistanceMinimizing {
         Self { inclination_rad }
     }
 
-    /// Helper: Computes the relative distance between two rows at a given column x.
+    /// Relative cross-plane distance factor at a given orbital position (row).
     ///
-    /// distance_between_rows(inclination, x, num_cols) =
+    /// cross_plane_factor(inclination, y, num_rows) =
     ///    sqrt(cos²(Θ) + cos²(inclination) * sin²(Θ))
     /// where
-    //     Θ = 2π * x / num_cols
-    fn distance_between_rows_at_col(&self, x: u8, num_cols: u8) -> f32 {
-        let theta = 2.0 * PI * (x as f32) / (num_cols as f32);
+    ///    Θ = 2π * y / num_rows
+    ///
+    /// Minimum at the poles (Θ = π/2), maximum at the equator (Θ = 0).
+    fn cross_plane_factor(&self, y: u8, num_rows: u8) -> f32 {
+        let theta = 2.0 * PI * (y as f32) / (num_rows as f32);
         let cos_theta = libm::cosf(theta);
         let sin_theta = libm::sinf(theta);
         let cos_inc = libm::cosf(self.inclination_rad);
@@ -48,20 +50,19 @@ impl RoutingAlgorithm for DistanceMinimizing {
             return torus.shortest_path_direction_y(current, target);
         }
 
-        let h_dir = torus.shortest_path_direction_x(current, target);
-        let (prev_x, next_x) = torus.adjacent_x(current, h_dir);
+        let v_dir = torus.shortest_path_direction_y(current, target);
+        let toward_y = match v_dir {
+            Direction::South => torus.next_y(current),
+            _ => torus.prev_y(current),
+        };
 
-        let curr_row_dist = self.distance_between_rows_at_col(current.x, torus.num_cols);
-        let next_row_dist = self.distance_between_rows_at_col(next_x, torus.num_cols);
-        let prev_row_dist = self.distance_between_rows_at_col(prev_x, torus.num_cols);
+        let curr_factor = self.cross_plane_factor(current.y, torus.num_rows);
+        let toward_factor = self.cross_plane_factor(toward_y, torus.num_rows);
 
-        let is_minimal = prev_row_dist > curr_row_dist && next_row_dist > curr_row_dist;
-        let is_shrinking = next_row_dist < curr_row_dist;
-
-        if is_minimal || is_shrinking {
-            h_dir
+        if toward_factor < curr_factor {
+            v_dir
         } else {
-            torus.shortest_path_direction_y(current, target)
+            torus.shortest_path_direction_x(current, target)
         }
     }
 }

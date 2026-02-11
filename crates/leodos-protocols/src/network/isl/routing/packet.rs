@@ -8,8 +8,7 @@ use crate::network::cfe::tc::Telecommand;
 use crate::network::cfe::tc::TelecommandError;
 use crate::network::cfe::tc::TelecommandSecondaryHeader;
 use crate::network::isl::address::Address;
-use crate::network::isl::address::OrbitId;
-use crate::network::isl::address::SatelliteId;
+use crate::network::isl::address::RawAddress;
 use crate::network::spp::Apid;
 use crate::network::spp::PrimaryHeader;
 use crate::network::spp::SequenceCount;
@@ -64,8 +63,8 @@ pub struct IslRoutingTelecommand {
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
 pub struct IslRoutingTelecommandHeader {
-    /// The target address for this packet.
-    pub target: Address,
+    /// The target address for this packet (wire format).
+    pub target: RawAddress,
     /// An ID for request/response correlation. Set to 0 for asynchronous messages.
     pub message_id: u8,
     /// The application-specific action code for the final destination.
@@ -98,9 +97,13 @@ impl IslRoutingTelecommandHeader {
     pub fn new(message_id: u8, target: Address, action_code: u8) -> Self {
         Self {
             message_id,
-            target,
+            target: RawAddress::from(target),
             action_code,
         }
+    }
+
+    pub fn target(&self) -> Address {
+        self.target.parse()
     }
 }
 
@@ -113,8 +116,7 @@ impl IslRoutingTelecommand {
         apid: Apid,
         function_code: u8,
         message_id: u8,
-        target_orb: OrbitId,
-        target_sat: SatelliteId,
+        target: Address,
         action_code: u8,
         payload_len: usize,
     ) -> Result<&'a mut Self, IslMessageError> {
@@ -142,7 +144,7 @@ impl IslRoutingTelecommand {
         })?;
 
         isl_tc.isl_header.message_id = message_id;
-        isl_tc.isl_header.target = Address::new(target_orb, target_sat);
+        isl_tc.isl_header.target = RawAddress::from(target);
         isl_tc.isl_header.action_code = action_code;
 
         isl_tc.set_cfe_checksum();

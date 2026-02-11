@@ -1,3 +1,4 @@
+pub mod collector;
 pub mod mapper;
-pub mod reducer;
 pub mod proxy;
+pub mod reducer;

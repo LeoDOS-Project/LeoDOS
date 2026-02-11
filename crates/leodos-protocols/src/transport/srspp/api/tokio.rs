@@ -5,7 +5,7 @@
 //! ## Sender Example
 //!
 //! ```ignore
-//! let sender = SrspSender::new(config, link);
+//! let sender = SrsppSender::new(config, link);
 //!
 //! // Send messages
 //! sender.send(&data).await?;
@@ -18,7 +18,7 @@
 //! ## Receiver Example
 //!
 //! ```ignore
-//! let mut receiver = SrspReceiver::new(config, link);
+//! let mut receiver = SrsppReceiver::new(config, link);
 //!
 //! // Receive messages
 //! while let Some(message) = receiver.recv().await? {
@@ -26,7 +26,8 @@
 //! }
 //! ```
 
-use crate::datalink::DataLink;
+use crate::network::NetworkLayer;
+use crate::network::isl::address::Address;
 use crate::network::spp::Apid;
 use crate::network::spp::SequenceCount;
 use crate::transport::srspp::machine::receiver::ReceiverAction;
@@ -41,18 +42,18 @@ use crate::transport::srspp::machine::sender::SenderConfig;
 use crate::transport::srspp::machine::sender::SenderError;
 use crate::transport::srspp::machine::sender::SenderEvent;
 use crate::transport::srspp::machine::sender::SenderMachine;
-use crate::transport::srspp::packet::SrspAckPacket;
-use crate::transport::srspp::packet::SrspType;
+use crate::transport::srspp::packet::SrsppAckPacket;
+use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::packet::parse_ack_packet;
 use crate::transport::srspp::packet::parse_data_packet;
-use crate::transport::srspp::packet::parse_srsp_type;
+use crate::transport::srspp::packet::parse_srspp_type;
 use std::collections::HashMap;
 use tokio::time::Duration;
 use tokio::time::Instant;
 
 /// Error type for srspp operations.
 #[derive(Debug)]
-pub enum SrspError {
+pub enum SrsppError {
     /// Send buffer is full.
     BufferFull,
     /// Window is full (too many unacked packets).
@@ -67,30 +68,30 @@ pub enum SrspError {
     ReceiverError(ReceiverError),
 }
 
-impl std::fmt::Display for SrspError {
+impl std::fmt::Display for SrsppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SrspError::BufferFull => write!(f, "send buffer full"),
-            SrspError::WindowFull => write!(f, "window full"),
-            SrspError::LinkError(e) => write!(f, "link error: {}", e),
-            SrspError::PacketError(e) => write!(f, "packet error: {}", e),
-            SrspError::SenderError(e) => write!(f, "sender error: {:?}", e),
-            SrspError::ReceiverError(e) => write!(f, "receiver error: {:?}", e),
+            SrsppError::BufferFull => write!(f, "send buffer full"),
+            SrsppError::WindowFull => write!(f, "window full"),
+            SrsppError::LinkError(e) => write!(f, "link error: {}", e),
+            SrsppError::PacketError(e) => write!(f, "packet error: {}", e),
+            SrsppError::SenderError(e) => write!(f, "sender error: {:?}", e),
+            SrsppError::ReceiverError(e) => write!(f, "receiver error: {:?}", e),
         }
     }
 }
 
-impl std::error::Error for SrspError {}
+impl std::error::Error for SrsppError {}
 
-impl From<SenderError> for SrspError {
+impl From<SenderError> for SrsppError {
     fn from(e: SenderError) -> Self {
-        SrspError::SenderError(e)
+        SrsppError::SenderError(e)
     }
 }
 
-impl From<ReceiverError> for SrspError {
+impl From<ReceiverError> for SrsppError {
     fn from(e: ReceiverError) -> Self {
-        SrspError::ReceiverError(e)
+        SrsppError::ReceiverError(e)
     }
 }
 
@@ -98,7 +99,7 @@ impl From<ReceiverError> for SrspError {
 ///
 /// Sends messages reliably over the link, handling segmentation and retransmission.
 /// Receives ACKs from the remote receiver.
-pub struct SrspSender<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize> {
+pub struct SrsppSender<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize> {
     link: L,
     machine: SenderMachine<WIN, BUF, MTU>,
     actions: SenderActions,
@@ -107,8 +108,8 @@ pub struct SrspSender<L: DataLink, const WIN: usize, const BUF: usize, const MTU
     recv_buffer: [u8; MTU],
 }
 
-impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize>
-    SrspSender<L, WIN, BUF, MTU>
+impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize>
+    SrsppSender<L, WIN, BUF, MTU>
 {
     /// Create a new sender.
     pub fn new(config: SenderConfig, link: L, ticks_per_sec: u32) -> Self {
@@ -128,7 +129,7 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize>
     /// This returns when all packets have been transmitted (but not necessarily ACKed).
     ///
     /// For guaranteed delivery, call `flush()` after sending.
-    pub async fn send(&mut self, data: &[u8]) -> Result<(), SrspError> {
+    pub async fn send(&mut self, data: &[u8]) -> Result<(), SrsppError> {
         self.machine
             .handle(SenderEvent::SendRequest { data }, &mut self.actions)?;
 
@@ -137,7 +138,7 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize>
     }
 
     /// Wait for all sent data to be acknowledged.
-    pub async fn flush(&mut self) -> Result<(), SrspError> {
+    pub async fn flush(&mut self) -> Result<(), SrsppError> {
         while !self.machine.is_idle() {
             self.poll().await?;
         }
@@ -147,7 +148,7 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize>
     /// Poll for incoming ACKs and handle timeouts.
     ///
     /// Call this periodically if you want to process ACKs without blocking on flush.
-    pub async fn poll(&mut self) -> Result<(), SrspError> {
+    pub async fn poll(&mut self) -> Result<(), SrsppError> {
         let next_deadline = self.next_timer_deadline();
 
         tokio::select! {
@@ -155,7 +156,7 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize>
 
             // Check for incoming ACK
             result = self.link.recv(&mut self.recv_buffer) => {
-                let len = result.map_err(|e| SrspError::LinkError(e.to_string()))?;
+                let len = result.map_err(|e| SrsppError::LinkError(e.to_string()))?;
                 self.handle_incoming(&self.recv_buffer[..len].to_vec()).await?;
             }
 
@@ -178,7 +179,7 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize>
         self.machine.available_bytes()
     }
 
-    async fn process_actions(&mut self) -> Result<(), SrspError> {
+    async fn process_actions(&mut self) -> Result<(), SrsppError> {
         for action in self.actions.iter() {
             match action {
                 SenderAction::Transmit { seq, rto_ticks } => {
@@ -186,7 +187,7 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize>
                         self.link
                             .send(packet)
                             .await
-                            .map_err(|e| SrspError::LinkError(e.to_string()))?;
+                            .map_err(|e| SrsppError::LinkError(e.to_string()))?;
 
                         self.machine.mark_transmitted(*seq);
 
@@ -209,13 +210,13 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize>
         Ok(())
     }
 
-    async fn handle_incoming(&mut self, packet: &[u8]) -> Result<(), SrspError> {
-        let srsp_type =
-            parse_srsp_type(packet).map_err(|e| SrspError::PacketError(format!("{:?}", e)))?;
+    async fn handle_incoming(&mut self, packet: &[u8]) -> Result<(), SrsppError> {
+        let srspp_type =
+            parse_srspp_type(packet).map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
-        if srsp_type == SrspType::Ack {
+        if srspp_type == SrsppType::Ack {
             let ack =
-                parse_ack_packet(packet).map_err(|e| SrspError::PacketError(format!("{:?}", e)))?;
+                parse_ack_packet(packet).map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
             self.machine.handle(
                 SenderEvent::AckReceived {
@@ -232,7 +233,7 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize>
         Ok(())
     }
 
-    async fn handle_timeouts(&mut self) -> Result<(), SrspError> {
+    async fn handle_timeouts(&mut self) -> Result<(), SrsppError> {
         let now = Instant::now();
 
         let expired: Vec<u16> = self
@@ -265,14 +266,15 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize>
 ///
 /// Receives messages reliably over the link, handling reordering and reassembly.
 /// Sends ACKs to the remote sender.
-pub struct SrspReceiver<
-    L: DataLink,
+pub struct SrsppReceiver<
+    L: NetworkLayer,
     const WIN: usize,
     const BUF: usize,
     const MTU: usize,
     const REASM: usize,
 > {
     link: L,
+    local_address: Address,
     apid: Apid,
     machine: ReceiverMachine<WIN, BUF, REASM>,
     actions: ReceiverActions,
@@ -282,16 +284,23 @@ pub struct SrspReceiver<
     ack_buffer: [u8; 16],
 }
 
-impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize, const REASM: usize>
-    SrspReceiver<L, WIN, BUF, MTU, REASM>
+impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize, const REASM: usize>
+    SrsppReceiver<L, WIN, BUF, MTU, REASM>
 {
-    /// Create a new receiver.
-    pub fn new(config: ReceiverConfig, link: L, ticks_per_sec: u32) -> Self {
+    /// Create a new receiver for a specific remote sender.
+    pub fn new(
+        config: ReceiverConfig,
+        remote_address: Address,
+        link: L,
+        ticks_per_sec: u32,
+    ) -> Self {
+        let local_address = config.local_address;
         let apid = config.apid;
         Self {
             link,
+            local_address,
             apid,
-            machine: ReceiverMachine::new(config),
+            machine: ReceiverMachine::new(config, remote_address),
             actions: ReceiverActions::new(),
             ack_timer: None,
             ticks_per_sec,
@@ -303,7 +312,7 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize, const RE
     /// Receive the next complete message.
     ///
     /// Blocks until a message is available.
-    pub async fn recv(&mut self) -> Result<Box<[u8]>, SrspError> {
+    pub async fn recv(&mut self) -> Result<Box<[u8]>, SrsppError> {
         loop {
             // Check if we already have a message
             if let Some(msg) = self.machine.take_message() {
@@ -325,13 +334,13 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize, const RE
     }
 
     /// Poll for incoming data and handle ACK timer.
-    pub async fn poll(&mut self) -> Result<(), SrspError> {
+    pub async fn poll(&mut self) -> Result<(), SrsppError> {
         tokio::select! {
             biased;
 
             // Check for incoming data
             result = self.link.recv(&mut self.recv_buffer) => {
-                let len = result.map_err(|e| SrspError::LinkError(e.to_string()))?;
+                let len = result.map_err(|e| SrsppError::LinkError(e.to_string()))?;
                 self.handle_incoming(&self.recv_buffer[..len].to_vec()).await?;
             }
 
@@ -344,13 +353,13 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize, const RE
         Ok(())
     }
 
-    async fn handle_incoming(&mut self, packet: &[u8]) -> Result<(), SrspError> {
-        let srsp_type =
-            parse_srsp_type(packet).map_err(|e| SrspError::PacketError(format!("{:?}", e)))?;
+    async fn handle_incoming(&mut self, packet: &[u8]) -> Result<(), SrsppError> {
+        let srspp_type =
+            parse_srspp_type(packet).map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
-        if srsp_type == SrspType::Data {
+        if srspp_type == SrsppType::Data {
             let data = parse_data_packet(packet)
-                .map_err(|e| SrspError::PacketError(format!("{:?}", e)))?;
+                .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
             self.machine.handle(
                 ReceiverEvent::DataReceived {
@@ -368,7 +377,7 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize, const RE
         Ok(())
     }
 
-    async fn handle_ack_timeout(&mut self) -> Result<(), SrspError> {
+    async fn handle_ack_timeout(&mut self) -> Result<(), SrsppError> {
         self.ack_timer = None;
         self.machine
             .handle(ReceiverEvent::AckTimeout, &mut self.actions)?;
@@ -376,26 +385,28 @@ impl<L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize, const RE
         Ok(())
     }
 
-    async fn process_actions(&mut self) -> Result<(), SrspError> {
+    async fn process_actions(&mut self) -> Result<(), SrsppError> {
         for action in self.actions.iter() {
             match action {
                 ReceiverAction::SendAck {
+                    destination: _,
                     cumulative_ack,
                     selective_bitmap,
                 } => {
-                    let ack = SrspAckPacket::builder()
+                    let ack = SrsppAckPacket::builder()
                         .buffer(&mut self.ack_buffer)
+                        .source_address(self.local_address)
                         .apid(self.apid)
                         .cumulative_ack(*cumulative_ack)
                         .sequence_count(SequenceCount::new())
                         .selective_bitmap(*selective_bitmap)
                         .build()
-                        .map_err(|e| SrspError::PacketError(format!("{:?}", e)))?;
+                        .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
                     self.link
                         .send(zerocopy::IntoBytes::as_bytes(ack))
                         .await
-                        .map_err(|e| SrspError::LinkError(e.to_string()))?;
+                        .map_err(|e| SrsppError::LinkError(e.to_string()))?;
                 }
                 ReceiverAction::StartAckTimer { ticks } => {
                     self.ack_timer =
@@ -466,7 +477,7 @@ mod tests {
         recv_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
     }
 
-    impl DataLink for MockLinkA {
+    impl NetworkLayer for MockLinkA {
         type Error = std::io::Error;
 
         async fn send(&mut self, packet: &[u8]) -> Result<(), Self::Error> {
@@ -486,7 +497,7 @@ mod tests {
         }
     }
 
-    impl DataLink for MockLinkB {
+    impl NetworkLayer for MockLinkB {
         type Error = std::io::Error;
 
         async fn send(&mut self, packet: &[u8]) -> Result<(), Self::Error> {
@@ -508,28 +519,34 @@ mod tests {
 
     fn sender_config() -> SenderConfig {
         SenderConfig {
+            source_address: Address::satellite(0, 1),
             apid: Apid::new(0x42).unwrap(),
-            rto_ticks: 1000, // 1 second at 1000 ticks/sec
+            rto_ticks: 1000,
             max_retransmits: 3,
         }
     }
 
     fn receiver_config() -> ReceiverConfig {
         ReceiverConfig {
+            local_address: Address::satellite(0, 2),
             apid: Apid::new(0x42).unwrap(),
             immediate_ack: true,
             ack_delay_ticks: 100,
         }
     }
 
+    fn remote_address() -> Address {
+        Address::satellite(0, 1)
+    }
+
     #[tokio::test]
     async fn test_send_recv_single_message() {
         let (link_a, link_b) = MockLinkPair::new();
 
-        let mut sender: SrspSender<_, 8, 4096, 512> =
-            SrspSender::new(sender_config(), link_a, 1000);
-        let mut receiver: SrspReceiver<_, 8, 4096, 512, 8192> =
-            SrspReceiver::new(receiver_config(), link_b, 1000);
+        let mut sender: SrsppSender<_, 8, 4096, 512> =
+            SrsppSender::new(sender_config(), link_a, 1000);
+        let mut receiver: SrsppReceiver<_, 8, 4096, 512, 8192> =
+            SrsppReceiver::new(receiver_config(), remote_address(), link_b, 1000);
 
         let message = b"Hello, srspp!";
 

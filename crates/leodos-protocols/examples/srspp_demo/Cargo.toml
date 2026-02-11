@@ -1,0 +1,8 @@
+[package]
+name = "srspp_demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+leodos-protocols = { path = "../..", features = ["tokio"] }
+tokio = { version = "1", features = ["full"] }

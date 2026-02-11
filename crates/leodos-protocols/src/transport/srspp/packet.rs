@@ -1,8 +1,10 @@
-//! SRSP packet definitions using zerocopy.
+//! SRSPP packet definitions using zerocopy.
 //!
-//! SRSP adds a minimal header to Space Packets to distinguish DATA from ACK
+//! SRSPP adds a minimal header to Space Packets to distinguish DATA from ACK
 //! packets and carry acknowledgment information.
 
+use crate::network::isl::address::Address;
+use crate::network::isl::address::RawAddress;
 use crate::network::spp::Apid;
 use crate::network::spp::PacketType;
 use crate::network::spp::PacketVersion;
@@ -22,14 +24,14 @@ use zerocopy::byteorder::network_endian;
 /// SRSP packet type identifier.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u8)]
-pub enum SrspType {
+pub enum SrsppType {
     /// Data packet carrying application payload
     Data = 0x00,
     /// Acknowledgment packet
     Ack = 0x01,
 }
 
-impl SrspType {
+impl SrsppType {
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             0x00 => Some(Self::Data),
@@ -39,25 +41,31 @@ impl SrspType {
     }
 }
 
-/// The SRSP header (1 byte).
+/// The SRSP header (3 bytes).
 ///
-/// For DATA packets, only the type field is used. The sequence information
-/// comes from the Space Packet primary header.
+/// Contains source address for stream identification and packet type.
+/// The sequence information comes from the Space Packet primary header.
 ///
 /// For ACK packets, additional fields carry acknowledgment information
 /// in the AckPayload that follows.
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
-pub struct SrspHeader {
+pub struct SrsppHeader {
+    /// Source address of the sender.
+    pub source_address: RawAddress,
     /// Packet type: DATA (0x00) or ACK (0x01)
     pub packet_type: u8,
 }
 
-impl SrspHeader {
+impl SrsppHeader {
     pub const SIZE: usize = size_of::<Self>();
 
-    pub fn srsp_type(&self) -> Option<SrspType> {
-        SrspType::from_u8(self.packet_type)
+    pub fn srspp_type(&self) -> Option<SrsppType> {
+        SrsppType::from_u8(self.packet_type)
+    }
+
+    pub fn source_address(&self) -> Address {
+        self.source_address.parse()
     }
 }
 
@@ -101,7 +109,8 @@ impl AckPayload {
 /// |   - Sequence Count (for reliability)         |
 /// |   - Sequence Flags (for segmentation)        |
 /// +------------------------------------+---------+
-/// | SRSP Header                        | 1 byte  |
+/// | SRSP Header                        | 3 bytes |
+/// |   - Source Address (2 bytes)                 |
 /// |   - Type: DATA (0x00)                        |
 /// +------------------------------------+---------+
 /// | Payload                            | N bytes |
@@ -109,14 +118,14 @@ impl AckPayload {
 /// ```
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable)]
-pub struct SrspDataPacket {
+pub struct SrsppDataPacket {
     pub primary: PrimaryHeader,
-    pub srsp_header: SrspHeader,
+    pub srspp_header: SrsppHeader,
     pub payload: [u8],
 }
 
-impl SrspDataPacket {
-    pub const HEADER_SIZE: usize = size_of::<PrimaryHeader>() + SrspHeader::SIZE;
+impl SrsppDataPacket {
+    pub const HEADER_SIZE: usize = size_of::<PrimaryHeader>() + SrsppHeader::SIZE;
 
     /// Maximum payload size for a given MTU
     pub const fn max_payload_size(mtu: usize) -> usize {
@@ -132,7 +141,8 @@ impl SrspDataPacket {
 /// +------------------------------------+---------+
 /// | Space Packet Primary Header        | 6 bytes |
 /// +------------------------------------+---------+
-/// | SRSP Header                        | 1 byte  |
+/// | SRSP Header                        | 3 bytes |
+/// |   - Source Address (2 bytes)                 |
 /// |   - Type: ACK (0x01)                         |
 /// +------------------------------------+---------+
 /// | ACK Payload                        | 4 bytes |
@@ -142,19 +152,19 @@ impl SrspDataPacket {
 /// ```
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
-pub struct SrspAckPacket {
+pub struct SrsppAckPacket {
     pub primary: PrimaryHeader,
-    pub srsp_header: SrspHeader,
+    pub srspp_header: SrsppHeader,
     pub ack_payload: AckPayload,
 }
 
-impl SrspAckPacket {
+impl SrsppAckPacket {
     pub const SIZE: usize = size_of::<Self>();
 }
 
 /// Errors that can occur when building SRSP packets.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
-pub enum SrspPacketError {
+pub enum SrsppPacketError {
     #[error("buffer too small: required {required} bytes, provided {provided} bytes")]
     BufferTooSmall { required: usize, provided: usize },
     #[error("invalid SRSP packet type")]
@@ -164,23 +174,24 @@ pub enum SrspPacketError {
 }
 
 #[bon]
-impl SrspDataPacket {
+impl SrsppDataPacket {
     /// Build a DATA packet in the provided buffer.
     ///
     /// Returns a mutable reference to the packet, allowing payload to be written.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],
+        source_address: Address,
         apid: Apid,
         sequence_count: SequenceCount,
         sequence_flag: SequenceFlag,
         payload_len: usize,
-    ) -> Result<&'a mut SrspDataPacket, SrspPacketError> {
-        let required_len = SrspDataPacket::HEADER_SIZE + payload_len;
+    ) -> Result<&'a mut SrsppDataPacket, SrsppPacketError> {
+        let required_len = SrsppDataPacket::HEADER_SIZE + payload_len;
         let provided_len = buffer.len();
 
-        let (packet, _) = SrspDataPacket::mut_from_prefix_with_elems(buffer, required_len)
-            .map_err(|_| SrspPacketError::BufferTooSmall {
+        let (packet, _) = SrsppDataPacket::mut_from_prefix_with_elems(buffer, payload_len)
+            .map_err(|_| SrsppPacketError::BufferTooSmall {
                 required: required_len,
                 provided: provided_len,
             })?;
@@ -196,30 +207,32 @@ impl SrspDataPacket {
         packet.primary.set_sequence_flag(sequence_flag);
         packet
             .primary
-            .set_data_field_len((SrspHeader::SIZE + payload_len) as u16);
+            .set_data_field_len((SrsppHeader::SIZE + payload_len) as u16);
 
         // Set SRSP header
-        packet.srsp_header.packet_type = SrspType::Data as u8;
+        packet.srspp_header.source_address = RawAddress::from(source_address);
+        packet.srspp_header.packet_type = SrsppType::Data as u8;
 
         Ok(packet)
     }
 }
 
 #[bon]
-impl SrspAckPacket {
+impl SrsppAckPacket {
     /// Build an ACK packet in the provided buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],
+        source_address: Address,
         apid: Apid,
         sequence_count: SequenceCount,
         cumulative_ack: SequenceCount,
         selective_bitmap: u16,
-    ) -> Result<&'a mut SrspAckPacket, SrspPacketError> {
+    ) -> Result<&'a mut SrsppAckPacket, SrsppPacketError> {
         let provided_len = buffer.len();
-        let (packet, _) = SrspAckPacket::mut_from_prefix(buffer).map_err(|_| {
-            SrspPacketError::BufferTooSmall {
-                required: SrspAckPacket::SIZE,
+        let (packet, _) = SrsppAckPacket::mut_from_prefix(buffer).map_err(|_| {
+            SrsppPacketError::BufferTooSmall {
+                required: SrsppAckPacket::SIZE,
                 provided: provided_len,
             }
         })?;
@@ -235,10 +248,11 @@ impl SrspAckPacket {
         packet.primary.set_sequence_flag(SequenceFlag::Unsegmented);
         packet
             .primary
-            .set_data_field_len((SrspHeader::SIZE + AckPayload::SIZE) as u16);
+            .set_data_field_len((SrsppHeader::SIZE + AckPayload::SIZE) as u16);
 
         // Set SRSP header
-        packet.srsp_header.packet_type = SrspType::Ack as u8;
+        packet.srspp_header.source_address = RawAddress::from(source_address);
+        packet.srspp_header.packet_type = SrsppType::Ack as u8;
 
         // Set ACK payload
         packet.ack_payload = AckPayload::new(cumulative_ack.value(), selective_bitmap);
@@ -248,50 +262,56 @@ impl SrspAckPacket {
 }
 
 /// Parse an SRSP packet type from a byte slice.
-pub fn parse_srsp_type(bytes: &[u8]) -> Result<SrspType, SrspPacketError> {
-    if bytes.len() < size_of::<PrimaryHeader>() + SrspHeader::SIZE {
-        return Err(SrspPacketError::BufferTooSmall {
-            required: size_of::<PrimaryHeader>() + SrspHeader::SIZE,
+pub fn parse_srspp_type(bytes: &[u8]) -> Result<SrsppType, SrsppPacketError> {
+    if bytes.len() < size_of::<PrimaryHeader>() + SrsppHeader::SIZE {
+        return Err(SrsppPacketError::BufferTooSmall {
+            required: size_of::<PrimaryHeader>() + SrsppHeader::SIZE,
             provided: bytes.len(),
         });
     }
 
-    let srsp_type_byte = bytes[size_of::<PrimaryHeader>()];
-    SrspType::from_u8(srsp_type_byte).ok_or(SrspPacketError::InvalidPacketType)
+    let type_offset = size_of::<PrimaryHeader>() + size_of::<RawAddress>();
+    let srspp_type_byte = bytes[type_offset];
+    SrsppType::from_u8(srspp_type_byte).ok_or(SrsppPacketError::InvalidPacketType)
 }
 
 /// Parse an SRSP DATA packet from a byte slice.
-pub fn parse_data_packet(bytes: &[u8]) -> Result<&SrspDataPacket, SrspPacketError> {
-    SrspDataPacket::ref_from_bytes(bytes).map_err(|_| SrspPacketError::BufferTooSmall {
-        required: SrspDataPacket::HEADER_SIZE,
+pub fn parse_data_packet(bytes: &[u8]) -> Result<&SrsppDataPacket, SrsppPacketError> {
+    SrsppDataPacket::ref_from_bytes(bytes).map_err(|_| SrsppPacketError::BufferTooSmall {
+        required: SrsppDataPacket::HEADER_SIZE,
         provided: bytes.len(),
     })
 }
 
 /// Parse an SRSP ACK packet from a byte slice.
-pub fn parse_ack_packet(bytes: &[u8]) -> Result<&SrspAckPacket, SrspPacketError> {
-    if bytes.len() < SrspAckPacket::SIZE {
-        return Err(SrspPacketError::BufferTooSmall {
-            required: SrspAckPacket::SIZE,
+pub fn parse_ack_packet(bytes: &[u8]) -> Result<&SrsppAckPacket, SrsppPacketError> {
+    if bytes.len() < SrsppAckPacket::SIZE {
+        return Err(SrsppPacketError::BufferTooSmall {
+            required: SrsppAckPacket::SIZE,
             provided: bytes.len(),
         });
     }
 
-    SrspAckPacket::ref_from_bytes(&bytes[..SrspAckPacket::SIZE])
-        .map_err(|_| SrspPacketError::InvalidPacketType)
+    SrsppAckPacket::ref_from_bytes(&bytes[..SrsppAckPacket::SIZE])
+        .map_err(|_| SrsppPacketError::InvalidPacketType)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn test_address() -> Address {
+        Address::satellite(1, 5)
+    }
+
     #[test]
     fn test_build_data_packet() {
         let mut buffer = [0u8; 128];
         let apid = Apid::new(0x42).unwrap();
 
-        let packet = SrspDataPacket::builder()
+        let packet = SrsppDataPacket::builder()
             .buffer(&mut buffer)
+            .source_address(test_address())
             .apid(apid)
             .sequence_count(SequenceCount::from(5))
             .sequence_flag(SequenceFlag::Unsegmented)
@@ -301,7 +321,8 @@ mod tests {
 
         assert_eq!(packet.primary.apid(), apid);
         assert_eq!(packet.primary.sequence_count().value(), 5);
-        assert_eq!(packet.srsp_header.packet_type, SrspType::Data as u8);
+        assert_eq!(packet.srspp_header.packet_type, SrsppType::Data as u8);
+        assert_eq!(packet.srspp_header.source_address(), test_address());
         assert_eq!(packet.payload.len(), 10);
     }
 
@@ -310,8 +331,9 @@ mod tests {
         let mut buffer = [0u8; 128];
         let apid = Apid::new(0x42).unwrap();
 
-        let packet = SrspAckPacket::builder()
+        let packet = SrsppAckPacket::builder()
             .buffer(&mut buffer)
+            .source_address(test_address())
             .apid(apid)
             .sequence_count(SequenceCount::from(1))
             .cumulative_ack(SequenceCount::from(10))
@@ -320,19 +342,21 @@ mod tests {
             .unwrap();
 
         assert_eq!(packet.primary.apid(), apid);
-        assert_eq!(packet.srsp_header.packet_type, SrspType::Ack as u8);
+        assert_eq!(packet.srspp_header.packet_type, SrsppType::Ack as u8);
+        assert_eq!(packet.srspp_header.source_address(), test_address());
         assert_eq!(packet.ack_payload.cumulative_ack().value(), 10);
         assert_eq!(packet.ack_payload.selective_ack_bitmap(), 0b1010);
     }
 
     #[test]
-    fn test_parse_srsp_type() {
+    fn test_parse_srspp_type() {
         let mut buffer = [0u8; 128];
         let apid = Apid::new(0x42).unwrap();
 
         // Build a DATA packet
-        SrspDataPacket::builder()
+        SrsppDataPacket::builder()
             .buffer(&mut buffer)
+            .source_address(test_address())
             .apid(apid)
             .sequence_count(SequenceCount::from(0))
             .sequence_flag(SequenceFlag::Unsegmented)
@@ -340,11 +364,12 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(parse_srsp_type(&buffer).unwrap(), SrspType::Data);
+        assert_eq!(parse_srspp_type(&buffer).unwrap(), SrsppType::Data);
 
         // Build an ACK packet
-        SrspAckPacket::builder()
+        SrsppAckPacket::builder()
             .buffer(&mut buffer)
+            .source_address(test_address())
             .apid(apid)
             .sequence_count(SequenceCount::from(0))
             .cumulative_ack(SequenceCount::from(0))
@@ -352,6 +377,6 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(parse_srsp_type(&buffer).unwrap(), SrspType::Ack);
+        assert_eq!(parse_srspp_type(&buffer).unwrap(), SrsppType::Ack);
     }
 }

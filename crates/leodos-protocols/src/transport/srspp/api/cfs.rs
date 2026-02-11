@@ -8,8 +8,7 @@ use leodos_libcfs::runtime::select_either::Either;
 use leodos_libcfs::runtime::select_either::select_either;
 use leodos_libcfs::runtime::time::sleep;
 
-use crate::datalink::DataLink;
-use crate::network::spp::Apid;
+use crate::network::NetworkLayer;
 use crate::network::spp::SequenceCount;
 use crate::transport::srspp::machine::receiver::ReceiverAction;
 use crate::transport::srspp::machine::receiver::ReceiverActions;
@@ -24,11 +23,11 @@ use crate::transport::srspp::machine::sender::SenderError;
 use crate::transport::srspp::machine::sender::SenderEvent;
 use crate::transport::srspp::machine::sender::SenderMachine;
 use crate::transport::srspp::packet;
-use crate::transport::srspp::packet::SrspAckPacket;
-use crate::transport::srspp::packet::SrspType;
+use crate::transport::srspp::packet::SrsppAckPacket;
+use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::packet::parse_ack_packet;
 use crate::transport::srspp::packet::parse_data_packet;
-use crate::transport::srspp::packet::parse_srsp_type;
+use crate::transport::srspp::packet::parse_srspp_type;
 
 // ============================================================================
 // Error type
@@ -39,7 +38,7 @@ pub enum Error<E> {
     Sender(SenderError),
     Receiver(ReceiverError),
     Link(E),
-    Packet(packet::SrspPacketError),
+    Packet(packet::SrsppPacketError),
 }
 
 impl<E> From<SenderError> for Error<E> {
@@ -54,8 +53,8 @@ impl<E> From<ReceiverError> for Error<E> {
     }
 }
 
-impl<E> From<packet::SrspPacketError> for Error<E> {
-    fn from(e: packet::SrspPacketError) -> Self {
+impl<E> From<packet::SrsppPacketError> for Error<E> {
+    fn from(e: packet::SrsppPacketError) -> Self {
         Error::Packet(e)
     }
 }
@@ -126,12 +125,12 @@ struct SenderState<E, const WIN: usize, const BUF: usize, const MTU: usize> {
 }
 
 /// Channel that owns the sender state. Split into handle + driver.
-pub struct SrspSenderChannel<E, const WIN: usize, const BUF: usize, const MTU: usize> {
+pub struct SrsppSender<E, const WIN: usize = 8, const BUF: usize = 4096, const MTU: usize = 512> {
     state: RefCell<SenderState<E, WIN, BUF, MTU>>,
 }
 
 impl<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
-    SrspSenderChannel<E, WIN, BUF, MTU>
+    SrsppSender<E, WIN, BUF, MTU>
 {
     pub fn new(config: SenderConfig) -> Self {
         let rto = Duration::from_millis(config.rto_ticks);
@@ -147,16 +146,16 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
         }
     }
 
-    pub fn split<L: DataLink<Error = E>>(
+    pub fn split<L: NetworkLayer<Error = E>>(
         &self,
         link: L,
     ) -> (
-        SrspSenderHandle<'_, E, WIN, BUF, MTU>,
-        SrspSenderDriver<'_, L, WIN, BUF, MTU>,
+        SrsppSenderHandle<'_, E, WIN, BUF, MTU>,
+        SrsppSenderDriver<'_, L, WIN, BUF, MTU>,
     ) {
         (
-            SrspSenderHandle { channel: self },
-            SrspSenderDriver {
+            SrsppSenderHandle { channel: self },
+            SrsppSenderDriver {
                 link,
                 channel: self,
                 recv_buffer: [0u8; MTU],
@@ -166,12 +165,12 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
 }
 
 /// Handle for sending data. Used by the application.
-pub struct SrspSenderHandle<'a, E, const WIN: usize, const BUF: usize, const MTU: usize> {
-    channel: &'a SrspSenderChannel<E, WIN, BUF, MTU>,
+pub struct SrsppSenderHandle<'a, E, const WIN: usize, const BUF: usize, const MTU: usize> {
+    channel: &'a SrsppSender<E, WIN, BUF, MTU>,
 }
 
 impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
-    SrspSenderHandle<'a, E, WIN, BUF, MTU>
+    SrsppSenderHandle<'a, E, WIN, BUF, MTU>
 {
     /// Send data, waiting for buffer space if needed.
     pub async fn send(&mut self, data: &[u8]) -> Result<(), Error<E>> {
@@ -228,14 +227,14 @@ impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
 }
 
 /// Driver that handles I/O. Runs as a concurrent task.
-pub struct SrspSenderDriver<'a, L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize> {
+pub struct SrsppSenderDriver<'a, L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize> {
     link: L,
-    channel: &'a SrspSenderChannel<L::Error, WIN, BUF, MTU>,
+    channel: &'a SrsppSender<L::Error, WIN, BUF, MTU>,
     recv_buffer: [u8; MTU],
 }
 
-impl<'a, L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize>
-    SrspSenderDriver<'a, L, WIN, BUF, MTU>
+impl<'a, L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize>
+    SrsppSenderDriver<'a, L, WIN, BUF, MTU>
 where
     L::Error: Clone,
 {
@@ -356,7 +355,7 @@ where
     fn handle_ack(&mut self, len: usize) -> Result<(), Error<L::Error>> {
         let packet = &self.recv_buffer[..len];
 
-        if let Ok(SrspType::Ack) = parse_srsp_type(packet) {
+        if let Ok(SrsppType::Ack) = parse_srspp_type(packet) {
             if let Ok(ack) = parse_ack_packet(packet) {
                 let SenderState {
                     machine,
@@ -418,50 +417,82 @@ where
 // Receiver
 // ============================================================================
 
-struct ReceiverState<E, const WIN: usize, const BUF: usize, const REASM: usize> {
+use crate::network::isl::address::Address;
+use heapless::index_map::FnvIndexMap;
+
+/// A received message with its source address.
+#[derive(Debug, Clone)]
+pub struct ReceivedMessage<const REASM: usize> {
+    pub source: Address,
+    pub data: heapless::Vec<u8, REASM>,
+}
+
+struct StreamState<const WIN: usize, const BUF: usize, const REASM: usize> {
     machine: ReceiverMachine<WIN, BUF, REASM>,
-    actions: ReceiverActions,
     ack_deadline: Option<SysTime>,
+}
+
+struct MultiReceiverState<
+    E,
+    const WIN: usize,
+    const BUF: usize,
+    const REASM: usize,
+    const MAX_STREAMS: usize,
+> {
+    config: ReceiverConfig,
+    streams: FnvIndexMap<Address, StreamState<WIN, BUF, REASM>, MAX_STREAMS>,
+    actions: ReceiverActions,
     ack_delay: Duration,
-    apid: Apid,
     closed: bool,
     error: Option<Error<E>>,
 }
 
 /// Channel that owns the receiver state. Split into handle + driver.
-pub struct SrspReceiverChannel<E, const WIN: usize, const BUF: usize, const REASM: usize> {
-    state: RefCell<ReceiverState<E, WIN, BUF, REASM>>,
+///
+/// Supports receiving from multiple senders simultaneously. Each sender is
+/// identified by its source address and has independent stream state.
+pub struct SrsppReceiver<
+    E,
+    const WIN: usize = 8,
+    const BUF: usize = 4096,
+    const REASM: usize = 8192,
+    const MAX_STREAMS: usize = 4,
+> {
+    state: RefCell<MultiReceiverState<E, WIN, BUF, REASM, MAX_STREAMS>>,
 }
 
-impl<E: Clone, const WIN: usize, const BUF: usize, const REASM: usize>
-    SrspReceiverChannel<E, WIN, BUF, REASM>
+impl<
+        E: Clone,
+        const WIN: usize,
+        const BUF: usize,
+        const REASM: usize,
+        const MAX_STREAMS: usize,
+    > SrsppReceiver<E, WIN, BUF, REASM, MAX_STREAMS>
 {
     pub fn new(config: ReceiverConfig) -> Self {
-        let apid = config.apid;
         let ack_delay = Duration::from_millis(config.ack_delay_ticks);
         Self {
-            state: RefCell::new(ReceiverState {
-                machine: ReceiverMachine::new(config),
+            state: RefCell::new(MultiReceiverState {
+                config,
+                streams: FnvIndexMap::new(),
                 actions: ReceiverActions::new(),
-                ack_deadline: None,
                 ack_delay,
-                apid,
                 closed: false,
                 error: None,
             }),
         }
     }
 
-    pub fn split<L: DataLink<Error = E>, const MTU: usize>(
+    pub fn split<L: NetworkLayer<Error = E>, const MTU: usize>(
         &self,
         link: L,
     ) -> (
-        SrspReceiverHandle<'_, E, WIN, BUF, REASM>,
-        SrspReceiverDriver<'_, L, WIN, BUF, MTU, REASM>,
+        SrsppReceiverHandle<'_, E, WIN, BUF, REASM, MAX_STREAMS>,
+        SrsppReceiverDriver<'_, L, WIN, BUF, MTU, REASM, MAX_STREAMS>,
     ) {
         (
-            SrspReceiverHandle { channel: self },
-            SrspReceiverDriver {
+            SrsppReceiverHandle { channel: self },
+            SrsppReceiverDriver {
                 link,
                 channel: self,
                 recv_buffer: [0u8; MTU],
@@ -472,29 +503,45 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const REASM: usize>
 }
 
 /// Handle for receiving data. Used by the application.
-pub struct SrspReceiverHandle<'a, E, const WIN: usize, const BUF: usize, const REASM: usize> {
-    channel: &'a SrspReceiverChannel<E, WIN, BUF, REASM>,
+pub struct SrsppReceiverHandle<
+    'a,
+    E,
+    const WIN: usize,
+    const BUF: usize,
+    const REASM: usize,
+    const MAX_STREAMS: usize,
+> {
+    channel: &'a SrsppReceiver<E, WIN, BUF, REASM, MAX_STREAMS>,
 }
 
-impl<'a, E: Clone, const WIN: usize, const BUF: usize, const REASM: usize>
-    SrspReceiverHandle<'a, E, WIN, BUF, REASM>
+impl<
+        'a,
+        E: Clone,
+        const WIN: usize,
+        const BUF: usize,
+        const REASM: usize,
+        const MAX_STREAMS: usize,
+    > SrsppReceiverHandle<'a, E, WIN, BUF, REASM, MAX_STREAMS>
 {
-    /// Receive next message, waiting if none available.
-    pub async fn recv(&mut self) -> Result<heapless::Vec<u8, REASM>, Error<E>> {
+    /// Receive next message from any sender, waiting if none available.
+    pub async fn recv(&mut self) -> Result<ReceivedMessage<REASM>, Error<E>> {
         poll_fn(|_cx| {
             let mut state = self.channel.state.borrow_mut();
 
-            // Check for driver error
             if let Some(ref e) = state.error {
                 return Poll::Ready(Err(e.clone()));
             }
 
-            // Check for message
-            if let Some(msg) = state.machine.take_message() {
-                Poll::Ready(Ok(msg.iter().copied().collect()))
-            } else {
-                Poll::Pending
+            for (source, stream) in state.streams.iter_mut() {
+                if let Some(msg) = stream.machine.take_message() {
+                    return Poll::Ready(Ok(ReceivedMessage {
+                        source: *source,
+                        data: msg.iter().copied().collect(),
+                    }));
+                }
             }
+
+            Poll::Pending
         })
         .await
     }
@@ -505,44 +552,55 @@ impl<'a, E: Clone, const WIN: usize, const BUF: usize, const REASM: usize>
         self.channel.state.borrow_mut().closed = true;
     }
 
-    /// Check if there's a message ready.
+    /// Check if there's a message ready from any sender.
     pub fn has_message(&self) -> bool {
-        self.channel.state.borrow().machine.has_message()
+        let state = self.channel.state.borrow();
+        state.streams.values().any(|s| s.machine.has_message())
+    }
+
+    /// Get the number of active streams.
+    pub fn stream_count(&self) -> usize {
+        self.channel.state.borrow().streams.len()
     }
 }
 
 /// Driver that handles I/O. Runs as a concurrent task.
-pub struct SrspReceiverDriver<
+pub struct SrsppReceiverDriver<
     'a,
-    L: DataLink,
+    L: NetworkLayer,
     const WIN: usize,
     const BUF: usize,
     const MTU: usize,
     const REASM: usize,
+    const MAX_STREAMS: usize,
 > {
     link: L,
-    channel: &'a SrspReceiverChannel<L::Error, WIN, BUF, REASM>,
+    channel: &'a SrsppReceiver<L::Error, WIN, BUF, REASM, MAX_STREAMS>,
     recv_buffer: [u8; MTU],
     ack_buffer: [u8; 16],
 }
 
-impl<'a, L: DataLink, const WIN: usize, const BUF: usize, const MTU: usize, const REASM: usize>
-    SrspReceiverDriver<'a, L, WIN, BUF, MTU, REASM>
+impl<
+        'a,
+        L: NetworkLayer,
+        const WIN: usize,
+        const BUF: usize,
+        const MTU: usize,
+        const REASM: usize,
+        const MAX_STREAMS: usize,
+    > SrsppReceiverDriver<'a, L, WIN, BUF, MTU, REASM, MAX_STREAMS>
 where
     L::Error: Clone,
 {
     /// Run the driver loop.
     pub async fn run(&mut self) -> Result<(), Error<L::Error>> {
         loop {
-            // Check if closed
             if self.channel.state.borrow().closed {
                 return Ok(());
             }
 
-            // Calculate timeout
-            let timeout = self.duration_until_ack_timeout();
+            let timeout = self.duration_until_next_ack_timeout();
 
-            // Wait for data or ACK timeout
             match select_either(self.link.recv(&mut self.recv_buffer), sleep(timeout)).await {
                 Either::Left(result) => match result {
                     Ok(len) => {
@@ -558,7 +616,7 @@ where
                     }
                 },
                 Either::Right(()) => {
-                    if let Err(e) = self.handle_ack_timeout().await {
+                    if let Err(e) = self.handle_ack_timeouts().await {
                         self.channel.state.borrow_mut().error = Some(e.clone());
                         return Err(e);
                     }
@@ -567,12 +625,14 @@ where
         }
     }
 
-    fn duration_until_ack_timeout(&self) -> Duration {
+    fn duration_until_next_ack_timeout(&self) -> Duration {
         let now = SysTime::now();
-        self.channel
-            .state
-            .borrow()
-            .ack_deadline
+        let state = self.channel.state.borrow();
+        state
+            .streams
+            .values()
+            .filter_map(|s| s.ack_deadline)
+            .min()
             .map(|deadline| {
                 if deadline > now {
                     Duration::from(deadline - now)
@@ -586,77 +646,125 @@ where
     async fn handle_data(&mut self, len: usize) -> Result<(), Error<L::Error>> {
         let packet = &self.recv_buffer[..len];
 
-        if let Ok(SrspType::Data) = parse_srsp_type(packet) {
+        if let Ok(SrsppType::Data) = parse_srspp_type(packet) {
             if let Ok(data) = parse_data_packet(packet) {
+                let source_address = data.srspp_header.source_address();
+                let seq = data.primary.sequence_count();
+                let flags = data.primary.sequence_flag();
+                let payload: heapless::Vec<u8, MTU> = data.payload.iter().copied().collect();
+
                 {
                     let mut state = self.channel.state.borrow_mut();
-                    let ReceiverState {
-                        machine, actions, ..
-                    } = &mut *state;
-                    machine.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: data.primary.sequence_count(),
-                            flags: data.primary.sequence_flag(),
-                            payload: &data.payload,
-                        },
+                    let MultiReceiverState {
+                        config,
+                        streams,
                         actions,
-                    )?;
+                        ..
+                    } = &mut *state;
+
+                    if !streams.contains_key(&source_address) {
+                        let stream_state = StreamState {
+                            machine: ReceiverMachine::new(config.clone(), source_address),
+                            ack_deadline: None,
+                        };
+                        let _ = streams.insert(source_address, stream_state);
+                    }
+
+                    if let Some(stream) = streams.get_mut(&source_address) {
+                        stream.machine.handle(
+                            ReceiverEvent::DataReceived {
+                                seq,
+                                flags,
+                                payload: &payload,
+                            },
+                            actions,
+                        )?;
+                    }
                 }
 
-                self.process_actions().await?;
+                self.process_actions_for_stream(source_address).await?;
             }
         }
 
         Ok(())
     }
 
-    async fn handle_ack_timeout(&mut self) -> Result<(), Error<L::Error>> {
-        let should_handle = {
+    async fn handle_ack_timeouts(&mut self) -> Result<(), Error<L::Error>> {
+        let now = SysTime::now();
+
+        let expired: heapless::Vec<Address, MAX_STREAMS> = {
             let state = self.channel.state.borrow();
             state
-                .ack_deadline
-                .map(|d| SysTime::now() >= d)
-                .unwrap_or(false)
+                .streams
+                .iter()
+                .filter_map(|(source, stream)| {
+                    stream
+                        .ack_deadline
+                        .filter(|&d| now >= d)
+                        .map(|_| *source)
+                })
+                .collect()
         };
 
-        if should_handle {
+        for source in expired {
             {
                 let mut state = self.channel.state.borrow_mut();
-                let ReceiverState {
-                    machine,
-                    actions,
-                    ack_deadline,
-                    ..
+                let MultiReceiverState {
+                    streams, actions, ..
                 } = &mut *state;
-                *ack_deadline = None;
-                machine.handle(ReceiverEvent::AckTimeout, actions)?;
+                if let Some(stream) = streams.get_mut(&source) {
+                    stream.ack_deadline = None;
+                    stream.machine.handle(ReceiverEvent::AckTimeout, actions)?;
+                }
             }
-
-            self.process_actions().await?;
+            self.process_actions_for_stream(source).await?;
         }
 
         Ok(())
     }
 
-    async fn process_actions(&mut self) -> Result<(), Error<L::Error>> {
-        // Collect ACK to send
-        let ack_to_send: Option<(SequenceCount, u16)> = {
+    async fn process_actions_for_stream(
+        &mut self,
+        source: Address,
+    ) -> Result<(), Error<L::Error>> {
+        let (ack_to_send, timer_actions, ack_delay) = {
             let state = self.channel.state.borrow();
-            state.actions.iter().find_map(|a| match a {
+            let ack = state.actions.iter().find_map(|a| match a {
                 ReceiverAction::SendAck {
+                    destination,
                     cumulative_ack,
                     selective_bitmap,
-                } => Some((*cumulative_ack, *selective_bitmap)),
+                } => Some((
+                    state.config.local_address,
+                    state.config.apid,
+                    *destination,
+                    *cumulative_ack,
+                    *selective_bitmap,
+                )),
                 _ => None,
-            })
+            });
+
+            let timer: heapless::Vec<ReceiverAction, 4> = state
+                .actions
+                .iter()
+                .filter(|a| {
+                    matches!(
+                        a,
+                        ReceiverAction::StartAckTimer { .. } | ReceiverAction::StopAckTimer
+                    )
+                })
+                .copied()
+                .collect();
+
+            (ack, timer, state.ack_delay)
         };
 
-        // Send ACK if needed
-        if let Some((cumulative_ack, selective_bitmap)) = ack_to_send {
-            let apid = self.channel.state.borrow().apid;
-
-            let ack = SrspAckPacket::builder()
+        if let Some((local_address, apid, _destination, cumulative_ack, selective_bitmap)) =
+            ack_to_send
+        {
+            let ack = SrsppAckPacket::builder()
                 .buffer(&mut self.ack_buffer)
+                .source_address(local_address)
                 .apid(apid)
                 .cumulative_ack(cumulative_ack)
                 .selective_bitmap(selective_bitmap)
@@ -669,22 +777,20 @@ where
                 .map_err(Error::Link)?;
         }
 
-        // Process timer actions
         {
             let mut state = self.channel.state.borrow_mut();
-            let ReceiverState {
-                actions,
-                ack_deadline,
-                ack_delay,
-                ..
-            } = &mut *state;
-            for action in actions.iter() {
+            for action in timer_actions {
                 match action {
-                    ReceiverAction::StartAckTimer { ticks: _ } => {
-                        *ack_deadline = Some(SysTime::now() + SysTime::from(*ack_delay));
+                    ReceiverAction::StartAckTimer { .. } => {
+                        if let Some(entry) = state.streams.get_mut(&source) {
+                            entry.ack_deadline =
+                                Some(SysTime::now() + SysTime::from(ack_delay));
+                        }
                     }
                     ReceiverAction::StopAckTimer => {
-                        *ack_deadline = None;
+                        if let Some(entry) = state.streams.get_mut(&source) {
+                            entry.ack_deadline = None;
+                        }
                     }
                     _ => {}
                 }

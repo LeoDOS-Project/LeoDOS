@@ -3,6 +3,7 @@
 use core::future::Future;
 
 pub mod cop1;
+pub mod link;
 pub mod sdlp;
 pub mod sdls;
 pub mod uslp;

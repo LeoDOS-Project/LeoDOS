@@ -1,0 +1,171 @@
+use core::cell::RefCell;
+use core::future::poll_fn;
+use core::task::Poll;
+
+use heapless::Deque;
+
+use crate::datalink::DataLink;
+use crate::network::NetworkLayer;
+
+#[derive(Debug, Clone)]
+pub enum LocalLinkError {
+    QueueFull,
+    Closed,
+}
+
+impl core::fmt::Display for LocalLinkError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::QueueFull => write!(f, "queue full"),
+            Self::Closed => write!(f, "channel closed"),
+        }
+    }
+}
+
+impl core::error::Error for LocalLinkError {}
+
+struct Packet<const MTU: usize> {
+    data: [u8; MTU],
+    len: usize,
+}
+
+struct LocalChannelState<const QUEUE: usize, const MTU: usize> {
+    to_router: Deque<Packet<MTU>, QUEUE>,
+    from_router: Deque<Packet<MTU>, QUEUE>,
+    closed: bool,
+}
+
+pub struct LocalChannel<const QUEUE: usize, const MTU: usize> {
+    state: RefCell<LocalChannelState<QUEUE, MTU>>,
+}
+
+impl<const QUEUE: usize, const MTU: usize> LocalChannel<QUEUE, MTU> {
+    pub fn new() -> Self {
+        Self {
+            state: RefCell::new(LocalChannelState {
+                to_router: Deque::new(),
+                from_router: Deque::new(),
+                closed: false,
+            }),
+        }
+    }
+
+    pub fn split(&self) -> (LocalAppHandle<'_, QUEUE, MTU>, LocalRouterHandle<'_, QUEUE, MTU>) {
+        (
+            LocalAppHandle { channel: self },
+            LocalRouterHandle { channel: self },
+        )
+    }
+
+    pub fn close(&self) {
+        self.state.borrow_mut().closed = true;
+    }
+}
+
+impl<const QUEUE: usize, const MTU: usize> Default for LocalChannel<QUEUE, MTU> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct LocalAppHandle<'a, const QUEUE: usize, const MTU: usize> {
+    channel: &'a LocalChannel<QUEUE, MTU>,
+}
+
+impl<'a, const QUEUE: usize, const MTU: usize> NetworkLayer for LocalAppHandle<'a, QUEUE, MTU> {
+    type Error = LocalLinkError;
+
+    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+        poll_fn(|_cx| {
+            let mut state = self.channel.state.borrow_mut();
+
+            if state.closed {
+                return Poll::Ready(Err(LocalLinkError::Closed));
+            }
+
+            if state.to_router.is_full() {
+                return Poll::Pending;
+            }
+
+            let mut packet = Packet {
+                data: [0u8; MTU],
+                len: data.len().min(MTU),
+            };
+            packet.data[..packet.len].copy_from_slice(&data[..packet.len]);
+            state.to_router.push_back(packet).ok();
+
+            Poll::Ready(Ok(()))
+        })
+        .await
+    }
+
+    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+        poll_fn(|_cx| {
+            let mut state = self.channel.state.borrow_mut();
+
+            if let Some(packet) = state.from_router.pop_front() {
+                let len = packet.len.min(buffer.len());
+                buffer[..len].copy_from_slice(&packet.data[..len]);
+                return Poll::Ready(Ok(len));
+            }
+
+            if state.closed {
+                return Poll::Ready(Err(LocalLinkError::Closed));
+            }
+
+            Poll::Pending
+        })
+        .await
+    }
+}
+
+pub struct LocalRouterHandle<'a, const QUEUE: usize, const MTU: usize> {
+    channel: &'a LocalChannel<QUEUE, MTU>,
+}
+
+impl<'a, const QUEUE: usize, const MTU: usize> DataLink for LocalRouterHandle<'a, QUEUE, MTU> {
+    type Error = LocalLinkError;
+
+    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+        poll_fn(|_cx| {
+            let mut state = self.channel.state.borrow_mut();
+
+            if state.closed {
+                return Poll::Ready(Err(LocalLinkError::Closed));
+            }
+
+            if state.from_router.is_full() {
+                return Poll::Pending;
+            }
+
+            let mut packet = Packet {
+                data: [0u8; MTU],
+                len: data.len().min(MTU),
+            };
+            packet.data[..packet.len].copy_from_slice(&data[..packet.len]);
+            state.from_router.push_back(packet).ok();
+
+            Poll::Ready(Ok(()))
+        })
+        .await
+    }
+
+    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+        poll_fn(|_cx| {
+            let mut state = self.channel.state.borrow_mut();
+
+            if let Some(packet) = state.to_router.pop_front() {
+                let len = packet.len.min(buffer.len());
+                buffer[..len].copy_from_slice(&packet.data[..len]);
+                return Poll::Ready(Ok(len));
+            }
+
+            if state.closed {
+                return Poll::Ready(Err(LocalLinkError::Closed));
+            }
+
+            Poll::Pending
+        })
+        .await
+    }
+}

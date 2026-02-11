@@ -1,0 +1,19 @@
+[package]
+name = "leodos-srspp-echo"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+leodos-libcfs = { path = "../leodos-libcfs" }
+leodos-protocols = { path = "../leodos-protocols", features = ["cfs"] }
+
+[profile.release]
+lto = true
+panic = "abort"
+opt-level = "z"
+
+[profile.dev]
+panic = "abort"
