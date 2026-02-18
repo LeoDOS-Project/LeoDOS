@@ -1,4 +1,6 @@
 #import "@preview/polylux:0.4.0": *
+#import "@preview/chronos:0.2.1"
+#import "@preview/fletcher:0.5.8" as fletcher: diagram as fdiagram, node, edge
 
 #set page(paper: "presentation-16-9")
 #set text(font: "Helvetica Neue", size: 20pt)
@@ -608,7 +610,7 @@
           ),
           text(weight: "bold")[SPP Header], [6 B], [Primary header],
           text(weight: "bold")[SRSPP Header], [3 B], [],
-          [#h(6pt) Source Addr], [2 B], [Sender node ID],
+          [#h(6pt) Source Addr], [2 B], [ISL address of sender],
           [#h(6pt) Type], [1 B], [0x00 = DATA],
           text(weight: "bold")[Payload], [≤64 KB], [Application data],
         )
@@ -628,7 +630,7 @@
           ),
           text(weight: "bold")[SPP Header], [6 B], [Primary header],
           text(weight: "bold")[SRSPP Header], [3 B], [],
-          [#h(6pt) Source Addr], [2 B], [Sender node ID],
+          [#h(6pt) Source Addr], [2 B], [ISL address of sender],
           [#h(6pt) Type], [1 B], [0x01 = ACK],
           text(weight: "bold")[Cumul. ACK], [2 B], [Highest in-order seq],
           text(weight: "bold")[Select. Bitmap], [2 B], [Out-of-order bitmap],
@@ -641,6 +643,297 @@
   #text(size: 13pt)[
     The selective ACK bitmap reports exactly which packets arrived, so only missing ones
     are retransmitted. SRSPP reuses SPP's sequence count — no extra sequence field needed.
+  ]
+]
+
+// ============================================================
+// SRSPP Addressing
+// ============================================================
+
+#slide[
+  #text(size: 28pt, weight: "bold")[SRSPP Addressing]
+  #v(2pt)
+  #text(size: 13pt, fill: dim)[ISL address scheme — SPP has no source address, so SRSPP adds one]
+  #v(8pt)
+
+  #text(size: 14pt)[
+    SPP only carries an APID (destination app), not a source address. SRSPP adds a *2-byte source address* so the receiver can identify the sender and maintain per-sender state.
+  ]
+
+  #v(8pt)
+  #text(size: 13pt)[
+    #table(
+      columns: (1.2fr, 0.6fr, 0.6fr, 2fr),
+      stroke: none,
+      inset: 5pt,
+      fill: (_, y) => if y == 0 { luma(200) } else if calc.rem(y, 2) == 1 { luma(240) } else { white },
+      table.header(
+        text(weight: "bold")[Address Type],
+        text(weight: "bold")[Byte 0],
+        text(weight: "bold")[Byte 1],
+        text(weight: "bold")[Description],
+      ),
+      [Ground Station], [`0x00`], [station_id], [Ground station (e.g. 0x00 0x03 = station 3)],
+      [Satellite], [orbit + 1], [sat_id], [Satellite node (e.g. 0x01 0x05 = orbit 0, sat 5)],
+      [Service Area], [orbit + 1], [`0x00`], [Broadcast to all satellites in an orbit],
+    )
+  ]
+
+  #v(8pt)
+  #text(size: 14pt)[
+    #grid(
+      columns: (1fr, 1fr),
+      gutter: 20pt,
+      [
+        *Why add a source address?*
+        - SPP only carries an APID (destination app) — no way to identify who sent the packet
+        - Reliable delivery requires per-sender state (sequence numbers, reorder bitmaps)
+      ],
+      [
+        *Why per-sender state?*
+        - The receiver tracks a separate sequence counter and reorder bitmap for each source address
+        - This allows multiple senders to transmit concurrently to the same receiver
+      ],
+    )
+  ]
+]
+
+// ============================================================
+// SRSPP Connection Model
+// ============================================================
+
+#slide[
+  #text(size: 28pt, weight: "bold")[SRSPP Connection Model]
+  #v(2pt)
+  #text(size: 13pt, fill: dim)[Design choice — one connection per satellite pair]
+  #v(6pt)
+
+  #text(size: 12pt)[
+    #table(
+      columns: (0.4fr, 2fr, 1.2fr),
+      stroke: none,
+      inset: 5pt,
+      fill: (_, y) => if y == 0 { luma(200) } else if y == 3 { luma(210) } else {
+        if calc.rem(y, 2) == 1 { luma(240) } else { white }
+      },
+      table.header(
+        text(weight: "bold")[],
+        text(weight: "bold")[Model],
+        text(weight: "bold")[Demux Key],
+      ),
+      [A], [Multiple connections between the same two apps], [source_addr + APID + conn_id],
+      [B], [One connection per (source app, dest app) pair], [source_addr + APID],
+      text(weight: "bold")[C], text(weight: "bold")[One connection per satellite pair ← SRSPP], text(weight: "bold")[source_addr],
+    )
+  ]
+
+  #v(8pt)
+  #text(size: 14pt)[
+    #grid(
+      columns: (1fr, 1fr),
+      gutter: 20pt,
+      [
+        *Why model C?*
+        - Simplest receiver state — one sequence counter and one reorder bitmap per remote satellite
+        - In LEO ISL, each satellite has 4 links (N/S/E/W) — one connection per neighbor is natural
+        - A dedicated communication app on each satellite handles all SRSPP traffic
+      ],
+      [
+        *Implication:*
+        - No built-in multiplexing — and therefore no handling of head-of-line blocking
+        - Application-level routing (via APID) happens above SRSPP, not inside it
+      ],
+    )
+  ]
+]
+
+// ============================================================
+// SRSPP Architecture
+// ============================================================
+
+#slide[
+  #text(size: 28pt, weight: "bold")[SRSPP Architecture]
+  #v(2pt)
+  #text(size: 13pt, fill: dim)[Split design — pure state machines separated from async I/O]
+  #v(4pt)
+
+  #grid(
+    columns: (1fr, 1.2fr),
+    gutter: 16pt,
+    [
+      #text(size: 11pt)[
+        #fdiagram(
+          node-stroke: 0.5pt,
+          node-corner-radius: 3pt,
+          spacing: (24pt, 14pt),
+          node((0, 0), align(center)[*Application* \ `send(data)` · `recv()`], name: <app>),
+          node((0, 1), [*Handle* (app-facing API)], name: <handle>),
+          node((0, 2), align(center)[
+            *State Machine* (pure) \
+            #v(4pt)
+            #grid(columns: 2, gutter: 16pt,
+              box(stroke: 0.3pt + luma(120), inset: 5pt, radius: 3pt)[Sender],
+              box(stroke: 0.3pt + luma(120), inset: 5pt, radius: 3pt)[Receiver],
+            )
+          ], name: <sm>),
+          node((0, 3), [*Driver* (I/O + timers)], name: <driver>),
+          node((0, 4), [*Network Layer*], name: <net>),
+          edge(<app>, <handle>, "<->"),
+          edge(<handle>, <sm>, "<->", label: text(size: 9pt)[events / actions]),
+          edge(<sm>, <driver>, "<->", label: text(size: 9pt)[actions / events]),
+          edge(<driver>, <net>, "<->"),
+        )
+      ]
+    ],
+    [
+      #text(size: 12pt)[
+        *Design principles:*
+        #v(6pt)
+        - *Pure state machines:* no async, no I/O, no allocator — deterministic and testable
+        #v(4pt)
+        - *Handle/Driver split:* app API and I/O loop run as independent tasks
+        #v(4pt)
+        - *Event/Action model:* machines consume events, emit actions; driver executes them
+        #v(4pt)
+        - *`no_std` compatible:* zero heap, runs on bare-metal flight hardware
+        #v(4pt)
+        - *Compile-time sizing:* window, buffer, and MTU are const generic parameters
+        #v(4pt)
+        - *Two backends:* Tokio (testing) and cFS (flight)
+      ]
+    ],
+  )
+]
+
+// ============================================================
+// SRSPP Reliable Delivery
+// ============================================================
+
+#slide[
+  #text(size: 28pt, weight: "bold")[SRSPP Reliable Delivery]
+  #v(2pt)
+  #text(size: 13pt, fill: dim)[Selective ACK — only missing packets are retransmitted]
+  #v(6pt)
+
+  #grid(
+    columns: (1fr, 1.1fr),
+    gutter: 14pt,
+    [
+      #text(size: 10pt)[
+        #chronos.diagram({
+          import chronos: *
+          _par("S", display-name: "Sender")
+          _par("R", display-name: "Receiver")
+          _seq("S", "R", comment: "DATA(seq=0)")
+          _seq("S", "R", comment: "DATA(seq=1)")
+          _seq("S", "R", comment: "DATA(seq=2)", end-tip: "x", color: red)
+          _seq("S", "R", comment: "DATA(seq=3)")
+          _seq("R", "S", comment: "ACK(cumul=1, bm=0b10)", dashed: true)
+          _seq("S", "R", comment: "DATA(seq=2)", color: orange)
+          _seq("R", "S", comment: "ACK(cumul=3, bm=0)", dashed: true)
+        })
+      ]
+
+      #v(2pt)
+      #text(size: 10pt)[
+        *Timeout:* if no ACK within RTO#fn(1), retransmit. After _n_ failures → PacketLost.
+      ]
+    ],
+    [
+      #text(size: 10pt)[
+        *Selective ACK bitmap (16 bits):*
+        #v(3pt)
+        Receiver tracks out-of-order packets in a bitmap relative to the cumulative ACK:
+        #v(3pt)
+        #table(
+          columns: (0.3fr, 1.5fr),
+          stroke: none,
+          inset: 2pt,
+          fill: (_, y) => if y == 0 { luma(220) } else if calc.rem(y, 2) == 1 { luma(240) } else { white },
+          table.header(text(weight: "bold")[Bit], text(weight: "bold")[Meaning]),
+          [0], [cumul_ack + 1 received],
+          [1], [cumul_ack + 2 received],
+          [...], [...],
+          [15], [cumul_ack + 16 received],
+        )
+        #v(3pt)
+        *Example:* cumul=1, bitmap=`0b10`
+        - Bit 0 = 0 → seq 2 *missing*
+        - Bit 1 = 1 → seq 3 received
+        → Only seq 2 is retransmitted.
+      ]
+    ],
+  )
+
+  #v(1pt)
+  #text(size: 8pt, fill: dim)[#fn(1) Retransmission Timeout]
+]
+
+// ============================================================
+// SRSPP Sender & Receiver
+// ============================================================
+
+#slide[
+  #text(size: 28pt, weight: "bold")[SRSPP Sender & Receiver]
+  #v(2pt)
+  #text(size: 13pt, fill: dim)[Compile-time configured with const generics — zero heap allocation]
+  #v(6pt)
+
+  #text(size: 11pt)[
+    #grid(
+      columns: (1fr, 1fr),
+      gutter: 14pt,
+      [
+        *Sender* — `SenderMachine<WIN, BUF, MTU>`
+        #v(3pt)
+        #table(
+          columns: (1.2fr, 1.5fr),
+          stroke: none,
+          inset: 3pt,
+          fill: (_, y) => if y == 0 { luma(220) } else if calc.rem(y, 2) == 1 { luma(240) } else { white },
+          table.header(text(weight: "bold")[Parameter], text(weight: "bold")[Purpose]),
+          [WIN slots], [In-flight packet tracking],
+          [BUF bytes], [Retransmit data storage],
+          [MTU], [Max packet size on wire],
+        )
+
+        #v(4pt)
+        *Packet slot lifecycle:*
+        #v(2pt)
+        Empty → PendingTx → AwaitingAck
+
+        On ACK: AwaitingAck → Empty \
+        On timeout: AwaitingAck → PendingTx \
+        Max retries: → PacketLost
+
+        #v(4pt)
+        *Segmentation:* messages exceeding MTU are split using SPP sequence flags (First / Continuation / Last).
+      ],
+      [
+        *Receiver* — `ReceiverMachine<WIN, BUF, REASM>`
+        #v(3pt)
+        #table(
+          columns: (1.2fr, 1.5fr),
+          stroke: none,
+          inset: 3pt,
+          fill: (_, y) => if y == 0 { luma(220) } else if calc.rem(y, 2) == 1 { luma(240) } else { white },
+          table.header(text(weight: "bold")[Parameter], text(weight: "bold")[Purpose]),
+          [WIN slots], [Out-of-order packet buffer],
+          [BUF bytes], [Reorder data storage],
+          [REASM bytes], [Message reassembly buffer],
+        )
+
+        #v(4pt)
+        *On packet arrival:*
+        #v(2pt)
+        seq = expected → deliver + advance \
+        seq > expected → buffer + set bitmap bit \
+        seq < expected → duplicate, ignore
+
+        #v(4pt)
+        *Reassembly:* segments are joined using sequence flags. Complete messages are delivered to the application.
+      ],
+    )
   ]
 ]
 

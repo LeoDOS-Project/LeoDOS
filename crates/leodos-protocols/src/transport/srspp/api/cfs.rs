@@ -800,3 +800,37 @@ where
         Ok(())
     }
 }
+
+// ============================================================================
+// TransportSender / TransportReceiver impls
+// ============================================================================
+
+impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
+    crate::transport::TransportSender for SrsppSenderHandle<'a, E, WIN, BUF, MTU>
+{
+    type Error = Error<E>;
+
+    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+        self.send(data).await
+    }
+}
+
+impl<
+        'a,
+        E: Clone,
+        const WIN: usize,
+        const BUF: usize,
+        const REASM: usize,
+        const MAX_STREAMS: usize,
+    > crate::transport::TransportReceiver
+    for SrsppReceiverHandle<'a, E, WIN, BUF, REASM, MAX_STREAMS>
+{
+    type Error = Error<E>;
+
+    async fn recv(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        let msg = self.recv().await?;
+        let len = msg.data.len().min(buf.len());
+        buf[..len].copy_from_slice(&msg.data[..len]);
+        Ok(len)
+    }
+}

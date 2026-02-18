@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./scripts/find-unused-bindings.sh:*)",
+      "Bash(grep:*)",
+      "Bash(make docker-prep:*)",
+      "Bash(make docker-all:*)",
+      "Bash(make docker-install:*)",
+      "Bash(timeout 15 make:*)",
+      "Bash(tree:*)",
+      "WebSearch",
+      "WebFetch(domain:www.fermyon.com)"
+    ]
+  },
+  "outputStyle": "Explanatory"
+}
