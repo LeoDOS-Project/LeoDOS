@@ -14,6 +14,7 @@ use leodos_protocols::network::passthrough::PassThrough;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::api::cfs::SrsppSender;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
+use leodos_protocols::transport::srspp::rto::FixedRto;
 
 mod bindings {
     #![allow(non_upper_case_globals)]
@@ -61,7 +62,7 @@ pub extern "C" fn SRSPP_SENDER_AppMain() {
         };
 
         let sender: SrsppSender<Error> = SrsppSender::new(config);
-        let (mut handle, mut driver) = sender.split(network);
+        let (mut handle, mut driver) = sender.split(network, FixedRto::new(1000));
 
         let send_task = async {
             let mut counter: u32 = 0;

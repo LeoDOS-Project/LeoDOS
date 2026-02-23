@@ -40,6 +40,9 @@ pub enum SenderAction {
     /// A packet was permanently lost (max retransmits exceeded).
     PacketLost { seq: SequenceCount },
 
+    /// A segmented message was lost (a packet from it was permanently lost).
+    MessageLost,
+
     /// Send buffer has space available (for backpressure signaling).
     SpaceAvailable { bytes: usize },
 }
@@ -141,6 +144,7 @@ struct PacketMeta {
     retransmit_count: u8,
     offset: usize,
     len: usize,
+    is_segmented: bool,
 }
 
 /// Sender state machine.
@@ -255,10 +259,8 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         let max_payload = Self::max_payload_per_packet();
 
         if data.len() <= max_payload {
-            // Single packet
-            self.queue_packet(data, SequenceFlag::Unsegmented, actions)?;
+            self.queue_packet(data, SequenceFlag::Unsegmented, false, actions)?;
         } else {
-            // Segment
             let mut offset = 0;
             let mut is_first = true;
 
@@ -276,7 +278,12 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
                     SequenceFlag::Continuation
                 };
 
-                self.queue_packet(&data[offset..offset + chunk_size], flags, actions)?;
+                self.queue_packet(
+                    &data[offset..offset + chunk_size],
+                    flags,
+                    true,
+                    actions,
+                )?;
                 offset += chunk_size;
             }
         }
@@ -288,6 +295,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         &mut self,
         payload: &[u8],
         flags: SequenceFlag,
+        is_segmented: bool,
         actions: &mut SenderActions,
     ) -> Result<(), SenderError> {
         // Build packet in tx_buffer
@@ -334,6 +342,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
             retransmit_count: 0,
             offset,
             len: packet_len,
+            is_segmented,
         };
 
         self.next_seq = (self.next_seq + 1) & SequenceCount::MAX;
@@ -396,17 +405,17 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
 
     fn handle_timeout(&mut self, seq: SequenceCount, actions: &mut SenderActions) {
         let seq_val = seq.value();
+        let mut lost_segmented = false;
 
-        for meta in &mut self.meta {
-            if meta.state == SlotState::AwaitingAck && meta.seq == seq_val {
-                if meta.retransmit_count >= self.config.max_retransmits {
-                    // Give up
+        for i in 0..self.meta.len() {
+            if self.meta[i].state == SlotState::AwaitingAck && self.meta[i].seq == seq_val {
+                if self.meta[i].retransmit_count >= self.config.max_retransmits {
                     actions.push(SenderAction::PacketLost { seq });
-                    meta.state = SlotState::Empty;
+                    lost_segmented = self.meta[i].is_segmented;
+                    self.meta[i].state = SlotState::Empty;
                 } else {
-                    // Mark for retransmit and emit action
-                    meta.state = SlotState::PendingTransmit;
-                    meta.retransmit_count += 1;
+                    self.meta[i].state = SlotState::PendingTransmit;
+                    self.meta[i].retransmit_count += 1;
                     actions.push(SenderAction::Transmit {
                         seq,
                         rto_ticks: self.config.rto_ticks,
@@ -414,6 +423,10 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
                 }
                 break;
             }
+        }
+
+        if lost_segmented {
+            actions.push(SenderAction::MessageLost);
         }
 
         self.update_send_base();
@@ -721,5 +734,54 @@ mod tests {
         // Packet 1 still pending
         assert!(!sender.is_idle());
         assert!(sender.get_packet(SequenceCount::from(1)).is_some());
+    }
+
+    #[test]
+    fn test_message_lost_on_segmented_packet_loss() {
+        let mut sender: SenderMachine<8, 4096, 64> = SenderMachine::new(make_config());
+        let mut actions = SenderActions::new();
+
+        let data = [0u8; 150];
+        sender
+            .handle(SenderEvent::SendRequest { data: &data }, &mut actions)
+            .unwrap();
+
+        let transmit_count = actions
+            .iter()
+            .filter(|a| matches!(a, SenderAction::Transmit { .. }))
+            .count();
+        assert!(transmit_count >= 3);
+
+        for i in 0..transmit_count as u16 {
+            sender.mark_transmitted(SequenceCount::from(i));
+        }
+
+        for _ in 0..3 {
+            sender
+                .handle(
+                    SenderEvent::RetransmitTimeout {
+                        seq: SequenceCount::from(1),
+                    },
+                    &mut actions,
+                )
+                .unwrap();
+            sender.mark_transmitted(SequenceCount::from(1));
+        }
+
+        sender
+            .handle(
+                SenderEvent::RetransmitTimeout {
+                    seq: SequenceCount::from(1),
+                },
+                &mut actions,
+            )
+            .unwrap();
+
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, SenderAction::PacketLost { seq } if seq.value() == 1)));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, SenderAction::MessageLost)));
     }
 }

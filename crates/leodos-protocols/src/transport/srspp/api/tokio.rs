@@ -47,6 +47,7 @@ use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::packet::parse_ack_packet;
 use crate::transport::srspp::packet::parse_data_packet;
 use crate::transport::srspp::packet::parse_srspp_type;
+use crate::transport::srspp::rto::RtoPolicy;
 use std::collections::HashMap;
 use tokio::time::Duration;
 use tokio::time::Instant;
@@ -99,26 +100,29 @@ impl From<ReceiverError> for SrsppError {
 ///
 /// Sends messages reliably over the link, handling segmentation and retransmission.
 /// Receives ACKs from the remote receiver.
-pub struct SrsppSender<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize> {
+pub struct SrsppSender<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize> {
     link: L,
+    rto_policy: P,
     machine: SenderMachine<WIN, BUF, MTU>,
     actions: SenderActions,
     retransmit_timers: HashMap<u16, Instant>,
     ticks_per_sec: u32,
+    start_time: Instant,
     recv_buffer: [u8; MTU],
 }
 
-impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize>
-    SrsppSender<L, WIN, BUF, MTU>
+impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize>
+    SrsppSender<L, P, WIN, BUF, MTU>
 {
-    /// Create a new sender.
-    pub fn new(config: SenderConfig, link: L, ticks_per_sec: u32) -> Self {
+    pub fn new(config: SenderConfig, link: L, rto_policy: P, ticks_per_sec: u32) -> Self {
         Self {
             link,
+            rto_policy,
             machine: SenderMachine::new(config),
             actions: SenderActions::new(),
             retransmit_timers: HashMap::new(),
             ticks_per_sec,
+            start_time: Instant::now(),
             recv_buffer: [0u8; MTU],
         }
     }
@@ -182,7 +186,7 @@ impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize>
     async fn process_actions(&mut self) -> Result<(), SrsppError> {
         for action in self.actions.iter() {
             match action {
-                SenderAction::Transmit { seq, rto_ticks } => {
+                SenderAction::Transmit { seq, .. } => {
                     if let Some(packet) = self.machine.get_packet(*seq) {
                         self.link
                             .send(packet)
@@ -191,8 +195,12 @@ impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize>
 
                         self.machine.mark_transmitted(*seq);
 
+                        let now = Instant::now();
+                        let elapsed = now.duration_since(self.start_time);
+                        let now_secs = elapsed.as_secs() as u32;
+                        let rto = self.rto_policy.rto_ticks(now_secs);
                         let deadline =
-                            Instant::now() + ticks_to_duration(*rto_ticks, self.ticks_per_sec);
+                            now + ticks_to_duration(rto, self.ticks_per_sec);
                         self.retransmit_timers.insert(seq.value(), deadline);
                     }
                 }
@@ -202,8 +210,9 @@ impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize>
                 SenderAction::PacketLost { seq } => {
                     eprintln!("srspp: Packet {} lost after max retransmits", seq.value());
                 }
-                SenderAction::SpaceAvailable { .. } => {
-                    // Could notify waiters if we add backpressure
+                SenderAction::SpaceAvailable { .. } => {}
+                SenderAction::MessageLost => {
+                    eprintln!("srspp: Segmented message lost");
                 }
             }
         }
@@ -279,6 +288,7 @@ pub struct SrsppReceiver<
     machine: ReceiverMachine<WIN, BUF, REASM>,
     actions: ReceiverActions,
     ack_timer: Option<Instant>,
+    progress_timer: Option<Instant>,
     ticks_per_sec: u32,
     recv_buffer: [u8; MTU],
     ack_buffer: [u8; 16],
@@ -303,6 +313,7 @@ impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize, cons
             machine: ReceiverMachine::new(config, remote_address),
             actions: ReceiverActions::new(),
             ack_timer: None,
+            progress_timer: None,
             ticks_per_sec,
             recv_buffer: [0u8; MTU],
             ack_buffer: [0u8; 16],
@@ -333,20 +344,22 @@ impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize, cons
             .map(|m| m.to_vec().into_boxed_slice())
     }
 
-    /// Poll for incoming data and handle ACK timer.
+    /// Poll for incoming data and handle timers.
     pub async fn poll(&mut self) -> Result<(), SrsppError> {
         tokio::select! {
             biased;
 
-            // Check for incoming data
             result = self.link.recv(&mut self.recv_buffer) => {
                 let len = result.map_err(|e| SrsppError::LinkError(e.to_string()))?;
                 self.handle_incoming(&self.recv_buffer[..len].to_vec()).await?;
             }
 
-            // Handle ACK timer
             _ = sleep_until(self.ack_timer) => {
                 self.handle_ack_timeout().await?;
+            }
+
+            _ = sleep_until(self.progress_timer) => {
+                self.handle_progress_timeout().await?;
             }
         }
 
@@ -385,6 +398,14 @@ impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize, cons
         Ok(())
     }
 
+    async fn handle_progress_timeout(&mut self) -> Result<(), SrsppError> {
+        self.progress_timer = None;
+        self.machine
+            .handle(ReceiverEvent::ProgressTimeout, &mut self.actions)?;
+        self.process_actions().await?;
+        Ok(())
+    }
+
     async fn process_actions(&mut self) -> Result<(), SrsppError> {
         for action in self.actions.iter() {
             match action {
@@ -416,7 +437,13 @@ impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize, cons
                     self.ack_timer = None;
                 }
                 ReceiverAction::MessageReady => {
-                    // Message will be retrieved by recv()
+                }
+                ReceiverAction::StartProgressTimer { ticks } => {
+                    self.progress_timer =
+                        Some(Instant::now() + ticks_to_duration(*ticks, self.ticks_per_sec));
+                }
+                ReceiverAction::StopProgressTimer => {
+                    self.progress_timer = None;
                 }
             }
         }
@@ -439,6 +466,7 @@ async fn sleep_until(deadline: Option<Instant>) {
 mod tests {
     #![allow(unused)]
     use super::*;
+    use crate::transport::srspp::rto::FixedRto;
     use std::collections::VecDeque;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -532,6 +560,7 @@ mod tests {
             apid: Apid::new(0x42).unwrap(),
             immediate_ack: true,
             ack_delay_ticks: 100,
+            progress_timeout_ticks: None,
         }
     }
 
@@ -543,8 +572,8 @@ mod tests {
     async fn test_send_recv_single_message() {
         let (link_a, link_b) = MockLinkPair::new();
 
-        let mut sender: SrsppSender<_, 8, 4096, 512> =
-            SrsppSender::new(sender_config(), link_a, 1000);
+        let mut sender: SrsppSender<_, _, 8, 4096, 512> =
+            SrsppSender::new(sender_config(), link_a, FixedRto::new(1000), 1000);
         let mut receiver: SrsppReceiver<_, 8, 4096, 512, 8192> =
             SrsppReceiver::new(receiver_config(), remote_address(), link_b, 1000);
 

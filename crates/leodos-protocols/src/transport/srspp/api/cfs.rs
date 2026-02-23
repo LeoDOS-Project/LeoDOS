@@ -28,6 +28,7 @@ use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::packet::parse_ack_packet;
 use crate::transport::srspp::packet::parse_data_packet;
 use crate::transport::srspp::packet::parse_srspp_type;
+use crate::transport::srspp::rto::RtoPolicy;
 
 // ============================================================================
 // Error type
@@ -119,7 +120,6 @@ struct SenderState<E, const WIN: usize, const BUF: usize, const MTU: usize> {
     machine: SenderMachine<WIN, BUF, MTU>,
     actions: SenderActions,
     timers: TimerSet<WIN>,
-    rto: Duration,
     closed: bool,
     error: Option<Error<E>>,
 }
@@ -133,30 +133,30 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
     SrsppSender<E, WIN, BUF, MTU>
 {
     pub fn new(config: SenderConfig) -> Self {
-        let rto = Duration::from_millis(config.rto_ticks);
         Self {
             state: RefCell::new(SenderState {
                 machine: SenderMachine::new(config),
                 actions: SenderActions::new(),
                 timers: TimerSet::new(),
-                rto,
                 closed: false,
                 error: None,
             }),
         }
     }
 
-    pub fn split<L: NetworkLayer<Error = E>>(
+    pub fn split<L: NetworkLayer<Error = E>, P: RtoPolicy>(
         &self,
         link: L,
+        rto_policy: P,
     ) -> (
         SrsppSenderHandle<'_, E, WIN, BUF, MTU>,
-        SrsppSenderDriver<'_, L, WIN, BUF, MTU>,
+        SrsppSenderDriver<'_, L, P, WIN, BUF, MTU>,
     ) {
         (
             SrsppSenderHandle { channel: self },
             SrsppSenderDriver {
                 link,
+                rto_policy,
                 channel: self,
                 recv_buffer: [0u8; MTU],
             },
@@ -227,14 +227,15 @@ impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
 }
 
 /// Driver that handles I/O. Runs as a concurrent task.
-pub struct SrsppSenderDriver<'a, L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize> {
+pub struct SrsppSenderDriver<'a, L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize> {
     link: L,
+    rto_policy: P,
     channel: &'a SrsppSender<L::Error, WIN, BUF, MTU>,
     recv_buffer: [u8; MTU],
 }
 
-impl<'a, L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize>
-    SrsppSenderDriver<'a, L, WIN, BUF, MTU>
+impl<'a, L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize>
+    SrsppSenderDriver<'a, L, P, WIN, BUF, MTU>
 where
     L::Error: Clone,
 {
@@ -324,15 +325,18 @@ where
             if let Some(packet_data) = packet_data {
                 self.link.send(&packet_data).await.map_err(Error::Link)?;
 
+                let rto = Duration::from_millis(
+                    self.rto_policy.rto_ticks(now.seconds()),
+                );
+
                 let mut state = self.channel.state.borrow_mut();
                 let SenderState {
                     machine,
                     timers,
-                    rto,
                     ..
                 } = &mut *state;
                 machine.mark_transmitted(seq);
-                timers.start(seq.value(), now + SysTime::from(*rto));
+                timers.start(seq.value(), now + SysTime::from(rto));
             }
         }
 
@@ -430,6 +434,7 @@ pub struct ReceivedMessage<const REASM: usize> {
 struct StreamState<const WIN: usize, const BUF: usize, const REASM: usize> {
     machine: ReceiverMachine<WIN, BUF, REASM>,
     ack_deadline: Option<SysTime>,
+    progress_deadline: Option<SysTime>,
 }
 
 struct MultiReceiverState<
@@ -599,7 +604,7 @@ where
                 return Ok(());
             }
 
-            let timeout = self.duration_until_next_ack_timeout();
+            let timeout = self.duration_until_next_timeout();
 
             match select_either(self.link.recv(&mut self.recv_buffer), sleep(timeout)).await {
                 Either::Left(result) => match result {
@@ -616,7 +621,7 @@ where
                     }
                 },
                 Either::Right(()) => {
-                    if let Err(e) = self.handle_ack_timeouts().await {
+                    if let Err(e) = self.handle_timeouts().await {
                         self.channel.state.borrow_mut().error = Some(e.clone());
                         return Err(e);
                     }
@@ -625,13 +630,14 @@ where
         }
     }
 
-    fn duration_until_next_ack_timeout(&self) -> Duration {
+    fn duration_until_next_timeout(&self) -> Duration {
         let now = SysTime::now();
         let state = self.channel.state.borrow();
         state
             .streams
             .values()
-            .filter_map(|s| s.ack_deadline)
+            .flat_map(|s| [s.ack_deadline, s.progress_deadline])
+            .flatten()
             .min()
             .map(|deadline| {
                 if deadline > now {
@@ -666,6 +672,7 @@ where
                         let stream_state = StreamState {
                             machine: ReceiverMachine::new(config.clone(), source_address),
                             ack_deadline: None,
+                            progress_deadline: None,
                         };
                         let _ = streams.insert(source_address, stream_state);
                     }
@@ -689,10 +696,10 @@ where
         Ok(())
     }
 
-    async fn handle_ack_timeouts(&mut self) -> Result<(), Error<L::Error>> {
+    async fn handle_timeouts(&mut self) -> Result<(), Error<L::Error>> {
         let now = SysTime::now();
 
-        let expired: heapless::Vec<Address, MAX_STREAMS> = {
+        let ack_expired: heapless::Vec<Address, MAX_STREAMS> = {
             let state = self.channel.state.borrow();
             state
                 .streams
@@ -706,7 +713,7 @@ where
                 .collect()
         };
 
-        for source in expired {
+        for source in ack_expired {
             {
                 let mut state = self.channel.state.borrow_mut();
                 let MultiReceiverState {
@@ -715,6 +722,36 @@ where
                 if let Some(stream) = streams.get_mut(&source) {
                     stream.ack_deadline = None;
                     stream.machine.handle(ReceiverEvent::AckTimeout, actions)?;
+                }
+            }
+            self.process_actions_for_stream(source).await?;
+        }
+
+        let progress_expired: heapless::Vec<Address, MAX_STREAMS> = {
+            let state = self.channel.state.borrow();
+            state
+                .streams
+                .iter()
+                .filter_map(|(source, stream)| {
+                    stream
+                        .progress_deadline
+                        .filter(|&d| now >= d)
+                        .map(|_| *source)
+                })
+                .collect()
+        };
+
+        for source in progress_expired {
+            {
+                let mut state = self.channel.state.borrow_mut();
+                let MultiReceiverState {
+                    streams, actions, ..
+                } = &mut *state;
+                if let Some(stream) = streams.get_mut(&source) {
+                    stream.progress_deadline = None;
+                    stream
+                        .machine
+                        .handle(ReceiverEvent::ProgressTimeout, actions)?;
                 }
             }
             self.process_actions_for_stream(source).await?;
@@ -744,13 +781,16 @@ where
                 _ => None,
             });
 
-            let timer: heapless::Vec<ReceiverAction, 4> = state
+            let timer: heapless::Vec<ReceiverAction, 8> = state
                 .actions
                 .iter()
                 .filter(|a| {
                     matches!(
                         a,
-                        ReceiverAction::StartAckTimer { .. } | ReceiverAction::StopAckTimer
+                        ReceiverAction::StartAckTimer { .. }
+                            | ReceiverAction::StopAckTimer
+                            | ReceiverAction::StartProgressTimer { .. }
+                            | ReceiverAction::StopProgressTimer
                     )
                 })
                 .copied()
@@ -790,6 +830,18 @@ where
                     ReceiverAction::StopAckTimer => {
                         if let Some(entry) = state.streams.get_mut(&source) {
                             entry.ack_deadline = None;
+                        }
+                    }
+                    ReceiverAction::StartProgressTimer { ticks } => {
+                        if let Some(entry) = state.streams.get_mut(&source) {
+                            let delay = Duration::from_millis(ticks);
+                            entry.progress_deadline =
+                                Some(SysTime::now() + SysTime::from(delay));
+                        }
+                    }
+                    ReceiverAction::StopProgressTimer => {
+                        if let Some(entry) = state.streams.get_mut(&source) {
+                            entry.progress_deadline = None;
                         }
                     }
                     _ => {}

@@ -171,14 +171,41 @@ The sender blocks when either the window is full or the buffer is exhausted.
 | BUF             | Sender   | 4096    | Send buffer size (bytes)                       |
 | MTU             | Sender   | 512     | Maximum transmission unit (bytes per packet)   |
 | REASM           | Receiver | 8192    | Maximum reassembled message size (bytes)       |
-| RTO             | Sender   | 1000    | Retransmission timeout (ticks)                 |
+| RTO Policy      | Sender   | Fixed   | Retransmission timeout strategy (see below)    |
 | Max Retransmits | Sender   | 3       | Attempts before declaring packet lost          |
 | ACK Delay       | Receiver | 100     | Time to wait before sending delayed ACK (ticks)|
 
-**Note:** SRSPP does not negotiate parameters at runtime. Both endpoints must be
-configured with compatible values. The simplest approach is to share the same
-constants between sender and receiver applications. With matching defaults,
-the sender will never exceed what the receiver can handle.
+### RTO Policy
+
+The retransmission timeout is governed by a pluggable `RtoPolicy` trait.
+The driver queries the policy each time it starts a retransmission timer,
+passing the current time so the policy can adapt dynamically.
+
+Two built-in policies are provided:
+
+**FixedRto** — returns a constant timeout. Suitable for ISL links
+with stable, predictable latency.
+
+**OrbitAwareRto** — adapts the timeout based on a contact schedule:
+
+- If the current time falls inside a LOS window: use a short ISL RTO
+  (the link is active, real loss should be detected quickly).
+- If outside a window: set RTO to the time until the next LOS window
+  plus a configurable margin. This prevents the sender from declaring
+  packets lost during normal orbital gaps.
+- If no future windows exist in the schedule: fall back to the ISL RTO.
+
+The contact schedule is stored in a `ContactSchedule<N>` backed by a
+`heapless::Vec`, keeping it `no_std` compatible. Each window records
+a station ID and start/end time in seconds.
+
+Custom policies can be implemented by implementing `RtoPolicy::rto_ticks`.
+
+**Note:** SRSPP does not negotiate parameters at runtime. Both endpoints
+must be configured with compatible values. The simplest approach is to
+share the same constants between sender and receiver applications. With
+matching defaults, the sender will never exceed what the receiver can
+handle.
 
 Compatibility constraints:
 - APID must match for routing to work

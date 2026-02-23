@@ -15,6 +15,7 @@ use leodos_protocols::transport::srspp::api::cfs::SrsppReceiver;
 use leodos_protocols::transport::srspp::api::cfs::SrsppSender;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
+use leodos_protocols::transport::srspp::rto::FixedRto;
 
 type SrsppError = leodos_protocols::transport::srspp::api::cfs::Error<Error>;
 
@@ -90,6 +91,7 @@ fn rx_config() -> ReceiverConfig {
         apid: Apid::new(RX_APID).unwrap(),
         immediate_ack: false,
         ack_delay_ticks: ACK_DELAY_MS,
+        progress_timeout_ticks: None,
     }
 }
 
@@ -141,7 +143,7 @@ pub extern "C" fn CFE_ES_Main() {
             SrsppSender::new(tx_config());
 
         let (mut rx_handle, mut rx_driver) = receiver.split::<_, MTU>(rx_link);
-        let (mut tx_handle, mut tx_driver) = sender.split(tx_link);
+        let (mut tx_handle, mut tx_driver) = sender.split(tx_link, FixedRto::new(RTO_MS));
 
         let echo_task = echo_loop(&mut rx_handle, &mut tx_handle);
         let rx_task = rx_driver.run();

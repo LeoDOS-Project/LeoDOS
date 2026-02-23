@@ -41,6 +41,7 @@ pub extern "C" fn SRSPP_RECEIVER_AppMain() {
             apid: Apid::new(0x50).unwrap(),
             immediate_ack: false,
             ack_delay_ticks: 100,
+            progress_timeout_ticks: None,
         };
 
         let receiver: SrsppReceiver<Error> = SrsppReceiver::new(config);

@@ -572,6 +572,7 @@
         - *Bare-metal:* `no_std` Rust with zero heap allocation — runs on flight hardware
         - *Low latency:* designed for 5–40 ms LEO hops, not deep-space delays
         - *Instant start:* no connection setup, critical when contact windows are short
+        - *Orbit-aware RTO:* retransmission timeout adapts to LOS contact schedules
       ],
     )
   ]
@@ -836,7 +837,8 @@
 
       #v(2pt)
       #text(size: 10pt)[
-        *Timeout:* if no ACK within RTO#fn(1), retransmit. After _n_ failures → PacketLost.
+        *Timeout:* if no ACK within RTO#fn(1), retransmit. After _n_ failures → PacketLost. \
+        RTO is pluggable: fixed for ISL, orbit-aware for ground links (pauses during LOS gaps).
       ]
     ],
     [

@@ -8,6 +8,7 @@ use leodos_protocols::network::NetworkLayer;
 use leodos_protocols::transport::srspp::api::tokio::{SrsppReceiver, SrsppSender};
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
+use leodos_protocols::transport::srspp::rto::FixedRto;
 
 const MTU: usize = 512;
 
@@ -69,6 +70,7 @@ fn receiver_config(addr: Address) -> ReceiverConfig {
         apid: Apid::new(0x50).unwrap(),
         immediate_ack: true,
         ack_delay_ticks: 100,
+        progress_timeout_ticks: None,
     }
 }
 
@@ -85,8 +87,8 @@ async fn main() {
 
     let (sender_link, receiver_link) = SimulatedLink::new_pair();
 
-    let mut sender: SrsppSender<_, 8, 4096, MTU> =
-        SrsppSender::new(sender_config(sender_addr), sender_link, 1000);
+    let mut sender: SrsppSender<_, _, 8, 4096, MTU> =
+        SrsppSender::new(sender_config(sender_addr), sender_link, FixedRto::new(1000), 1000);
 
     let mut receiver: SrsppReceiver<_, 8, 4096, MTU, 8192> =
         SrsppReceiver::new(receiver_config(receiver_addr), sender_addr, receiver_link, 1000);

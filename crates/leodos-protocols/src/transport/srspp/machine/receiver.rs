@@ -22,6 +22,9 @@ pub enum ReceiverEvent<'a> {
 
     /// ACK delay timer expired.
     AckTimeout,
+
+    /// Progress timer expired — `expected_seq` hasn't advanced.
+    ProgressTimeout,
 }
 
 /// Actions the receiver machine wants the driver to perform.
@@ -42,6 +45,12 @@ pub enum ReceiverAction {
 
     /// A complete message is ready. Call `take_message()` to retrieve it.
     MessageReady,
+
+    /// Start progress timer (gap detected).
+    StartProgressTimer { ticks: u32 },
+
+    /// Stop progress timer (progress made).
+    StopProgressTimer,
 }
 
 /// Collection of actions emitted by the receiver.
@@ -122,6 +131,9 @@ pub struct ReceiverConfig {
     pub immediate_ack: bool,
     /// ACK delay in ticks (if not immediate).
     pub ack_delay_ticks: u32,
+    /// If `Some`, skip gaps after this many ticks without progress.
+    /// If `None`, wait indefinitely (reliable mode).
+    pub progress_timeout_ticks: Option<u32>,
 }
 
 /// Metadata for a packet in the reorder buffer.
@@ -217,6 +229,9 @@ impl<const WIN: usize, const BUF: usize, const REASM: usize> ReceiverMachine<WIN
             ReceiverEvent::AckTimeout => {
                 self.handle_ack_timeout(actions);
             }
+            ReceiverEvent::ProgressTimeout => {
+                self.handle_progress_timeout(actions)?;
+            }
         }
         Ok(())
     }
@@ -250,35 +265,45 @@ impl<const WIN: usize, const BUF: usize, const REASM: usize> ReceiverMachine<WIN
     ) -> Result<(), ReceiverError> {
         let seq_val = seq.value();
         let distance = seq_val.wrapping_sub(self.expected_seq) & SequenceCount::MAX;
+        let seq_before = self.expected_seq;
 
         if distance == 0 {
-            // In order - deliver immediately
             self.deliver_packet(flags, payload)?;
             self.advance();
 
-            // Check for buffered packets we can now deliver
             self.deliver_buffered(actions)?;
 
-            // Emit message ready if complete
             if self.complete_message_len.is_some() {
                 actions.push(ReceiverAction::MessageReady);
             }
         } else if distance < Self::MAX_AHEAD {
-            // Out of order but within window - buffer it
             let bit_pos = distance - 1;
             let mask = 1u16 << bit_pos;
 
             if self.recv_bitmap & mask == 0 {
-                // Not a duplicate
                 self.store_out_of_order(seq_val, flags, payload)?;
                 self.recv_bitmap |= mask;
             }
         } else if distance > SequenceCount::MAX - Self::MAX_AHEAD {
-            // Behind expected - duplicate, ignore
         }
-        // else: too far ahead, ignore
 
-        // Handle ACK
+        let progressed = self.expected_seq != seq_before;
+
+        if let Some(ticks) = self.config.progress_timeout_ticks {
+            if progressed {
+                actions.push(ReceiverAction::StopProgressTimer);
+                let has_gap = self.reorder_meta.iter().any(|m| m.occupied);
+                if has_gap {
+                    actions.push(ReceiverAction::StartProgressTimer { ticks });
+                }
+            } else {
+                let has_gap = self.reorder_meta.iter().any(|m| m.occupied);
+                if has_gap {
+                    actions.push(ReceiverAction::StartProgressTimer { ticks });
+                }
+            }
+        }
+
         self.ack_pending = true;
 
         if self.config.immediate_ack {
@@ -298,6 +323,38 @@ impl<const WIN: usize, const BUF: usize, const REASM: usize> ReceiverMachine<WIN
         if self.ack_pending {
             self.emit_ack(actions);
         }
+    }
+
+    fn handle_progress_timeout(
+        &mut self,
+        actions: &mut ReceiverActions,
+    ) -> Result<(), ReceiverError> {
+        if self.reassembly_in_progress {
+            self.reassembly_len = 0;
+            self.reassembly_in_progress = false;
+        }
+
+        self.advance();
+
+        self.deliver_buffered(actions)?;
+
+        if self.complete_message_len.is_some() {
+            actions.push(ReceiverAction::MessageReady);
+        }
+
+        let has_gap = self
+            .reorder_meta
+            .iter()
+            .any(|m| m.occupied);
+        if has_gap {
+            if let Some(ticks) = self.config.progress_timeout_ticks {
+                actions.push(ReceiverAction::StartProgressTimer { ticks });
+            }
+        } else {
+            actions.push(ReceiverAction::StopProgressTimer);
+        }
+
+        Ok(())
     }
 
     fn emit_ack(&mut self, actions: &mut ReceiverActions) {
@@ -493,6 +550,7 @@ mod tests {
             apid: Apid::new(0x42).unwrap(),
             immediate_ack: true,
             ack_delay_ticks: 20,
+            progress_timeout_ticks: None,
         }
     }
 
@@ -502,6 +560,7 @@ mod tests {
             apid: Apid::new(0x42).unwrap(),
             immediate_ack: false,
             ack_delay_ticks: 20,
+            progress_timeout_ticks: None,
         }
     }
 
@@ -740,5 +799,181 @@ mod tests {
             .unwrap();
 
         assert!(!receiver.has_message());
+    }
+
+    fn make_progress_config(ticks: u32) -> ReceiverConfig {
+        ReceiverConfig {
+            local_address: test_local_address(),
+            apid: Apid::new(0x42).unwrap(),
+            immediate_ack: true,
+            ack_delay_ticks: 20,
+            progress_timeout_ticks: Some(ticks),
+        }
+    }
+
+    #[test]
+    fn test_progress_timeout_skips_gap() {
+        let mut receiver: ReceiverMachine<8, 4096, 8192> =
+            ReceiverMachine::new(make_progress_config(50), test_remote_address());
+        let mut actions = ReceiverActions::new();
+
+        receiver
+            .handle(
+                ReceiverEvent::DataReceived {
+                    seq: SequenceCount::from(0),
+                    flags: SequenceFlag::Unsegmented,
+                    payload: &[1],
+                },
+                &mut actions,
+            )
+            .unwrap();
+        receiver.take_message();
+
+        receiver
+            .handle(
+                ReceiverEvent::DataReceived {
+                    seq: SequenceCount::from(2),
+                    flags: SequenceFlag::Unsegmented,
+                    payload: &[3],
+                },
+                &mut actions,
+            )
+            .unwrap();
+        assert!(!receiver.has_message());
+
+        receiver
+            .handle(ReceiverEvent::ProgressTimeout, &mut actions)
+            .unwrap();
+
+        assert_eq!(receiver.expected_seq().value(), 3);
+        assert!(receiver.has_message());
+        assert_eq!(receiver.take_message().unwrap(), &[3]);
+    }
+
+    #[test]
+    fn test_progress_timeout_discards_partial_reassembly() {
+        let mut receiver: ReceiverMachine<8, 4096, 8192> =
+            ReceiverMachine::new(make_progress_config(50), test_remote_address());
+        let mut actions = ReceiverActions::new();
+
+        receiver
+            .handle(
+                ReceiverEvent::DataReceived {
+                    seq: SequenceCount::from(0),
+                    flags: SequenceFlag::First,
+                    payload: &[1, 2, 3],
+                },
+                &mut actions,
+            )
+            .unwrap();
+
+        receiver
+            .handle(
+                ReceiverEvent::DataReceived {
+                    seq: SequenceCount::from(3),
+                    flags: SequenceFlag::Unsegmented,
+                    payload: &[10, 11],
+                },
+                &mut actions,
+            )
+            .unwrap();
+        assert!(!receiver.has_message());
+
+        receiver
+            .handle(ReceiverEvent::ProgressTimeout, &mut actions)
+            .unwrap();
+        assert!(!receiver.has_message());
+
+        receiver
+            .handle(ReceiverEvent::ProgressTimeout, &mut actions)
+            .unwrap();
+        assert!(receiver.has_message());
+        assert_eq!(receiver.take_message().unwrap(), &[10, 11]);
+
+        receiver
+            .handle(
+                ReceiverEvent::DataReceived {
+                    seq: SequenceCount::from(4),
+                    flags: SequenceFlag::Unsegmented,
+                    payload: &[20, 21],
+                },
+                &mut actions,
+            )
+            .unwrap();
+        assert!(receiver.has_message());
+        assert_eq!(receiver.take_message().unwrap(), &[20, 21]);
+    }
+
+    #[test]
+    fn test_no_progress_timeout_in_reliable_mode() {
+        let mut receiver: ReceiverMachine<8, 4096, 8192> =
+            ReceiverMachine::new(make_config(), test_remote_address());
+        let mut actions = ReceiverActions::new();
+
+        receiver
+            .handle(
+                ReceiverEvent::DataReceived {
+                    seq: SequenceCount::from(0),
+                    flags: SequenceFlag::Unsegmented,
+                    payload: &[1],
+                },
+                &mut actions,
+            )
+            .unwrap();
+        receiver.take_message();
+
+        receiver
+            .handle(
+                ReceiverEvent::DataReceived {
+                    seq: SequenceCount::from(2),
+                    flags: SequenceFlag::Unsegmented,
+                    payload: &[3],
+                },
+                &mut actions,
+            )
+            .unwrap();
+
+        assert!(!actions.iter().any(|a| matches!(
+            a,
+            ReceiverAction::StartProgressTimer { .. }
+        )));
+    }
+
+    #[test]
+    fn test_progress_timer_resets_on_progress() {
+        let mut receiver: ReceiverMachine<8, 4096, 8192> =
+            ReceiverMachine::new(make_progress_config(50), test_remote_address());
+        let mut actions = ReceiverActions::new();
+
+        receiver
+            .handle(
+                ReceiverEvent::DataReceived {
+                    seq: SequenceCount::from(1),
+                    flags: SequenceFlag::Unsegmented,
+                    payload: &[2],
+                },
+                &mut actions,
+            )
+            .unwrap();
+
+        assert!(actions.iter().any(|a| matches!(
+            a,
+            ReceiverAction::StartProgressTimer { ticks: 50 }
+        )));
+
+        receiver
+            .handle(
+                ReceiverEvent::DataReceived {
+                    seq: SequenceCount::from(0),
+                    flags: SequenceFlag::Unsegmented,
+                    payload: &[1],
+                },
+                &mut actions,
+            )
+            .unwrap();
+
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, ReceiverAction::StopProgressTimer)));
     }
 }
