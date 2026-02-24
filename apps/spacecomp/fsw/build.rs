@@ -5,10 +5,12 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=../config/default_spacecomp_msgids.h");
     println!("cargo:rerun-if-changed=../config/default_spacecomp_perfids.h");
+    println!("cargo:rerun-if-changed=../config/default_spacecomp_platform_cfg.h");
 
     let bindings = bindgen::Builder::default()
         .header("../config/default_spacecomp_msgids.h")
         .header("../config/default_spacecomp_perfids.h")
+        .header("../config/default_spacecomp_platform_cfg.h")
         .allowlist_var("SPACECOMP_.*")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()

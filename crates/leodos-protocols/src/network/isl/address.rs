@@ -3,7 +3,7 @@ use zerocopy::Immutable;
 use zerocopy::IntoBytes;
 use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
-use zerocopy::network_endian::U16;
+use zerocopy::network_endian::U32;
 
 use crate::network::isl::torus::Point;
 
@@ -11,54 +11,32 @@ use crate::network::isl::torus::Point;
 #[derive(
     Copy, Clone, Debug, PartialEq, Eq, Hash, FromBytes, IntoBytes, Immutable, KnownLayout, Unaligned,
 )]
-pub struct SpacecraftId(pub U16);
+pub struct SpacecraftId(pub U32);
 
 impl SpacecraftId {
-    pub const fn new(id: u16) -> Self {
-        Self(U16::new(id))
+    pub const fn new(id: u32) -> Self {
+        Self(U32::new(id))
     }
 
-    pub fn get(&self) -> u16 {
+    pub fn get(&self) -> u32 {
         self.0.get()
     }
 
-    pub fn orbit(&self) -> u16 {
-        self.get() / 1000
+    pub fn encode(orbit: u8, sat: u8, num_sats: u8) -> Self {
+        Self::new((orbit as u32 + 1) * num_sats as u32 + sat as u32)
     }
 
-    pub fn sat(&self) -> u16 {
-        self.get() % 1000
-    }
-}
-
-impl From<SpacecraftId> for Address {
-    fn from(scid: SpacecraftId) -> Self {
-        let orbit = scid.orbit();
-        let sat = scid.sat() as u8;
+    pub fn to_address(&self, num_sats: u8) -> Address {
+        let n = num_sats as u32;
+        let orbit = self.get() / n;
+        let sat = self.get() % n;
         if orbit == 0 {
-            Address::Ground { station_id: sat }
+            Address::Ground { station_id: sat as u8 }
         } else {
             Address::Satellite {
                 orbit_id: (orbit - 1) as u8,
-                satellite_id: sat,
+                satellite_id: sat as u8,
             }
-        }
-    }
-}
-
-impl TryFrom<Address> for SpacecraftId {
-    type Error = ();
-
-    fn try_from(addr: Address) -> Result<Self, Self::Error> {
-        match addr {
-            Address::Ground { station_id } => Ok(SpacecraftId::new(station_id as u16)),
-            Address::Satellite {
-                orbit_id,
-                satellite_id,
-            } => Ok(SpacecraftId::new(
-                ((orbit_id + 1) as u16) * 1000 + satellite_id as u16,
-            )),
-            Address::ServiceArea { .. } => Err(()),
         }
     }
 }

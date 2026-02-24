@@ -20,12 +20,14 @@ pub enum State {
         job_id: u16,
         expected: u8,
         received: u8,
+        map_state: roles::mapper::MapState,
     },
     Reducing {
         los_addr: Address,
         job_id: u16,
         expected: u8,
         received: u8,
+        reduce_state: roles::reducer::ReduceState,
     },
 }
 
@@ -56,16 +58,15 @@ impl State {
                 job_id: jid,
                 expected,
                 received,
+                map_state,
             } => {
                 if op == OpCode::DataChunk {
+                    map_state.ingest_chunk(payload);
                     *received += 1;
                     if *received >= *expected {
-                        let result = [0u8; 32];
                         let ra = *reducer_addr;
                         let j = *jid;
-                        isl::send(link, ctx, ra, OpCode::DataChunk, j, &result)
-                            .await
-                            .ok();
+                        map_state.emit_results(link, ctx, ra, j).await;
                         event::info(0, "Map phase complete").ok();
                         *self = State::Idle;
                     }
@@ -76,16 +77,15 @@ impl State {
                 job_id: jid,
                 expected,
                 received,
+                reduce_state,
             } => {
                 if op == OpCode::DataChunk {
+                    reduce_state.ingest_chunk(payload);
                     *received += 1;
                     if *received >= *expected {
-                        let result = [0u8; 16];
                         let la = *los_addr;
                         let j = *jid;
-                        isl::send(link, ctx, la, OpCode::JobResult, j, &result)
-                            .await
-                            .ok();
+                        reduce_state.emit_results(link, ctx, la, j).await;
                         event::info(0, "Reduce phase complete").ok();
                         *self = State::Idle;
                     }
@@ -129,6 +129,7 @@ impl State {
                             job_id,
                             expected: p.collector_count,
                             received: 0,
+                            map_state: roles::mapper::MapState::new(),
                         };
                     }
                 }
@@ -144,6 +145,7 @@ impl State {
                             job_id,
                             expected: p.mapper_count,
                             received: 0,
+                            reduce_state: roles::reducer::ReduceState::new(),
                         };
                     }
                 }

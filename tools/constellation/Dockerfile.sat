@@ -1,0 +1,34 @@
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    curl \
+    clang \
+    libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo
+ENV PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+WORKDIR /cFS
+COPY . /cFS
+
+RUN make SIMULATION=native prep && make install
+
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpthread-stubs0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /cFS/build/exe/cpu1 /cFS/build/exe/cpu1
+COPY tools/constellation/start_orbit.sh /start_orbit.sh
+RUN chmod +x /start_orbit.sh
+
+ENTRYPOINT ["/start_orbit.sh"]

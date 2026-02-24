@@ -75,7 +75,7 @@ endif
 
 # The "LOCALTGTS" defines the top-level targets that are implemented in this makefile
 # Any other target may also be given, in that case it will simply be passed through.
-LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov docker-build docker-prep docker-all docker-install docker-run docker-shell
+LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov docker-build docker-prep docker-all docker-install docker-run docker-shell constellation-build constellation-gen constellation-up constellation-down
 OTHERTGTS := $(filter-out $(LOCALTGTS),$(MAKECMDGOALS))
 
 # As this makefile does not build any real files, treat everything as a PHONY target
@@ -160,7 +160,7 @@ osalguide:
 # that is used to indicate the prep step has been done.  This way
 # the prep step does not need to be done explicitly by the user
 # as long as the default options are sufficient.
-$(filter-out prep distclean docker-build docker-prep docker-all docker-install docker-run docker-shell,$(LOCALTGTS)): $(O)/.prep
+$(filter-out prep distclean docker-build docker-prep docker-all docker-install docker-run docker-shell constellation-build constellation-gen constellation-up constellation-down,$(LOCALTGTS)): $(O)/.prep
 
 # Docker targets for building on macOS
 docker-build:
@@ -180,3 +180,19 @@ docker-run:
 
 docker-shell:
 	docker compose run --rm cfs-build bash
+
+# Constellation targets
+MAX_ORB ?= 3
+MAX_SAT ?= 3
+
+constellation-build:
+	docker build -f tools/constellation/Dockerfile.sat -t leodos-sat:latest .
+
+constellation-gen:
+	MAX_ORB=$(MAX_ORB) MAX_SAT=$(MAX_SAT) bash tools/constellation/create_constellation.sh
+
+constellation-up: constellation-gen
+	docker compose -f docker-compose.constellation.yml up
+
+constellation-down:
+	docker compose -f docker-compose.constellation.yml down
