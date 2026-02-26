@@ -1,6 +1,6 @@
 use core::future::Future;
 
-use crate::mission::compute::schema::Schema;
+use crate::mission::spacecomp::schema::Schema;
 
 pub trait Sink {
     type Input: Schema;

@@ -2,16 +2,16 @@ use core::future::Future;
 
 use bon::Builder;
 
-use crate::mission::compute::io::sink::Sink;
-use crate::mission::compute::io::source::Source;
-use crate::mission::compute::schema::Schema;
+use crate::mission::spacecomp::io::sink::Sink;
+use crate::mission::spacecomp::io::source::Source;
+use crate::mission::spacecomp::schema::Schema;
 
-/// A trait for collecting sensor data and producing processed output.
-pub trait Collector {
+/// A trait for mapping input data to output data.
+pub trait Mapper {
     type Input: Schema;
     type Output: Schema;
 
-    fn collect<S>(
+    fn map<S>(
         &mut self,
         input: Self::Input,
         sink: &mut S,
@@ -20,19 +20,19 @@ pub trait Collector {
         S: Sink<Input = Self::Output>;
 }
 
-/// A runner that connects a source, collector, and sink.
+/// A runner that connects a source, mapper, and sink.
 #[derive(Builder)]
-pub struct CollectRunner<Src, Col, Snk> {
+pub struct MapRunner<Src, Map, Snk> {
     pub source: Src,
-    pub collector: Col,
+    pub mapper: Map,
     pub sink: Snk,
 }
 
-impl<Src, Col, Snk> CollectRunner<Src, Col, Snk>
+impl<Src, Map, Snk> MapRunner<Src, Map, Snk>
 where
     Src: Source,
-    Col: Collector<Input = Src::Output>,
-    Snk: Sink<Input = Col::Output>,
+    Map: Mapper<Input = Src::Output>,
+    Snk: Sink<Input = Map::Output>,
 {
     pub async fn run(&mut self) -> Result<(), Snk::Error> {
         loop {
@@ -43,7 +43,7 @@ where
                 }
                 Some(Ok(val)) => val,
             };
-            self.collector.collect(input, &mut self.sink).await?;
+            self.mapper.map(input, &mut self.sink).await?;
         }
         Ok(())
     }

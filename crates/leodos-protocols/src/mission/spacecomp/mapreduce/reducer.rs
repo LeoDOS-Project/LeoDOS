@@ -1,6 +1,6 @@
-use crate::mission::compute::io::sink::Sink;
-use crate::mission::compute::io::source::Source;
-use crate::mission::compute::schema::Schema;
+use crate::mission::spacecomp::io::sink::Sink;
+use crate::mission::spacecomp::io::source::Source;
+use crate::mission::spacecomp::schema::Schema;
 
 /// A trait for reducing input data to output data.
 pub trait Reducer {

@@ -15,7 +15,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use leodos_protocols::mission::compute::scheduler::*;
+//! use leodos_protocols::mission::spacecomp::scheduler::*;
 //! use leodos_protocols::network::isl::torus::{Point, Torus};
 //!
 //! let torus = Torus::new(8, 8);

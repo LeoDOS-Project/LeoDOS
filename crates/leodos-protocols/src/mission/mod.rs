@@ -1,2 +1,2 @@
-pub mod compute;
+pub mod spacecomp;
 pub mod colonies;

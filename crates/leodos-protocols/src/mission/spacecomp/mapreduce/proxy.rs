@@ -7,9 +7,9 @@
 
 use heapless::Vec;
 
-use crate::mission::compute::job::Job;
-use crate::mission::compute::scheduler::aoi::Aoi;
-use crate::mission::compute::scheduler::{
+use crate::mission::spacecomp::job::Job;
+use crate::mission::spacecomp::scheduler::aoi::Aoi;
+use crate::mission::spacecomp::scheduler::{
     CostModel, Hungarian, JobCost, JobParams, Solver, SpaceCompCost,
 };
 use crate::network::isl::projection::Projection;
