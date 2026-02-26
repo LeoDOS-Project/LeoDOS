@@ -2,6 +2,8 @@
 #![allow(unexpected_cfgs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
+// TODO: work toward #![deny(missing_docs)] — ~1045 items remain
 
 pub mod coding;
 pub mod datalink;
