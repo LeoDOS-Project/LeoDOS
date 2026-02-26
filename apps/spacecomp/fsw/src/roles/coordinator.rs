@@ -1,4 +1,3 @@
-use leodos_libcfs::cfe::evs::event;
 use leodos_protocols::mission::compute::job::Job;
 use leodos_protocols::mission::compute::mapreduce::proxy::{
     Coordinator, JobPlan, ReducerPlacement,
@@ -10,22 +9,16 @@ use leodos_protocols::network::isl::address::{Address, RawAddress};
 use leodos_protocols::network::isl::geo::{GeoAoi, LatLon};
 use leodos_protocols::network::isl::shell::Shell;
 use leodos_protocols::network::isl::torus::{Point, Torus};
-use leodos_protocols::network::NetworkLayer;
 use zerocopy::IntoBytes;
 
-use crate::isl;
+use crate::isl::{self, NodeHandle};
+use crate::machine::MAX_SATELLITES;
 use crate::{NUM_ORBITS, NUM_SATS};
 
-const MAX_SATELLITES: usize = 64;
 const ALTITUDE_M: f32 = 550_000.0;
 const INCLINATION_DEG: f32 = 87.0;
 
-pub async fn plan_and_assign<L: NetworkLayer>(
-    link: &mut L,
-    ctx: &isl::Context,
-    local_node: Point,
-    job_id: u16,
-) {
+pub fn plan(local_node: Point) -> Result<JobPlan<MAX_SATELLITES>, &'static str> {
     let torus = Torus::new(NUM_ORBITS, NUM_SATS);
     let shell = Shell::new(torus, ALTITUDE_M, INCLINATION_DEG);
 
@@ -38,16 +31,15 @@ pub async fn plan_and_assign<L: NetworkLayer>(
         .build();
 
     let coordinator = Coordinator::new(shell, ReducerPlacement::CenterOfAoi);
-    let plan: JobPlan<MAX_SATELLITES> = match coordinator.plan(&job, local_node) {
-        Ok(p) => p,
-        Err(msg) => {
-            event::info(0, msg).ok();
-            return;
-        }
-    };
+    coordinator.plan(&job, local_node)
+}
 
-    event::info(0, "Job planned, sending assignments").ok();
-
+pub async fn send_assignments(
+    handle: &mut NodeHandle<'_>,
+    plan: &JobPlan<MAX_SATELLITES>,
+    local_address: Address,
+    job_id: u16,
+) {
     for (i, collector_pos) in plan.collectors.iter().enumerate() {
         let mapper_idx = plan.assignment[i];
         let mapper_pos = plan.mappers[mapper_idx];
@@ -57,7 +49,7 @@ pub async fn plan_and_assign<L: NetworkLayer>(
             partition_id: i as u8,
         };
         let target = Address::from(*collector_pos);
-        isl::send(link, ctx, target, OpCode::AssignCollector, job_id, payload.as_bytes())
+        isl::send(handle, target, OpCode::AssignCollector, job_id, payload.as_bytes())
             .await
             .ok();
     }
@@ -70,19 +62,17 @@ pub async fn plan_and_assign<L: NetworkLayer>(
             collector_count: collector_count as u8,
         };
         let target = Address::from(*mapper_pos);
-        isl::send(link, ctx, target, OpCode::AssignMapper, job_id, payload.as_bytes())
+        isl::send(handle, target, OpCode::AssignMapper, job_id, payload.as_bytes())
             .await
             .ok();
     }
 
     let payload = AssignReducerPayload {
-        los_addr: RawAddress::from(ctx.local_address),
+        los_addr: RawAddress::from(local_address),
         mapper_count: plan.mappers.len() as u8,
     };
     let target = Address::from(plan.reducer);
-    isl::send(link, ctx, target, OpCode::AssignReducer, job_id, payload.as_bytes())
+    isl::send(handle, target, OpCode::AssignReducer, job_id, payload.as_bytes())
         .await
         .ok();
-
-    event::info(0, "All assignments sent").ok();
 }

@@ -1,39 +1,31 @@
-use leodos_libcfs::cfe::evs::event;
-use leodos_protocols::mission::compute::packet::{AssignCollectorPayload, OpCode};
-use leodos_protocols::network::NetworkLayer;
+use leodos_protocols::mission::compute::packet::OpCode;
+use leodos_protocols::network::isl::address::Address;
 
 use crate::data;
-use crate::isl;
+use crate::isl::{self, NodeHandle};
 
-pub async fn send_data<L: NetworkLayer>(
-    link: &mut L,
-    ctx: &isl::Context,
-    payload: &AssignCollectorPayload,
+const MAX_CHUNK: usize = 256;
+
+pub async fn send_data(
+    handle: &mut NodeHandle<'_>,
+    mapper_addr: Address,
+    partition_id: u8,
     job_id: u16,
 ) {
-    let mapper_addr = payload.mapper_addr.parse();
-    let partition_id = payload.partition_id;
-
-    event::info(0, "Collector: partitioning text").ok();
-
     let total_partitions = crate::NUM_SATS;
     let (chunk, chunk_len) = data::partition_text(partition_id, total_partitions);
 
     if chunk_len == 0 {
-        event::info(0, "Collector: empty partition").ok();
         return;
     }
 
-    let max_chunk = 256;
     let mut offset = 0;
     while offset < chunk_len {
-        let end = (offset + max_chunk).min(chunk_len);
+        let end = (offset + MAX_CHUNK).min(chunk_len);
         let slice = &chunk[offset..end];
-        isl::send(link, ctx, mapper_addr, OpCode::DataChunk, job_id, slice)
+        isl::send(handle, mapper_addr, OpCode::DataChunk, job_id, slice)
             .await
             .ok();
         offset = end;
     }
-
-    event::info(0, "Collector: done").ok();
 }

@@ -2,11 +2,12 @@ use heapless::index_map::FnvIndexMap;
 use leodos_libcfs::cfe::evs::event;
 use leodos_protocols::mission::compute::packet::OpCode;
 use leodos_protocols::network::isl::address::Address;
-use leodos_protocols::network::NetworkLayer;
 use zerocopy::IntoBytes;
 
 use crate::data::{WordCount, WORD_COUNT_SIZE};
-use crate::isl;
+use crate::isl::{self, NodeHandle};
+
+const BATCH_BUF_SIZE: usize = 256;
 
 pub struct MapState {
     counts: FnvIndexMap<[u8; 16], u32, 64>,
@@ -35,15 +36,14 @@ impl MapState {
         }
     }
 
-    pub async fn emit_results<L: NetworkLayer>(
+    pub async fn emit_results(
         &self,
-        link: &mut L,
-        ctx: &isl::Context,
+        handle: &mut NodeHandle<'_>,
         reducer_addr: Address,
         job_id: u16,
     ) {
-        let max_per_packet = 256 / WORD_COUNT_SIZE;
-        let mut buf = [0u8; 256];
+        let max_per_packet = BATCH_BUF_SIZE / WORD_COUNT_SIZE;
+        let mut buf = [0u8; BATCH_BUF_SIZE];
         let mut idx = 0;
 
         for (word, &count) in self.counts.iter() {
@@ -54,7 +54,7 @@ impl MapState {
 
             if idx >= max_per_packet {
                 let payload_len = idx * WORD_COUNT_SIZE;
-                isl::send(link, ctx, reducer_addr, OpCode::DataChunk, job_id, &buf[..payload_len])
+                isl::send(handle, reducer_addr, OpCode::DataChunk, job_id, &buf[..payload_len])
                     .await
                     .ok();
                 idx = 0;
@@ -63,7 +63,7 @@ impl MapState {
 
         if idx > 0 {
             let payload_len = idx * WORD_COUNT_SIZE;
-            isl::send(link, ctx, reducer_addr, OpCode::DataChunk, job_id, &buf[..payload_len])
+            isl::send(handle, reducer_addr, OpCode::DataChunk, job_id, &buf[..payload_len])
                 .await
                 .ok();
         }
