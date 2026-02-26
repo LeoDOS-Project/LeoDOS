@@ -102,10 +102,6 @@ impl SpaceCompMessage {
         self.header.job_id()
     }
 
-    pub fn header(&self) -> &SpaceCompHeader {
-        &self.header
-    }
-
     pub fn payload(&self) -> &[u8] {
         &self.payload
     }
@@ -144,14 +140,14 @@ impl SpaceCompMessage {
 /// ```
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable, Clone, Copy)]
-pub struct SpaceCompHeader {
+pub(crate) struct SpaceCompHeader {
     op_code: u8,
     _reserved: u8,
     job_id: U16,
 }
 
 impl SpaceCompHeader {
-    pub fn new(op_code: OpCode, job_id: u16) -> Self {
+    pub(crate) fn new(op_code: OpCode, job_id: u16) -> Self {
         Self {
             op_code: op_code as u8,
             _reserved: 0,
@@ -159,19 +155,19 @@ impl SpaceCompHeader {
         }
     }
 
-    pub fn op_code(&self) -> Result<OpCode, ()> {
+    pub(crate) fn op_code(&self) -> Result<OpCode, ()> {
         self.op_code.try_into()
     }
 
-    pub fn set_op_code(&mut self, op_code: OpCode) {
+    pub(crate) fn set_op_code(&mut self, op_code: OpCode) {
         self.op_code = op_code as u8;
     }
 
-    pub fn job_id(&self) -> u16 {
+    pub(crate) fn job_id(&self) -> u16 {
         self.job_id.get()
     }
 
-    pub fn set_job_id(&mut self, job_id: u16) {
+    pub(crate) fn set_job_id(&mut self, job_id: u16) {
         self.job_id = U16::new(job_id);
     }
 }
