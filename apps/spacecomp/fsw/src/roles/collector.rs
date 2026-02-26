@@ -6,7 +6,7 @@ use crate::isl::{self, NodeHandle};
 
 const MAX_CHUNK: usize = 256;
 
-pub async fn send_data(
+pub async fn run(
     handle: &mut NodeHandle<'_>,
     mapper_addr: Address,
     partition_id: u8,
@@ -22,8 +22,7 @@ pub async fn send_data(
     let mut offset = 0;
     while offset < chunk_len {
         let end = (offset + MAX_CHUNK).min(chunk_len);
-        let slice = &chunk[offset..end];
-        isl::send(handle, mapper_addr, OpCode::DataChunk, job_id, slice)
+        isl::send(handle, mapper_addr, OpCode::DataChunk, job_id, &chunk[offset..end])
             .await
             .ok();
         offset = end;

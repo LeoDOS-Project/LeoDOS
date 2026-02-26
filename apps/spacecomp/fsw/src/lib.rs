@@ -1,5 +1,7 @@
 #![no_std]
 
+use core::mem::size_of;
+
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::error::Error;
@@ -34,7 +36,6 @@ mod bindings {
 mod fmt;
 pub mod data;
 mod isl;
-pub mod machine;
 mod roles;
 
 pub const NUM_ORBITS: u8 = bindings::SPACECOMP_NUM_ORBITS as u8;
@@ -171,70 +172,66 @@ pub extern "C" fn SPACECOMP_AppMain() {
         let (mut handle, mut driver) = node.split(app_link, FixedRto::new(RTO_MS));
 
         let app_task = async move {
-            let mut machine = machine::Machine::new();
-            let mut payload_buf = [0u8; 512];
+            use leodos_protocols::mission::compute::packet::{
+                AssignCollectorPayload, AssignMapperPayload, AssignReducerPayload, OpCode,
+            };
+            use zerocopy::FromBytes;
+
+            let mut buf = [0u8; 512];
 
             loop {
                 let Ok(msg) = handle.recv().await else { break };
-                let Some(cmd) = isl::parse(&msg.data, &mut payload_buf) else {
+                let Some(cmd) = isl::parse(&msg.data, &mut buf) else {
                     continue;
                 };
 
-                let event = machine::Event {
-                    op: cmd.op_code,
-                    job_id: cmd.job_id,
-                    payload: &payload_buf[..cmd.payload_len],
-                };
-
-                let Some(action) = machine.on_event(event, point) else {
-                    continue;
-                };
-
-                match action {
-                    machine::Action::SendAssignments {
-                        plan,
-                        local_address,
-                        job_id,
-                    } => {
-                        roles::coordinator::send_assignments(
-                            &mut handle,
-                            &plan,
-                            local_address,
-                            job_id,
-                        )
-                        .await;
+                match cmd.op_code {
+                    OpCode::SubmitJob => {
+                        roles::coordinator::run(&mut handle, point, cmd.job_id).await;
                     }
-                    machine::Action::CollectAndSend {
-                        mapper_addr,
-                        partition_id,
-                        job_id,
-                    } => {
-                        roles::collector::send_data(
-                            &mut handle,
-                            mapper_addr,
-                            partition_id,
-                            job_id,
-                        )
-                        .await;
-                    }
-                    machine::Action::EmitMapResults {
-                        map_state,
-                        reducer_addr,
-                        job_id,
-                    } => {
-                        map_state
-                            .emit_results(&mut handle, reducer_addr, job_id)
+                    OpCode::AssignCollector => {
+                        if let Some(p) = buf
+                            .get(..size_of::<AssignCollectorPayload>())
+                            .and_then(|b| AssignCollectorPayload::read_from_bytes(b).ok())
+                        {
+                            roles::collector::run(
+                                &mut handle,
+                                p.mapper_addr.parse(),
+                                p.partition_id,
+                                cmd.job_id,
+                            )
                             .await;
+                        }
                     }
-                    machine::Action::EmitReduceResults {
-                        reduce_state,
-                        los_addr,
-                        job_id,
-                    } => {
-                        reduce_state
-                            .emit_results(&mut handle, los_addr, job_id)
+                    OpCode::AssignMapper => {
+                        if let Some(p) = buf
+                            .get(..size_of::<AssignMapperPayload>())
+                            .and_then(|b| AssignMapperPayload::read_from_bytes(b).ok())
+                        {
+                            roles::mapper::run(
+                                &mut handle,
+                                p.reducer_addr.parse(),
+                                cmd.job_id,
+                                p.collector_count,
+                            )
                             .await;
+                        }
                     }
+                    OpCode::AssignReducer => {
+                        if let Some(p) = buf
+                            .get(..size_of::<AssignReducerPayload>())
+                            .and_then(|b| AssignReducerPayload::read_from_bytes(b).ok())
+                        {
+                            roles::reducer::run(
+                                &mut handle,
+                                p.los_addr.parse(),
+                                cmd.job_id,
+                                p.mapper_count,
+                            )
+                            .await;
+                        }
+                    }
+                    _ => {}
                 }
             }
         };

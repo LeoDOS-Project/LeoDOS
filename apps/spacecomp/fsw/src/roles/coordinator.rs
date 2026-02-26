@@ -12,13 +12,34 @@ use leodos_protocols::network::isl::torus::{Point, Torus};
 use zerocopy::IntoBytes;
 
 use crate::isl::{self, NodeHandle};
-use crate::machine::MAX_SATELLITES;
 use crate::{NUM_ORBITS, NUM_SATS};
 
+const MAX_SATELLITES: usize = 64;
 const ALTITUDE_M: f32 = 550_000.0;
 const INCLINATION_DEG: f32 = 87.0;
 
-pub fn plan(local_node: Point) -> Result<JobPlan<MAX_SATELLITES>, &'static str> {
+pub async fn run(handle: &mut NodeHandle<'_>, local_node: Point, job_id: u16) {
+    let plan = match plan(local_node) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    let local_address = Address::from(local_node);
+    send_assignments(handle, &plan, local_address, job_id).await;
+
+    let mut buf = [0u8; 512];
+    loop {
+        let Ok(msg) = handle.recv().await else { return };
+        let Some(cmd) = isl::parse(&msg.data, &mut buf) else {
+            continue;
+        };
+        if cmd.op_code == OpCode::JobResult && cmd.job_id == job_id {
+            return;
+        }
+    }
+}
+
+fn plan(local_node: Point) -> Result<JobPlan<MAX_SATELLITES>, &'static str> {
     let torus = Torus::new(NUM_ORBITS, NUM_SATS);
     let shell = Shell::new(torus, ALTITUDE_M, INCLINATION_DEG);
 
@@ -34,7 +55,7 @@ pub fn plan(local_node: Point) -> Result<JobPlan<MAX_SATELLITES>, &'static str> 
     coordinator.plan(&job, local_node)
 }
 
-pub async fn send_assignments(
+async fn send_assignments(
     handle: &mut NodeHandle<'_>,
     plan: &JobPlan<MAX_SATELLITES>,
     local_address: Address,
