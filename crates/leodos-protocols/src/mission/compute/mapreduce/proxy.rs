@@ -119,10 +119,10 @@ impl Coordinator {
     }
 
     fn filter_ascending<const N: usize>(&self, nodes: &Vec<Point, N>) -> Vec<Point, N> {
-        let half = self.shell.torus.num_rows / 2;
+        let half = self.shell.torus.num_orbs / 2;
         let mut result = Vec::new();
         for &node in nodes {
-            if node.y < half {
+            if node.orb < half {
                 let _ = result.push(node);
             }
         }
@@ -131,8 +131,8 @@ impl Coordinator {
 
     fn select_mappers<const N: usize>(&self, grid_aoi: &Aoi) -> Vec<Point, N> {
         let mut mappers = Vec::new();
-        for x in 0..self.shell.torus.num_cols {
-            for y in 0..self.shell.torus.num_rows {
+        for x in 0..self.shell.torus.num_sats {
+            for y in 0..self.shell.torus.num_orbs {
                 let point = Point::new(y, x);
                 if grid_aoi.contains(&self.shell.torus, point) {
                     if mappers.push(point).is_err() {

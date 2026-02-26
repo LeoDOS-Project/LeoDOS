@@ -1,7 +1,5 @@
 #![no_std]
 
-use core::mem::size_of;
-
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::error::Error;
@@ -9,20 +7,28 @@ use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::Runtime;
 use leodos_protocols::datalink::link::cfs::UdpDataLink;
+use leodos_protocols::mission::compute::packet::AssignCollectorPayload;
+use leodos_protocols::mission::compute::packet::AssignMapperPayload;
+use leodos_protocols::mission::compute::packet::AssignReducerPayload;
+use leodos_protocols::mission::compute::packet::OpCode;
+use leodos_protocols::mission::compute::packet::SpaceCompMessage;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::isl::routing::algorithm::distance_minimizing::DistanceMinimizing;
 use leodos_protocols::network::isl::routing::local::LocalChannel;
+use leodos_protocols::network::isl::routing::local::LocalLinkError;
 use leodos_protocols::network::isl::routing::Router;
 use leodos_protocols::network::isl::torus::Direction;
 use leodos_protocols::network::isl::torus::Point;
 use leodos_protocols::network::isl::torus::Torus;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
+use leodos_protocols::transport::srspp::api::cfs::SrsppNodeHandle;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
 use leodos_protocols::transport::srspp::packet::SrsppDataPacket;
 use leodos_protocols::transport::srspp::rto::FixedRto;
+use zerocopy::FromBytes;
 
 mod bindings {
     #![allow(non_upper_case_globals)]
@@ -35,8 +41,9 @@ mod bindings {
 #[macro_use]
 mod fmt;
 pub mod data;
-mod isl;
 mod roles;
+
+pub type NodeHandle<'a> = SrsppNodeHandle<'a, LocalLinkError, 8, 4096, 512, 8192, 4>;
 
 pub const NUM_ORBITS: u8 = bindings::SPACECOMP_NUM_ORBITS as u8;
 pub const NUM_SATS: u8 = bindings::SPACECOMP_NUM_SATS as u8;
@@ -172,66 +179,66 @@ pub extern "C" fn SPACECOMP_AppMain() {
         let (mut handle, mut driver) = node.split(app_link, FixedRto::new(RTO_MS));
 
         let app_task = async move {
-            use leodos_protocols::mission::compute::packet::{
-                AssignCollectorPayload, AssignMapperPayload, AssignReducerPayload, OpCode,
-            };
-            use zerocopy::FromBytes;
-
-            let mut buf = [0u8; 512];
+            let mut recv_buf = [0u8; 8192];
 
             loop {
-                let Ok(msg) = handle.recv().await else { break };
-                let Some(cmd) = isl::parse(&msg.data, &mut buf) else {
+                let Ok((_, len)) = handle.recv(&mut recv_buf).await else {
+                    break;
+                };
+                let Some(msg) = SpaceCompMessage::parse(&recv_buf[..len]) else {
+                    continue;
+                };
+                let Ok(op_code) = msg.op_code() else {
                     continue;
                 };
 
-                match cmd.op_code {
+                match op_code {
                     OpCode::SubmitJob => {
-                        roles::coordinator::run(&mut handle, point, cmd.job_id).await;
+                        roles::coordinator::run(&mut handle, point, msg.job_id()).await;
                     }
                     OpCode::AssignCollector => {
-                        let Some(p) = buf
-                            .get(..size_of::<AssignCollectorPayload>())
-                            .and_then(|b| AssignCollectorPayload::read_from_bytes(b).ok())
+                        let Some(p) = AssignCollectorPayload::read_from_prefix(msg.payload())
+                            .ok()
+                            .map(|(v, _)| v)
                         else {
                             continue;
                         };
                         roles::collector::run(
                             &mut handle,
-                            p.mapper_addr().parse(),
+                            p.mapper_addr(),
                             p.partition_id(),
-                            cmd.job_id,
+                            msg.job_id(),
                         )
                         .await;
                     }
                     OpCode::AssignMapper => {
-                        let Some(p) = buf
-                            .get(..size_of::<AssignMapperPayload>())
-                            .and_then(|b| AssignMapperPayload::read_from_bytes(b).ok())
+                        let Some(p) = AssignMapperPayload::read_from_prefix(msg.payload())
+                            .ok()
+                            .map(|(v, _)| v)
                         else {
                             continue;
                         };
 
                         roles::mapper::run(
                             &mut handle,
-                            p.reducer_addr().parse(),
-                            cmd.job_id,
+                            p.reducer_addr(),
+                            msg.job_id(),
                             p.collector_count(),
                         )
                         .await;
                     }
                     OpCode::AssignReducer => {
-                        let Some(p) = buf
-                            .get(..size_of::<AssignReducerPayload>())
-                            .and_then(|b| AssignReducerPayload::read_from_bytes(b).ok())
+                        let Some(p) = AssignReducerPayload::read_from_prefix(msg.payload())
+                            .ok()
+                            .map(|(v, _)| v)
                         else {
                             continue;
                         };
 
                         roles::reducer::run(
                             &mut handle,
-                            p.los_addr().parse(),
-                            cmd.job_id,
+                            p.los_addr(),
+                            msg.job_id(),
                             p.mapper_count(),
                         )
                         .await;

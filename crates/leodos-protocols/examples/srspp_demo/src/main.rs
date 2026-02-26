@@ -59,8 +59,12 @@ fn sender_config(addr: Address) -> SenderConfig {
     SenderConfig {
         source_address: addr,
         apid: Apid::new(0x50).unwrap(),
+        function_code: 0,
+        message_id: 0,
+        action_code: 0,
         rto_ticks: 1000,
         max_retransmits: 3,
+        header_overhead: leodos_protocols::transport::srspp::packet::SrsppDataPacket::HEADER_SIZE,
     }
 }
 
@@ -68,6 +72,9 @@ fn receiver_config(addr: Address) -> ReceiverConfig {
     ReceiverConfig {
         local_address: addr,
         apid: Apid::new(0x50).unwrap(),
+        function_code: 0,
+        message_id: 0,
+        action_code: 0,
         immediate_ack: true,
         ack_delay_ticks: 100,
         progress_timeout_ticks: None,
@@ -97,7 +104,7 @@ async fn main() {
         for i in 0..5 {
             let msg = format!("Hello #{} from {:?}", i, sender_addr);
             println!("[Sender] Sending: {}", msg);
-            if let Err(e) = sender.send(msg.as_bytes()).await {
+            if let Err(e) = sender.send(receiver_addr, msg.as_bytes()).await {
                 eprintln!("[Sender] Error: {:?}", e);
                 break;
             }
@@ -109,10 +116,11 @@ async fn main() {
     });
 
     let recv_task = tokio::spawn(async move {
+        let mut buf = [0u8; 8192];
         for _ in 0..5 {
-            match receiver.recv().await {
-                Ok(data) => {
-                    let msg = String::from_utf8_lossy(&data);
+            match receiver.recv(&mut buf).await {
+                Ok(len) => {
+                    let msg = String::from_utf8_lossy(&buf[..len]);
                     println!("[Receiver] Got: {}", msg);
                 }
                 Err(e) => {

@@ -48,12 +48,13 @@ pub extern "C" fn SRSPP_RECEIVER_AppMain() {
         let (mut handle, mut driver) = receiver.split::<_, 512>(network);
 
         let recv_task = async {
+            let mut buf = [0u8; 8192];
             loop {
-                let msg = match handle.recv().await {
-                    Ok(m) => m,
+                let (_, len) = match handle.recv(&mut buf).await {
+                    Ok(r) => r,
                     Err(_) => break,
                 };
-                if let Ok(text) = core::str::from_utf8(&msg.data) {
+                if let Ok(text) = core::str::from_utf8(&buf[..len]) {
                     event::info(1, text).ok();
                 } else {
                     event::info(1, "Received binary message").ok();

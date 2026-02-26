@@ -1,12 +1,13 @@
 use heapless::index_map::FnvIndexMap;
-use leodos_protocols::mission::compute::packet::OpCode;
+use leodos_protocols::mission::compute::packet::{OpCode, SpaceCompMessage};
 use leodos_protocols::network::isl::address::Address;
 use zerocopy::IntoBytes;
 
 use crate::data::{WordCount, WORD_COUNT_SIZE};
-use crate::isl::{self, NodeHandle};
+use crate::NodeHandle;
 
 const BATCH_BUF_SIZE: usize = 256;
+const MSG_BUF_SIZE: usize = 512;
 
 pub async fn run(
     handle: &mut NodeHandle<'_>,
@@ -16,18 +17,20 @@ pub async fn run(
 ) {
     let mut counts: FnvIndexMap<[u8; 16], u32, 64> = FnvIndexMap::new();
     let mut received = 0u8;
-    let mut buf = [0u8; 512];
+    let mut recv_buf = [0u8; 8192];
 
     loop {
-        let Ok(msg) = handle.recv().await else { return };
-        let Some(cmd) = isl::parse(&msg.data, &mut buf) else {
+        let Ok((_, len)) = handle.recv(&mut recv_buf).await else {
+            return;
+        };
+        let Some(msg) = SpaceCompMessage::parse(&recv_buf[..len]) else {
             continue;
         };
-        if cmd.op_code != OpCode::DataChunk {
+        if msg.op_code() != Ok(OpCode::DataChunk) {
             continue;
         }
 
-        ingest(&mut counts, &buf[..cmd.payload_len]);
+        ingest(&mut counts, msg.payload());
         received += 1;
 
         if received >= expected {
@@ -60,28 +63,41 @@ async fn emit(
     job_id: u16,
 ) {
     let max_per_packet = BATCH_BUF_SIZE / WORD_COUNT_SIZE;
-    let mut buf = [0u8; BATCH_BUF_SIZE];
+    let mut payload_buf = [0u8; BATCH_BUF_SIZE];
+    let mut msg_buf = [0u8; MSG_BUF_SIZE];
     let mut idx = 0;
 
     for (word, &count) in counts.iter() {
         let wc = WordCount::new(word, count);
         let offset = idx * WORD_COUNT_SIZE;
-        buf[offset..offset + WORD_COUNT_SIZE].copy_from_slice(wc.as_bytes());
+        payload_buf[offset..offset + WORD_COUNT_SIZE].copy_from_slice(wc.as_bytes());
         idx += 1;
 
         if idx >= max_per_packet {
             let payload_len = idx * WORD_COUNT_SIZE;
-            isl::send(handle, reducer_addr, OpCode::DataChunk, job_id, &buf[..payload_len])
-                .await
-                .ok();
+            if let Some(msg) = SpaceCompMessage::builder()
+                .buffer(&mut msg_buf)
+                .op_code(OpCode::DataChunk)
+                .job_id(job_id)
+                .payload(&payload_buf[..payload_len])
+                .build()
+            {
+                handle.send(reducer_addr, msg.as_bytes()).await.ok();
+            }
             idx = 0;
         }
     }
 
     if idx > 0 {
         let payload_len = idx * WORD_COUNT_SIZE;
-        isl::send(handle, reducer_addr, OpCode::DataChunk, job_id, &buf[..payload_len])
-            .await
-            .ok();
+        if let Some(msg) = SpaceCompMessage::builder()
+            .buffer(&mut msg_buf)
+            .op_code(OpCode::DataChunk)
+            .job_id(job_id)
+            .payload(&payload_buf[..payload_len])
+            .build()
+        {
+            handle.send(reducer_addr, msg.as_bytes()).await.ok();
+        }
     }
 }

@@ -107,10 +107,10 @@ impl JobCost {
     }
 
     pub fn hop_distance(torus: &Torus, from: Point, to: Point) -> u32 {
-        let dx = Torus::distance(from.x, to.x, torus.num_cols)
-            .min(Torus::distance(to.x, from.x, torus.num_cols));
-        let dy = Torus::distance(from.y, to.y, torus.num_rows)
-            .min(Torus::distance(to.y, from.y, torus.num_rows));
+        let dx = Torus::distance(from.sat, to.sat, torus.num_sats)
+            .min(Torus::distance(to.sat, from.sat, torus.num_sats));
+        let dy = Torus::distance(from.orb, to.orb, torus.num_orbs)
+            .min(Torus::distance(to.orb, from.orb, torus.num_orbs));
         (dx + dy) as u32
     }
 }

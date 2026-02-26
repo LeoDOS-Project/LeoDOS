@@ -89,6 +89,9 @@ fn rx_config() -> ReceiverConfig {
     ReceiverConfig {
         local_address: Address::ground(1),
         apid: Apid::new(RX_APID).unwrap(),
+        function_code: 0,
+        message_id: 0,
+        action_code: 0,
         immediate_ack: false,
         ack_delay_ticks: ACK_DELAY_MS,
         progress_timeout_ticks: None,
@@ -99,8 +102,12 @@ fn tx_config() -> SenderConfig {
     SenderConfig {
         source_address: Address::ground(1),
         apid: Apid::new(TX_APID).unwrap(),
+        function_code: 0,
+        message_id: 0,
+        action_code: 0,
         rto_ticks: RTO_MS,
         max_retransmits: MAX_RETRANSMITS,
+        header_overhead: leodos_protocols::transport::srspp::packet::SrsppDataPacket::HEADER_SIZE,
     }
 }
 
@@ -121,10 +128,11 @@ async fn echo_loop<'a>(
         MTU,
     >,
 ) -> core::result::Result<(), SrsppError> {
+    let mut recv_buf = [0u8; REASM];
     loop {
-        let msg = rx_handle.recv().await?;
+        let (source, len) = rx_handle.recv(&mut recv_buf).await?;
         event::info(1, "Echo: received message").ok();
-        tx_handle.send(&msg.data).await?;
+        tx_handle.send(source, &recv_buf[..len]).await?;
     }
 }
 

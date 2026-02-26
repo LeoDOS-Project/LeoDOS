@@ -15,10 +15,10 @@ impl RoutingAlgorithm for Manhattan {
         }
 
         // Prioritize Y direction first
-        if current.y != target.y {
-            return torus.shortest_path_direction_y(current, target);
+        if current.orb != target.orb {
+            return torus.shortest_path_direction_orb(current, target);
         }
 
-        torus.shortest_path_direction_x(current, target)
+        torus.shortest_path_direction_sat(current, target)
     }
 }

@@ -29,11 +29,11 @@ impl Projection {
     /// - Latitude: `arcsin(sin(i) * sin(ν))`
     /// - Longitude: `Ω + atan2(cos(i) * sin(ν), cos(ν))`
     pub fn nadir(&self, point: Point) -> LatLon {
-        let num_planes = self.shell.torus.num_cols as f32;
-        let sats_per_plane = self.shell.torus.num_rows as f32;
+        let num_planes = self.shell.torus.num_sats as f32;
+        let sats_per_plane = self.shell.torus.num_orbs as f32;
 
-        let raan = 2.0 * PI * (point.x as f32) / num_planes;
-        let true_anomaly = 2.0 * PI * (point.y as f32) / sats_per_plane;
+        let raan = 2.0 * PI * (point.sat as f32) / num_planes;
+        let true_anomaly = 2.0 * PI * (point.orb as f32) / sats_per_plane;
 
         let sin_i = libm::sinf(self.shell.inclination_rad);
         let cos_i = libm::cosf(self.shell.inclination_rad);
@@ -57,8 +57,8 @@ impl Projection {
     pub fn satellites_in_geo_aoi<const N: usize>(&self, geo_aoi: &GeoAoi) -> Vec<Point, N> {
         let mut result = Vec::new();
 
-        for x in 0..self.shell.torus.num_cols {
-            for y in 0..self.shell.torus.num_rows {
+        for x in 0..self.shell.torus.num_sats {
+            for y in 0..self.shell.torus.num_orbs {
                 let point = Point::new(y, x);
                 let pos = self.nadir(point);
                 if geo_aoi.contains(pos) && result.push(point).is_err() {
@@ -85,10 +85,10 @@ impl Projection {
         let mut max_x = u8::MIN;
 
         for &p in &covering {
-            min_y = min_y.min(p.y);
-            max_y = max_y.max(p.y);
-            min_x = min_x.min(p.x);
-            max_x = max_x.max(p.x);
+            min_y = min_y.min(p.orb);
+            max_y = max_y.max(p.orb);
+            min_x = min_x.min(p.sat);
+            max_x = max_x.max(p.sat);
         }
 
         Some(Aoi::new(Point::new(min_y, min_x), Point::new(max_y, max_x)))

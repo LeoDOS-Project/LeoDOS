@@ -22,8 +22,8 @@ impl CostModel for ManhattanCost {
     type Cost = u32;
 
     fn cost(&self, torus: &Torus, task: Point, processor: Point) -> u32 {
-        let dx = torus.distance_x(task, processor).min(torus.distance_x(processor, task));
-        let dy = torus.distance_y(task, processor).min(torus.distance_y(processor, task));
+        let dx = torus.distance_sat(task, processor).min(torus.distance_sat(processor, task));
+        let dy = torus.distance_orb(task, processor).min(torus.distance_orb(processor, task));
         (dx + dy) as u32 * self.hop_cost
     }
 }

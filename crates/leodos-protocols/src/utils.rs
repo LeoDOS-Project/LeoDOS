@@ -37,3 +37,8 @@ pub fn checksum_u8(bytes: &[u8]) -> u8 {
 pub fn validate_checksum_u8(bytes: &[u8]) -> bool {
     checksum_u8(bytes) == 0
 }
+
+pub trait Header<H> {
+    fn get(&self) -> &H;
+    fn get_mut(&mut self) -> &mut H;
+}

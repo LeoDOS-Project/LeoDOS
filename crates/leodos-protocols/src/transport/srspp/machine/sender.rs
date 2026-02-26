@@ -3,9 +3,8 @@
 //! Handles segmentation, buffering, and retransmission of messages.
 //! Completely synchronous - no I/O, no async.
 
-use crate::network::isl::address::Address;
+use crate::network::isl::address::{Address, RawAddress};
 use crate::network::spp::{Apid, SequenceCount, SequenceFlag};
-use crate::transport::srspp::packet::{SrsppDataPacket, SrsppPacketError};
 use heapless::Vec;
 
 /// Maximum number of actions that can be emitted per event.
@@ -15,7 +14,7 @@ const MAX_ACTIONS: usize = 32;
 #[derive(Debug)]
 pub enum SenderEvent<'a> {
     /// Application wants to send data.
-    SendRequest { data: &'a [u8] },
+    SendRequest { target: Address, data: &'a [u8] },
 
     /// An ACK packet was received from the remote.
     AckReceived {
@@ -31,7 +30,7 @@ pub enum SenderEvent<'a> {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum SenderAction {
     /// Transmit a packet and start its retransmission timer.
-    /// Call `get_packet(seq)` to get the packet data.
+    /// Call `get_payload(seq)` to get the payload data.
     Transmit { seq: SequenceCount, rto_ticks: u32 },
 
     /// Stop a retransmission timer.
@@ -103,28 +102,31 @@ impl<'a> IntoIterator for &'a SenderActions {
 /// Error from sender operations.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum SenderError {
-    /// Not enough space in send buffer.
     #[error("send buffer full")]
     BufferFull,
-    /// Packet build error.
-    #[error("packet build error: {0}")]
-    PacketError(#[from] SrsppPacketError),
-    /// Window full (too many unacked packets).
     #[error("send window full")]
     WindowFull,
 }
 
+pub struct PayloadInfo<'a> {
+    pub seq: SequenceCount,
+    pub flags: SequenceFlag,
+    pub target: Address,
+    pub payload: &'a [u8],
+}
+
 /// Configuration for the sender.
 #[derive(Debug, Clone)]
+#[derive(bon::Builder)]
 pub struct SenderConfig {
-    /// Source address for outgoing packets.
     pub source_address: Address,
-    /// APID to use for outgoing packets.
     pub apid: Apid,
-    /// Retransmission timeout in ticks.
+    pub function_code: u8,
+    pub message_id: u8,
+    pub action_code: u8,
     pub rto_ticks: u32,
-    /// Maximum retransmission attempts before giving up.
     pub max_retransmits: u8,
+    pub header_overhead: usize,
 }
 
 /// State of a packet slot.
@@ -137,14 +139,31 @@ enum SlotState {
 }
 
 /// Metadata for a packet in the send buffer.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct PacketMeta {
     state: SlotState,
     seq: u16,
+    flags: SequenceFlag,
+    target: RawAddress,
     retransmit_count: u8,
     offset: usize,
     len: usize,
     is_segmented: bool,
+}
+
+impl Default for PacketMeta {
+    fn default() -> Self {
+        Self {
+            state: SlotState::Empty,
+            seq: 0,
+            flags: SequenceFlag::Unsegmented,
+            target: RawAddress::from(Address::ground(0)),
+            retransmit_count: 0,
+            offset: 0,
+            len: 0,
+            is_segmented: false,
+        }
+    }
 }
 
 /// Sender state machine.
@@ -159,22 +178,14 @@ struct PacketMeta {
 /// * `MTU` - Maximum transmission unit (packet size)
 pub struct SenderMachine<const WIN: usize, const BUF: usize, const MTU: usize> {
     config: SenderConfig,
-
-    // Packet buffer
     meta: [PacketMeta; WIN],
     data: [u8; BUF],
     write_pos: usize,
-
-    // Sequence tracking
     next_seq: u16,
     send_base: u16,
-
-    // Transmit buffer for building packets
-    tx_buffer: [u8; MTU],
 }
 
 impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BUF, MTU> {
-    /// Create a new sender state machine.
     pub fn new(config: SenderConfig) -> Self {
         Self {
             config,
@@ -183,13 +194,15 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
             write_pos: 0,
             next_seq: 0,
             send_base: 0,
-            tx_buffer: [0u8; MTU],
         }
     }
 
-    /// Maximum payload size per packet.
-    pub const fn max_payload_per_packet() -> usize {
-        SrsppDataPacket::max_payload_size(MTU)
+    pub fn config(&self) -> &SenderConfig {
+        &self.config
+    }
+
+    pub fn max_payload_per_packet(&self) -> usize {
+        MTU.saturating_sub(self.config.header_overhead)
     }
 
     /// Available space in the send buffer (bytes).
@@ -215,15 +228,17 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         self.meta.iter().all(|m| m.state == SlotState::Empty)
     }
 
-    /// Get packet data by sequence number.
-    ///
-    /// Call this after receiving a `Transmit` action to get the packet bytes.
-    pub fn get_packet(&self, seq: SequenceCount) -> Option<&[u8]> {
+    pub fn get_payload(&self, seq: SequenceCount) -> Option<PayloadInfo<'_>> {
         let seq_val = seq.value();
         self.meta
             .iter()
             .find(|m| m.state != SlotState::Empty && m.seq == seq_val)
-            .map(|m| &self.data[m.offset..m.offset + m.len])
+            .map(|m| PayloadInfo {
+                seq: SequenceCount::from(m.seq),
+                flags: m.flags,
+                target: m.target.parse(),
+                payload: &self.data[m.offset..m.offset + m.len],
+            })
     }
 
     /// Process an event and produce actions.
@@ -235,8 +250,8 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         actions.clear();
 
         match event {
-            SenderEvent::SendRequest { data } => {
-                self.handle_send_request(data, actions)?;
+            SenderEvent::SendRequest { target, data } => {
+                self.handle_send_request(target, data, actions)?;
             }
             SenderEvent::AckReceived {
                 cumulative_ack,
@@ -253,13 +268,14 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
 
     fn handle_send_request(
         &mut self,
+        target: Address,
         data: &[u8],
         actions: &mut SenderActions,
     ) -> Result<(), SenderError> {
-        let max_payload = Self::max_payload_per_packet();
+        let max_payload = self.max_payload_per_packet();
 
         if data.len() <= max_payload {
-            self.queue_packet(data, SequenceFlag::Unsegmented, false, actions)?;
+            self.queue_packet(target, data, SequenceFlag::Unsegmented, false, actions)?;
         } else {
             let mut offset = 0;
             let mut is_first = true;
@@ -279,6 +295,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
                 };
 
                 self.queue_packet(
+                    target,
                     &data[offset..offset + chunk_size],
                     flags,
                     true,
@@ -293,61 +310,44 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
 
     fn queue_packet(
         &mut self,
+        target: Address,
         payload: &[u8],
         flags: SequenceFlag,
         is_segmented: bool,
         actions: &mut SenderActions,
     ) -> Result<(), SenderError> {
-        // Build packet in tx_buffer
-        let packet = SrsppDataPacket::builder()
-            .buffer(&mut self.tx_buffer)
-            .source_address(self.config.source_address)
-            .apid(self.config.apid)
-            .sequence_count(SequenceCount::from(self.next_seq))
-            .sequence_flag(flags)
-            .payload_len(payload.len())
-            .build()
-            .map_err(SenderError::PacketError)?;
-
-        packet.payload.copy_from_slice(payload);
-
-        let packet_len = SrsppDataPacket::HEADER_SIZE + payload.len();
-
-        // Find free slot
         let slot_idx = self
             .meta
             .iter()
             .position(|m| m.state == SlotState::Empty)
             .ok_or(SenderError::WindowFull)?;
 
-        // Check buffer space
-        if packet_len > self.available_bytes() {
+        if payload.len() > self.available_bytes() {
             self.compact();
-            if packet_len > self.available_bytes() {
+            if payload.len() > self.available_bytes() {
                 return Err(SenderError::BufferFull);
             }
         }
 
-        // Copy to buffer
         let offset = self.write_pos;
-        self.data[offset..offset + packet_len].copy_from_slice(&self.tx_buffer[..packet_len]);
-        self.write_pos += packet_len;
+        self.data[offset..offset + payload.len()].copy_from_slice(payload);
+        self.write_pos += payload.len();
 
         let seq = SequenceCount::from(self.next_seq);
 
-        // Update meta
         self.meta[slot_idx] = PacketMeta {
             state: SlotState::PendingTransmit,
             seq: self.next_seq,
+            flags,
+            target: RawAddress::from(target),
             retransmit_count: 0,
             offset,
-            len: packet_len,
+            len: payload.len(),
             is_segmented,
         };
 
         self.next_seq = (self.next_seq + 1) & SequenceCount::MAX;
 
-        // Emit transmit action
         actions.push(SenderAction::Transmit {
             seq,
             rto_ticks: self.config.rto_ticks,
@@ -513,14 +513,23 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transport::srspp::packet::SrsppDataPacket;
 
     fn make_config() -> SenderConfig {
         SenderConfig {
             source_address: Address::satellite(1, 5),
             apid: Apid::new(0x42).unwrap(),
+            function_code: 0,
+            message_id: 0,
+            action_code: 0,
             rto_ticks: 100,
             max_retransmits: 3,
+            header_overhead: SrsppDataPacket::HEADER_SIZE,
         }
+    }
+
+    fn target() -> Address {
+        Address::satellite(2, 3)
     }
 
     #[test]
@@ -529,7 +538,7 @@ mod tests {
         let mut actions = SenderActions::new();
 
         sender
-            .handle(SenderEvent::SendRequest { data: &[1, 2, 3] }, &mut actions)
+            .handle(SenderEvent::SendRequest { target: target(), data: &[1, 2, 3] }, &mut actions)
             .unwrap();
 
         // Should have one Transmit action
@@ -540,9 +549,8 @@ mod tests {
             SenderAction::Transmit { seq, rto_ticks: 100 } if seq.value() == 0
         ));
 
-        // Can get packet data
-        let packet = sender.get_packet(SequenceCount::from(0)).unwrap();
-        assert!(!packet.is_empty());
+        let info = sender.get_payload(SequenceCount::from(0)).unwrap();
+        assert!(!info.payload.is_empty());
     }
 
     #[test]
@@ -551,7 +559,7 @@ mod tests {
         let mut actions = SenderActions::new();
 
         sender
-            .handle(SenderEvent::SendRequest { data: &[1, 2, 3] }, &mut actions)
+            .handle(SenderEvent::SendRequest { target: target(), data: &[1, 2, 3] }, &mut actions)
             .unwrap();
 
         // Before marking - packet is PendingTransmit
@@ -570,7 +578,7 @@ mod tests {
         let mut actions = SenderActions::new();
 
         sender
-            .handle(SenderEvent::SendRequest { data: &[1, 2, 3] }, &mut actions)
+            .handle(SenderEvent::SendRequest { target: target(), data: &[1, 2, 3] }, &mut actions)
             .unwrap();
         sender.mark_transmitted(SequenceCount::from(0));
 
@@ -603,7 +611,7 @@ mod tests {
         let mut actions = SenderActions::new();
 
         sender
-            .handle(SenderEvent::SendRequest { data: &[1, 2, 3] }, &mut actions)
+            .handle(SenderEvent::SendRequest { target: target(), data: &[1, 2, 3] }, &mut actions)
             .unwrap();
         sender.mark_transmitted(SequenceCount::from(0));
 
@@ -631,7 +639,7 @@ mod tests {
         let mut actions = SenderActions::new();
 
         sender
-            .handle(SenderEvent::SendRequest { data: &[1, 2, 3] }, &mut actions)
+            .handle(SenderEvent::SendRequest { target: target(), data: &[1, 2, 3] }, &mut actions)
             .unwrap();
         sender.mark_transmitted(SequenceCount::from(0));
 
@@ -671,19 +679,18 @@ mod tests {
         let mut sender: SenderMachine<8, 4096, 64> = SenderMachine::new(make_config());
         let mut actions = SenderActions::new();
 
-        // MTU=64, header=7, so max payload ~57 bytes
-        // Send 150 bytes = 3 packets
         let data = [0u8; 150];
         sender
-            .handle(SenderEvent::SendRequest { data: &data }, &mut actions)
+            .handle(SenderEvent::SendRequest { target: target(), data: &data }, &mut actions)
             .unwrap();
 
-        // Should have 3 Transmit actions
+        let max_payload = 64 - SrsppDataPacket::HEADER_SIZE;
+        let expected = (150 + max_payload - 1) / max_payload;
         let transmit_count = actions
             .iter()
             .filter(|a| matches!(a, SenderAction::Transmit { .. }))
             .count();
-        assert_eq!(transmit_count, 3);
+        assert_eq!(transmit_count, expected);
     }
 
     #[test]
@@ -696,6 +703,7 @@ mod tests {
             sender
                 .handle(
                     SenderEvent::SendRequest {
+                        target: target(),
                         data: &[i as u8; 10],
                     },
                     &mut actions,
@@ -733,7 +741,7 @@ mod tests {
 
         // Packet 1 still pending
         assert!(!sender.is_idle());
-        assert!(sender.get_packet(SequenceCount::from(1)).is_some());
+        assert!(sender.get_payload(SequenceCount::from(1)).is_some());
     }
 
     #[test]
@@ -743,7 +751,7 @@ mod tests {
 
         let data = [0u8; 150];
         sender
-            .handle(SenderEvent::SendRequest { data: &data }, &mut actions)
+            .handle(SenderEvent::SendRequest { target: target(), data: &data }, &mut actions)
             .unwrap();
 
         let transmit_count = actions

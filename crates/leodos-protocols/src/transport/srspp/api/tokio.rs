@@ -43,6 +43,7 @@ use crate::transport::srspp::machine::sender::SenderError;
 use crate::transport::srspp::machine::sender::SenderEvent;
 use crate::transport::srspp::machine::sender::SenderMachine;
 use crate::transport::srspp::packet::SrsppAckPacket;
+use crate::transport::srspp::packet::SrsppDataPacket;
 use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::packet::parse_ack_packet;
 use crate::transport::srspp::packet::parse_data_packet;
@@ -109,6 +110,7 @@ pub struct SrsppSender<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BU
     ticks_per_sec: u32,
     start_time: Instant,
     recv_buffer: [u8; MTU],
+    tx_buffer: [u8; MTU],
 }
 
 impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize>
@@ -124,6 +126,7 @@ impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MT
             ticks_per_sec,
             start_time: Instant::now(),
             recv_buffer: [0u8; MTU],
+            tx_buffer: [0u8; MTU],
         }
     }
 
@@ -133,9 +136,9 @@ impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MT
     /// This returns when all packets have been transmitted (but not necessarily ACKed).
     ///
     /// For guaranteed delivery, call `flush()` after sending.
-    pub async fn send(&mut self, data: &[u8]) -> Result<(), SrsppError> {
+    pub async fn send(&mut self, target: Address, data: &[u8]) -> Result<(), SrsppError> {
         self.machine
-            .handle(SenderEvent::SendRequest { data }, &mut self.actions)?;
+            .handle(SenderEvent::SendRequest { target, data }, &mut self.actions)?;
 
         self.process_actions().await?;
         Ok(())
@@ -184,14 +187,54 @@ impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MT
     }
 
     async fn process_actions(&mut self) -> Result<(), SrsppError> {
-        for action in self.actions.iter() {
+        let actions: heapless::Vec<SenderAction, 32> =
+            self.actions.iter().copied().collect();
+
+        for action in &actions {
             match action {
                 SenderAction::Transmit { seq, .. } => {
-                    if let Some(packet) = self.machine.get_packet(*seq) {
+                    let cfg = self.machine.config();
+                    let source_address = cfg.source_address;
+                    let apid = cfg.apid;
+                    let function_code = cfg.function_code;
+                    let message_id = cfg.message_id;
+                    let action_code = cfg.action_code;
+
+                    let packet_len =
+                        if let Some(info) = self.machine.get_payload(*seq) {
+                            let pkt = SrsppDataPacket::builder()
+                                .buffer(&mut self.tx_buffer)
+                                .source_address(source_address)
+                                .target(info.target)
+                                .apid(apid)
+                                .function_code(function_code)
+                                .message_id(message_id)
+                                .action_code(action_code)
+                                .sequence_count(*seq)
+                                .sequence_flag(info.flags)
+                                .payload_len(info.payload.len())
+                                .build()
+                                .map_err(|e| {
+                                    SrsppError::PacketError(
+                                        format!("{:?}", e),
+                                    )
+                                })?;
+                            pkt.payload.copy_from_slice(info.payload);
+                            Some(
+                                SrsppDataPacket::HEADER_SIZE
+                                    + info.payload.len(),
+                            )
+                        } else {
+                            None
+                        };
+
+                    if let Some(len) = packet_len {
                         self.link
-                            .send(packet)
+                            .send(&self.tx_buffer[..len])
                             .await
-                            .map_err(|e| SrsppError::LinkError(e.to_string()))?;
+                            .map_err(|e| {
+                                SrsppError::LinkError(e.to_string())
+                            })?;
 
                         self.machine.mark_transmitted(*seq);
 
@@ -201,14 +244,18 @@ impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MT
                         let rto = self.rto_policy.rto_ticks(now_secs);
                         let deadline =
                             now + ticks_to_duration(rto, self.ticks_per_sec);
-                        self.retransmit_timers.insert(seq.value(), deadline);
+                        self.retransmit_timers
+                            .insert(seq.value(), deadline);
                     }
                 }
                 SenderAction::StopTimer { seq } => {
                     self.retransmit_timers.remove(&seq.value());
                 }
                 SenderAction::PacketLost { seq } => {
-                    eprintln!("srspp: Packet {} lost after max retransmits", seq.value());
+                    eprintln!(
+                        "srspp: Packet {} lost after max retransmits",
+                        seq.value()
+                    );
                 }
                 SenderAction::SpaceAvailable { .. } => {}
                 SenderAction::MessageLost => {
@@ -285,13 +332,16 @@ pub struct SrsppReceiver<
     link: L,
     local_address: Address,
     apid: Apid,
+    function_code: u8,
+    message_id: u8,
+    action_code: u8,
     machine: ReceiverMachine<WIN, BUF, REASM>,
     actions: ReceiverActions,
     ack_timer: Option<Instant>,
     progress_timer: Option<Instant>,
     ticks_per_sec: u32,
     recv_buffer: [u8; MTU],
-    ack_buffer: [u8; 16],
+    ack_buffer: [u8; 32],
 }
 
 impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize, const REASM: usize>
@@ -306,31 +356,37 @@ impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize, cons
     ) -> Self {
         let local_address = config.local_address;
         let apid = config.apid;
+        let function_code = config.function_code;
+        let message_id = config.message_id;
+        let action_code = config.action_code;
         Self {
             link,
             local_address,
             apid,
+            function_code,
+            message_id,
+            action_code,
             machine: ReceiverMachine::new(config, remote_address),
             actions: ReceiverActions::new(),
             ack_timer: None,
             progress_timer: None,
             ticks_per_sec,
             recv_buffer: [0u8; MTU],
-            ack_buffer: [0u8; 16],
+            ack_buffer: [0u8; 32],
         }
     }
 
     /// Receive the next complete message.
     ///
     /// Blocks until a message is available.
-    pub async fn recv(&mut self) -> Result<Box<[u8]>, SrsppError> {
+    pub async fn recv(&mut self, buf: &mut [u8]) -> Result<usize, SrsppError> {
         loop {
-            // Check if we already have a message
             if let Some(msg) = self.machine.take_message() {
-                return Ok(msg.to_vec().into_boxed_slice());
+                let len = msg.len().min(buf.len());
+                buf[..len].copy_from_slice(&msg[..len]);
+                return Ok(len);
             }
 
-            // Wait for incoming packet or ACK timer
             self.poll().await?;
         }
     }
@@ -338,10 +394,12 @@ impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize, cons
     /// Try to receive a message without blocking.
     ///
     /// Returns `None` if no complete message is available.
-    pub fn try_recv(&mut self) -> Option<Box<[u8]>> {
-        self.machine
-            .take_message()
-            .map(|m| m.to_vec().into_boxed_slice())
+    pub fn try_recv(&mut self, buf: &mut [u8]) -> Option<usize> {
+        self.machine.take_message().map(|m| {
+            let len = m.len().min(buf.len());
+            buf[..len].copy_from_slice(&m[..len]);
+            len
+        })
     }
 
     /// Poll for incoming data and handle timers.
@@ -410,14 +468,18 @@ impl<L: NetworkLayer, const WIN: usize, const BUF: usize, const MTU: usize, cons
         for action in self.actions.iter() {
             match action {
                 ReceiverAction::SendAck {
-                    destination: _,
+                    destination,
                     cumulative_ack,
                     selective_bitmap,
                 } => {
                     let ack = SrsppAckPacket::builder()
                         .buffer(&mut self.ack_buffer)
                         .source_address(self.local_address)
+                        .target(*destination)
                         .apid(self.apid)
+                        .function_code(self.function_code)
+                        .message_id(self.message_id)
+                        .action_code(self.action_code)
                         .cumulative_ack(*cumulative_ack)
                         .sequence_count(SequenceCount::new())
                         .selective_bitmap(*selective_bitmap)
@@ -549,8 +611,12 @@ mod tests {
         SenderConfig {
             source_address: Address::satellite(0, 1),
             apid: Apid::new(0x42).unwrap(),
+            function_code: 0,
+            message_id: 0,
+            action_code: 0,
             rto_ticks: 1000,
             max_retransmits: 3,
+            header_overhead: SrsppDataPacket::HEADER_SIZE,
         }
     }
 
@@ -558,6 +624,9 @@ mod tests {
         ReceiverConfig {
             local_address: Address::satellite(0, 2),
             apid: Apid::new(0x42).unwrap(),
+            function_code: 0,
+            message_id: 0,
+            action_code: 0,
             immediate_ack: true,
             ack_delay_ticks: 100,
             progress_timeout_ticks: None,
@@ -578,23 +647,24 @@ mod tests {
             SrsppReceiver::new(receiver_config(), remote_address(), link_b, 1000);
 
         let message = b"Hello, srspp!";
+        let receiver_addr = Address::satellite(0, 2);
 
-        // Send in one task
         let send_handle = tokio::spawn(async move {
-            sender.send(message).await.unwrap();
+            sender.send(receiver_addr, message).await.unwrap();
             sender.flush().await.unwrap();
             sender
         });
 
-        // Receive in another
         let recv_handle = tokio::spawn(async move {
-            let received = receiver.recv().await.unwrap();
-            (receiver, received)
+            let mut buf = [0u8; 8192];
+            let len = receiver.recv(&mut buf).await.unwrap();
+            let data = buf[..len].to_vec();
+            (receiver, data)
         });
 
         let (sender, receiver) = tokio::join!(send_handle, recv_handle);
         let _sender = sender.unwrap();
         let (_receiver, received) = receiver.unwrap();
-        assert_eq!(&*received, message);
+        assert_eq!(&received[..], message);
     }
 }

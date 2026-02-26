@@ -122,17 +122,15 @@ pub enum ReceiverError {
 
 /// Configuration for the receiver.
 #[derive(Debug, Clone)]
+#[derive(bon::Builder)]
 pub struct ReceiverConfig {
-    /// Local address of this receiver (used as source in ACK packets).
     pub local_address: Address,
-    /// APID to expect for incoming packets.
     pub apid: Apid,
-    /// Whether to send ACKs immediately or delay them.
+    pub function_code: u8,
+    pub message_id: u8,
+    pub action_code: u8,
     pub immediate_ack: bool,
-    /// ACK delay in ticks (if not immediate).
     pub ack_delay_ticks: u32,
-    /// If `Some`, skip gaps after this many ticks without progress.
-    /// If `None`, wait indefinitely (reliable mode).
     pub progress_timeout_ticks: Option<u32>,
 }
 
@@ -548,6 +546,9 @@ mod tests {
         ReceiverConfig {
             local_address: test_local_address(),
             apid: Apid::new(0x42).unwrap(),
+            function_code: 0,
+            message_id: 0,
+            action_code: 0,
             immediate_ack: true,
             ack_delay_ticks: 20,
             progress_timeout_ticks: None,
@@ -558,6 +559,9 @@ mod tests {
         ReceiverConfig {
             local_address: test_local_address(),
             apid: Apid::new(0x42).unwrap(),
+            function_code: 0,
+            message_id: 0,
+            action_code: 0,
             immediate_ack: false,
             ack_delay_ticks: 20,
             progress_timeout_ticks: None,
@@ -805,6 +809,9 @@ mod tests {
         ReceiverConfig {
             local_address: test_local_address(),
             apid: Apid::new(0x42).unwrap(),
+            function_code: 0,
+            message_id: 0,
+            action_code: 0,
             immediate_ack: true,
             ack_delay_ticks: 20,
             progress_timeout_ticks: Some(ticks),

@@ -22,21 +22,21 @@ impl SpacecraftId {
         self.0.get()
     }
 
-    pub fn encode(orbit: u8, sat: u8, num_sats: u8) -> Self {
-        Self::new((orbit as u32 + 1) * num_sats as u32 + sat as u32)
+    pub fn encode(orb: u8, sat: u8, num_sats: u8) -> Self {
+        Self::new((orb as u32 + 1) * num_sats as u32 + sat as u32)
     }
 
     pub fn to_address(&self, num_sats: u8) -> Address {
         let n = num_sats as u32;
-        let orbit = self.get() / n;
+        let orb = self.get() / n;
         let sat = self.get() % n;
-        if orbit == 0 {
-            Address::Ground { station_id: sat as u8 }
+        if orb == 0 {
+            Address::Ground { station: sat as u8 }
         } else {
-            Address::Satellite {
-                orbit_id: (orbit - 1) as u8,
-                satellite_id: sat as u8,
-            }
+            Address::Satellite(Point {
+                orb: (orb - 1) as u8,
+                sat: sat as u8,
+            })
         }
     }
 }
@@ -46,32 +46,32 @@ impl SpacecraftId {
     FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable, Copy, Clone, Debug, PartialEq, Eq, Hash,
 )]
 pub struct RawAddress {
-    ground_or_orbit: u8,
+    ground_or_orb: u8,
     station_or_sat: u8,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Address {
-    Ground { station_id: u8 },
-    Satellite { orbit_id: u8, satellite_id: u8 },
-    ServiceArea { orbit_id: u8 },
+    Ground { station: u8 },
+    Satellite(Point),
+    ServiceArea { orb: u8 },
 }
 
 impl RawAddress {
     pub fn parse(&self) -> Address {
-        if self.ground_or_orbit == 0 {
+        if self.ground_or_orb == 0 {
             Address::Ground {
-                station_id: self.station_or_sat,
+                station: self.station_or_sat,
             }
         } else if self.station_or_sat == 0 {
             Address::ServiceArea {
-                orbit_id: self.ground_or_orbit - 1,
+                orb: self.ground_or_orb - 1,
             }
         } else {
-            Address::Satellite {
-                orbit_id: self.ground_or_orbit - 1,
-                satellite_id: self.station_or_sat,
-            }
+            Address::Satellite(Point {
+                orb: self.ground_or_orb - 1,
+                sat: self.station_or_sat,
+            })
         }
     }
 }
@@ -79,19 +79,16 @@ impl RawAddress {
 impl From<Address> for RawAddress {
     fn from(addr: Address) -> Self {
         match addr {
-            Address::Ground { station_id } => Self {
-                ground_or_orbit: 0,
-                station_or_sat: station_id,
+            Address::Ground { station } => Self {
+                ground_or_orb: 0,
+                station_or_sat: station,
             },
-            Address::Satellite {
-                orbit_id,
-                satellite_id,
-            } => Self {
-                ground_or_orbit: orbit_id + 1,
-                station_or_sat: satellite_id,
+            Address::Satellite(Point { orb, sat }) => Self {
+                ground_or_orb: orb + 1,
+                station_or_sat: sat,
             },
-            Address::ServiceArea { orbit_id } => Self {
-                ground_or_orbit: orbit_id + 1,
+            Address::ServiceArea { orb } => Self {
+                ground_or_orb: orb + 1,
                 station_or_sat: 0,
             },
         }
@@ -99,32 +96,29 @@ impl From<Address> for RawAddress {
 }
 
 impl Address {
-    pub fn ground(station_id: u8) -> Self {
-        Self::Ground { station_id }
+    pub fn ground(station: u8) -> Self {
+        Self::Ground { station: station }
     }
 
-    pub fn satellite(orbit_id: u8, satellite_id: u8) -> Self {
-        Self::Satellite {
-            orbit_id,
-            satellite_id,
-        }
+    pub fn satellite(orb: u8, sat: u8) -> Self {
+        Self::Satellite(Point { orb, sat })
     }
 
-    pub fn service_area(orbit_id: u8) -> Self {
-        Self::ServiceArea { orbit_id }
+    pub fn service_area(orb: u8) -> Self {
+        Self::ServiceArea { orb }
     }
 
     pub fn is_valid_source(&self) -> bool {
         !matches!(self, Address::ServiceArea { .. })
     }
 
-    pub fn is_in_service_area(&self, min_sat_id: u8, max_sat_id: u8) -> bool {
+    pub fn is_in_service_area(&self, min_sat: u8, max_sat: u8) -> bool {
         match self {
-            Address::Satellite { satellite_id, .. } => {
-                if min_sat_id <= max_sat_id {
-                    (min_sat_id..=max_sat_id).contains(satellite_id)
+            Address::Satellite(Point { sat, .. }) => {
+                if min_sat <= max_sat {
+                    (min_sat..=max_sat).contains(sat)
                 } else {
-                    (min_sat_id..).contains(satellite_id) || (..=max_sat_id).contains(satellite_id)
+                    (min_sat..).contains(sat) || (..=max_sat).contains(sat)
                 }
             }
             _ => false,
@@ -135,11 +129,8 @@ impl Address {
 impl From<Address> for Point {
     fn from(addr: Address) -> Self {
         match addr {
-            Address::Satellite {
-                orbit_id,
-                satellite_id,
-            } => Point::new(satellite_id, orbit_id),
-            Address::ServiceArea { orbit_id } => Point::new(0, orbit_id),
+            Address::Satellite(Point { orb, sat }) => Point::new(sat, orb),
+            Address::ServiceArea { orb } => Point::new(0, orb),
             Address::Ground { .. } => Point::new(0, 0),
         }
     }
@@ -147,9 +138,9 @@ impl From<Address> for Point {
 
 impl From<Point> for Address {
     fn from(point: Point) -> Self {
-        Address::Satellite {
-            orbit_id: point.y,
-            satellite_id: point.x,
-        }
+        Address::Satellite(Point {
+            orb: point.orb,
+            sat: point.sat,
+        })
     }
 }

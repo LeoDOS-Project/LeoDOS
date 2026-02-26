@@ -58,11 +58,11 @@ impl Aoi {
     }
 
     fn y_range(&self, torus: &Torus) -> WrappedRange {
-        WrappedRange::new(self.upper_left.y, self.lower_right.y, torus.num_rows)
+        WrappedRange::new(self.upper_left.orb, self.lower_right.orb, torus.num_orbs)
     }
 
     fn x_range(&self, torus: &Torus) -> WrappedRange {
-        WrappedRange::new(self.upper_left.x, self.lower_right.x, torus.num_cols)
+        WrappedRange::new(self.upper_left.sat, self.lower_right.sat, torus.num_sats)
     }
 
     pub fn center(&self, torus: &Torus) -> Point {
@@ -70,7 +70,7 @@ impl Aoi {
     }
 
     pub fn contains(&self, torus: &Torus, point: Point) -> bool {
-        self.y_range(torus).contains(point.y) && self.x_range(torus).contains(point.x)
+        self.y_range(torus).contains(point.orb) && self.x_range(torus).contains(point.sat)
     }
 
     pub fn width(&self, torus: &Torus) -> u8 {

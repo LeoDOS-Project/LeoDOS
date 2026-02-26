@@ -117,8 +117,8 @@ impl CostModel for SpaceCompCost {
     type Cost = u64;
 
     fn cost(&self, torus: &Torus, task: Point, processor: Point) -> u64 {
-        let dx = torus.distance_x(task, processor).min(torus.distance_x(processor, task));
-        let dy = torus.distance_y(task, processor).min(torus.distance_y(processor, task));
+        let dx = torus.distance_sat(task, processor).min(torus.distance_sat(processor, task));
+        let dy = torus.distance_orb(task, processor).min(torus.distance_orb(processor, task));
         let hops = (dx + dy) as u64;
 
         if hops == 0 {

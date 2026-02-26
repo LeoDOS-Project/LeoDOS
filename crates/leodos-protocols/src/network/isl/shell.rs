@@ -44,11 +44,11 @@ impl Shell {
     }
 
     fn satellite_spacing_angle(&self) -> f32 {
-        2.0 * PI / self.torus.num_rows as f32
+        2.0 * PI / self.torus.num_orbs as f32
     }
 
     fn plane_spacing_angle(&self) -> f32 {
-        2.0 * PI / self.torus.num_cols as f32
+        2.0 * PI / self.torus.num_sats as f32
     }
 
     pub fn within_plane_distance(&self) -> f32 {
@@ -70,7 +70,7 @@ impl Shell {
     }
 
     pub fn cross_plane_distance_at_row(&self, row: u8) -> f32 {
-        let phase = row as f32 / self.torus.num_rows as f32;
+        let phase = row as f32 / self.torus.num_orbs as f32;
         self.cross_plane_distance(phase)
     }
 }

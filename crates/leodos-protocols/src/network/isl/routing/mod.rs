@@ -43,6 +43,7 @@ pub enum Error<N, S, E, W, G, L> {
     IslMessageError(isl::routing::packet::IslMessageError),
 }
 
+#[bon::bon]
 impl<N, S, E, W, G, L, R> Router<N, S, E, W, G, L, R>
 where
     N: DataLink,
@@ -53,6 +54,7 @@ where
     L: DataLink,
     R: RoutingAlgorithm,
 {
+    #[builder]
     pub fn new(
         north: N,
         south: S,
@@ -60,9 +62,8 @@ where
         west: W,
         ground: G,
         local: L,
-        addr: Address,
-        max_orb: u8,
-        max_sat: u8,
+        address: Address,
+        torus: Torus,
         algorithm: R,
     ) -> Self {
         Self {
@@ -72,8 +73,8 @@ where
             west,
             ground,
             local,
-            address: addr,
-            torus: Torus::new(max_orb, max_sat),
+            address,
+            torus,
             algorithm,
         }
     }
@@ -84,6 +85,9 @@ where
 
     /// Determines the next hop for a given destination address.
     pub fn next_hop(&self, destination: Address) -> Direction {
+        if matches!(destination, Address::Ground { .. }) {
+            return Direction::Ground;
+        }
         self.algorithm.route(
             &self.torus,
             Point::from(self.address),
@@ -101,7 +105,7 @@ where
         local_buffer: &mut [u8],
     ) -> (
         Result<usize, Error<N::Error, S::Error, E::Error, W::Error, G::Error, L::Error>>,
-        Option<Direction>,
+        Direction,
     ) {
         let n = self.north.recv(north_buffer).fuse();
         let s = self.south.recv(south_buffer).fuse();
@@ -111,12 +115,12 @@ where
         let l = self.local.recv(local_buffer).fuse();
         pin_utils::pin_mut!(n, s, e, w, g, l);
         futures::select_biased! {
-            len = n => (len.map_err(Error::North), Some(Direction::North)),
-            len = s => (len.map_err(Error::South), Some(Direction::South)),
-            len = e => (len.map_err(Error::East), Some(Direction::East)),
-            len = w => (len.map_err(Error::West), Some(Direction::West)),
-            len = g => (len.map_err(Error::Ground), None),
-            len = l => (len.map_err(Error::Local), Some(Direction::Local)),
+            len = n => (len.map_err(Error::North), Direction::North),
+            len = s => (len.map_err(Error::South), Direction::South),
+            len = e => (len.map_err(Error::East), Direction::East),
+            len = w => (len.map_err(Error::West), Direction::West),
+            len = g => (len.map_err(Error::Ground), Direction::Ground),
+            len = l => (len.map_err(Error::Local), Direction::Local),
         }
     }
 
@@ -144,22 +148,16 @@ where
                 continue;
             };
 
-            let result = if let Some(dir) = direction {
-                let buffer = match dir {
-                    Direction::North => &north_buffer,
-                    Direction::South => &south_buffer,
-                    Direction::East => &east_buffer,
-                    Direction::West => &west_buffer,
-                    Direction::Local => &local_buffer,
-                };
-
-                self.route_packet(buffer, len).await
-            } else {
-                self.route_packet(&ground_buffer, len).await
+            let buffer = match direction {
+                Direction::North => &north_buffer,
+                Direction::South => &south_buffer,
+                Direction::East => &east_buffer,
+                Direction::West => &west_buffer,
+                Direction::Ground => &ground_buffer,
+                Direction::Local => &local_buffer,
             };
-            if result.is_err() {
-                continue;
-            }
+
+            let _ = self.route_packet(buffer, len).await;
         }
     }
 
@@ -177,6 +175,7 @@ where
             Direction::South => self.south.send(&packet).await.map_err(Error::South)?,
             Direction::East => self.east.send(&packet).await.map_err(Error::East)?,
             Direction::West => self.west.send(&packet).await.map_err(Error::West)?,
+            Direction::Ground => self.ground.send(&packet).await.map_err(Error::Ground)?,
             Direction::Local => self.local.send(&packet).await.map_err(Error::Local)?,
         }
         Ok(())

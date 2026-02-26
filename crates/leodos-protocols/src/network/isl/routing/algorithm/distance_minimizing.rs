@@ -42,27 +42,27 @@ impl RoutingAlgorithm for DistanceMinimizing {
             return Direction::Local;
         }
 
-        if current.y == target.y {
-            return torus.shortest_path_direction_x(current, target);
+        if current.orb == target.orb {
+            return torus.shortest_path_direction_sat(current, target);
         }
 
-        if current.x == target.x {
-            return torus.shortest_path_direction_y(current, target);
+        if current.sat == target.sat {
+            return torus.shortest_path_direction_orb(current, target);
         }
 
-        let v_dir = torus.shortest_path_direction_y(current, target);
-        let toward_y = match v_dir {
-            Direction::South => torus.next_y(current),
-            _ => torus.prev_y(current),
+        let v_dir = torus.shortest_path_direction_orb(current, target);
+        let toward_orb = match v_dir {
+            Direction::East => torus.next_orb(current),
+            _ => torus.prev_orb(current),
         };
 
-        let curr_factor = self.cross_plane_factor(current.y, torus.num_rows);
-        let toward_factor = self.cross_plane_factor(toward_y, torus.num_rows);
+        let curr_factor = self.cross_plane_factor(current.orb, torus.num_orbs);
+        let toward_factor = self.cross_plane_factor(toward_orb, torus.num_orbs);
 
         if toward_factor < curr_factor {
             v_dir
         } else {
-            torus.shortest_path_direction_x(current, target)
+            torus.shortest_path_direction_sat(current, target)
         }
     }
 }

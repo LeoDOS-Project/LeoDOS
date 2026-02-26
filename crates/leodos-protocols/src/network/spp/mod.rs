@@ -317,9 +317,17 @@ impl Deref for SpacePacket {
 }
 
 impl DerefMut for SpacePacket {
-    /// Mutably dereferences to the `PrimaryHeader`.
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.primary_header
+    }
+}
+
+impl crate::utils::Header<PrimaryHeader> for PrimaryHeader {
+    fn get(&self) -> &PrimaryHeader {
+        self
+    }
+    fn get_mut(&mut self) -> &mut PrimaryHeader {
+        self
     }
 }
 

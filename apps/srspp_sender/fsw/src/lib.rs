@@ -54,11 +54,16 @@ pub extern "C" fn SRSPP_SENDER_AppMain() {
         let datalink = UdpDataLink::bind(local_addr, remote_addr)?;
         let network = PassThrough::new(datalink);
 
+        let target = Address::satellite(0, 2);
         let config = SenderConfig {
             source_address: Address::satellite(0, 1),
             apid: Apid::new(0x50).unwrap(),
+            function_code: 0,
+            message_id: 0,
+            action_code: 0,
             rto_ticks: 1000,
             max_retransmits: 3,
+            header_overhead: leodos_protocols::transport::srspp::packet::SrsppDataPacket::HEADER_SIZE,
         };
 
         let sender: SrsppSender<Error> = SrsppSender::new(config);
@@ -74,7 +79,7 @@ pub extern "C" fn SRSPP_SENDER_AppMain() {
                 let num_str = format_u32(counter, &mut num_buf);
                 let _ = msg.extend_from_slice(num_str);
 
-                if handle.send(&msg).await.is_err() {
+                if handle.send(target, &msg).await.is_err() {
                     break;
                 }
                 event::info(1, "Sent message").ok();
