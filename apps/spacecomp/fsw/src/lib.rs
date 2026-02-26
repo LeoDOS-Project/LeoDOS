@@ -190,46 +190,51 @@ pub extern "C" fn SPACECOMP_AppMain() {
                         roles::coordinator::run(&mut handle, point, cmd.job_id).await;
                     }
                     OpCode::AssignCollector => {
-                        if let Some(p) = buf
+                        let Some(p) = buf
                             .get(..size_of::<AssignCollectorPayload>())
                             .and_then(|b| AssignCollectorPayload::read_from_bytes(b).ok())
-                        {
-                            roles::collector::run(
-                                &mut handle,
-                                p.mapper_addr.parse(),
-                                p.partition_id,
-                                cmd.job_id,
-                            )
-                            .await;
-                        }
+                        else {
+                            continue;
+                        };
+                        roles::collector::run(
+                            &mut handle,
+                            p.mapper_addr().parse(),
+                            p.partition_id(),
+                            cmd.job_id,
+                        )
+                        .await;
                     }
                     OpCode::AssignMapper => {
-                        if let Some(p) = buf
+                        let Some(p) = buf
                             .get(..size_of::<AssignMapperPayload>())
                             .and_then(|b| AssignMapperPayload::read_from_bytes(b).ok())
-                        {
-                            roles::mapper::run(
-                                &mut handle,
-                                p.reducer_addr.parse(),
-                                cmd.job_id,
-                                p.collector_count,
-                            )
-                            .await;
-                        }
+                        else {
+                            continue;
+                        };
+
+                        roles::mapper::run(
+                            &mut handle,
+                            p.reducer_addr().parse(),
+                            cmd.job_id,
+                            p.collector_count(),
+                        )
+                        .await;
                     }
                     OpCode::AssignReducer => {
-                        if let Some(p) = buf
+                        let Some(p) = buf
                             .get(..size_of::<AssignReducerPayload>())
                             .and_then(|b| AssignReducerPayload::read_from_bytes(b).ok())
-                        {
-                            roles::reducer::run(
-                                &mut handle,
-                                p.los_addr.parse(),
-                                cmd.job_id,
-                                p.mapper_count,
-                            )
-                            .await;
-                        }
+                        else {
+                            continue;
+                        };
+
+                        roles::reducer::run(
+                            &mut handle,
+                            p.los_addr().parse(),
+                            cmd.job_id,
+                            p.mapper_count(),
+                        )
+                        .await;
                     }
                     _ => {}
                 }

@@ -4,7 +4,6 @@ use leodos_protocols::mission::compute::packet::{OpCode, SpaceCompHeader};
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::routing::local::LocalLinkError;
 use leodos_protocols::transport::srspp::api::cfs::{Error, SrsppNodeHandle};
-use zerocopy::network_endian::U16;
 use zerocopy::FromBytes;
 use zerocopy::IntoBytes;
 
@@ -28,11 +27,7 @@ pub async fn send<
 ) -> Result<(), Error<E>> {
     let mut buf = [0u8; MAX_ISL_MESSAGE];
     let hdr_size = size_of::<SpaceCompHeader>();
-    let header = SpaceCompHeader {
-        op_code: op_code as u8,
-        _reserved: 0,
-        job_id: U16::new(job_id),
-    };
+    let header = SpaceCompHeader::new(op_code, job_id);
     buf[..hdr_size].copy_from_slice(header.as_bytes());
     if !payload.is_empty() {
         buf[hdr_size..hdr_size + payload.len()].copy_from_slice(payload);
