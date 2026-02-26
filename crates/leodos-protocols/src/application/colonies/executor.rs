@@ -1,8 +1,8 @@
 use zerocopy::IntoBytes as _;
 
 use crate::datalink::DataLink;
-use crate::mission::colonies::client::{ClientError, ColoniesClient};
-use crate::mission::colonies::messages::*;
+use crate::application::colonies::client::{ClientError, ColoniesClient};
+use crate::application::colonies::messages::*;
 use core::future::Future;
 use core::str;
 

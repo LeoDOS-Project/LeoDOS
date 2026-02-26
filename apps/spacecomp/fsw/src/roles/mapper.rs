@@ -1,5 +1,5 @@
 use heapless::index_map::FnvIndexMap;
-use leodos_protocols::mission::spacecomp::packet::{OpCode, SpaceCompMessage};
+use leodos_protocols::application::spacecomp::packet::{OpCode, SpaceCompMessage};
 use leodos_protocols::network::isl::address::Address;
 use zerocopy::IntoBytes;
 

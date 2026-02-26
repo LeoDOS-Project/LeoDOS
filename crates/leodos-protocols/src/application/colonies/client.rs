@@ -1,7 +1,7 @@
 use zerocopy::IntoBytes;
 
 use crate::datalink::DataLink;
-use crate::mission::colonies::messages::*;
+use crate::application::colonies::messages::*;
 use crate::network::spp::{Apid, SequenceCount};
 
 #[derive(Debug)]

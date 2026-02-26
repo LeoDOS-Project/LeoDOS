@@ -1,8 +1,8 @@
-use leodos_protocols::mission::spacecomp::job::Job;
-use leodos_protocols::mission::spacecomp::mapreduce::proxy::{
+use leodos_protocols::application::spacecomp::job::Job;
+use leodos_protocols::application::spacecomp::mapreduce::proxy::{
     Coordinator, JobPlan, ReducerPlacement,
 };
-use leodos_protocols::mission::spacecomp::packet::{
+use leodos_protocols::application::spacecomp::packet::{
     AssignCollectorPayload, AssignMapperPayload, AssignReducerPayload, OpCode, SpaceCompMessage,
 };
 use leodos_protocols::network::isl::address::Address;

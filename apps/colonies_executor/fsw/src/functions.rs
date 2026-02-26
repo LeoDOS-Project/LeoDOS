@@ -1,7 +1,7 @@
 use core::fmt;
 use core::str;
-use leodos_protocols::mission::colonies::executor::ColoniesHandler;
-use leodos_protocols::mission::colonies::messages::ArgIterator;
+use leodos_protocols::application::colonies::executor::ColoniesHandler;
+use leodos_protocols::application::colonies::messages::ArgIterator;
 
 /// The logic handler.
 pub struct Handler {
