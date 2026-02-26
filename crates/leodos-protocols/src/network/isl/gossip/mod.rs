@@ -13,7 +13,7 @@ use crate::network::isl::torus::Torus;
 use heapless::Vec;
 use zerocopy::network_endian::U16;
 
-pub const EPOCH_CACHE_SIZE: usize = 128;
+pub(crate) const EPOCH_CACHE_SIZE: usize = 128;
 
 /// The state required to process incoming gossip messages, including duplicate detection
 /// and routing logic.

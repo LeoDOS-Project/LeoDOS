@@ -39,25 +39,25 @@ impl SrsppType {
 
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
-pub struct SrsppHeader {
+pub(crate) struct SrsppHeader {
     source_address: RawAddress,
     packet_type: u8,
 }
 
 impl SrsppHeader {
-    pub fn srspp_type(&self) -> Option<SrsppType> {
+    pub(crate) fn srspp_type(&self) -> Option<SrsppType> {
         SrsppType::from_u8(self.packet_type)
     }
 
-    pub fn source_address(&self) -> Address {
+    pub(crate) fn source_address(&self) -> Address {
         self.source_address.parse()
     }
 
-    pub fn set_source_address(&mut self, address: Address) {
+    pub(crate) fn set_source_address(&mut self, address: Address) {
         self.source_address = RawAddress::from(address);
     }
 
-    pub fn set_srspp_type(&mut self, srspp_type: SrsppType) {
+    pub(crate) fn set_srspp_type(&mut self, srspp_type: SrsppType) {
         self.packet_type = srspp_type as u8;
     }
 }
@@ -70,18 +70,18 @@ pub struct AckPayload {
 }
 
 impl AckPayload {
-    pub fn new(cumulative_ack: u16, bitmap: u16) -> Self {
+    pub(crate) fn new(cumulative_ack: u16, bitmap: u16) -> Self {
         Self {
             cumulative_ack: network_endian::U16::new(cumulative_ack),
             selective_ack_bitmap: network_endian::U16::new(bitmap),
         }
     }
 
-    pub fn cumulative_ack(&self) -> SequenceCount {
+    pub(crate) fn cumulative_ack(&self) -> SequenceCount {
         SequenceCount::from(self.cumulative_ack.get())
     }
 
-    pub fn selective_ack_bitmap(&self) -> u16 {
+    pub(crate) fn selective_ack_bitmap(&self) -> u16 {
         self.selective_ack_bitmap.get()
     }
 }
@@ -100,8 +100,8 @@ impl AckPayload {
 pub struct SrsppDataPacket {
     pub primary: PrimaryHeader,
     pub secondary: TelecommandSecondaryHeader,
-    pub isl_header: IslRoutingTelecommandHeader,
-    pub srspp_header: SrsppHeader,
+    pub(crate) isl_header: IslRoutingTelecommandHeader,
+    pub(crate) srspp_header: SrsppHeader,
     pub payload: [u8],
 }
 
@@ -139,9 +139,9 @@ impl SrsppDataPacket {
 pub struct SrsppAckPacket {
     pub primary: PrimaryHeader,
     pub secondary: TelecommandSecondaryHeader,
-    pub isl_header: IslRoutingTelecommandHeader,
-    pub srspp_header: SrsppHeader,
-    pub ack_payload: AckPayload,
+    pub(crate) isl_header: IslRoutingTelecommandHeader,
+    pub(crate) srspp_header: SrsppHeader,
+    pub(crate) ack_payload: AckPayload,
 }
 
 impl SrsppAckPacket {

@@ -2,11 +2,11 @@
 
 use core::future::Future;
 
-pub mod cop1;
+mod cop1;
 pub mod link;
 pub mod sdlp;
-pub mod sdls;
-pub mod uslp;
+mod sdls;
+mod uslp;
 
 /// Trait for the underlying link.
 ///

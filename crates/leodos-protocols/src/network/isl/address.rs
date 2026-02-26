@@ -45,7 +45,7 @@ impl SpacecraftId {
 #[derive(
     FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable, Copy, Clone, Debug, PartialEq, Eq, Hash,
 )]
-pub struct RawAddress {
+pub(crate) struct RawAddress {
     ground_or_orb: u8,
     station_or_sat: u8,
 }
@@ -58,7 +58,7 @@ pub enum Address {
 }
 
 impl RawAddress {
-    pub fn parse(&self) -> Address {
+    pub(crate) fn parse(&self) -> Address {
         if self.ground_or_orb == 0 {
             Address::Ground {
                 station: self.station_or_sat,

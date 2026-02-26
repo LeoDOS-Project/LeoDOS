@@ -16,8 +16,8 @@ use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
 use zerocopy::byteorder::network_endian;
 
-pub mod encapsulation;
-pub mod handler;
+mod encapsulation;
+mod handler;
 pub mod segmentation;
 
 pub use zerocopy;

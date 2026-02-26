@@ -1,7 +1,7 @@
 /// Tracks epoch numbers using a sliding window bitmask to detect duplicates.
 /// Handles u16 wrap-around logic internally.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct EpochTracker {
+pub(crate) struct EpochTracker {
     history_mask: u128,
     /// The highest epoch number seen so far.
     highest_seen_epoch: u16,
@@ -9,11 +9,11 @@ pub struct EpochTracker {
 }
 
 impl EpochTracker {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    pub fn is_duplicate(&mut self, epoch: u16) -> bool {
+    pub(crate) fn is_duplicate(&mut self, epoch: u16) -> bool {
         if !self.initialized {
             self.highest_seen_epoch = epoch;
             self.history_mask = 0;

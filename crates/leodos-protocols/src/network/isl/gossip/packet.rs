@@ -50,7 +50,7 @@ use crate::utils::validate_checksum_u8;
 pub struct IslGossipTelecommand {
     pub primary: PrimaryHeader,
     pub secondary: TelecommandSecondaryHeader,
-    pub gossip_header: IslGossipHeader,
+    pub(crate) gossip_header: IslGossipHeader,
     pub payload: [u8],
 }
 
@@ -72,7 +72,7 @@ pub struct Epoch(pub U16);
 /// The ISL-specific header for a gossip message.
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
-pub struct IslGossipHeader {
+pub(crate) struct IslGossipHeader {
     /// Address of the node that originated this gossip.
     pub originator: RawAddress,
     /// Address of the immediate sender (for routing - don't echo back).
@@ -102,11 +102,11 @@ impl From<TelecommandError> for GossipMessageError {
 }
 
 impl IslGossipHeader {
-    pub fn originator(&self) -> Address {
+    pub(crate) fn originator(&self) -> Address {
         self.originator.parse()
     }
 
-    pub fn from_address(&self) -> Address {
+    pub(crate) fn from_address(&self) -> Address {
         self.from_address.parse()
     }
 }

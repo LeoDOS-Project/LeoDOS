@@ -54,7 +54,7 @@ use zerocopy::Unaligned;
 pub struct IslRoutingTelecommand {
     pub primary: PrimaryHeader,
     pub secondary: TelecommandSecondaryHeader,
-    pub isl_header: IslRoutingTelecommandHeader,
+    pub(crate) isl_header: IslRoutingTelecommandHeader,
     pub payload: [u8],
 }
 
@@ -62,7 +62,7 @@ pub struct IslRoutingTelecommand {
 /// This structure is placed at the beginning of the `Telecommand`'s payload.
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
-pub struct IslRoutingTelecommandHeader {
+pub(crate) struct IslRoutingTelecommandHeader {
     target: RawAddress,
     message_id: u8,
     action_code: u8,
@@ -91,7 +91,7 @@ impl From<TelecommandError> for IslMessageError {
 #[bon]
 impl IslRoutingTelecommandHeader {
     #[builder]
-    pub fn new(message_id: u8, target: Address, action_code: u8) -> Self {
+    pub(crate) fn new(message_id: u8, target: Address, action_code: u8) -> Self {
         Self {
             message_id,
             target: RawAddress::from(target),
@@ -99,27 +99,27 @@ impl IslRoutingTelecommandHeader {
         }
     }
 
-    pub fn target(&self) -> Address {
+    pub(crate) fn target(&self) -> Address {
         self.target.parse()
     }
 
-    pub fn set_target(&mut self, target: Address) {
+    pub(crate) fn set_target(&mut self, target: Address) {
         self.target = RawAddress::from(target);
     }
 
-    pub fn message_id(&self) -> u8 {
+    pub(crate) fn message_id(&self) -> u8 {
         self.message_id
     }
 
-    pub fn set_message_id(&mut self, message_id: u8) {
+    pub(crate) fn set_message_id(&mut self, message_id: u8) {
         self.message_id = message_id;
     }
 
-    pub fn action_code(&self) -> u8 {
+    pub(crate) fn action_code(&self) -> u8 {
         self.action_code
     }
 
-    pub fn set_action_code(&mut self, action_code: u8) {
+    pub(crate) fn set_action_code(&mut self, action_code: u8) {
         self.action_code = action_code;
     }
 }
