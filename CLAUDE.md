@@ -1,0 +1,1 @@
+- Commit changes incrementally — each commit should be a single logical change
