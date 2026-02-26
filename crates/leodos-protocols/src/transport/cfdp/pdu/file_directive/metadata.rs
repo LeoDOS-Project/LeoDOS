@@ -382,8 +382,9 @@ impl MetadataPdu {
         directive_pdu.set_directive_code(DirectiveCode::Metadata);
 
         let provided_len = directive_pdu.rest.len();
+        let rest_len = file_size_len + src_name_lv_len + dst_name_lv_len + options_len;
         let meta_pdu =
-            MetadataPdu::mut_from_bytes_with_elems(&mut directive_pdu.rest, specific_data_len)
+            MetadataPdu::mut_from_bytes_with_elems(&mut directive_pdu.rest, rest_len)
                 .map_err(|_| CfdpError::BufferTooSmall {
                     required: specific_data_len,
                     provided: provided_len,

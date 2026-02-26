@@ -128,17 +128,15 @@ impl ColoniesPacket {
             .build()
             .map_err(ColoniesMessageError::Telecommand)?;
 
-        let required_len = size_of::<PrimaryHeader>()
-            + size_of::<TelecommandSecondaryHeader>()
-            + size_of::<ColoniesHeader>()
-            + payload_len;
-
         let buffer = tc.as_mut_bytes();
         let provided_len = buffer.len();
 
-        let packet = Self::mut_from_bytes_with_elems(buffer, required_len).map_err(|_| {
+        let packet = Self::mut_from_bytes_with_elems(buffer, payload_len).map_err(|_| {
             ColoniesMessageError::Telecommand(TelecommandError::BufferTooSmall {
-                required_len,
+                required_len: size_of::<PrimaryHeader>()
+                    + size_of::<TelecommandSecondaryHeader>()
+                    + size_of::<ColoniesHeader>()
+                    + payload_len,
                 provided_len,
             })
         })?;
@@ -150,8 +148,8 @@ impl ColoniesPacket {
     }
 
     pub fn set_cfe_checksum(&mut self) {
-        self.secondary.checksum = 0;
-        self.secondary.checksum = checksum_u8(self.as_bytes());
+        self.secondary.set_checksum(0);
+        self.secondary.set_checksum(checksum_u8(self.as_bytes()));
     }
     pub fn validate_cfe_checksum(&self) -> bool {
         validate_checksum_u8(self.as_bytes())

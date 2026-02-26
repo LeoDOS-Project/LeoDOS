@@ -56,8 +56,26 @@ pub struct Telecommand {
 #[repr(C)]
 #[derive(IntoBytes, FromBytes, Unaligned, Immutable, KnownLayout, Default, Copy, Clone, Debug)]
 pub struct TelecommandSecondaryHeader {
-    pub function_code: u8,
-    pub checksum: u8,
+    function_code: u8,
+    checksum: u8,
+}
+
+impl TelecommandSecondaryHeader {
+    pub fn function_code(&self) -> u8 {
+        self.function_code
+    }
+
+    pub fn set_function_code(&mut self, function_code: u8) {
+        self.function_code = function_code;
+    }
+
+    pub fn checksum(&self) -> u8 {
+        self.checksum
+    }
+
+    pub fn set_checksum(&mut self, checksum: u8) {
+        self.checksum = checksum;
+    }
 }
 
 /// An error that can occur when building a CFE packet.
@@ -151,10 +169,10 @@ impl Telecommand {
     }
 
     pub fn function_code(&self) -> u8 {
-        self.secondary.function_code
+        self.secondary.function_code()
     }
     pub fn set_function_code(&mut self, function_code: u8) {
-        self.secondary.function_code = function_code;
+        self.secondary.set_function_code(function_code);
     }
 
     /// Calculates and sets the 8-bit cFE checksum for this command packet.
@@ -163,8 +181,8 @@ impl Telecommand {
     /// with the checksum field itself treated as zero during calculation.
     pub fn set_cfe_checksum(&mut self) {
         // Temporarily set the checksum byte to 0 for calculation.
-        self.secondary.checksum = 0;
-        self.secondary.checksum = checksum_u8(self.as_bytes());
+        self.secondary.set_checksum(0);
+        self.secondary.set_checksum(checksum_u8(self.as_bytes()));
     }
 
     /// Validates the 8-bit cFE checksum.

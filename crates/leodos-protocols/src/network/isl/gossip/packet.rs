@@ -132,24 +132,23 @@ impl IslGossipTelecommand {
             });
         }
 
-        let payload_len = size_of::<IslGossipHeader>() + payload_len;
+        let tc_payload_len = size_of::<IslGossipHeader>() + payload_len;
         let tc = Telecommand::builder()
             .buffer(buffer)
             .apid(apid)
             .sequence_count(SequenceCount::new())
             .function_code(function_code)
-            .payload_len(payload_len)
+            .payload_len(tc_payload_len)
             .build()
             .map_err(GossipMessageError::Cfe)?;
 
-        let required_len =
-            size_of::<PrimaryHeader>() + size_of::<TelecommandSecondaryHeader>() + payload_len;
-
         let buffer = tc.as_mut_bytes();
         let provided_len = buffer.len();
-        let gossip_tc = Self::mut_from_bytes_with_elems(buffer, required_len).map_err(|_| {
+        let gossip_tc = Self::mut_from_bytes_with_elems(buffer, payload_len).map_err(|_| {
             GossipMessageError::Cfe(TelecommandError::BufferTooSmall {
-                required_len,
+                required_len: size_of::<PrimaryHeader>()
+                    + size_of::<TelecommandSecondaryHeader>()
+                    + tc_payload_len,
                 provided_len,
             })
         })?;
@@ -175,8 +174,8 @@ impl IslGossipTelecommand {
     }
 
     pub fn set_cfe_checksum(&mut self) {
-        self.secondary.checksum = 0;
-        self.secondary.checksum = checksum_u8(self.as_bytes());
+        self.secondary.set_checksum(0);
+        self.secondary.set_checksum(checksum_u8(self.as_bytes()));
     }
 
     pub fn validate_cfe_checksum(&self) -> bool {

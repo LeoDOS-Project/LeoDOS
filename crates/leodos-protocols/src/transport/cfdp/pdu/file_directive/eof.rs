@@ -209,7 +209,8 @@ impl EofPdu {
         directive_pdu.set_directive_code(DirectiveCode::Eof);
 
         let remaining_len = directive_pdu.rest.len();
-        let eof_pdu = EofPdu::mut_from_bytes_with_elems(&mut directive_pdu.rest, specific_data_len)
+        let rest_len = file_size_len + fault_loc_len;
+        let eof_pdu = EofPdu::mut_from_bytes_with_elems(&mut directive_pdu.rest, rest_len)
             .map_err(|_| CfdpError::BufferTooSmall {
                 required: specific_data_len,
                 provided: remaining_len,

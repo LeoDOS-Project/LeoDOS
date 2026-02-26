@@ -96,7 +96,7 @@ impl<L2: DataLink> SpacePacketReceiver<L2> {
                 .await
                 .map_err(ReceiveError::Datalink)?;
 
-            let Ok((sp, _)) = SpacePacket::ref_from_prefix_with_elems(buffer, len) else {
+            let Ok(sp) = SpacePacket::ref_from_bytes(&buffer[..len]) else {
                 return Err(ReceiveError::FormatError);
             };
 

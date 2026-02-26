@@ -221,8 +221,9 @@ impl FinishedPdu {
         directive_pdu.set_directive_code(DirectiveCode::Finished);
         let remaining_len = directive_pdu.rest.len();
 
+        let rest_len = fs_responses_len + fault_loc_len;
         let (fin_pdu, _rest) =
-            FinishedPdu::mut_from_prefix_with_elems(&mut directive_pdu.rest, specific_data_len)
+            FinishedPdu::mut_from_prefix_with_elems(&mut directive_pdu.rest, rest_len)
                 .map_err(|_| CfdpError::BufferTooSmall {
                     provided: remaining_len,
                     required: specific_data_len,

@@ -148,7 +148,7 @@ impl NakPduSmall {
         directive_pdu.set_directive_code(DirectiveCode::Nak);
 
         let nak_pdu =
-            NakPduSmall::mut_from_bytes_with_elems(&mut directive_pdu.rest, specific_data_len)
+            NakPduSmall::mut_from_bytes_with_elems(&mut directive_pdu.rest, segments_len)
                 .or_else(|_| Err(CfdpError::Custom("Failed to build NAK PDU")))?;
         nak_pdu.set_start_of_scope(start_of_scope);
         nak_pdu.set_end_of_scope(end_of_scope);

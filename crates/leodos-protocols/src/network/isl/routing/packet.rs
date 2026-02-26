@@ -63,12 +63,9 @@ pub struct IslRoutingTelecommand {
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
 pub struct IslRoutingTelecommandHeader {
-    /// The target address for this packet (wire format).
-    pub target: RawAddress,
-    /// An ID for request/response correlation. Set to 0 for asynchronous messages.
-    pub message_id: u8,
-    /// The application-specific action code for the final destination.
-    pub action_code: u8,
+    target: RawAddress,
+    message_id: u8,
+    action_code: u8,
 }
 
 /// An error that can occur when building or parsing an ISL message.
@@ -105,6 +102,26 @@ impl IslRoutingTelecommandHeader {
     pub fn target(&self) -> Address {
         self.target.parse()
     }
+
+    pub fn set_target(&mut self, target: Address) {
+        self.target = RawAddress::from(target);
+    }
+
+    pub fn message_id(&self) -> u8 {
+        self.message_id
+    }
+
+    pub fn set_message_id(&mut self, message_id: u8) {
+        self.message_id = message_id;
+    }
+
+    pub fn action_code(&self) -> u8 {
+        self.action_code
+    }
+
+    pub fn set_action_code(&mut self, action_code: u8) {
+        self.action_code = action_code;
+    }
 }
 
 #[bon]
@@ -129,23 +146,21 @@ impl IslRoutingTelecommand {
             .build()
             .map_err(IslMessageError::Cfe)?;
 
-        let required_len = size_of::<PrimaryHeader>()
-            + size_of::<TelecommandSecondaryHeader>()
-            + size_of::<IslRoutingTelecommandHeader>()
-            + payload_len;
-
         let buffer = tc.as_mut_bytes();
         let provided_len = buffer.len();
-        let isl_tc = Self::mut_from_bytes_with_elems(buffer, required_len).map_err(|_| {
+        let isl_tc = Self::mut_from_bytes_with_elems(buffer, payload_len).map_err(|_| {
             TelecommandError::BufferTooSmall {
-                required_len,
+                required_len: size_of::<PrimaryHeader>()
+                    + size_of::<TelecommandSecondaryHeader>()
+                    + size_of::<IslRoutingTelecommandHeader>()
+                    + payload_len,
                 provided_len,
             }
         })?;
 
-        isl_tc.isl_header.message_id = message_id;
-        isl_tc.isl_header.target = RawAddress::from(target);
-        isl_tc.isl_header.action_code = action_code;
+        isl_tc.isl_header.set_message_id(message_id);
+        isl_tc.isl_header.set_target(target);
+        isl_tc.isl_header.set_action_code(action_code);
 
         isl_tc.set_cfe_checksum();
 
@@ -159,8 +174,8 @@ impl IslRoutingTelecommand {
     /// The algorithm is a byte-wise XOR sum of the entire packet,
     /// with the checksum field itself treated as zero during calculation.
     pub fn set_cfe_checksum(&mut self) {
-        self.secondary.checksum = 0;
-        self.secondary.checksum = checksum_u8(self.as_bytes());
+        self.secondary.set_checksum(0);
+        self.secondary.set_checksum(checksum_u8(self.as_bytes()));
     }
 
     /// Validates the 8-bit cFE checksum.
@@ -196,5 +211,14 @@ impl IslRoutingTelecommand {
     pub fn parse<'a>(bytes: &'a [u8]) -> Result<&'a IslRoutingTelecommand, IslMessageError> {
         let tc = Telecommand::parse(bytes).map_err(IslMessageError::Cfe)?;
         Self::from_telecommand(tc)
+    }
+}
+
+impl crate::utils::Header<PrimaryHeader> for IslRoutingTelecommand {
+    fn get(&self) -> &PrimaryHeader {
+        &self.primary
+    }
+    fn get_mut(&mut self) -> &mut PrimaryHeader {
+        &mut self.primary
     }
 }
