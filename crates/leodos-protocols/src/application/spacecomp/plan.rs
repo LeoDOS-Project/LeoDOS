@@ -9,7 +9,7 @@ use heapless::Vec;
 use crate::application::spacecomp::job::{AssignmentSolver, Job};
 use crate::application::spacecomp::scheduler::aoi::Aoi;
 use crate::application::spacecomp::scheduler::{
-    CostModel, Hungarian, JonkerVolgenant, JobCost, JobParams, Solver, SpaceCompCost,
+    CostModel, Hungarian, JonkerVolgenant, Solver, SpaceCompCost,
 };
 use crate::network::isl::projection::Projection;
 use crate::network::isl::shell::Shell;
@@ -83,17 +83,8 @@ impl Job {
             ReducerPlacement::CenterOfAoi => grid_aoi.center(&shell.torus),
         };
 
-        let params = JobParams {
-            map_processing_factor: self.map_processing_factor,
-            reduce_processing_factor: self.reduce_processing_factor,
-            map_reduction_factor: self.map_reduction_factor,
-            reduce_reduction_factor: self.reduce_reduction_factor,
-            data_volume_bytes: self.data_volume_bytes,
-            ..Default::default()
-        };
-        let estimated_cost = JobCost::total_cost(
+        let estimated_cost = self.estimated_cost(
             &shell.torus,
-            &params,
             collectors.as_slice(),
             mappers.as_slice(),
             assignment.as_slice(),
