@@ -4,13 +4,27 @@
 //! execution plan: which satellites collect, which map, where to reduce, and
 //! the optimal collector-to-mapper assignment via bipartite matching.
 
+/// Area of interest on the satellite grid.
+pub mod aoi;
+/// Assignment solver trait and implementations.
+pub mod assignment;
+/// Job cost estimation.
+pub mod cost;
+/// Point-to-point distance/cost models for the assignment solver.
+pub mod distance;
+
+pub use aoi::Aoi;
+pub use assignment::hungarian::Hungarian;
+pub use assignment::lapjv::JonkerVolgenant;
+pub use assignment::{Bounded, Solver};
+pub use cost::hop_distance;
+pub use distance::manhattan::ManhattanCost;
+pub use distance::spacecomp::SpaceCompCost;
+pub use distance::CostModel;
+
 use heapless::Vec;
 
 use crate::application::spacecomp::job::{AssignmentSolver, Job};
-use crate::application::spacecomp::scheduler::aoi::Aoi;
-use crate::application::spacecomp::scheduler::{
-    CostModel, Hungarian, JonkerVolgenant, Solver, SpaceCompCost,
-};
 use crate::network::isl::projection::Projection;
 use crate::network::isl::shell::Shell;
 use crate::network::isl::torus::Point;
@@ -184,6 +198,73 @@ mod tests {
     fn test_shell() -> Shell {
         let torus = Torus::new(20, 72);
         Shell::new(torus, 550_000.0, 87.0)
+    }
+
+    #[test]
+    fn test_full_workflow() {
+        let torus = Torus::new(4, 4);
+        let cost_model = ManhattanCost { hop_cost: 10 };
+
+        let tasks = [
+            Point::new(0, 0),
+            Point::new(1, 1),
+            Point::new(2, 2),
+            Point::new(3, 3),
+        ];
+
+        let processors = [
+            Point::new(0, 1),
+            Point::new(1, 0),
+            Point::new(2, 3),
+            Point::new(3, 2),
+        ];
+
+        let mut matrix = [[0u32; 8]; 8];
+        for (i, &task) in tasks.iter().enumerate() {
+            for (j, &proc) in processors.iter().enumerate() {
+                matrix[i][j] = cost_model.cost(&torus, task, proc);
+            }
+        }
+
+        let mut solver = Hungarian::<u32, 8>::new();
+        let assignment = solver.solve(&matrix, 4);
+
+        assert_eq!(assignment.len(), 4);
+
+        let total: u32 = assignment
+            .iter()
+            .enumerate()
+            .map(|(i, &j)| matrix[i][j])
+            .sum();
+
+        assert_eq!(total, 10 * 4);
+    }
+
+    #[test]
+    fn test_optimal_assignment_diagonal() {
+        let torus = Torus::new(4, 4);
+        let cost_model = ManhattanCost { hop_cost: 1 };
+
+        let tasks = [Point::new(0, 0), Point::new(1, 1), Point::new(2, 2)];
+        let processors = [Point::new(0, 0), Point::new(1, 1), Point::new(2, 2)];
+
+        let mut matrix = [[0u32; 4]; 4];
+        for (i, &task) in tasks.iter().enumerate() {
+            for (j, &proc) in processors.iter().enumerate() {
+                matrix[i][j] = cost_model.cost(&torus, task, proc);
+            }
+        }
+
+        let mut solver = Hungarian::<u32, 4>::new();
+        let assignment = solver.solve(&matrix, 3);
+
+        let total: u32 = assignment
+            .iter()
+            .enumerate()
+            .map(|(i, &j)| matrix[i][j])
+            .sum();
+
+        assert_eq!(total, 0);
     }
 
     #[test]

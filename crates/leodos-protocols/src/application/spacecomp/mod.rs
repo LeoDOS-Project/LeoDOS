@@ -9,7 +9,5 @@ pub mod roles;
 pub mod packet;
 /// Job planning: satellite selection, assignment, and cost estimation.
 pub mod plan;
-/// Task-to-satellite assignment algorithms.
-pub mod scheduler;
 /// Zero-copy data schema trait.
 pub mod schema;

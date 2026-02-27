@@ -10,7 +10,7 @@ use heapless::Vec;
 use super::geo::{GeoAoi, LatLon};
 use super::shell::Shell;
 use super::torus::Point;
-use crate::application::spacecomp::scheduler::aoi::Aoi;
+use crate::application::spacecomp::plan::aoi::Aoi;
 
 /// Projects satellite grid positions to geographic coordinates and vice versa.
 pub struct Projection {
