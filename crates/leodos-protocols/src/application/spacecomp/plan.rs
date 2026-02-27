@@ -6,10 +6,10 @@
 
 use heapless::Vec;
 
-use crate::application::spacecomp::job::Job;
+use crate::application::spacecomp::job::{AssignmentSolver, Job};
 use crate::application::spacecomp::scheduler::aoi::Aoi;
 use crate::application::spacecomp::scheduler::{
-    CostModel, Hungarian, JobCost, JobParams, Solver, SpaceCompCost,
+    CostModel, Hungarian, JonkerVolgenant, JobCost, JobParams, Solver, SpaceCompCost,
 };
 use crate::network::isl::projection::Projection;
 use crate::network::isl::shell::Shell;
@@ -26,7 +26,7 @@ pub enum ReducerPlacement {
 
 /// The result of planning a SpaceCoMP job.
 #[derive(Debug, Clone)]
-pub struct JobPlan<const N: usize> {
+pub struct Plan<const N: usize> {
     /// Satellite positions assigned as data collectors.
     pub collectors: Vec<Point, N>,
     /// Satellite positions assigned as data mappers.
@@ -50,7 +50,7 @@ impl Job {
         shell: Shell,
         reducer_placement: ReducerPlacement,
         los_node: Point,
-    ) -> Result<JobPlan<N>, &'static str> {
+    ) -> Result<Plan<N>, &'static str> {
         let projection = Projection::new(shell);
 
         let all_covering: Vec<Point, N> = projection.satellites_in_geo_aoi(&self.geo_aoi);
@@ -101,7 +101,7 @@ impl Job {
             los_node,
         );
 
-        Ok(JobPlan {
+        Ok(Plan {
             collectors,
             mappers,
             assignment,
@@ -112,12 +112,14 @@ impl Job {
     }
 }
 
-fn filter_ascending<const N: usize>(shell: Shell, nodes: &Vec<Point, N>) -> Vec<Point, N> {
+fn filter_ascending<const N: usize>(shell: Shell, points: &Vec<Point, N>) -> Vec<Point, N> {
     let half = shell.torus.num_orbs / 2;
     let mut result = Vec::new();
-    for &node in nodes {
-        if node.orb < half {
-            let _ = result.push(node);
+    for &point in points {
+        if point.orb < half {
+            if result.push(point).is_err() {
+                break;
+            };
         }
     }
     result
@@ -162,12 +164,22 @@ fn solve_assignment<const N: usize>(
         }
     }
 
-    let mut solver = Hungarian::<u64, MAX>::new();
-    let raw = solver.solve(&cost_matrix, collectors.len());
+    let raw = match job.solver {
+        AssignmentSolver::Hungarian => {
+            let mut s = Hungarian::<u64, MAX>::new();
+            s.solve(&cost_matrix, collectors.len())
+        }
+        AssignmentSolver::JonkerVolgenant => {
+            let mut s = JonkerVolgenant::<u64, MAX>::new();
+            s.solve(&cost_matrix, collectors.len())
+        }
+    };
 
     let mut result = Vec::new();
     for &idx in &raw {
-        let _ = result.push(idx);
+        if result.push(idx).is_err() {
+            return Err("assignment result exceeds capacity");
+        }
     }
     Ok(result)
 }
@@ -188,7 +200,10 @@ mod tests {
         let shell = test_shell();
 
         let job = Job::builder()
-            .geo_aoi(GeoAoi::new(LatLon::new(10.0, -5.0), LatLon::new(-10.0, 5.0)))
+            .geo_aoi(GeoAoi::new(
+                LatLon::new(10.0, -5.0),
+                LatLon::new(-10.0, 5.0),
+            ))
             .data_volume_bytes(1_000_000)
             .build();
 
@@ -206,14 +221,21 @@ mod tests {
         let shell = test_shell();
 
         let job = Job::builder()
-            .geo_aoi(GeoAoi::new(LatLon::new(10.0, -5.0), LatLon::new(-10.0, 5.0)))
+            .geo_aoi(GeoAoi::new(
+                LatLon::new(10.0, -5.0),
+                LatLon::new(-10.0, 5.0),
+            ))
             .data_volume_bytes(1_000_000)
             .build();
 
         let los = Point::new(0, 36);
 
-        let center_plan = job.plan::<64>(shell, ReducerPlacement::CenterOfAoi, los).unwrap();
-        let los_plan = job.plan::<64>(shell, ReducerPlacement::LineOfSight, los).unwrap();
+        let center_plan = job
+            .plan::<64>(shell, ReducerPlacement::CenterOfAoi, los)
+            .unwrap();
+        let los_plan = job
+            .plan::<64>(shell, ReducerPlacement::LineOfSight, los)
+            .unwrap();
 
         assert!(
             center_plan.estimated_cost <= los_plan.estimated_cost,

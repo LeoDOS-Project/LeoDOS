@@ -337,12 +337,12 @@ impl AssignCollectorMessage {
     pub fn new<'a>(
         buffer: &'a mut [u8],
         job_id: u16,
-        mapper_addr: Address,
+        mapper_addr: impl Into<Address>,
         partition_id: usize,
     ) -> Result<&'a SpaceCompMessage, BuildError> {
         let partition_id = u8::try_from(partition_id).map_err(|_| BuildError::OutOfRange)?;
         let payload = AssignCollectorPayload::builder()
-            .mapper_addr(mapper_addr)
+            .mapper_addr(mapper_addr.into())
             .partition_id(partition_id)
             .build();
         Ok(SpaceCompMessage::builder()
@@ -383,12 +383,12 @@ impl AssignMapperMessage {
     pub fn new<'a>(
         buffer: &'a mut [u8],
         job_id: u16,
-        reducer_addr: Address,
+        reducer_addr: impl Into<Address>,
         collector_count: usize,
     ) -> Result<&'a SpaceCompMessage, BuildError> {
         let collector_count = u8::try_from(collector_count).map_err(|_| BuildError::OutOfRange)?;
         let payload = AssignMapperPayload::builder()
-            .reducer_addr(reducer_addr)
+            .reducer_addr(reducer_addr.into())
             .collector_count(collector_count)
             .build();
         Ok(SpaceCompMessage::builder()
@@ -429,12 +429,12 @@ impl AssignReducerMessage {
     pub fn new<'a>(
         buffer: &'a mut [u8],
         job_id: u16,
-        los_addr: Address,
+        los_addr: impl Into<Address>,
         mapper_count: usize,
     ) -> Result<&'a SpaceCompMessage, BuildError> {
         let mapper_count = u8::try_from(mapper_count).map_err(|_| BuildError::OutOfRange)?;
         let payload = AssignReducerPayload::builder()
-            .los_addr(los_addr)
+            .los_addr(los_addr.into())
             .mapper_count(mapper_count)
             .build();
         Ok(SpaceCompMessage::builder()
