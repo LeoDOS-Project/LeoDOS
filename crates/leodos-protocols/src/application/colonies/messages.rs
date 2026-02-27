@@ -19,6 +19,7 @@ use crate::network::spp::SpacePacket;
 use crate::utils::checksum_u8;
 use crate::utils::validate_checksum_u8;
 
+/// Operation codes for the ColonyOS protocol.
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ColoniesOpCode {
@@ -48,34 +49,44 @@ impl TryFrom<u8> for ColoniesOpCode {
     }
 }
 
+/// A ColonyOS packet: SPP primary + TC secondary + Colonies header + payload.
 #[repr(C)]
 #[derive(FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct ColoniesPacket {
+    /// SPP primary header.
     pub primary: PrimaryHeader,
+    /// cFE telecommand secondary header.
     pub secondary: TelecommandSecondaryHeader,
+    /// ColonyOS-specific header with opcode and message ID.
     pub colonies: ColoniesHeader,
+    /// Variable-length payload containing LV-encoded arguments.
     pub payload: [u8],
 }
 
+/// Fixed 8-byte header for ColonyOS messages.
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable, Clone, Copy)]
 pub struct ColoniesHeader {
-    pub op_code: u8,
-    pub _reserved: [u8; 3],
-    pub msg_id: U32,
+    op_code: u8,
+    _reserved: [u8; 3],
+    msg_id: U32,
 }
 
 impl ColoniesHeader {
+    /// Returns the operation code.
     pub fn op_code(&self) -> Result<ColoniesOpCode, ()> {
         self.op_code.try_into()
     }
+    /// Sets the operation code.
     pub fn set_op_code(&mut self, op_code: ColoniesOpCode) {
         self.op_code = op_code as u8;
     }
 
+    /// Returns the message correlation ID.
     pub fn msg_id(&self) -> u32 {
         self.msg_id.get()
     }
+    /// Sets the message correlation ID.
     pub fn set_msg_id(&mut self, msg_id: u32) {
         self.msg_id = U32::new(msg_id);
     }
@@ -96,17 +107,23 @@ impl DerefMut for ColoniesPacket {
     }
 }
 
+/// Errors that can occur when constructing or parsing a ColonyOS packet.
 #[derive(Debug)]
 pub enum ColoniesMessageError {
+    /// The underlying telecommand layer reported an error.
     Telecommand(TelecommandError),
+    /// The payload exceeds the maximum allowed size.
     PayloadTooLarge,
+    /// The payload is too small to contain the required header.
     PayloadTooSmall,
+    /// The packet could not be parsed.
     Parse,
 }
 
 #[bon]
 impl ColoniesPacket {
     #[builder]
+    /// Constructs a new ColonyOS packet in the provided buffer.
     pub fn new<'a>(
         buffer: &'a mut [u8],
         apid: Apid,
@@ -147,16 +164,19 @@ impl ColoniesPacket {
         Ok(packet)
     }
 
+    /// Computes and stores the cFE checksum over the entire packet.
     pub fn set_cfe_checksum(&mut self) {
         self.secondary.set_checksum(0);
         self.secondary.set_checksum(checksum_u8(self.as_bytes()));
     }
+    /// Validates the cFE checksum of the packet.
     pub fn validate_cfe_checksum(&self) -> bool {
         validate_checksum_u8(self.as_bytes())
     }
 }
 
 impl ColoniesPacket {
+    /// Parses a ColonyOS packet from a byte slice.
     pub fn parse(bytes: &[u8]) -> Result<&Self, ColoniesMessageError> {
         let tc = Telecommand::parse(bytes).map_err(ColoniesMessageError::Telecommand)?;
         <&ColoniesPacket>::try_from(tc)
@@ -174,12 +194,14 @@ impl<'a> TryFrom<&'a Telecommand> for &'a ColoniesPacket {
     }
 }
 
+/// Iterator over Length-Value encoded arguments in a ColonyOS payload.
 #[derive(Debug, Clone, Copy)]
 pub struct ArgIterator<'a> {
     buffer: &'a [u8],
 }
 
 impl<'a> ArgIterator<'a> {
+    /// Creates a new argument iterator over the given buffer.
     pub fn new(buffer: &'a [u8]) -> Self {
         Self { buffer }
     }
@@ -213,10 +235,12 @@ pub struct PayloadWriter<'a> {
 }
 
 impl<'a> PayloadWriter<'a> {
+    /// Creates a new writer over the given buffer.
     pub fn new(buffer: &'a mut [u8]) -> Self {
         Self { buffer, cursor: 0 }
     }
 
+    /// Writes a length-prefixed byte slice into the buffer.
     pub fn write_bytes(&mut self, data: &[u8]) -> Result<(), ()> {
         let len = data.len();
 
@@ -235,14 +259,17 @@ impl<'a> PayloadWriter<'a> {
         Ok(())
     }
 
+    /// Writes a length-prefixed UTF-8 string into the buffer.
     pub fn write_str(&mut self, s: &str) -> Result<(), ()> {
         self.write_bytes(s.as_bytes())
     }
 
+    /// Returns the number of bytes written so far.
     pub fn len(&self) -> usize {
         self.cursor
     }
     
+    /// Returns the number of bytes remaining in the buffer.
     pub fn remaining_capacity(&self) -> usize {
         self.buffer.len() - self.cursor
     }

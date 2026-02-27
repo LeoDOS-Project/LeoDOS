@@ -48,9 +48,12 @@ use crate::utils::validate_checksum_u8;
 #[repr(C)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable)]
 pub struct IslGossipTelecommand {
+    /// CCSDS SPP primary header.
     pub primary: PrimaryHeader,
+    /// CFE command secondary header.
     pub secondary: TelecommandSecondaryHeader,
     pub(crate) gossip_header: IslGossipHeader,
+    /// Variable-length gossip data payload.
     pub payload: [u8],
 }
 
@@ -65,6 +68,7 @@ impl core::fmt::Debug for IslGossipTelecommand {
     }
 }
 
+/// A gossip epoch number used for duplicate detection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable)]
 #[repr(transparent)]
 pub struct Epoch(pub U16);
@@ -73,26 +77,28 @@ pub struct Epoch(pub U16);
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
 pub(crate) struct IslGossipHeader {
-    /// Address of the node that originated this gossip.
-    pub originator: RawAddress,
-    /// Address of the immediate sender (for routing - don't echo back).
-    pub from_address: RawAddress,
-    /// The minimum satellite ID in the target service area for this gossip.
-    pub service_area_min: u8,
-    /// The maximum satellite ID in the target service area for this gossip.
-    pub service_area_max: u8,
-    /// The unique sequence number for this piece of gossip, used for duplicate detection.
-    pub epoch: Epoch,
-    /// The application-specific action code for the gossip message.
-    pub action_code: u8,
+    originator: RawAddress,
+    from_address: RawAddress,
+    pub(crate) service_area_min: u8,
+    pub(crate) service_area_max: u8,
+    epoch: Epoch,
+    action_code: u8,
 }
 
 /// An error that can occur when building or parsing a Gossip message.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum GossipMessageError {
+    /// An error from the underlying CFE telecommand layer.
     Cfe(TelecommandError),
+    /// The payload is too small to contain a gossip header.
     PayloadTooSmall,
-    PayloadTooLarge { max: usize, provided: usize },
+    /// The payload exceeds the maximum allowed size.
+    PayloadTooLarge {
+        /// Maximum allowed payload size.
+        max: usize,
+        /// Actual payload size provided.
+        provided: usize,
+    },
 }
 
 impl From<TelecommandError> for GossipMessageError {
@@ -102,12 +108,40 @@ impl From<TelecommandError> for GossipMessageError {
 }
 
 impl IslGossipHeader {
+    /// Address of the node that originated this gossip.
     pub(crate) fn originator(&self) -> Address {
         self.originator.parse()
     }
 
+    pub(crate) fn set_originator(&mut self, addr: Address) {
+        self.originator = RawAddress::from(addr);
+    }
+
+    /// Address of the immediate sender (for routing — don't echo back).
     pub(crate) fn from_address(&self) -> Address {
         self.from_address.parse()
+    }
+
+    pub(crate) fn set_from_address(&mut self, addr: Address) {
+        self.from_address = RawAddress::from(addr);
+    }
+
+    /// The unique sequence number for this piece of gossip, used for duplicate detection.
+    pub(crate) fn epoch(&self) -> Epoch {
+        self.epoch
+    }
+
+    pub(crate) fn set_epoch(&mut self, epoch: Epoch) {
+        self.epoch = epoch;
+    }
+
+    /// The application-specific action code for the gossip message.
+    pub(crate) fn action_code(&self) -> u8 {
+        self.action_code
+    }
+
+    pub(crate) fn set_action_code(&mut self, action_code: u8) {
+        self.action_code = action_code;
     }
 }
 
@@ -153,12 +187,12 @@ impl IslGossipTelecommand {
             })
         })?;
 
-        gossip_tc.gossip_header.originator = RawAddress::from(originator);
-        gossip_tc.gossip_header.from_address = RawAddress::from(from_address);
+        gossip_tc.gossip_header.set_originator(originator);
+        gossip_tc.gossip_header.set_from_address(from_address);
         gossip_tc.gossip_header.service_area_min = service_area_min;
         gossip_tc.gossip_header.service_area_max = service_area_max;
-        gossip_tc.gossip_header.epoch = epoch;
-        gossip_tc.gossip_header.action_code = action_code;
+        gossip_tc.gossip_header.set_epoch(epoch);
+        gossip_tc.gossip_header.set_action_code(action_code);
 
         gossip_tc.set_cfe_checksum();
 
@@ -173,15 +207,18 @@ impl IslGossipTelecommand {
         Ok(Self::ref_from_bytes(tc.as_bytes()).unwrap())
     }
 
+    /// Calculates and sets the 8-bit cFE checksum for this gossip packet.
     pub fn set_cfe_checksum(&mut self) {
         self.secondary.set_checksum(0);
         self.secondary.set_checksum(checksum_u8(self.as_bytes()));
     }
 
+    /// Returns `true` if the cFE checksum is valid.
     pub fn validate_cfe_checksum(&self) -> bool {
         validate_checksum_u8(self.as_bytes())
     }
 
+    /// Returns the length of the gossip data payload in bytes.
     pub fn data_len(&self) -> usize {
         self.payload.len()
     }

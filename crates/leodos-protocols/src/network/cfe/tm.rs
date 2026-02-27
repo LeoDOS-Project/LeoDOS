@@ -44,8 +44,11 @@ use zerocopy::network_endian::U64;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct Telemetry {
+    /// CCSDS SPP primary header.
     pub primary: PrimaryHeader,
+    /// CFE telemetry secondary header containing timestamp.
     pub secondary: TelemetrySecondaryHeader,
+    /// Variable-length telemetry payload.
     pub payload: [u8],
 }
 
@@ -53,12 +56,11 @@ pub struct Telemetry {
 #[repr(C)]
 #[derive(IntoBytes, FromBytes, Unaligned, KnownLayout, Immutable, Default, Copy, Clone, Debug)]
 pub struct TelemetrySecondaryHeader {
-    /// 6-byte CCSDS Day Segmented (CDS) time format with 2 spare bytes.
-    pub time: U64,
-    /// Padding to ensure the payload that follows is 64-bit aligned.
-    pub spare: [u8; 2],
+    time: U64,
+    spare: [u8; 2],
 }
 
+/// Bitmask constants for the telemetry secondary header fields.
 pub mod bitmask {
     /// Bitmask for the time field in the telemetry secondary header.
     pub const TIME_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
@@ -69,11 +71,22 @@ use bitmask::*;
 /// An error that can occur when building a CFE telemetry packet.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TelemetryError {
-    BufferTooSmall { required: usize, provided: usize },
+    /// The provided buffer is too small to hold the packet.
+    BufferTooSmall {
+        /// Minimum number of bytes needed.
+        required: usize,
+        /// Actual buffer size provided.
+        provided: usize,
+    },
+    /// The time value exceeds the 6-byte CDS range.
     InvalidTimeValue,
+    /// The underlying SPP builder returned an error.
     SpacePacketError(crate::network::spp::BuildError),
+    /// The secondary header flag is not set to Present.
     MissingSecondaryHeader,
+    /// The packet data field does not match the expected layout.
     PayloadMismatch,
+    /// The packet type does not match (e.g. telecommand instead of telemetry).
     TypeMismatch,
 }
 
@@ -150,9 +163,11 @@ impl Telemetry {
         Ok(tm)
     }
 
+    /// 6-byte CCSDS Day Segmented (CDS) time value.
     pub fn time(&self) -> u64 {
         self.secondary.time.get() & TIME_MASK
     }
+    /// Sets the 6-byte time value, returning an error if out of range.
     pub fn set_time(&mut self, time: u64) -> Result<(), TelemetryError> {
         if time & !TIME_MASK != 0 {
             return Err(TelemetryError::InvalidTimeValue);
@@ -161,13 +176,16 @@ impl Telemetry {
         Ok(())
     }
 
+    /// Returns the telemetry payload bytes.
     pub fn payload(&self) -> &[u8] {
         self.payload.as_bytes()
     }
+    /// Returns a mutable reference to the telemetry payload bytes.
     pub fn payload_mut(&mut self) -> &mut [u8] {
         self.payload.as_mut_bytes()
     }
 
+    /// Parses a byte slice as a CFE telemetry packet.
     pub fn parse<'a>(bytes: &'a [u8]) -> Result<&'a Telemetry, TelemetryError> {
         let sp = SpacePacket::ref_from_bytes(bytes).map_err(|_| TelemetryError::PayloadMismatch)?;
         <&Telemetry>::try_from(sp)

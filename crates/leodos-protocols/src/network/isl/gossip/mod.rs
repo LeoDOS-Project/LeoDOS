@@ -1,7 +1,10 @@
 //! Defines the ISL Gossip message structure and builders.
 
+/// Sliding-window duplicate filter for epoch-based deduplication.
 pub mod bitmap;
+/// Epoch tracking with wrap-around-aware duplicate detection.
 pub mod epoch;
+/// Gossip packet structure and builder.
 pub mod packet;
 
 use crate::network::isl::address::Address;
@@ -29,7 +32,7 @@ where
     torus: Torus,
     /// The address of the node running this handler.
     my_address: Address,
-    /// Application-specific logic to handle the gossip payload.
+    /// Callback invoked for each unique gossip message received.
     pub app_logic: F,
 }
 
@@ -37,6 +40,7 @@ impl<F> GossipHandler<F>
 where
     F: FnMut(&IslGossipTelecommand),
 {
+    /// Creates a new gossip handler with the given topology and callback.
     pub fn new(torus: Torus, my_address: Address, app_logic: F) -> Self {
         Self {
             epoch_cache: [Epoch(U16::new(0)); EPOCH_CACHE_SIZE],
@@ -47,6 +51,7 @@ where
         }
     }
 
+    /// Returns `true` if this epoch has already been seen (and caches it if not).
     pub fn is_duplicate(&mut self, epoch: Epoch) -> bool {
         if self.epoch_cache.contains(&epoch) {
             return true;
@@ -56,11 +61,12 @@ where
         false
     }
 
+    /// Processes an incoming gossip packet, invoking the callback and returning forwards.
     pub fn process_gossip<'a>(
         &mut self,
         packet: &'a IslGossipTelecommand,
     ) -> Vec<(Direction, &'a IslGossipTelecommand), 4> {
-        if self.is_duplicate(packet.gossip_header.epoch) {
+        if self.is_duplicate(packet.gossip_header.epoch()) {
             return Vec::new();
         }
 
