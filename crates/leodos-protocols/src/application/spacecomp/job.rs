@@ -8,6 +8,16 @@ use bon::Builder;
 
 use crate::network::isl::geo::GeoAoi;
 
+/// Which assignment algorithm to use for collector-to-mapper matching.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum AssignmentSolver {
+    /// Kuhn-Munkres (Hungarian) algorithm, O(n^3).
+    #[default]
+    Hungarian,
+    /// Jonker-Volgenant (LAPJV) algorithm, O(n^3) but typically faster.
+    JonkerVolgenant,
+}
+
 /// A complete SpaceCoMP job request (Section II-A of the paper).
 #[derive(Debug, Clone, Copy, Builder)]
 pub struct Job {
@@ -36,4 +46,8 @@ pub struct Job {
     /// Only use ascending satellites (Section III-B.2).
     #[builder(default = false)]
     pub ascending_only: bool,
+
+    /// Assignment algorithm to use.
+    #[builder(default)]
+    pub solver: AssignmentSolver,
 }
