@@ -69,6 +69,7 @@ pub trait FileStore: Debug + Send + Sync {
     /// A `Future` that resolves to a `Result` containing the file size in bytes.
     fn file_size(&self, path: FileId) -> impl Future<Output = Result<u64, CfdpError>>;
 
+    /// Calculates the full-file checksum using the given hasher.
     fn calculate_checksum<H>(
         &self,
         file_id: FileId,

@@ -1,12 +1,16 @@
+/// Policy for computing retransmission timeout values.
 pub trait RtoPolicy {
+    /// Compute the retransmission timeout in ticks for the current time.
     fn rto_ticks(&self, now_secs: u32) -> u32;
 }
 
+/// Fixed retransmission timeout that ignores orbital dynamics.
 pub struct FixedRto {
     rto_ticks: u32,
 }
 
 impl FixedRto {
+    /// Create a new fixed RTO policy with the given timeout in ticks.
     pub fn new(rto_ticks: u32) -> Self {
         Self { rto_ticks }
     }
@@ -18,24 +22,31 @@ impl RtoPolicy for FixedRto {
     }
 }
 
+/// A ground station contact window defined by start and end times.
 #[derive(Debug, Clone)]
 pub struct ContactWindow {
+    /// Ground station identifier.
     pub station_id: u8,
+    /// Window start time in mission-elapsed seconds.
     pub start_secs: u32,
+    /// Window end time in mission-elapsed seconds (exclusive).
     pub end_secs: u32,
 }
 
+/// Ordered schedule of ground station contact windows.
 pub struct ContactSchedule<const N: usize> {
     windows: heapless::Vec<ContactWindow, N>,
 }
 
 impl<const N: usize> ContactSchedule<N> {
+    /// Create an empty contact schedule.
     pub fn new() -> Self {
         Self {
             windows: heapless::Vec::new(),
         }
     }
 
+    /// Insert a contact window in chronological order.
     pub fn add_window(&mut self, window: ContactWindow) -> Result<(), ContactWindow> {
         let pos = self
             .windows
@@ -46,17 +57,20 @@ impl<const N: usize> ContactSchedule<N> {
         self.windows.insert(pos, window).map_err(|e| e)
     }
 
+    /// Check if the given time falls within any contact window.
     pub fn in_window(&self, now_secs: u32) -> bool {
         self.windows
             .iter()
             .any(|w| now_secs >= w.start_secs && now_secs < w.end_secs)
     }
 
+    /// Return the next contact window starting after the given time.
     pub fn next_window(&self, now_secs: u32) -> Option<&ContactWindow> {
         self.windows.iter().find(|w| w.start_secs > now_secs)
     }
 }
 
+/// RTO policy that adapts timeout based on orbital contact windows.
 pub struct OrbitAwareRto<const N: usize> {
     isl_rto_ticks: u32,
     margin_ticks: u32,
@@ -64,6 +78,7 @@ pub struct OrbitAwareRto<const N: usize> {
 }
 
 impl<const N: usize> OrbitAwareRto<N> {
+    /// Create an orbit-aware RTO with ISL timeout, margin, and contact schedule.
     pub fn new(isl_rto_ticks: u32, margin_ticks: u32, schedule: ContactSchedule<N>) -> Self {
         Self {
             isl_rto_ticks,

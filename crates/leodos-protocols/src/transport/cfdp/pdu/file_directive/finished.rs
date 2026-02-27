@@ -97,6 +97,7 @@ impl FinishedPdu {
     pub fn condition_code(&self) -> Result<ConditionCode, CfdpError> {
         ConditionCode::try_from(get_bits_u8(self.packed_flags, FINISHED_CONDITION_CODE_MASK))
     }
+    /// Sets the condition code field.
     pub fn set_condition_code(&mut self, code: ConditionCode) {
         let code_bits = (code as u8) << 4;
         self.packed_flags = (self.packed_flags & !FINISHED_CONDITION_CODE_MASK) | code_bits;
@@ -108,6 +109,7 @@ impl FinishedPdu {
         // We'll return a bool where `true` means complete.
         get_bits_u8(self.packed_flags, FINISHED_DELIVERY_CODE_MASK) == 0
     }
+    /// Sets the delivery code. `true` means Data Complete.
     pub fn set_delivery_code(&mut self, complete: bool) {
         let delivery_bit = if complete { 0 } else { 1 } << 2;
         self.packed_flags = (self.packed_flags & !FINISHED_DELIVERY_CODE_MASK) | delivery_bit;
@@ -117,6 +119,7 @@ impl FinishedPdu {
     pub fn file_status(&self) -> Option<FileStatus> {
         FileStatus::try_from(get_bits_u8(self.packed_flags, FINISHED_FILE_STATUS_MASK)).ok()
     }
+    /// Sets the file status field.
     pub fn set_file_status(&mut self, status: FileStatus) {
         let status_bits = status as u8;
         self.packed_flags = (self.packed_flags & !FINISHED_FILE_STATUS_MASK) | status_bits;
@@ -142,6 +145,7 @@ impl FinishedPdu {
             .map(|tlv| tlv.value())
     }
 
+    /// Writes optional Filestore Response and Fault Location TLVs into the rest slice.
     pub fn set_tlvs(
         &mut self,
         filestore_responses: Option<&[u8]>,
@@ -174,6 +178,7 @@ impl FinishedPdu {
 
 #[bon]
 impl FinishedPdu {
+    /// Builds a new Finished PDU in the given buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],

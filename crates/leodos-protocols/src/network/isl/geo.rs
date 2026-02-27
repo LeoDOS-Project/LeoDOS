@@ -17,34 +17,45 @@ use core::f32::consts::PI;
 
 const EARTH_RADIUS_M: f32 = 6_371_000.0;
 
+/// A geographic coordinate in degrees of latitude and longitude.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LatLon {
+    /// Latitude in degrees (-90 to 90).
     pub lat_deg: f32,
+    /// Longitude in degrees (-180 to 180).
     pub lon_deg: f32,
 }
 
 impl LatLon {
+    /// Creates a new coordinate from latitude and longitude in degrees.
     pub fn new(lat_deg: f32, lon_deg: f32) -> Self {
         Self { lat_deg, lon_deg }
     }
 
+    /// Returns the latitude converted to radians.
     pub fn lat_rad(&self) -> f32 {
         self.lat_deg * PI / 180.0
     }
 
+    /// Returns the longitude converted to radians.
     pub fn lon_rad(&self) -> f32 {
         self.lon_deg * PI / 180.0
     }
 }
 
+/// Earth-Centered Earth-Fixed (ECEF) Cartesian coordinate in meters.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ecef {
+    /// X coordinate in meters.
     pub x: f32,
+    /// Y coordinate in meters.
     pub y: f32,
+    /// Z coordinate in meters.
     pub z: f32,
 }
 
 impl Ecef {
+    /// Converts a geographic coordinate to ECEF Cartesian coordinates.
     pub fn from_latlon(coord: LatLon) -> Self {
         let phi = coord.lat_rad();
         let lambda = coord.lon_rad();
@@ -57,6 +68,7 @@ impl Ecef {
         }
     }
 
+    /// Converts back to a geographic coordinate.
     pub fn to_latlon(&self) -> LatLon {
         let r = libm::sqrtf(self.x * self.x + self.y * self.y + self.z * self.z);
         let lat_rad = libm::asinf(self.z / r);
@@ -68,6 +80,7 @@ impl Ecef {
         }
     }
 
+    /// Returns the Euclidean distance to another ECEF point in meters.
     pub fn distance(&self, other: &Ecef) -> f32 {
         let dx = self.x - other.x;
         let dy = self.y - other.y;
@@ -76,25 +89,34 @@ impl Ecef {
     }
 }
 
+/// A geographic area of interest defined by its bounding box corners.
 #[derive(Debug, Clone, Copy)]
 pub struct GeoAoi {
+    /// Upper-left (northwest) corner of the bounding box.
     pub upper_left: LatLon,
+    /// Lower-right (southeast) corner of the bounding box.
     pub lower_right: LatLon,
 }
 
 impl GeoAoi {
+    /// Creates a new geographic AOI from its bounding box corners.
     pub fn new(upper_left: LatLon, lower_right: LatLon) -> Self {
-        Self { upper_left, lower_right }
+        Self {
+            upper_left,
+            lower_right,
+        }
     }
 
+    /// Returns `true` if the given point lies within this AOI.
     pub fn contains(&self, point: LatLon) -> bool {
-        let lat_ok = point.lat_deg <= self.upper_left.lat_deg
-            && point.lat_deg >= self.lower_right.lat_deg;
-        let lon_ok = point.lon_deg >= self.upper_left.lon_deg
-            && point.lon_deg <= self.lower_right.lon_deg;
+        let lat_ok =
+            point.lat_deg <= self.upper_left.lat_deg && point.lat_deg >= self.lower_right.lat_deg;
+        let lon_ok =
+            point.lon_deg >= self.upper_left.lon_deg && point.lon_deg <= self.lower_right.lon_deg;
         lat_ok && lon_ok
     }
 
+    /// Returns the center point of this AOI.
     pub fn center(&self) -> LatLon {
         LatLon {
             lat_deg: (self.upper_left.lat_deg + self.lower_right.lat_deg) / 2.0,
@@ -102,10 +124,12 @@ impl GeoAoi {
         }
     }
 
+    /// Returns the longitudinal width in degrees.
     pub fn width_deg(&self) -> f32 {
         self.lower_right.lon_deg - self.upper_left.lon_deg
     }
 
+    /// Returns the latitudinal height in degrees.
     pub fn height_deg(&self) -> f32 {
         self.upper_left.lat_deg - self.lower_right.lat_deg
     }

@@ -20,14 +20,18 @@ use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
 use zerocopy::byteorder::network_endian;
 
+/// SRSPP packet type discriminator.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u8)]
 pub enum SrsppType {
+    /// Data packet carrying application payload.
     Data = 0x00,
+    /// Acknowledgment packet.
     Ack = 0x01,
 }
 
 impl SrsppType {
+    /// Parse an SRSPP type from a raw byte value.
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             0x00 => Some(Self::Data),
@@ -62,6 +66,7 @@ impl SrsppHeader {
     }
 }
 
+/// Payload of an SRSPP acknowledgment packet.
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
 pub struct AckPayload {
@@ -98,28 +103,35 @@ impl AckPayload {
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable)]
 pub struct SrsppDataPacket {
+    /// Space Packet primary header.
     pub primary: PrimaryHeader,
+    /// cFE telecommand secondary header.
     pub secondary: TelecommandSecondaryHeader,
     pub(crate) isl_header: IslRoutingTelecommandHeader,
     pub(crate) srspp_header: SrsppHeader,
+    /// Variable-length application payload.
     pub payload: [u8],
 }
 
 impl SrsppDataPacket {
+    /// Total header size in bytes (SPP + cFE + ISL + SRSPP).
     pub const HEADER_SIZE: usize = size_of::<PrimaryHeader>()
         + size_of::<TelecommandSecondaryHeader>()
         + size_of::<IslRoutingTelecommandHeader>()
         + size_of::<SrsppHeader>();
 
+    /// Maximum payload bytes that fit within the given MTU.
     pub const fn max_payload_size(mtu: usize) -> usize {
         mtu.saturating_sub(Self::HEADER_SIZE)
     }
 
+    /// Compute and set the cFE checksum over the entire packet.
     pub fn set_cfe_checksum(&mut self) {
         self.secondary.set_checksum(0);
         self.secondary.set_checksum(checksum_u8(self.as_bytes()));
     }
 
+    /// Validate the cFE checksum of this packet.
     pub fn validate_cfe_checksum(&self) -> bool {
         validate_checksum_u8(self.as_bytes())
     }
@@ -137,7 +149,9 @@ impl SrsppDataPacket {
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
 pub struct SrsppAckPacket {
+    /// Space Packet primary header.
     pub primary: PrimaryHeader,
+    /// cFE telecommand secondary header.
     pub secondary: TelecommandSecondaryHeader,
     pub(crate) isl_header: IslRoutingTelecommandHeader,
     pub(crate) srspp_header: SrsppHeader,
@@ -145,28 +159,45 @@ pub struct SrsppAckPacket {
 }
 
 impl SrsppAckPacket {
+    /// Compute and set the cFE checksum over the entire packet.
     pub fn set_cfe_checksum(&mut self) {
         self.secondary.set_checksum(0);
         self.secondary.set_checksum(checksum_u8(self.as_bytes()));
     }
 
+    /// Validate the cFE checksum of this packet.
     pub fn validate_cfe_checksum(&self) -> bool {
         validate_checksum_u8(self.as_bytes())
     }
 }
 
+/// Errors that can occur when constructing or parsing SRSPP packets.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum SrsppPacketError {
+    /// Buffer is too small for the packet.
     #[error("buffer too small: required {required} bytes, provided {provided} bytes")]
-    BufferTooSmall { required: usize, provided: usize },
+    BufferTooSmall {
+        /// Minimum number of bytes needed.
+        required: usize,
+        /// Actual number of bytes provided.
+        provided: usize,
+    },
+    /// Packet type byte is not a valid SRSPP type.
     #[error("invalid SRSP packet type")]
     InvalidPacketType,
+    /// Payload exceeds the maximum allowed size.
     #[error("payload too large: maximum {max} bytes, provided {provided} bytes")]
-    PayloadTooLarge { max: usize, provided: usize },
+    PayloadTooLarge {
+        /// Maximum allowed payload size in bytes.
+        max: usize,
+        /// Actual payload size in bytes.
+        provided: usize,
+    },
 }
 
 #[bon]
 impl SrsppDataPacket {
+    /// Build a new SRSPP data packet in the provided buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],
@@ -224,6 +255,7 @@ impl SrsppDataPacket {
 
 #[bon]
 impl SrsppAckPacket {
+    /// Build a new SRSPP acknowledgment packet in the provided buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],
@@ -278,6 +310,7 @@ impl SrsppAckPacket {
     }
 }
 
+/// Parse the SRSPP packet type from a raw byte buffer.
 pub fn parse_srspp_type(bytes: &[u8]) -> Result<SrsppType, SrsppPacketError> {
     let min_size = SrsppDataPacket::HEADER_SIZE;
     if bytes.len() < min_size {
@@ -294,6 +327,7 @@ pub fn parse_srspp_type(bytes: &[u8]) -> Result<SrsppType, SrsppPacketError> {
     SrsppType::from_u8(bytes[type_offset]).ok_or(SrsppPacketError::InvalidPacketType)
 }
 
+/// Parse a data packet reference from a raw byte buffer.
 pub fn parse_data_packet(bytes: &[u8]) -> Result<&SrsppDataPacket, SrsppPacketError> {
     SrsppDataPacket::ref_from_bytes(bytes).map_err(|_| SrsppPacketError::BufferTooSmall {
         required: SrsppDataPacket::HEADER_SIZE,
@@ -301,6 +335,7 @@ pub fn parse_data_packet(bytes: &[u8]) -> Result<&SrsppDataPacket, SrsppPacketEr
     })
 }
 
+/// Parse an ACK packet reference from a raw byte buffer.
 pub fn parse_ack_packet(bytes: &[u8]) -> Result<&SrsppAckPacket, SrsppPacketError> {
     if bytes.len() < size_of::<SrsppAckPacket>() {
         return Err(SrsppPacketError::BufferTooSmall {

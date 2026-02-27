@@ -20,10 +20,14 @@ pub struct TlvFilestoreRequest {
     rest: [u8],
 }
 
+/// A parsed filestore request containing the action and file names.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FilestoreRequest {
+    /// The filestore action to perform.
     pub action: FilestoreAction,
+    /// The primary file name for the action.
     pub first_file_name: FileId,
+    /// The secondary file name, required for rename/append/replace actions.
     pub second_file_name: Option<FileId>,
 }
 
@@ -34,6 +38,7 @@ mod bitmasks {
 }
 
 impl TlvFilestoreRequest {
+    /// Parses a `TlvFilestoreRequest` from a generic `Tlv` reference.
     pub fn from_tlv(tlv: &Tlv) -> Result<&Self, CfdpError> {
         if tlv.length() < 1 {
             return Err(CfdpError::Custom("Filestore Request TLV too short"));
@@ -42,10 +47,12 @@ impl TlvFilestoreRequest {
             .map_err(|_| CfdpError::Custom("Failed to parse Filestore Request TLV"))
     }
 
+    /// Returns the filestore action code from the packed byte.
     pub fn action(&self) -> Result<FilestoreAction, CfdpError> {
         get_bits_u8(self.action_code_and_spare, bitmasks::ACTION_CODE_MASK).try_into()
     }
 
+    /// Sets the filestore action code.
     pub fn set_action(&mut self, action: FilestoreAction) {
         set_bits_u8(
             &mut self.action_code_and_spare,

@@ -77,13 +77,19 @@ pub struct TelemetryTransferFrameHeader {
     data_field_status: U16,
 }
 
+/// Bitmasks for TM Transfer Frame header fields.
 #[rustfmt::skip]
 pub mod bitmask {
+    /// Bitmask for the 2-bit version field.
     pub const VERSION_MASK: u16 =              0b_1100_0000_0000_0000;
+    /// Bitmask for the 10-bit Spacecraft ID field.
     pub const SCID_MASK: u16 =                 0b_0011_1111_1111_0000;
+    /// Bitmask for the 3-bit Virtual Channel ID field.
     pub const VCID_MASK: u16 =                 0b_0000_0000_0000_1110;
+    /// Bitmask for the 1-bit Operational Control Field flag.
     pub const OCF_FLAG_MASK: u16 =             0b_0000_0000_0000_0001;
 
+    /// Bitmask for the 11-bit First Header Pointer field.
     pub const FIRST_HEADER_POINTER_MASK: u16 = 0b_0000_0111_1111_1111;
 }
 
@@ -98,7 +104,9 @@ pub enum BuildError {
     InvalidVcid(u8),
     /// The provided buffer is too small to hold the requested frame.
     BufferTooSmall {
+        /// Minimum number of bytes needed.
         required_len: usize,
+        /// Actual buffer size provided.
         provided_len: usize,
     },
 }
@@ -115,6 +123,7 @@ pub enum ParseError {
 
 #[bon]
 impl TelemetryTransferFrame {
+    /// The size of the Telemetry Transfer Frame header in bytes.
     pub const HEADER_SIZE: usize = 6;
 
     /// Parses a raw, possibly randomized, byte slice into a zero-copy Telemetry Transfer Frame view.
@@ -159,6 +168,7 @@ impl TelemetryTransferFrame {
         &self.data_field
     }
 
+    /// Constructs a new TM Transfer Frame in the provided buffer.
     #[builder]
     pub fn new(
         buffer: &mut [u8],
@@ -212,6 +222,7 @@ impl TelemetryTransferFrameHeader {
     pub fn version(&self) -> u8 {
         get_bits_u16(self.version_scid_vcid_and_ocf, VERSION_MASK) as u8
     }
+    /// Sets the Transfer Frame Version Number.
     pub fn set_version(&mut self, version: u8) {
         set_bits_u16(
             &mut self.version_scid_vcid_and_ocf,
@@ -224,6 +235,7 @@ impl TelemetryTransferFrameHeader {
     pub fn scid(&self) -> u16 {
         get_bits_u16(self.version_scid_vcid_and_ocf, SCID_MASK)
     }
+    /// Sets the Spacecraft ID (SCID).
     pub fn set_scid(&mut self, scid: u16) {
         set_bits_u16(&mut self.version_scid_vcid_and_ocf, SCID_MASK, scid);
     }
@@ -232,6 +244,7 @@ impl TelemetryTransferFrameHeader {
     pub fn vcid(&self) -> u8 {
         get_bits_u16(self.version_scid_vcid_and_ocf, VCID_MASK) as u8
     }
+    /// Sets the Virtual Channel ID (VCID).
     pub fn set_vcid(&mut self, vcid: u8) {
         set_bits_u16(&mut self.version_scid_vcid_and_ocf, VCID_MASK, vcid as u16);
     }
@@ -240,6 +253,7 @@ impl TelemetryTransferFrameHeader {
     pub fn mc_frame_count(&self) -> u8 {
         self.mc_frame_count
     }
+    /// Sets the Master Channel Frame Count.
     pub fn set_mc_frame_count(&mut self, count: u8) {
         self.mc_frame_count = count;
     }
@@ -248,6 +262,7 @@ impl TelemetryTransferFrameHeader {
     pub fn vc_frame_count(&self) -> u8 {
         self.vc_frame_count
     }
+    /// Sets the Virtual Channel Frame Count.
     pub fn set_vc_frame_count(&mut self, count: u8) {
         self.vc_frame_count = count;
     }
@@ -256,6 +271,7 @@ impl TelemetryTransferFrameHeader {
     pub fn first_header_pointer(&self) -> u16 {
         get_bits_u16(self.data_field_status, FIRST_HEADER_POINTER_MASK)
     }
+    /// Sets the First Header Pointer value.
     pub fn set_first_header_pointer(&mut self, fhp: u16) {
         set_bits_u16(&mut self.data_field_status, FIRST_HEADER_POINTER_MASK, fhp);
     }

@@ -30,15 +30,20 @@ pub fn min_len(v: u64) -> usize {
     8
 }
 
+/// Computes an XOR checksum over a byte slice.
 pub fn checksum_u8(bytes: &[u8]) -> u8 {
     bytes.iter().fold(0, |acc, &byte| acc ^ byte)
 }
 
+/// Returns true if the XOR checksum of the slice (including the checksum byte) is zero.
 pub fn validate_checksum_u8(bytes: &[u8]) -> bool {
     checksum_u8(bytes) == 0
 }
 
+/// Trait for types that contain a protocol header of type `H`.
 pub trait Header<H> {
+    /// Returns a reference to the header.
     fn get(&self) -> &H;
+    /// Returns a mutable reference to the header.
     fn get_mut(&mut self) -> &mut H;
 }

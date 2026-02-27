@@ -1,5 +1,8 @@
+/// Routing algorithm trait and implementations.
 pub mod algorithm;
+/// Local in-process channel between router and application.
 pub mod local;
+/// ISL routable packet definitions and builders.
 pub mod packet;
 
 use futures::FutureExt as _;
@@ -33,13 +36,21 @@ pub struct Router<N, S, E, W, G, L, R> {
     algorithm: R,
 }
 
+/// Error from a specific directional link or from ISL message parsing.
 pub enum Error<N, S, E, W, G, L> {
+    /// Error on the north link.
     North(N),
+    /// Error on the south link.
     South(S),
+    /// Error on the east link.
     East(E),
+    /// Error on the west link.
     West(W),
+    /// Error on the ground link.
     Ground(G),
+    /// Error on the local link.
     Local(L),
+    /// Error parsing the ISL message.
     IslMessageError(isl::routing::packet::IslMessageError),
 }
 
@@ -55,6 +66,7 @@ where
     R: RoutingAlgorithm,
 {
     #[builder]
+    /// Creates a new router with all directional links and routing config.
     pub fn new(
         north: N,
         south: S,
@@ -79,6 +91,7 @@ where
         }
     }
 
+    /// Returns this router's own address.
     pub fn address(&self) -> Address {
         self.address
     }
@@ -95,6 +108,7 @@ where
         )
     }
 
+    /// Waits for a packet on any link and returns its length and direction.
     pub async fn recv(
         &mut self,
         north_buffer: &mut [u8],

@@ -5,8 +5,11 @@ use zerocopy::KnownLayout;
 use zerocopy::Ref;
 use zerocopy::Unaligned;
 
+/// A zero-copy serializable data type with a key for partitioning.
 pub trait Schema: IntoBytes + FromBytes + KnownLayout + Immutable + Unaligned {
+    /// The key type used for partitioning data across mappers.
     type Key<'a>;
+    /// Extracts the partition key from a zero-copy reference.
     fn key<'a>(pkt: &Ref<&'a [u8], Self>) -> Self::Key<'a>;
 }
 

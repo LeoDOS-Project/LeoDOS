@@ -7,7 +7,11 @@
 //! SRSP reuses the Space Packet sequence count and segmentation flags,
 //! adding only acknowledgment and retransmission mechanisms.
 
+/// Sender and receiver state machines.
 pub mod machine;
+/// Async API layer over the state machines.
 pub mod api;
+/// Packet types, builders, and parsers.
 pub mod packet;
+/// Retransmission timeout policies.
 pub mod rto;

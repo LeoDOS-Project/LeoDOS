@@ -14,11 +14,13 @@ use heapless::Vec;
 /// Implementations take an N×N cost matrix and return an assignment where
 /// `result[task]` is the processor assigned to that task.
 pub trait Solver<C, const N: usize> {
+    /// Solves the assignment problem and returns task-to-processor mapping.
     fn solve(&mut self, matrix: &[[C; N]; N], size: usize) -> Vec<usize, N>;
 }
 
 /// Trait for types that have a maximum value, used as infinity in algorithms.
 pub trait Bounded {
+    /// A large sentinel value used as infinity in assignment algorithms.
     const MAX: Self;
 }
 

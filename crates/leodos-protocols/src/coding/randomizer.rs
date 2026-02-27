@@ -18,6 +18,7 @@ pub trait Randomizer {
             *byte ^= rand;
         }
     }
+    /// Returns the randomization lookup table bytes.
     fn table(&self) -> &[u8];
 }
 

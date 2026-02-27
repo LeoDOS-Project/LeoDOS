@@ -70,13 +70,16 @@ impl EofPdu {
         // Condition Code is in the 4 most significant bits.
         ConditionCode::try_from(get_bits_u8(self.condition_code_and_spare, EOF_CC_MASK))
     }
+    /// Sets the condition code field.
     pub fn set_condition_code(&mut self, code: ConditionCode) {
         set_bits_u8(&mut self.condition_code_and_spare, EOF_CC_MASK, code as u8);
     }
 
+    /// Returns the 32-bit file checksum.
     pub fn file_checksum(&self) -> u32 {
         self.file_checksum.get()
     }
+    /// Sets the 32-bit file checksum.
     pub fn set_file_checksum(&mut self, checksum: u32) {
         self.file_checksum.set(checksum);
     }
@@ -97,6 +100,7 @@ impl EofPdu {
                 .map_err(|_| CfdpError::Custom("Invalid Eof File Size"))
         }
     }
+    /// Sets the FSS file size field.
     pub fn set_file_size(
         &mut self,
         large_file_flag: bool,
@@ -124,6 +128,7 @@ impl EofPdu {
         }
     }
 
+    /// Returns an iterator over any trailing TLVs (e.g., Fault Location).
     pub fn tlvs(&self, large_file_flag: bool) -> Result<TlvIterator<'_>, CfdpError> {
         let file_size_len = if large_file_flag { 8 } else { 4 };
 
@@ -155,6 +160,7 @@ impl EofPdu {
 
 #[bon]
 impl EofPdu {
+    /// Builds a new EOF PDU in the given buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],

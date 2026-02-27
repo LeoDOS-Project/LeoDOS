@@ -40,6 +40,7 @@ impl KeepAlivePduLarge {
     pub fn progress(&self) -> u64 {
         self.progress.get()
     }
+    /// Sets the progress field.
     pub fn set_progress(&mut self, progress: u64) {
         self.progress.set(progress);
     }
@@ -47,6 +48,7 @@ impl KeepAlivePduLarge {
 
 #[bon]
 impl KeepAlivePduLarge {
+    /// Builds a new large-file Keep Alive PDU in the given buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],

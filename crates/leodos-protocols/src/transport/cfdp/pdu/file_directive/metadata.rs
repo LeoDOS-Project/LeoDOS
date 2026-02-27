@@ -67,6 +67,7 @@ mod bitmasks {
 
 use bitmasks::*;
 
+/// Identifies the checksum algorithm used for data integrity (Table 5-10).
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChecksumType {
@@ -101,6 +102,7 @@ impl MetadataPdu {
     pub fn closure_requested(&self) -> bool {
         get_bits_u8(self.packed_flags, META_CLOSURE_REQ_MASK) == 1
     }
+    /// Sets the `Closure requested` flag.
     pub fn set_closure_requested(&mut self, requested: bool) {
         set_bits_u8(
             &mut self.packed_flags,
@@ -113,6 +115,7 @@ impl MetadataPdu {
     pub fn checksum_type(&self) -> Result<ChecksumType, CfdpError> {
         get_bits_u8(self.packed_flags, META_CHECKSUM_TYPE_MASK).try_into()
     }
+    /// Sets the checksum type field.
     pub fn set_checksum_type(&mut self, checksum_type: ChecksumType) {
         set_bits_u8(
             &mut self.packed_flags,
@@ -133,6 +136,7 @@ impl MetadataPdu {
                 .map(|(len, _)| len.get() as u64)
         }
     }
+    /// Sets the FSS file size field.
     pub fn set_file_size(
         &mut self,
         large_file_flag: bool,
@@ -211,6 +215,7 @@ impl MetadataPdu {
         ))
     }
 
+    /// Writes the LV-encoded file names and optional TLV options into the PDU.
     pub fn set_variable_fields(
         &mut self,
         large_file_flag: bool,
@@ -305,6 +310,7 @@ impl MetadataPdu {
         Ok(handlers)
     }
 
+    /// Returns an iterator over the Filestore Request TLVs in the metadata.
     pub fn filestore_requests(
         &self,
         large_file_flag: bool,
@@ -322,6 +328,7 @@ impl MetadataPdu {
 
 #[bon]
 impl MetadataPdu {
+    /// Builds a new Metadata PDU in the given buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],

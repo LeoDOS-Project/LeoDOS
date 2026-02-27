@@ -13,6 +13,7 @@ use super::solver::Bounded;
 
 /// Computes the cost of assigning a task to a processor.
 pub trait CostModel {
+    /// The numeric cost type (must support arithmetic and comparison).
     type Cost: Ord
         + Copy
         + Default
@@ -20,5 +21,6 @@ pub trait CostModel {
         + core::ops::Sub<Output = Self::Cost>
         + Bounded;
 
+    /// Computes the cost of assigning a task at one point to a processor at another.
     fn cost(&self, torus: &Torus, task: Point, processor: Point) -> Self::Cost;
 }

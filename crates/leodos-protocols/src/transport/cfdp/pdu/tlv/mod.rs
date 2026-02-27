@@ -1,8 +1,14 @@
+/// Entity ID TLV.
 pub mod entity_id;
+/// Fault Handler Override TLV and handler set.
 pub mod fault_handler_override;
+/// Filestore Request TLV.
 pub mod filestore_request;
+/// Filestore Response TLV.
 pub mod filestore_response;
+/// Flow Label TLV.
 pub mod flow_label;
+/// Message to User TLV.
 pub mod message_to_user;
 
 use zerocopy::FromBytes;
@@ -28,6 +34,7 @@ impl Tlv {
     pub fn tlv_type(&self) -> Result<TlvType, CfdpError> {
         TlvType::try_from(self.tlv_type)
     }
+    /// Sets the TLV's type field.
     pub fn set_type(&mut self, tlv_type: TlvType) {
         self.tlv_type = tlv_type as u8;
     }
@@ -36,6 +43,7 @@ impl Tlv {
     pub fn length(&self) -> usize {
         self.length as usize
     }
+    /// Sets the length of the value field in bytes.
     pub fn set_length(&mut self, length: usize) -> Result<(), CfdpError> {
         if length > u8::MAX as usize {
             return Err(CfdpError::Custom("Length exceeds maximum value for TLV"));
@@ -48,6 +56,7 @@ impl Tlv {
     pub fn value(&self) -> &[u8] {
         &self.value
     }
+    /// Writes the given bytes into the value field.
     pub fn set_value(&mut self, value: &[u8]) -> Result<(), CfdpError> {
         let len = value.len();
         self.value
@@ -63,14 +72,21 @@ impl Tlv {
     }
 }
 
+/// Identifies the type of a TLV record (Table 5-14).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TlvType {
+    /// Filestore Request (type 0x00).
     FilestoreRequest = 0x00,
+    /// Filestore Response (type 0x01).
     FilestoreResponse = 0x01,
+    /// Message to User (type 0x02).
     MessageToUser = 0x02,
     // 0x03 is unused/reserved
+    /// Fault Handler Override (type 0x04).
     FaultHandlerOverride = 0x04,
+    /// Flow Label (type 0x05).
     FlowLabel = 0x05,
+    /// Entity ID (type 0x06).
     EntityId = 0x06,
 }
 
@@ -90,7 +106,9 @@ impl TryFrom<u8> for TlvType {
     }
 }
 
+/// An iterator that yields zero-copy `Tlv` references from a byte buffer.
 pub struct TlvIterator<'a> {
+    /// The remaining unparsed bytes.
     pub buffer: &'a [u8],
 }
 
@@ -119,14 +137,23 @@ impl<'a> Iterator for TlvIterator<'a> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FilestoreAction {
+    /// Create a new file.
     CreateFile = 0x00,
+    /// Delete an existing file.
     DeleteFile = 0x01,
+    /// Rename a file.
     RenameFile = 0x02,
+    /// Append to an existing file.
     AppendFile = 0x03,
+    /// Replace an existing file.
     ReplaceFile = 0x04,
+    /// Create a new directory.
     CreateDirectory = 0x05,
+    /// Remove a directory.
     RemoveDirectory = 0x06,
+    /// Deny creation of a file.
     DenyFile = 0x07,
+    /// Deny creation of a directory.
     DenyDirectory = 0x08,
 }
 

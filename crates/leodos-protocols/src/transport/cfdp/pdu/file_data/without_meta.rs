@@ -51,6 +51,7 @@ impl FileDataPduWithoutMeta {
                 .map_err(|_| CfdpError::Custom("Invalid FSS Offset"))
         }
     }
+    /// Sets the FSS byte offset into the file.
     pub fn set_offset(&mut self, offset: u64, large_file_flag: bool) -> Result<(), CfdpError> {
         if large_file_flag {
             U64::mut_from_prefix(&mut self.rest)
@@ -76,6 +77,7 @@ impl FileDataPduWithoutMeta {
             .get(offset_len..)
             .ok_or_else(|| CfdpError::Custom("Invalid file data slice"))
     }
+    /// Returns a mutable slice containing the actual file data.
     pub fn file_data_mut(&mut self, large_file_flag: bool) -> Result<&mut [u8], CfdpError> {
         let offset_len = if large_file_flag { 8 } else { 4 };
         self.rest

@@ -12,14 +12,22 @@
 
 use crate::network::isl::torus::{Point, Torus};
 
+/// Parameters for computing MapReduce job cost.
 #[derive(Debug, Clone, Copy)]
 pub struct JobParams {
+    /// Map processing time multiplier (m_p in Eq. 5).
     pub map_processing_factor: f32,
+    /// Reduce processing time multiplier (r_p).
     pub reduce_processing_factor: f32,
+    /// Per-hop forwarding overhead in microseconds.
     pub hop_overhead_us: u64,
+    /// Map output compression ratio (F_M).
     pub map_reduction_factor: f32,
+    /// Reduce output compression ratio (F_R).
     pub reduce_reduction_factor: f32,
+    /// Total data volume per collect task in bytes.
     pub data_volume_bytes: u64,
+    /// Base processing time in microseconds (K in equations).
     pub base_processing_us: u64,
 }
 
@@ -51,9 +59,11 @@ impl JobParams {
     }
 }
 
+/// Computes end-to-end MapReduce job costs (Equations 15-17).
 pub struct JobCost;
 
 impl JobCost {
+    /// Computes the total map-phase cost across all collector-mapper pairs.
     pub fn map_cost(
         torus: &Torus,
         params: &JobParams,
@@ -72,6 +82,7 @@ impl JobCost {
             .fold(0u64, |acc, cost| acc.saturating_add(cost))
     }
 
+    /// Computes the reduce-phase cost including aggregation and result delivery.
     pub fn reduce_cost(
         torus: &Torus,
         params: &JobParams,
@@ -92,6 +103,7 @@ impl JobCost {
             .saturating_add(aggregation_cost)
     }
 
+    /// Computes the total job cost as the sum of map and reduce costs.
     pub fn total_cost(
         torus: &Torus,
         params: &JobParams,
@@ -106,6 +118,7 @@ impl JobCost {
         map.saturating_add(reduce)
     }
 
+    /// Returns the Manhattan distance (minimum hops) between two points on the torus.
     pub fn hop_distance(torus: &Torus, from: Point, to: Point) -> u32 {
         let dx = Torus::distance(from.sat, to.sat, torus.num_sats)
             .min(Torus::distance(to.sat, from.sat, torus.num_sats));

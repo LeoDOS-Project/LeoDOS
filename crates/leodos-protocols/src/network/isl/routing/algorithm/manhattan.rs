@@ -5,6 +5,7 @@ use crate::network::isl::torus::Direction;
 use crate::network::isl::torus::Point;
 use crate::network::isl::torus::Torus;
 
+/// Shortest-hop routing using Manhattan distance on the toroidal grid.
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Manhattan;
 

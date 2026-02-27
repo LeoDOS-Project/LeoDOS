@@ -6,7 +6,9 @@ use crate::application::colonies::messages::*;
 use core::future::Future;
 use core::str;
 
+/// Handler for processing assigned ColonyOS jobs.
 pub trait ColoniesHandler {
+    /// Executes a job, reading arguments from the iterator and writing results to the writer.
     fn handle(
         &mut self,
         func_name: &str,
@@ -15,6 +17,7 @@ pub trait ColoniesHandler {
     ) -> impl Future<Output = Result<(), &'static str>>;
 }
 
+/// A ColonyOS executor that polls for jobs and dispatches them to a handler.
 pub struct ColoniesExecutor<L2, H> {
     client: ColoniesClient<L2>,
     handler: H,
@@ -27,6 +30,7 @@ where
     L2: DataLink,
     H: ColoniesHandler,
 {
+    /// Creates a new executor with the given transport, handler, APID, and private key.
     pub fn new(link: L2, handler: H, apid: u16, executor_prv_key: &str) -> Self {
         Self {
             client: ColoniesClient::new(link, apid),
@@ -36,6 +40,7 @@ where
         }
     }
 
+    /// Sends a single assign request to the ColonyOS server.
     pub async fn assign(&mut self, buffer: &mut [u8]) -> Result<(), ClientError<L2::Error>> {
         self.client
             .assign(buffer, self.msg_id, &self.executor_prv_key)
@@ -43,6 +48,7 @@ where
             .map(|_| ())
     }
 
+    /// Runs the executor loop, polling for jobs and processing them forever.
     pub async fn run(&mut self, buffer: &mut [u8]) -> ! {
         loop {
             self.msg_id = self.msg_id.wrapping_add(1);

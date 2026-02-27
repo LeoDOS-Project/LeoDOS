@@ -15,8 +15,11 @@ const MAX_ACTIONS: usize = 32;
 pub enum ReceiverEvent<'a> {
     /// A data packet was received.
     DataReceived {
+        /// Sequence number of the received packet.
         seq: SequenceCount,
+        /// Segmentation flags of the received packet.
         flags: SequenceFlag,
+        /// Payload data of the received packet.
         payload: &'a [u8],
     },
 
@@ -32,13 +35,19 @@ pub enum ReceiverEvent<'a> {
 pub enum ReceiverAction {
     /// Send an ACK packet to a specific destination.
     SendAck {
+        /// Address to send the ACK to.
         destination: Address,
+        /// Highest contiguously received sequence number.
         cumulative_ack: SequenceCount,
+        /// Bitmap of selectively acknowledged packets beyond the cumulative ACK.
         selective_bitmap: u16,
     },
 
     /// Start ACK delay timer.
-    StartAckTimer { ticks: u32 },
+    StartAckTimer {
+        /// Timer duration in ticks.
+        ticks: u32,
+    },
 
     /// Stop ACK delay timer.
     StopAckTimer,
@@ -47,7 +56,10 @@ pub enum ReceiverAction {
     MessageReady,
 
     /// Start progress timer (gap detected).
-    StartProgressTimer { ticks: u32 },
+    StartProgressTimer {
+        /// Timer duration in ticks.
+        ticks: u32,
+    },
 
     /// Stop progress timer (progress made).
     StopProgressTimer,
@@ -124,13 +136,21 @@ pub enum ReceiverError {
 #[derive(Debug, Clone)]
 #[derive(bon::Builder)]
 pub struct ReceiverConfig {
+    /// Local address of this receiver.
     pub local_address: Address,
+    /// APID filter for incoming packets.
     pub apid: Apid,
+    /// cFE function code for outgoing ACK packets.
     pub function_code: u8,
+    /// ISL routing message ID for outgoing ACK packets.
     pub message_id: u8,
+    /// ISL routing action code for outgoing ACK packets.
     pub action_code: u8,
+    /// If true, send ACKs immediately; otherwise use delayed ACKs.
     pub immediate_ack: bool,
+    /// Delayed ACK timer duration in ticks.
     pub ack_delay_ticks: u32,
+    /// Progress timeout in ticks; `None` disables gap-skipping.
     pub progress_timeout_ticks: Option<u32>,
 }
 

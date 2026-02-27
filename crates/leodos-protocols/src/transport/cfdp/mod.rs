@@ -31,22 +31,50 @@
 //! let file = receiver.accept().await;
 //! ```
 
+/// Class 2 (acknowledged) CFDP state machines and transaction management.
 pub mod class2;
+/// Abstract file I/O trait for platform-independent file operations.
 pub mod filestore;
+/// PDU parsing, serialization, and zero-copy views.
 pub mod pdu;
+/// Checksum algorithms for CFDP data integrity verification.
 pub mod checksum;
 
+/// Errors that can occur during CFDP operations.
 #[derive(Debug, PartialEq, Eq)]
 pub enum CfdpError {
     // Build errors
-    BufferTooSmall { required: usize, provided: usize },
-    DataTooLarge { field: &'static str, max: usize },
-    IdLengthInvalid { field: &'static str, len: usize },
+    /// The provided buffer is too small for the required data.
+    BufferTooSmall {
+        /// Minimum number of bytes needed.
+        required: usize,
+        /// Actual buffer size provided.
+        provided: usize,
+    },
+    /// A field's data exceeds its maximum allowed size.
+    DataTooLarge {
+        /// Name of the field that exceeded its limit.
+        field: &'static str,
+        /// Maximum allowed size in bytes.
+        max: usize,
+    },
+    /// An entity or sequence number ID has an invalid length.
+    IdLengthInvalid {
+        /// Name of the field with the invalid ID length.
+        field: &'static str,
+        /// The invalid length that was provided.
+        len: usize,
+    },
+    /// Source and destination entity ID lengths do not match.
     IdLengthMismatch,
     // Other errors
+    /// A custom error with a static message.
     Custom(&'static str),
+    /// The referenced transaction was not found.
     TransactionNotFound,
+    /// The maximum number of concurrent transactions has been reached.
     TooManyConcurrentTransactions,
+    /// The action buffer is full and cannot accept more actions.
     ActionBufferFull,
 }
 

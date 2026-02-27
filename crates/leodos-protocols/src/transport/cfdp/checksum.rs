@@ -7,17 +7,20 @@ pub trait CfdpChecksum: Send {
     fn finalize(self) -> u32;
 }
 
+/// CCSDS Modular Checksum implementation (sum of 32-bit words).
 pub mod modular {
     use heapless::Vec;
 
     use crate::transport::cfdp::checksum::CfdpChecksum;
 
+    /// A CCSDS Modular Checksum calculator (sum of big-endian 32-bit words).
     pub struct ModularChecksum {
         sum: u32,
         pending: Vec<u8, 4>,
     }
 
     impl ModularChecksum {
+        /// Creates a new modular checksum calculator with an initial sum of zero.
         pub fn new() -> Self {
             Self {
                 sum: 0,
@@ -70,6 +73,7 @@ pub mod modular {
     }
 }
 
+/// CRC-based checksum implementations (CRC-32C and IEEE 802.3).
 pub mod crc {
     use crc::CRC_32_ISCSI;
     use crc::CRC_32_ISO_HDLC;
@@ -81,6 +85,7 @@ pub mod crc {
     static CRC_CASTAGNOLI: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
     static CRC_IEEE: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
+    /// A CRC-32 checksum calculator supporting CRC-32C and IEEE variants.
     pub struct CrcChecksum {
         digest: Digest<'static, u32>,
     }
@@ -111,9 +116,11 @@ pub mod crc {
     }
 }
 
+/// A no-op checksum that always returns zero.
 pub mod null {
     use crate::transport::cfdp::checksum::CfdpChecksum;
 
+    /// A null checksum calculator that always produces zero.
     pub struct NullChecksum;
 
     impl CfdpChecksum for NullChecksum {

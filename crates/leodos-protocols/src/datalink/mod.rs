@@ -3,7 +3,9 @@
 use core::future::Future;
 
 mod cop1;
+/// Async frame sender/receiver traits and TC/TM link channels.
 pub mod link;
+/// Space Data Link Protocol frame definitions (TC, TM, AOS).
 pub mod sdlp;
 mod sdls;
 mod uslp;

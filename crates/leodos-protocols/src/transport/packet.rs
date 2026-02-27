@@ -5,6 +5,7 @@ use core::future::Future;
 /// Implementations of this trait handle the wrapping of data into
 /// Space Packets (L3) and Transfer Frames (L2).
 pub trait PacketTransport {
+    /// Error type returned by send operations.
     type Error;
 
     /// Sends a payload to the configured destination.

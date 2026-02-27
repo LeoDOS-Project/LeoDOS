@@ -14,8 +14,11 @@ pub struct Segmenter<'a> {
 /// Contains the necessary data to construct one `SpacePacket` in a segmented sequence.
 #[derive(Debug, PartialEq, Eq)]
 pub struct SegmentedPacketData<'a> {
+    /// Whether this is the first, continuation, or last segment.
     pub sequence_flag: SequenceFlag,
+    /// The sequence count for this segment's packet.
     pub sequence_count: SequenceCount,
+    /// The data slice for this segment.
     pub payload: &'a [u8],
 }
 

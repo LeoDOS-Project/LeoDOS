@@ -18,14 +18,19 @@ fn chord_length(radius: f32, angle_rad: f32) -> f32 {
     radius * libm::sqrtf(2.0 * (1.0 - libm::cosf(angle_rad)))
 }
 
+/// A Walker Delta constellation shell with physical ISL parameters.
 #[derive(Debug, Clone, Copy)]
 pub struct Shell {
+    /// The logical toroidal grid topology.
     pub torus: Torus,
+    /// Orbital altitude above Earth's surface in meters.
     pub altitude_m: f32,
+    /// Orbital inclination in radians.
     pub inclination_rad: f32,
 }
 
 impl Shell {
+    /// Creates a new shell from topology, altitude, and inclination (in degrees).
     pub fn new(torus: Torus, altitude_m: f32, inclination_deg: f32) -> Self {
         Self {
             torus,
@@ -34,10 +39,12 @@ impl Shell {
         }
     }
 
+    /// Returns the orbital radius (Earth radius + altitude) in meters.
     pub fn orbital_radius(&self) -> f32 {
         EARTH_RADIUS_M + self.altitude_m
     }
 
+    /// Returns the orbital period in seconds (Kepler's third law).
     pub fn orbital_period_s(&self) -> f32 {
         let r = self.orbital_radius();
         2.0 * PI * libm::sqrtf(r * r * r / GRAVITATIONAL_PARAM)
@@ -51,14 +58,17 @@ impl Shell {
         2.0 * PI / self.torus.num_sats as f32
     }
 
+    /// Returns the chord distance between adjacent satellites in the same plane.
     pub fn within_plane_distance(&self) -> f32 {
         chord_length(self.orbital_radius(), self.satellite_spacing_angle())
     }
 
+    /// Returns the equatorial chord distance between adjacent orbital planes.
     pub fn cross_plane_base_distance(&self) -> f32 {
         chord_length(self.orbital_radius(), self.plane_spacing_angle())
     }
 
+    /// Returns the cross-plane ISL distance at a given orbital phase (0.0-1.0).
     pub fn cross_plane_distance(&self, phase: f32) -> f32 {
         let theta = 2.0 * PI * phase;
         let cos_theta = libm::cosf(theta);
@@ -69,6 +79,7 @@ impl Shell {
         self.cross_plane_base_distance() * factor
     }
 
+    /// Returns the cross-plane ISL distance for a satellite at the given row.
     pub fn cross_plane_distance_at_row(&self, row: u8) -> f32 {
         let phase = row as f32 / self.torus.num_orbs as f32;
         self.cross_plane_distance(phase)

@@ -12,6 +12,7 @@ pub struct TlvMessageToUser {
 }
 
 impl TlvMessageToUser {
+    /// Returns the message payload bytes.
     pub fn message(&self) -> &[u8] {
         &self.rest
     }

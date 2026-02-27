@@ -16,7 +16,12 @@ pub enum ReassemblyError {
     /// A packet was received with a `SequenceCount` that was not the expected
     /// next value in the sequence, indicating a lost packet.
     #[error("Packet out of order: expected {expected}, got {got}")]
-    PacketOutOfOrder { expected: u16, got: u16 },
+    PacketOutOfOrder {
+        /// The expected sequence count value.
+        expected: u16,
+        /// The actual sequence count value received.
+        got: u16,
+    },
     /// A `Unsegmented` packet was passed to the reassembler, which only
     /// handles segmented sequences.
     #[error("Unexpected Unsegmented packet received")]

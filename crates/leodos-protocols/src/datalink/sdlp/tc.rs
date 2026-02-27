@@ -67,15 +67,23 @@ pub struct TelecommandTransferFrameHeader {
     sequence_num: u8,
 }
 
+/// Bitmasks for TC Transfer Frame header fields.
 #[rustfmt::skip]
 pub mod bitmask {
+    /// Bitmask for the 2-bit version field.
     pub const VERSION_MASK: u16 =      0b_1100_0000_0000_0000;
+    /// Bitmask for the 1-bit bypass flag.
     pub const BYPASS_FLAG_MASK: u16 =  0b_0010_0000_0000_0000;
+    /// Bitmask for the 1-bit control command flag.
     pub const CONTROL_FLAG_MASK: u16 = 0b_0001_0000_0000_0000;
+    /// Bitmask for the 2-bit reserved field.
     pub const _RESERVED_MASK: u16 =    0b_0000_1100_0000_0000;
+    /// Bitmask for the 10-bit Spacecraft ID field.
     pub const SCID_MASK: u16 =         0b_0000_0011_1111_1111;
 
+    /// Bitmask for the 6-bit Virtual Channel ID field.
     pub const VCID_MASK: u16 =         0b_1111_1100_0000_0000;
+    /// Bitmask for the 10-bit frame length field.
     pub const FRAME_LEN_MASK: u16 =    0b_0000_0011_1111_1111;
 }
 
@@ -91,17 +99,27 @@ pub enum BuildError {
     /// The provided data length exceeds the maximum of 1019 bytes.
     DataTooLong(usize),
     /// The provided buffer is too small to hold the requested frame.
-    BufferTooSmall { required: usize, provided: usize },
+    BufferTooSmall {
+        /// Minimum number of bytes needed for the frame.
+        required: usize,
+        /// Actual buffer size provided.
+        provided: usize,
+    },
 }
 
 /// An error that can occur during Telecommand Transfer Frame parsing.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ParseError {
     /// The provided slice is shorter than the 5-byte header.
-    TooShortForHeader { actual: usize },
+    TooShortForHeader {
+        /// Actual number of bytes provided.
+        actual: usize,
+    },
     /// The header's length field implies a frame larger than the provided buffer.
     IncompleteFrame {
+        /// Total frame length declared in the header.
         header_len: usize,
+        /// Actual buffer length provided.
         buffer_len: usize,
     },
 }
@@ -178,6 +196,7 @@ impl TelecommandTransferFrame {
         Self::HEADER_SIZE + self.data_field.len()
     }
 
+    /// Constructs a new TC Transfer Frame in the provided buffer.
     #[builder]
     pub fn new(
         buffer: &mut [u8],
@@ -225,6 +244,7 @@ impl TelecommandTransferFrameHeader {
     pub fn scid(&self) -> u16 {
         get_bits_u16(self.id_and_scid, SCID_MASK)
     }
+    /// Sets the Spacecraft ID (SCID).
     pub fn set_scid(&mut self, scid: u16) {
         set_bits_u16(&mut self.id_and_scid, SCID_MASK, scid);
     }
@@ -233,6 +253,7 @@ impl TelecommandTransferFrameHeader {
     pub fn vcid(&self) -> u8 {
         get_bits_u16(self.vcid_and_length, VCID_MASK) as u8
     }
+    /// Sets the Virtual Channel ID (VCID).
     pub fn set_vcid(&mut self, vcid: u8) {
         set_bits_u16(&mut self.vcid_and_length, VCID_MASK, vcid as u16);
     }
@@ -241,6 +262,7 @@ impl TelecommandTransferFrameHeader {
     pub fn frame_len(&self) -> usize {
         get_bits_u16(self.vcid_and_length, FRAME_LEN_MASK) as usize + 1
     }
+    /// Sets the total frame length in bytes as stored in the header.
     pub fn set_frame_len(&mut self, length: usize) {
         let len_field = (length - 1) as u16;
         set_bits_u16(&mut self.vcid_and_length, FRAME_LEN_MASK, len_field);
@@ -250,6 +272,7 @@ impl TelecommandTransferFrameHeader {
     pub fn sequence_num(&self) -> u8 {
         self.sequence_num
     }
+    /// Sets the Frame Sequence Number.
     pub fn set_sequence_num(&mut self, seq: u8) {
         self.sequence_num = seq;
     }
@@ -262,6 +285,7 @@ impl TelecommandTransferFrameHeader {
             BypassFlag::TypeA
         }
     }
+    /// Sets the Bypass Flag.
     pub fn set_bypass_flag(&mut self, flag: BypassFlag) {
         set_bits_u16(&mut self.id_and_scid, BYPASS_FLAG_MASK, flag as u16);
     }
@@ -274,6 +298,7 @@ impl TelecommandTransferFrameHeader {
             ControlFlag::TypeD
         }
     }
+    /// Sets the Control Command Flag.
     pub fn set_control_flag(&mut self, flag: ControlFlag) {
         set_bits_u16(&mut self.id_and_scid, CONTROL_FLAG_MASK, flag as u16);
     }

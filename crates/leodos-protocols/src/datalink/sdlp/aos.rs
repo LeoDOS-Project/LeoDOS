@@ -46,7 +46,9 @@ use crate::utils::set_bits_u16;
 #[repr(C, packed)]
 #[derive(IntoBytes, FromBytes, Unaligned, KnownLayout, Immutable)]
 pub struct AosTransferFrame {
+    /// The 6-byte primary header containing routing and sequencing fields.
     pub header: AosPrimaryHeader,
+    /// The variable-length data field carrying the frame payload.
     pub data_field: [u8],
 }
 
@@ -59,27 +61,46 @@ pub struct AosPrimaryHeader {
     replay_usage_spare_field: u8,
 }
 
+/// An error that can occur during AOS Transfer Frame construction.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum BuildError {
+    /// The provided Spacecraft ID is outside the valid 8-bit range.
     InvalidScid(u16),
+    /// The provided Virtual Channel ID is outside the valid 6-bit range.
     InvalidVcid(u8),
-    BufferTooSmall { required: usize, provided: usize },
+    /// The provided buffer is too small to hold the requested frame.
+    BufferTooSmall {
+        /// Minimum number of bytes needed for the frame.
+        required: usize,
+        /// Actual buffer size provided.
+        provided: usize,
+    },
 }
 
+/// An error that can occur during AOS Transfer Frame parsing.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ParseError {
+    /// The provided slice is shorter than the 6-byte primary header.
     TooShortForHeader,
+    /// The header version field does not match the expected AOS version.
     InvalidVersion(u8),
 }
 
+/// Bitmasks for AOS Transfer Frame header fields.
 #[rustfmt::skip]
 pub mod bitmasks {
+    /// Bitmask for the 2-bit version number field.
     pub const VERSION_MASK: u16    = 0b_11000000_00000000;
+    /// Bitmask for the 8-bit Spacecraft ID field.
     pub const SCID_MASK: u16       = 0b_00111111_11000000;
+    /// Bitmask for the 6-bit Virtual Channel ID field.
     pub const VCID_MASK: u16       = 0b_00000000_00111111;
 
+    /// Bitmask for the 1-bit replay flag.
     pub const REPLAY_FLAG_MASK: u8 = 0b_10000000;
+    /// Bitmask for the 1-bit usage/spare flag.
     pub const USAGE_FLAG_MASK: u8  = 0b_01000000;
+    /// Bitmask for the 6-bit spare field.
     pub const _SPARE_MASK: u8      = 0b_00111111;
 }
 
@@ -87,6 +108,7 @@ use bitmasks::*;
 
 #[bon]
 impl AosTransferFrame {
+    /// The AOS Transfer Frame version number (01 binary).
     pub const AOS_VERSION: u8 = 0b01;
 
     /// Parses a raw byte slice into a zero-copy AOS Frame view.
@@ -126,6 +148,7 @@ impl AosTransferFrame {
         Ok(frame)
     }
 
+    /// Constructs a new AOS Transfer Frame in the provided buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],
@@ -159,19 +182,23 @@ impl AosTransferFrame {
         Ok(frame)
     }
 
+    /// Returns a reference to the frame's primary header.
     pub fn header(&self) -> &AosPrimaryHeader {
         &self.header
     }
 
+    /// Returns a reference to the frame's data field.
     pub fn data(&self) -> &[u8] {
         &self.data_field
     }
 }
 
 impl AosPrimaryHeader {
+    /// Returns the 2-bit Transfer Frame Version Number.
     pub fn version(&self) -> u8 {
         get_bits_u16(self.version_scid_vcid_field, VERSION_MASK) as u8
     }
+    /// Sets the 2-bit Transfer Frame Version Number.
     pub fn set_version(&mut self, version: u8) {
         set_bits_u16(
             &mut self.version_scid_vcid_field,
@@ -180,32 +207,40 @@ impl AosPrimaryHeader {
         );
     }
 
+    /// Returns the 8-bit Spacecraft ID.
     pub fn scid(&self) -> u8 {
         get_bits_u16(self.version_scid_vcid_field, SCID_MASK) as u8
     }
+    /// Sets the 8-bit Spacecraft ID.
     pub fn set_scid(&mut self, scid: u8) {
         set_bits_u16(&mut self.version_scid_vcid_field, SCID_MASK, scid as u16);
     }
 
+    /// Returns the 6-bit Virtual Channel ID.
     pub fn vcid(&self) -> u8 {
         get_bits_u16(self.version_scid_vcid_field, VCID_MASK) as u8
     }
+    /// Sets the 6-bit Virtual Channel ID.
     pub fn set_vcid(&mut self, vcid: u8) {
         set_bits_u16(&mut self.version_scid_vcid_field, VCID_MASK, vcid as u16);
     }
 
+    /// Returns the 24-bit Virtual Channel Frame Count.
     pub fn vc_frame_count(&self) -> u32 {
         let b = self.vc_frame_count;
         u32::from_be_bytes([0, b[0], b[1], b[2]])
     }
+    /// Sets the 24-bit Virtual Channel Frame Count.
     pub fn set_vc_frame_count(&mut self, count: u32) {
         let bytes = count.to_be_bytes();
         self.vc_frame_count.copy_from_slice(&bytes[1..4]);
     }
 
+    /// Returns true if the replay flag is set.
     pub fn is_replay(&self) -> bool {
         get_bits_u8(self.replay_usage_spare_field, REPLAY_FLAG_MASK) != 0
     }
+    /// Sets the replay flag.
     pub fn set_replay(&mut self, replay: bool) {
         set_bits_u8(
             &mut self.replay_usage_spare_field,
@@ -214,9 +249,11 @@ impl AosPrimaryHeader {
         );
     }
 
+    /// Returns the usage/spare flag value.
     pub fn usage_flag(&self) -> bool {
         get_bits_u8(self.replay_usage_spare_field, USAGE_FLAG_MASK) != 0
     }
+    /// Sets the usage/spare flag value.
     pub fn set_usage_flag(&mut self, usage: bool) {
         set_bits_u8(
             &mut self.replay_usage_spare_field,

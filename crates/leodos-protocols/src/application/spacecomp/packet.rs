@@ -36,12 +36,19 @@ use crate::network::isl::address::{Address, RawAddress};
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum OpCode {
+    /// Ground station submits a new MapReduce job to the coordinator.
     SubmitJob = 0x00,
+    /// Coordinator assigns the collector role to a satellite.
     AssignCollector = 0x01,
+    /// Coordinator assigns the mapper role to a satellite.
     AssignMapper = 0x02,
+    /// Coordinator assigns the reducer role to a satellite.
     AssignReducer = 0x03,
+    /// A satellite reports that its processing phase is complete.
     PhaseDone = 0x04,
+    /// The reducer sends the final result back to the coordinator.
     JobResult = 0x05,
+    /// A data chunk transferred between processing phases.
     DataChunk = 0x10,
 }
 
@@ -88,24 +95,30 @@ pub struct SpaceCompMessage {
 }
 
 impl SpaceCompMessage {
+    /// Size of the fixed SpaceCoMP header in bytes.
     pub const HEADER_SIZE: usize = size_of::<SpaceCompHeader>();
 
+    /// Parses a SpaceCoMP message from a byte slice.
     pub fn parse(bytes: &[u8]) -> Option<&Self> {
         Self::ref_from_bytes(bytes).ok()
     }
 
+    /// Returns the operation code from the header.
     pub fn op_code(&self) -> Result<OpCode, ()> {
         self.header.op_code()
     }
 
+    /// Returns the job identifier from the header.
     pub fn job_id(&self) -> u16 {
         self.header.job_id()
     }
 
+    /// Returns the variable-length payload following the header.
     pub fn payload(&self) -> &[u8] {
         &self.payload
     }
 
+    /// Returns the entire message (header + payload) as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
         zerocopy::IntoBytes::as_bytes(self)
     }
@@ -114,6 +127,7 @@ impl SpaceCompMessage {
 #[bon]
 impl SpaceCompMessage {
     #[builder]
+    /// Constructs a new SpaceCoMP message in the provided buffer.
     pub fn new<'a>(
         buffer: &'a mut [u8],
         op_code: OpCode,
@@ -183,11 +197,14 @@ pub struct AssignCollectorPayload {
 #[bon]
 impl AssignCollectorPayload {
     #[builder]
+    /// Creates a new collector assignment payload.
     pub fn new(mapper_addr: Address, partition_id: u8) -> Self {
         Self { mapper_addr: RawAddress::from(mapper_addr), partition_id }
     }
 
+    /// Returns the address of the mapper this collector should send data to.
     pub fn mapper_addr(&self) -> Address { self.mapper_addr.parse() }
+    /// Returns the partition index assigned to this collector.
     pub fn partition_id(&self) -> u8 { self.partition_id }
 }
 
@@ -202,11 +219,14 @@ pub struct AssignMapperPayload {
 #[bon]
 impl AssignMapperPayload {
     #[builder]
+    /// Creates a new mapper assignment payload.
     pub fn new(reducer_addr: Address, collector_count: u8) -> Self {
         Self { reducer_addr: RawAddress::from(reducer_addr), collector_count }
     }
 
+    /// Returns the address of the reducer this mapper should forward to.
     pub fn reducer_addr(&self) -> Address { self.reducer_addr.parse() }
+    /// Returns the number of collectors feeding data to this mapper.
     pub fn collector_count(&self) -> u8 { self.collector_count }
 }
 
@@ -221,11 +241,14 @@ pub struct AssignReducerPayload {
 #[bon]
 impl AssignReducerPayload {
     #[builder]
+    /// Creates a new reducer assignment payload.
     pub fn new(los_addr: Address, mapper_count: u8) -> Self {
         Self { los_addr: RawAddress::from(los_addr), mapper_count }
     }
 
+    /// Returns the line-of-sight node address for result delivery.
     pub fn los_addr(&self) -> Address { self.los_addr.parse() }
+    /// Returns the number of mappers feeding data to this reducer.
     pub fn mapper_count(&self) -> u8 { self.mapper_count }
 }
 
@@ -233,8 +256,11 @@ impl AssignReducerPayload {
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Role {
+    /// Collects raw sensor data from the satellite's instruments.
     Collector = 1,
+    /// Processes and transforms collected data.
     Mapper = 2,
+    /// Aggregates mapped results into a final output.
     Reducer = 3,
 }
 
@@ -260,14 +286,17 @@ pub struct PhaseDonePayload {
 #[bon]
 impl PhaseDonePayload {
     #[builder]
+    /// Creates a new phase-done payload for the given role.
     pub fn new(role: Role) -> Self {
         Self { role: role as u8 }
     }
 
+    /// Returns the role that completed its phase.
     pub fn role(&self) -> Result<Role, ()> {
         self.role.try_into()
     }
 
+    /// Sets the role that completed its phase.
     pub fn set_role(&mut self, role: Role) {
         self.role = role as u8;
     }

@@ -76,10 +76,12 @@ pub struct DuplicateFilter {
 }
 
 impl DuplicateFilter {
+    /// Creates a new empty duplicate filter.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Returns `true` if `new` has already been seen, otherwise records it.
     pub fn is_duplicate(&mut self, new: u16) -> bool {
         if !self.initialized {
             self.head = new;

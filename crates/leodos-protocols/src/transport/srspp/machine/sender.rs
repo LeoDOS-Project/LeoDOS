@@ -14,16 +14,26 @@ const MAX_ACTIONS: usize = 32;
 #[derive(Debug)]
 pub enum SenderEvent<'a> {
     /// Application wants to send data.
-    SendRequest { target: Address, data: &'a [u8] },
+    SendRequest {
+        /// Destination address.
+        target: Address,
+        /// Data to send.
+        data: &'a [u8],
+    },
 
     /// An ACK packet was received from the remote.
     AckReceived {
+        /// Highest contiguously acknowledged sequence number.
         cumulative_ack: SequenceCount,
+        /// Bitmap of selectively acknowledged packets.
         selective_bitmap: u16,
     },
 
     /// A retransmission timer expired for a specific packet.
-    RetransmitTimeout { seq: SequenceCount },
+    RetransmitTimeout {
+        /// Sequence number of the timed-out packet.
+        seq: SequenceCount,
+    },
 }
 
 /// Actions the sender machine wants the driver to perform.
@@ -31,19 +41,33 @@ pub enum SenderEvent<'a> {
 pub enum SenderAction {
     /// Transmit a packet and start its retransmission timer.
     /// Call `get_payload(seq)` to get the payload data.
-    Transmit { seq: SequenceCount, rto_ticks: u32 },
+    Transmit {
+        /// Sequence number to transmit.
+        seq: SequenceCount,
+        /// Retransmission timeout in ticks.
+        rto_ticks: u32,
+    },
 
     /// Stop a retransmission timer.
-    StopTimer { seq: SequenceCount },
+    StopTimer {
+        /// Sequence number whose timer should be stopped.
+        seq: SequenceCount,
+    },
 
     /// A packet was permanently lost (max retransmits exceeded).
-    PacketLost { seq: SequenceCount },
+    PacketLost {
+        /// Sequence number of the lost packet.
+        seq: SequenceCount,
+    },
 
     /// A segmented message was lost (a packet from it was permanently lost).
     MessageLost,
 
     /// Send buffer has space available (for backpressure signaling).
-    SpaceAvailable { bytes: usize },
+    SpaceAvailable {
+        /// Number of bytes available.
+        bytes: usize,
+    },
 }
 
 /// Collection of actions emitted by the sender.
@@ -102,16 +126,23 @@ impl<'a> IntoIterator for &'a SenderActions {
 /// Error from sender operations.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum SenderError {
+    /// Send buffer has no space for the payload.
     #[error("send buffer full")]
     BufferFull,
+    /// All send window slots are occupied.
     #[error("send window full")]
     WindowFull,
 }
 
+/// Information about a buffered packet's payload and metadata.
 pub struct PayloadInfo<'a> {
+    /// Sequence number of the packet.
     pub seq: SequenceCount,
+    /// Segmentation flags for this packet.
     pub flags: SequenceFlag,
+    /// Destination address for this packet.
     pub target: Address,
+    /// Payload data bytes.
     pub payload: &'a [u8],
 }
 
@@ -119,13 +150,21 @@ pub struct PayloadInfo<'a> {
 #[derive(Debug, Clone)]
 #[derive(bon::Builder)]
 pub struct SenderConfig {
+    /// Local source address for outgoing packets.
     pub source_address: Address,
+    /// APID used for all packets from this sender.
     pub apid: Apid,
+    /// cFE function code for outgoing packets.
     pub function_code: u8,
+    /// ISL routing message ID.
     pub message_id: u8,
+    /// ISL routing action code.
     pub action_code: u8,
+    /// Retransmission timeout in ticks.
     pub rto_ticks: u32,
+    /// Maximum number of retransmission attempts per packet.
     pub max_retransmits: u8,
+    /// Total header overhead per packet in bytes.
     pub header_overhead: usize,
 }
 
@@ -186,6 +225,7 @@ pub struct SenderMachine<const WIN: usize, const BUF: usize, const MTU: usize> {
 }
 
 impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BUF, MTU> {
+    /// Create a new sender state machine with the given configuration.
     pub fn new(config: SenderConfig) -> Self {
         Self {
             config,
@@ -197,10 +237,12 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         }
     }
 
+    /// Returns a reference to the sender configuration.
     pub fn config(&self) -> &SenderConfig {
         &self.config
     }
 
+    /// Maximum payload bytes per packet given the MTU and header overhead.
     pub fn max_payload_per_packet(&self) -> usize {
         MTU.saturating_sub(self.config.header_overhead)
     }
@@ -228,6 +270,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         self.meta.iter().all(|m| m.state == SlotState::Empty)
     }
 
+    /// Retrieve payload info for a buffered packet by sequence number.
     pub fn get_payload(&self, seq: SequenceCount) -> Option<PayloadInfo<'_>> {
         let seq_val = seq.value();
         self.meta

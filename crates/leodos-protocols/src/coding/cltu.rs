@@ -13,7 +13,12 @@ const TAIL_SEQUENCE: &[u8] = &[0xC5; 8];
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum CltuError {
     /// The provided output buffer is too small to hold the encoded CLTU.
-    OutputBufferTooSmall { required: usize, provided: usize },
+    OutputBufferTooSmall {
+        /// Minimum number of bytes needed for the encoded CLTU.
+        required: usize,
+        /// Actual size of the provided output buffer.
+        provided: usize,
+    },
 }
 
 /// Computes the required buffer size for encoding a TC frame of a given length into a CLTU.

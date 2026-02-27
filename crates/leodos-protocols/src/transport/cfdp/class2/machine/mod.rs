@@ -23,14 +23,21 @@ pub const FILE_DATA_CHUNK_SIZE: usize = 2048;
 /// The specific type of timer to be managed.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum TimerType {
+    /// Timer for awaiting an acknowledgment PDU.
     Ack,
+    /// Timer for awaiting missing data after a NAK.
     Nak,
+    /// Timer for detecting transaction inactivity.
     Inactivity,
+    /// Timer for periodic keep-alive transmissions.
     KeepAlive,
 }
 
+/// The type of prompt to request from a remote entity.
 #[derive(Debug)]
 pub enum PromptType {
+    /// Prompt the receiver to send a NAK.
     Nak,
+    /// Prompt the receiver to send a Keep Alive.
     KeepAlive,
 }

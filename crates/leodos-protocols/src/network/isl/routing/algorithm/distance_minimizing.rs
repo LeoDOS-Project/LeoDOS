@@ -15,6 +15,7 @@ pub struct DistanceMinimizing {
 }
 
 impl DistanceMinimizing {
+    /// Creates a new distance-minimizing router for the given inclination.
     pub fn new(inclination_rad: f32) -> Self {
         Self { inclination_rad }
     }

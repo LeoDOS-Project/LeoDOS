@@ -64,9 +64,13 @@ use bitmasks::*;
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum TransactionStatus {
+    /// Transaction status is undefined.
     Undefined = 0b00,
+    /// Transaction is currently active.
     Active = 0b01,
+    /// Transaction has been terminated.
     Terminated = 0b10,
+    /// Transaction is unrecognized by the remote entity.
     Unrecognized = 0b11,
 }
 
@@ -84,10 +88,12 @@ impl TryFrom<u8> for TransactionStatus {
     }
 }
 
-// First, create an enum for clarity
+/// Identifies which directive is being acknowledged.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum AckedDirectiveCode {
+    /// Acknowledging an EOF PDU.
     Eof,
+    /// Acknowledging a Finished PDU.
     Finished,
 }
 
@@ -135,6 +141,7 @@ impl AckPdu {
     pub fn condition_code(&self) -> Result<ConditionCode, CfdpError> {
         ConditionCode::try_from(get_bits_u8(self.packed_status, ACK_CC_MASK))
     }
+    /// Sets the condition code of the acknowledged PDU.
     pub fn set_condition_code(&mut self, code: ConditionCode) {
         set_bits_u8(&mut self.packed_status, ACK_CC_MASK, code as u8);
     }
@@ -143,6 +150,7 @@ impl AckPdu {
     pub fn transaction_status(&self) -> Result<TransactionStatus, CfdpError> {
         TransactionStatus::try_from(get_bits_u8(self.packed_status, ACK_TRANSACTION_STATUS_MASK))
     }
+    /// Sets the transaction status field.
     pub fn set_transaction_status(&mut self, status: TransactionStatus) {
         set_bits_u8(
             &mut self.packed_status,
@@ -154,6 +162,7 @@ impl AckPdu {
 
 #[bon]
 impl AckPdu {
+    /// Builds a new ACK PDU in the given buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],

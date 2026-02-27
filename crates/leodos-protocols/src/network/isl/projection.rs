@@ -12,11 +12,13 @@ use super::shell::Shell;
 use super::torus::Point;
 use crate::application::spacecomp::scheduler::aoi::Aoi;
 
+/// Projects satellite grid positions to geographic coordinates and vice versa.
 pub struct Projection {
     shell: Shell,
 }
 
 impl Projection {
+    /// Creates a new projection from a constellation shell.
     pub fn new(shell: Shell) -> Self {
         Self { shell }
     }

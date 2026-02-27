@@ -52,9 +52,12 @@ use zerocopy::Unaligned;
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable)]
 pub struct IslRoutingTelecommand {
+    /// CCSDS SPP primary header.
     pub primary: PrimaryHeader,
+    /// CFE command secondary header.
     pub secondary: TelecommandSecondaryHeader,
     pub(crate) isl_header: IslRoutingTelecommandHeader,
+    /// Variable-length application payload.
     pub payload: [u8],
 }
 
@@ -76,8 +79,11 @@ pub enum IslMessageError {
     /// A received packet was expected to be an ISL message but its payload was
     /// too small to contain a valid `IslHeader`.
     PayloadTooSmall,
+    /// The payload exceeds the maximum allowed size.
     PayloadTooLarge {
+        /// Maximum allowed payload size.
         max: usize,
+        /// Actual payload size provided.
         provided: usize,
     },
 }
@@ -204,10 +210,12 @@ impl IslRoutingTelecommand {
         &self.payload
     }
 
+    /// Returns a mutable slice of the application payload.
     pub fn payload_mut(&mut self) -> &mut [u8] {
         &mut self.payload
     }
 
+    /// Parses a byte slice as an ISL routing telecommand.
     pub fn parse<'a>(bytes: &'a [u8]) -> Result<&'a IslRoutingTelecommand, IslMessageError> {
         let tc = Telecommand::parse(bytes).map_err(IslMessageError::Cfe)?;
         Self::from_telecommand(tc)

@@ -12,6 +12,7 @@ pub struct TlvFlowLabel {
 }
 
 impl TlvFlowLabel {
+    /// Returns the flow label bytes.
     pub fn label(&self) -> &[u8] {
         &self.rest
     }

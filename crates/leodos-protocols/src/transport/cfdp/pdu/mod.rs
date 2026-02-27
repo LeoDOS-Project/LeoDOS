@@ -6,9 +6,13 @@
 //! holds references to concrete PDU types that are views over the underlying network buffer.
 //! This allows for efficient, allocation-free parsing of incoming packets.
 
+/// File Data PDU types and builders.
 pub mod file_data;
+/// File Directive PDU types (EOF, Finished, ACK, Metadata, NAK, Prompt, KeepAlive).
 pub mod file_directive;
+/// PDU header structures and field accessors.
 pub mod header;
+/// Type-Length-Value (TLV) record types and iterators.
 pub mod tlv;
 
 use core::fmt;
@@ -143,10 +147,12 @@ impl EntityId {
         Ok(EntityId(u64::from_be_bytes(bytes)))
     }
 
+    /// Serializes this entity ID into a variable-length byte slice.
     pub fn write_to_slice(&self, slice: &mut [u8]) -> Result<(), CfdpError> {
         write_to_slice(self.0, slice)
     }
 
+    /// Returns the minimum number of bytes needed to represent this ID.
     pub fn len(&self) -> usize {
         min_len(self.0)
     }
@@ -159,15 +165,17 @@ impl fmt::Debug for EntityId {
     }
 }
 
+/// A CFDP transaction sequence number, stored as an owned `u64`.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default, PartialOrd, Ord)]
 pub struct TransactionSeqNum(pub u64);
 
 impl TransactionSeqNum {
-    /// Returns the sequence number as a `u64`.
+    /// Increments the sequence number by one, wrapping on overflow.
     pub fn increment(&mut self) {
         self.0 = self.0.wrapping_add(1);
     }
 
+    /// Creates a `TransactionSeqNum` from a variable-length byte slice (1 to 8 bytes).
     pub fn from_bytes(slice: &[u8]) -> Result<Self, CfdpError> {
         if slice.is_empty() || slice.len() > 8 {
             return Err(CfdpError::Custom(
@@ -179,10 +187,12 @@ impl TransactionSeqNum {
         Ok(TransactionSeqNum(u64::from_be_bytes(bytes)))
     }
 
+    /// Serializes this sequence number into a variable-length byte slice.
     pub fn write_to_slice(&self, slice: &mut [u8]) -> Result<(), CfdpError> {
         write_to_slice(self.0, slice)
     }
 
+    /// Returns the minimum number of bytes needed to represent this value.
     pub fn len(&self) -> usize {
         min_len(self.0)
     }
@@ -196,10 +206,12 @@ impl Pdu {
         &self.header_fixed
     }
 
+    /// Returns a mutable reference to the fixed part of the header.
     pub fn header_mut(&mut self) -> &mut PduHeaderFixedPart {
         &mut self.header_fixed
     }
 
+    /// Parses the PDU data field into a typed `PduVariant`.
     pub fn variant(&self) -> Result<PduVariant<'_>, CfdpError> {
         let header = self.header();
         let data = self.data_field()?;
@@ -348,6 +360,7 @@ impl Pdu {
         EntityId::from_bytes(bytes)
     }
 
+    /// Writes the source entity ID into the variable header.
     pub fn set_source_entity_id(&mut self, source_entity_id: EntityId) -> Result<(), CfdpError> {
         let entity_id_len = self.header_fixed.entity_id_len();
         let var_header_slice = self
@@ -370,6 +383,7 @@ impl Pdu {
         TransactionSeqNum::from_bytes(bytes)
     }
 
+    /// Writes the transaction sequence number into the variable header.
     pub fn set_transaction_seq_num(
         &mut self,
         txn_seq_num: TransactionSeqNum,
@@ -408,6 +422,7 @@ impl Pdu {
             .ok_or_else(|| CfdpError::Custom("Invalid data field slice"))
     }
 
+    /// Returns a mutable slice representing the PDU's data field.
     pub fn data_field_mut(&mut self) -> Result<&mut [u8], CfdpError> {
         let start = self.header_fixed.variable_header_len();
         self.rest
@@ -456,6 +471,7 @@ impl Pdu {
 
 #[bon]
 impl Pdu {
+    /// Builds a new PDU in the given buffer with header and entity IDs.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],

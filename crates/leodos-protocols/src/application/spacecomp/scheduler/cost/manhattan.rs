@@ -7,8 +7,10 @@ use crate::network::isl::torus::{Point, Torus};
 
 use super::CostModel;
 
+/// Manhattan distance cost model using per-hop cost on the torus.
 #[derive(Debug, Clone, Copy)]
 pub struct ManhattanCost {
+    /// Cost multiplier per hop.
     pub hop_cost: u32,
 }
 

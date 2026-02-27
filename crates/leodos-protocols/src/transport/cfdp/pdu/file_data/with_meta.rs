@@ -61,6 +61,7 @@ impl FileDataPduWithMeta {
     pub fn record_continuation_state(&self) -> u8 {
         get_bits_u8(self.admin_octet, FILE_DATA_REC_CONT_STATE_MASK)
     }
+    /// Sets the 2-bit record continuation state.
     pub fn set_record_continuation_state(&mut self, state: u8) -> Result<(), CfdpError> {
         if state > 0b11 {
             return Err(CfdpError::DataTooLarge {
@@ -72,9 +73,11 @@ impl FileDataPduWithMeta {
         Ok(())
     }
 
+    /// Returns the length of the segment metadata in bytes (0 to 63).
     pub fn metadata_len(&self) -> usize {
         get_bits_u8(self.admin_octet, FILE_DATA_SEG_META_LEN_MASK) as usize
     }
+    /// Sets the segment metadata length field.
     pub fn set_metadata_len(&mut self, len: u8) -> Result<(), CfdpError> {
         if len > 63 {
             return Err(CfdpError::DataTooLarge {
@@ -92,6 +95,7 @@ impl FileDataPduWithMeta {
             .get(0..self.metadata_len())
             .ok_or_else(|| CfdpError::Custom("Invalid segment metadata slice"))
     }
+    /// Writes segment metadata bytes into the PDU.
     pub fn set_segment_metadata(&mut self, metadata: &[u8]) -> Result<(), CfdpError> {
         let len = metadata.len();
         if len > 63 {
@@ -124,6 +128,7 @@ impl FileDataPduWithMeta {
                 .map_err(|_| CfdpError::Custom("Invalid FSS Offset"))
         }
     }
+    /// Sets the FSS byte offset into the file.
     pub fn set_offset(&mut self, offset: u64, large_file_flag: bool) -> Result<(), CfdpError> {
         let offset_slice = self
             .rest
@@ -154,6 +159,7 @@ impl FileDataPduWithMeta {
             .get(start..)
             .ok_or_else(|| CfdpError::Custom("Invalid file data slice"))
     }
+    /// Returns a mutable slice containing the actual file data.
     pub fn file_data_mut(&mut self, large_file_flag: bool) -> Result<&mut [u8], CfdpError> {
         let offset_len = if large_file_flag { 8 } else { 4 };
         let start = self.metadata_len() + offset_len;

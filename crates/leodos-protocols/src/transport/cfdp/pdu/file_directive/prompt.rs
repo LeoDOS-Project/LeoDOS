@@ -45,9 +45,12 @@ mod bitmasks {
 
 use bitmasks::*;
 
+/// The type of response requested by a Prompt PDU.
 #[derive(Debug, PartialEq, Eq)]
 pub enum PromptResponse {
+    /// Request a Keep Alive response.
     KeepAlive,
+    /// Request a NAK response.
     Nak,
 }
 
@@ -61,6 +64,7 @@ impl PromptPdu {
         }
     }
 
+    /// Sets the response type for this Prompt PDU.
     pub fn set_prompt_response(&mut self, response: PromptResponse) {
         let response_bit = match response {
             PromptResponse::Nak => 0,
@@ -76,6 +80,7 @@ impl PromptPdu {
 
 #[bon]
 impl PromptPdu {
+    /// Builds a new Prompt PDU in the given buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],

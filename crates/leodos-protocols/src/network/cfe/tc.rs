@@ -48,8 +48,11 @@ use zerocopy::Unaligned;
 #[repr(C)]
 #[derive(FromBytes, IntoBytes, Unaligned, Immutable, KnownLayout)]
 pub struct Telecommand {
+    /// CCSDS SPP primary header.
     pub primary: PrimaryHeader,
+    /// CFE command secondary header containing function code and checksum.
     pub secondary: TelecommandSecondaryHeader,
+    /// Variable-length command payload.
     pub payload: [u8],
 }
 /// The CFE command secondary header (2 bytes).
@@ -61,18 +64,22 @@ pub struct TelecommandSecondaryHeader {
 }
 
 impl TelecommandSecondaryHeader {
+    /// Returns the 8-bit function code.
     pub fn function_code(&self) -> u8 {
         self.function_code
     }
 
+    /// Sets the 8-bit function code.
     pub fn set_function_code(&mut self, function_code: u8) {
         self.function_code = function_code;
     }
 
+    /// Returns the 8-bit checksum value.
     pub fn checksum(&self) -> u8 {
         self.checksum
     }
 
+    /// Sets the 8-bit checksum value.
     pub fn set_checksum(&mut self, checksum: u8) {
         self.checksum = checksum;
     }
@@ -81,14 +88,22 @@ impl TelecommandSecondaryHeader {
 /// An error that can occur when building a CFE packet.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TelecommandError {
+    /// The provided buffer is too small to hold the packet.
     BufferTooSmall {
+        /// Minimum number of bytes needed.
         required_len: usize,
+        /// Actual buffer size provided.
         provided_len: usize,
     },
+    /// The underlying SPP builder returned an error.
     SpacePacketBuildError(spp::BuildError),
+    /// The underlying SPP parser returned an error.
     SpacePacketParseError(spp::ParseError),
+    /// The secondary header flag is not set to Present.
     MissingSecondaryHeader,
+    /// The packet data field does not match the expected layout.
     PayloadMismatch,
+    /// The packet type does not match (e.g. telemetry instead of telecommand).
     TypeMismatch,
 }
 
@@ -130,6 +145,7 @@ impl<'a> TryFrom<&'a SpacePacket> for &'a Telecommand {
 #[bon]
 impl Telecommand {
     #[builder]
+    /// Creates a new telecommand packet in the provided buffer.
     pub fn new<'a>(
         buffer: &'a mut [u8],
         apid: Apid,
@@ -164,13 +180,16 @@ impl Telecommand {
         Ok(tc)
     }
 
+    /// Minimum size of a telecommand packet (primary + secondary headers).
     pub const fn size_minimum() -> usize {
         size_of::<PrimaryHeader>() + size_of::<TelecommandSecondaryHeader>()
     }
 
+    /// Returns the function code from the secondary header.
     pub fn function_code(&self) -> u8 {
         self.secondary.function_code()
     }
+    /// Sets the function code in the secondary header.
     pub fn set_function_code(&mut self, function_code: u8) {
         self.secondary.set_function_code(function_code);
     }
@@ -192,19 +211,23 @@ impl Telecommand {
         validate_checksum_u8(self.as_bytes())
     }
 
+    /// Returns the command payload bytes.
     pub fn payload(&self) -> &[u8] {
         &self.payload
     }
 
+    /// Returns a mutable reference to the command payload bytes.
     pub fn payload_mut(&mut self) -> &mut [u8] {
         &mut self.payload
     }
 
+    /// Parses a byte slice as a CFE telecommand packet.
     pub fn parse<'a>(bytes: &'a [u8]) -> Result<&'a Telecommand, TelecommandError> {
         let sp = SpacePacket::parse(bytes).map_err(TelecommandError::SpacePacketParseError)?;
         <&'a Telecommand>::try_from(sp)
     }
 
+    /// Returns a reference to the underlying `SpacePacket`.
     pub fn as_spacepacket(&self) -> &SpacePacket {
         &**self
     }

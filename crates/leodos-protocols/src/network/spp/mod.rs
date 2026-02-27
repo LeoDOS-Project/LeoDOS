@@ -18,8 +18,10 @@ use zerocopy::byteorder::network_endian;
 
 mod encapsulation;
 mod handler;
+/// Segmentation and reassembly of large data across multiple Space Packets.
 pub mod segmentation;
 
+/// Re-export of the `zerocopy` crate used for zero-copy packet views.
 pub use zerocopy;
 
 /// A zero-copy view over a CCSDS Space Packet in a raw byte buffer.
@@ -57,7 +59,9 @@ pub use zerocopy;
 #[repr(C)]
 #[derive(ByteEq, FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 pub struct SpacePacket {
+    /// The 6-byte fixed primary header.
     pub primary_header: PrimaryHeader,
+    /// The variable-length data field (secondary header + user data).
     pub data_field: [u8],
 }
 
@@ -195,6 +199,7 @@ impl Apid {
         *self == Self::IDLE
     }
 
+    /// Returns the raw APID value.
     pub fn value(&self) -> u16 {
         self.0
     }
@@ -248,6 +253,7 @@ impl SequenceCount {
         self.0 = (self.0 + 1) & Self::MAX;
     }
 
+    /// Returns the raw sequence count value.
     pub fn value(&self) -> u16 {
         self.0
     }
@@ -264,10 +270,15 @@ impl SequenceCount {
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum ParseError {
     /// The provided slice is shorter than the 6-byte primary header.
-    TooShortForHeader { actual: usize },
+    TooShortForHeader {
+        /// Actual number of bytes provided.
+        actual: usize,
+    },
     /// The header's length field implies a packet larger than the provided buffer.
     IncompletePacket {
+        /// Total packet length declared in the header.
         header_len: usize,
+        /// Actual buffer length provided.
         buffer_len: usize,
     },
     /// The packet's header fields contain semantically invalid values.
@@ -287,13 +298,26 @@ pub enum ValidationError {
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum BuildError {
     /// This variant is not used by the builder but is kept for the `SpacePacket::new` constructor.
-    BufferTooSmall { required: usize, provided: usize },
+    BufferTooSmall {
+        /// Minimum number of bytes needed.
+        required: usize,
+        /// Actual buffer size provided.
+        provided: usize,
+    },
     /// The provided data field length exceeds the maximum allowed size.
-    PayloadTooLarge { max: usize, provided: usize },
+    PayloadTooLarge {
+        /// Maximum allowed data field size.
+        max: usize,
+        /// Actual data field size provided.
+        provided: usize,
+    },
     /// The CCSDS standard forbids packets with an empty data field.
     EmptyDataField,
     /// The provided APID value is outside the valid 11-bit range (0-2047).
-    InvalidApid { value: u16 },
+    InvalidApid {
+        /// The invalid APID value.
+        value: u16,
+    },
 }
 
 /// An error that occurs when setting or getting the typed data field.

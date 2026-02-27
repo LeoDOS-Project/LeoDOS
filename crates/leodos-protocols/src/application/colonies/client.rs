@@ -4,17 +4,26 @@ use crate::datalink::DataLink;
 use crate::application::colonies::messages::*;
 use crate::network::spp::{Apid, SequenceCount};
 
+/// Errors returned by the ColonyOS client.
 #[derive(Debug)]
 pub enum ClientError<E> {
+    /// The transport layer reported an error.
     Transport(E),
+    /// The packet could not be constructed or parsed.
     Packet(ColoniesMessageError),
+    /// The provided buffer is too small for the operation.
     BufferTooSmall,
+    /// The payload format is invalid (e.g., bad UTF-8 or missing fields).
     PayloadFormat,
 }
 
+/// A ColonyOS client that sends requests and receives responses over a data link.
 pub struct ColoniesClient<T> {
+    /// The underlying transport.
     pub transport: T,
+    /// Application process identifier for packet routing.
     pub apid: Apid,
+    /// Sequence counter for outgoing packets.
     pub seq_count: SequenceCount,
 }
 
@@ -22,6 +31,7 @@ impl<T> ColoniesClient<T>
 where
     T: DataLink,
 {
+    /// Creates a new client with the given transport and APID.
     pub fn new(transport: T, apid: u16) -> Self {
         Self {
             transport,
@@ -30,6 +40,7 @@ where
         }
     }
 
+    /// Sends an assign request and returns the response length.
     pub async fn assign(
         &mut self,
         buffer: &mut [u8],
@@ -42,6 +53,7 @@ where
         .await
     }
 
+    /// Performs a request-response round trip with the given opcode and payload.
     pub async fn rpc<F>(
         &mut self,
         buffer: &mut [u8],

@@ -11,21 +11,26 @@ use crate::network::isl::torus::Point;
 #[derive(
     Copy, Clone, Debug, PartialEq, Eq, Hash, FromBytes, IntoBytes, Immutable, KnownLayout, Unaligned,
 )]
+/// A unique numeric identifier for a spacecraft in the constellation.
 pub struct SpacecraftId(pub U32);
 
 impl SpacecraftId {
+    /// Creates a new spacecraft ID from a raw `u32` value.
     pub const fn new(id: u32) -> Self {
         Self(U32::new(id))
     }
 
+    /// Returns the underlying `u32` value.
     pub fn get(&self) -> u32 {
         self.0.get()
     }
 
+    /// Encodes an orbital plane and satellite index into a spacecraft ID.
     pub fn encode(orb: u8, sat: u8, num_sats: u8) -> Self {
         Self::new((orb as u32 + 1) * num_sats as u32 + sat as u32)
     }
 
+    /// Decodes this spacecraft ID into an `Address`.
     pub fn to_address(&self, num_sats: u8) -> Address {
         let n = num_sats as u32;
         let orb = self.get() / n;
@@ -50,11 +55,21 @@ pub(crate) struct RawAddress {
     station_or_sat: u8,
 }
 
+/// A logical address in the ISL network.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Address {
-    Ground { station: u8 },
+    /// A ground station identified by its station number.
+    Ground {
+        /// Ground station index.
+        station: u8,
+    },
+    /// A specific satellite at a grid position.
     Satellite(Point),
-    ServiceArea { orb: u8 },
+    /// All satellites in a given orbital plane (multicast).
+    ServiceArea {
+        /// Orbital plane index.
+        orb: u8,
+    },
 }
 
 impl RawAddress {
@@ -96,22 +111,27 @@ impl From<Address> for RawAddress {
 }
 
 impl Address {
+    /// Creates a ground station address.
     pub fn ground(station: u8) -> Self {
         Self::Ground { station: station }
     }
 
+    /// Creates a satellite address from orbital plane and satellite indices.
     pub fn satellite(orb: u8, sat: u8) -> Self {
         Self::Satellite(Point { orb, sat })
     }
 
+    /// Creates a service area (multicast) address for an orbital plane.
     pub fn service_area(orb: u8) -> Self {
         Self::ServiceArea { orb }
     }
 
+    /// Returns `true` if this address can be used as a packet source.
     pub fn is_valid_source(&self) -> bool {
         !matches!(self, Address::ServiceArea { .. })
     }
 
+    /// Returns `true` if this satellite falls within the given service area range.
     pub fn is_in_service_area(&self, min_sat: u8, max_sat: u8) -> bool {
         match self {
             Address::Satellite(Point { sat, .. }) => {

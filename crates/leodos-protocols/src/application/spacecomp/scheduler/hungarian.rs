@@ -50,6 +50,7 @@ impl<C, const N: usize> Hungarian<C, N>
 where
     C: Copy + Default + Bounded,
 {
+    /// Creates a new solver with zeroed working arrays.
     pub fn new() -> Self {
         Self {
             u: [C::default(); N],

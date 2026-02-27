@@ -20,5 +20,7 @@
 //! 4. When the `Last` packet is processed, the `Reassembler` will yield a slice
 //!    containing the complete data.
 
+/// Reassembly of segmented packets back into a contiguous data block.
 pub mod reassembler;
+/// Segmentation of large data into multiple packet-sized chunks.
 pub mod segmenter;

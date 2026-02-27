@@ -15,6 +15,7 @@ pub struct TlvEntityId {
 }
 
 impl TlvEntityId {
+    /// Parses and returns the entity ID from the TLV value.
     pub fn id(&self) -> Result<EntityId, CfdpError> {
         EntityId::from_bytes(&self.rest)
     }

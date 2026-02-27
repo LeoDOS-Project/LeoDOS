@@ -6,8 +6,11 @@
 //! designed to be completely independent of the underlying I/O and timing mechanisms,
 //! making it portable and easily testable.
 
+/// Output actions produced by the sender state machine.
 pub mod action;
+/// Input events that drive the sender state machine.
 pub mod event;
+/// Transaction state and configuration for the sender.
 pub mod transaction;
 
 use crate::transport::cfdp::CfdpError;

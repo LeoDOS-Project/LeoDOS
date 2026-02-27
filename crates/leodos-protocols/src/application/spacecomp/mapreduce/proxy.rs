@@ -16,29 +16,40 @@ use crate::network::isl::projection::Projection;
 use crate::network::isl::shell::Shell;
 use crate::network::isl::torus::Point;
 
+/// Strategy for placing the reducer satellite in a MapReduce job.
 #[derive(Debug, Clone, Copy)]
 pub enum ReducerPlacement {
+    /// Place the reducer at the line-of-sight (ground station) node.
     LineOfSight,
+    /// Place the reducer at the center of the area of interest.
     CenterOfAoi,
 }
 
 /// The result of planning a SpaceCoMP job.
 #[derive(Debug, Clone)]
 pub struct JobPlan<const N: usize> {
+    /// Satellite positions assigned as data collectors.
     pub collectors: Vec<Point, N>,
+    /// Satellite positions assigned as data mappers.
     pub mappers: Vec<Point, N>,
+    /// Collector-to-mapper assignment: `assignment[i]` is the mapper index for collector `i`.
     pub assignment: Vec<usize, N>,
+    /// Position of the reducer satellite.
     pub reducer: Point,
+    /// Grid-space bounding box of the area of interest.
     pub grid_aoi: Aoi,
+    /// Estimated total job cost in microseconds.
     pub estimated_cost: u64,
 }
 
+/// Orchestrates SpaceCoMP MapReduce jobs from the LOS node.
 pub struct Coordinator {
     shell: Shell,
     reducer_placement: ReducerPlacement,
 }
 
 impl Coordinator {
+    /// Creates a new coordinator for the given orbital shell and reducer strategy.
     pub fn new(shell: Shell, reducer_placement: ReducerPlacement) -> Self {
         Self { shell, reducer_placement }
     }

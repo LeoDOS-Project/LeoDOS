@@ -1,20 +1,25 @@
 use super::{FrameReceiver, FrameSender};
 use crate::datalink::DataLink;
 
+/// A data link composed of separate sender and receiver halves.
 pub struct AsymmetricLink<S, R> {
     sender: S,
     receiver: R,
 }
 
 impl<S, R> AsymmetricLink<S, R> {
+    /// Creates a new asymmetric link from separate sender and receiver.
     pub fn new(sender: S, receiver: R) -> Self {
         Self { sender, receiver }
     }
 }
 
+/// Errors from an asymmetric link, wrapping send or receive errors.
 #[derive(Debug, Clone)]
 pub enum AsymmetricLinkError<SE, RE> {
+    /// An error occurred during send.
     Send(SE),
+    /// An error occurred during receive.
     Recv(RE),
 }
 

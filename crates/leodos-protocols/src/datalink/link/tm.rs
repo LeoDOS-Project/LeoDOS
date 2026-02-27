@@ -8,20 +8,31 @@ use super::{FrameReceiver, FrameSender};
 use crate::coding::randomizer::{Randomizer, Tm255Randomizer};
 use crate::datalink::sdlp::tm::TelemetryTransferFrame;
 
+/// Configuration for a Telemetry link channel.
 #[derive(Debug, Clone)]
 pub struct TmConfig {
+    /// Spacecraft ID for TM frames.
     pub scid: u16,
+    /// Virtual Channel ID for TM frames.
     pub vcid: u8,
+    /// Maximum data field length in bytes.
     pub max_frame_data_len: usize,
+    /// Whether to apply CCSDS pseudo-randomization.
     pub randomize: bool,
 }
 
+/// Errors that can occur during TM link operations.
 #[derive(Debug, Clone)]
 pub enum TmError<E> {
+    /// The underlying link returned an error.
     Link(E),
+    /// The data exceeds the maximum frame data length.
     FrameTooLarge,
+    /// A received frame failed to parse.
     InvalidFrame,
+    /// The internal receive queue is full.
     QueueFull,
+    /// Failed to construct a TM Transfer Frame.
     BuildError,
 }
 
@@ -53,11 +64,13 @@ struct TmSenderState<E, const QUEUE: usize, const MTU: usize> {
     closed: bool,
 }
 
+/// Shared state channel for the TM sender, split into handle and driver.
 pub struct TmSenderChannel<E, const QUEUE: usize, const MTU: usize> {
     state: RefCell<TmSenderState<E, QUEUE, MTU>>,
 }
 
 impl<E: Clone, const QUEUE: usize, const MTU: usize> TmSenderChannel<E, QUEUE, MTU> {
+    /// Creates a new TM sender channel with the given configuration.
     pub fn new(config: TmConfig) -> Self {
         Self {
             state: RefCell::new(TmSenderState {
@@ -71,6 +84,7 @@ impl<E: Clone, const QUEUE: usize, const MTU: usize> TmSenderChannel<E, QUEUE, M
         }
     }
 
+    /// Splits the channel into a handle for sending and a driver for processing.
     pub fn split<W: FrameSender<Error = E>>(
         &self,
         writer: W,
@@ -90,15 +104,18 @@ impl<E: Clone, const QUEUE: usize, const MTU: usize> TmSenderChannel<E, QUEUE, M
     }
 }
 
+/// User-facing handle for enqueuing TM frames to send.
 pub struct TmSenderHandle<'a, E, const QUEUE: usize, const MTU: usize> {
     channel: &'a TmSenderChannel<E, QUEUE, MTU>,
 }
 
 impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TmSenderHandle<'a, E, QUEUE, MTU> {
+    /// Signals that no more data will be sent on this channel.
     pub fn close(&mut self) {
         self.channel.state.borrow_mut().closed = true;
     }
 
+    /// Returns true if the send queue is empty.
     pub fn is_empty(&self) -> bool {
         self.channel.state.borrow().pending.is_empty()
     }
@@ -142,6 +159,7 @@ impl<'a, E: Clone + core::error::Error, const QUEUE: usize, const MTU: usize> Fr
     }
 }
 
+/// Background driver that dequeues pending packets and writes TM frames.
 pub struct TmSenderDriver<'a, W, E, const QUEUE: usize, const MTU: usize> {
     writer: W,
     channel: &'a TmSenderChannel<E, QUEUE, MTU>,
@@ -154,6 +172,7 @@ impl<'a, W: FrameSender, E: Clone, const QUEUE: usize, const MTU: usize>
 where
     W::Error: Into<E>,
 {
+    /// Runs the send loop, processing queued packets until the channel is closed.
     pub async fn run(&mut self) -> Result<(), TmError<E>> {
         loop {
             let packet = {
@@ -227,11 +246,13 @@ struct TmReceiverState<E, const QUEUE: usize, const MTU: usize> {
     closed: bool,
 }
 
+/// Shared state channel for the TM receiver, split into handle and driver.
 pub struct TmReceiverChannel<E, const QUEUE: usize, const MTU: usize> {
     state: RefCell<TmReceiverState<E, QUEUE, MTU>>,
 }
 
 impl<E: Clone, const QUEUE: usize, const MTU: usize> TmReceiverChannel<E, QUEUE, MTU> {
+    /// Creates a new TM receiver channel with the given configuration.
     pub fn new(config: TmConfig) -> Self {
         Self {
             state: RefCell::new(TmReceiverState {
@@ -243,6 +264,7 @@ impl<E: Clone, const QUEUE: usize, const MTU: usize> TmReceiverChannel<E, QUEUE,
         }
     }
 
+    /// Splits the channel into a handle for receiving and a driver for processing.
     pub fn split<R: FrameReceiver<Error = E>>(
         &self,
         reader: R,
@@ -263,15 +285,18 @@ impl<E: Clone, const QUEUE: usize, const MTU: usize> TmReceiverChannel<E, QUEUE,
     }
 }
 
+/// User-facing handle for receiving TM frame data.
 pub struct TmReceiverHandle<'a, E, const QUEUE: usize, const MTU: usize> {
     channel: &'a TmReceiverChannel<E, QUEUE, MTU>,
 }
 
 impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TmReceiverHandle<'a, E, QUEUE, MTU> {
+    /// Signals that no more data should be received on this channel.
     pub fn close(&mut self) {
         self.channel.state.borrow_mut().closed = true;
     }
 
+    /// Returns true if there is received data available.
     pub fn has_data(&self) -> bool {
         !self.channel.state.borrow().received.is_empty()
     }
@@ -306,6 +331,7 @@ impl<'a, E: Clone + core::error::Error, const QUEUE: usize, const MTU: usize> Fr
     }
 }
 
+/// Background driver that reads TM frames and enqueues parsed data.
 pub struct TmReceiverDriver<'a, R, E, const QUEUE: usize, const MTU: usize> {
     reader: R,
     channel: &'a TmReceiverChannel<E, QUEUE, MTU>,
@@ -319,6 +345,7 @@ impl<'a, R: FrameReceiver, E: Clone, const QUEUE: usize, const MTU: usize>
 where
     R::Error: Into<E>,
 {
+    /// Runs the receive loop, reading frames until the channel is closed.
     pub async fn run(&mut self) -> Result<(), TmError<E>> {
         loop {
             if self.channel.state.borrow().closed {

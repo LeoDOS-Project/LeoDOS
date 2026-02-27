@@ -6,12 +6,19 @@ use zerocopy::Unaligned;
 
 use crate::transport::cfdp::CfdpError;
 
+/// Acknowledgment (ACK) PDU.
 pub mod ack;
+/// End-of-File (EOF) PDU.
 pub mod eof;
+/// Finished PDU.
 pub mod finished;
+/// Keep Alive PDU (small and large file variants).
 pub mod keepalive;
+/// Metadata PDU.
 pub mod metadata;
+/// Negative Acknowledgment (NAK) PDU (small and large file variants).
 pub mod nak;
+/// Prompt PDU.
 pub mod prompt;
 
 /// A zero-copy representation of the start of any File Directive's data field.
@@ -33,15 +40,23 @@ pub struct FileDirectivePdu {
     rest: [u8],
 }
 
+/// Identifies the type of File Directive PDU (Table 5-4).
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DirectiveCode {
+    /// End-of-File directive.
     Eof = 0x04,
+    /// Finished directive.
     Finished = 0x05,
+    /// Acknowledgment directive.
     Ack = 0x06,
+    /// Metadata directive.
     Metadata = 0x07,
+    /// Negative Acknowledgment directive.
     Nak = 0x08,
+    /// Prompt directive.
     Prompt = 0x09,
+    /// Keep Alive directive.
     KeepAlive = 0x0C,
 }
 

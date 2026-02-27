@@ -43,6 +43,7 @@ impl NakPduSmall {
     pub fn start_of_scope(&self) -> u32 {
         self.start_of_scope.get()
     }
+    /// Sets the start of scope field.
     pub fn set_start_of_scope(&mut self, scope: u32) {
         self.start_of_scope.set(scope);
     }
@@ -51,6 +52,7 @@ impl NakPduSmall {
     pub fn end_of_scope(&self) -> u32 {
         self.end_of_scope.get()
     }
+    /// Sets the end of scope field.
     pub fn set_end_of_scope(&mut self, scope: u32) {
         self.end_of_scope.set(scope);
     }
@@ -83,6 +85,7 @@ impl NakSegmentSmall {
     pub fn start_offset(&self) -> u32 {
         self.start_offset.get()
     }
+    /// Sets the start offset of the missing segment.
     pub fn set_start_offset(&mut self, offset: u32) {
         self.start_offset.set(offset);
     }
@@ -91,6 +94,7 @@ impl NakSegmentSmall {
     pub fn end_offset(&self) -> u32 {
         self.end_offset.get()
     }
+    /// Sets the end offset of the missing segment.
     pub fn set_end_offset(&mut self, offset: u32) {
         self.end_offset.set(offset);
     }
@@ -98,6 +102,7 @@ impl NakSegmentSmall {
 
 #[bon]
 impl NakPduSmall {
+    /// Builds a new small-file NAK PDU in the given buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],

@@ -8,9 +8,12 @@ use crate::application::spacecomp::schema::Schema;
 
 /// A trait for mapping input data to output data.
 pub trait Mapper {
+    /// The input schema consumed by this mapper.
     type Input: Schema;
+    /// The output schema produced by this mapper.
     type Output: Schema;
 
+    /// Maps a single input value, writing outputs to the sink.
     fn map<S>(
         &mut self,
         input: Self::Input,
@@ -23,8 +26,11 @@ pub trait Mapper {
 /// A runner that connects a source, mapper, and sink.
 #[derive(Builder)]
 pub struct MapRunner<Src, Map, Snk> {
+    /// Data source providing input values.
     pub source: Src,
+    /// Mapper that processes each input value.
     pub mapper: Map,
+    /// Sink that receives the mapped output values.
     pub sink: Snk,
 }
 
@@ -34,6 +40,7 @@ where
     Map: Mapper<Input = Src::Output>,
     Snk: Sink<Input = Map::Output>,
 {
+    /// Runs the map pipeline to completion.
     pub async fn run(&mut self) -> Result<(), Snk::Error> {
         loop {
             let input = match self.source.read().await {

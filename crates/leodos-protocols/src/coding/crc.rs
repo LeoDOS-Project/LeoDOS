@@ -27,10 +27,18 @@ pub struct CrcSpacePacket<'a, 'b> {
     crc_alg: &'b crc::Crc<u16>,
 }
 
+/// An error that can occur during CRC-aware Space Packet construction.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum BuilderError {
+    /// The underlying Space Packet build failed.
     Spec(BuildError),
-    BufferTooSmall { required: usize, provided: usize },
+    /// The buffer is too small to hold the packet and its CRC.
+    BufferTooSmall {
+        /// Minimum number of bytes needed.
+        required: usize,
+        /// Actual buffer size provided.
+        provided: usize,
+    },
 }
 
 impl Display for BuilderError {
@@ -53,9 +61,19 @@ pub enum CrcError {
     /// An error occurred during the underlying packet build.
     Build(BuilderError),
     /// The buffer was too small to hold the packet and its CRC.
-    BufferTooSmall { required: usize, provided: usize },
+    BufferTooSmall {
+        /// Minimum number of bytes needed.
+        required: usize,
+        /// Actual buffer size provided.
+        provided: usize,
+    },
     /// The calculated CRC did not match the one in the buffer.
-    ValidationFailed { expected: u16, calculated: u16 },
+    ValidationFailed {
+        /// CRC value stored in the packet.
+        expected: u16,
+        /// CRC value recomputed from the packet contents.
+        calculated: u16,
+    },
     /// An error occurred parsing the underlying data field.
     DataField(crate::network::spp::DataFieldError),
 }
@@ -96,6 +114,7 @@ impl From<crate::network::spp::DataFieldError> for CrcError {
 }
 
 impl<'a, 'b> CrcSpacePacket<'a, 'b> {
+    /// Creates a new CRC-protected Space Packet in the provided buffer.
     pub fn new(
         buffer: &'a mut [u8],
         apid: Apid,

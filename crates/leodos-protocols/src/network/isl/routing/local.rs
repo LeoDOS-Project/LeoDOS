@@ -7,9 +7,12 @@ use heapless::Deque;
 use crate::datalink::DataLink;
 use crate::network::NetworkLayer;
 
+/// Error from a local in-process channel.
 #[derive(Debug, Clone)]
 pub enum LocalLinkError {
+    /// The internal queue has no remaining capacity.
     QueueFull,
+    /// The channel has been closed.
     Closed,
 }
 
@@ -35,11 +38,13 @@ struct LocalChannelState<const QUEUE: usize, const MTU: usize> {
     closed: bool,
 }
 
+/// A single-threaded bidirectional channel between an app and a router.
 pub struct LocalChannel<const QUEUE: usize, const MTU: usize> {
     state: RefCell<LocalChannelState<QUEUE, MTU>>,
 }
 
 impl<const QUEUE: usize, const MTU: usize> LocalChannel<QUEUE, MTU> {
+    /// Creates a new local channel with empty queues.
     pub fn new() -> Self {
         Self {
             state: RefCell::new(LocalChannelState {
@@ -50,6 +55,7 @@ impl<const QUEUE: usize, const MTU: usize> LocalChannel<QUEUE, MTU> {
         }
     }
 
+    /// Splits the channel into application-side and router-side handles.
     pub fn split(&self) -> (LocalAppHandle<'_, QUEUE, MTU>, LocalRouterHandle<'_, QUEUE, MTU>) {
         (
             LocalAppHandle { channel: self },
@@ -57,6 +63,7 @@ impl<const QUEUE: usize, const MTU: usize> LocalChannel<QUEUE, MTU> {
         )
     }
 
+    /// Closes the channel, causing future operations to return `Closed`.
     pub fn close(&self) {
         self.state.borrow_mut().closed = true;
     }
@@ -68,6 +75,7 @@ impl<const QUEUE: usize, const MTU: usize> Default for LocalChannel<QUEUE, MTU> 
     }
 }
 
+/// Application-side handle for sending to and receiving from the router.
 pub struct LocalAppHandle<'a, const QUEUE: usize, const MTU: usize> {
     channel: &'a LocalChannel<QUEUE, MTU>,
 }
@@ -119,6 +127,7 @@ impl<'a, const QUEUE: usize, const MTU: usize> NetworkLayer for LocalAppHandle<'
     }
 }
 
+/// Router-side handle for sending to and receiving from the application.
 pub struct LocalRouterHandle<'a, const QUEUE: usize, const MTU: usize> {
     channel: &'a LocalChannel<QUEUE, MTU>,
 }

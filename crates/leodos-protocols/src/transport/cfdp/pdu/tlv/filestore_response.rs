@@ -17,18 +17,24 @@ pub struct TlvFilestoreResponse {
     rest: [u8],
 }
 
+/// A parsed filestore response containing the action and file names.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FilestoreResponse {
+    /// The filestore action that was requested.
     pub action: FilestoreAction,
+    /// The primary file name from the original request.
     pub first_file_name: FileId,
+    /// The secondary file name, used by rename/append/replace actions.
     pub second_file_name: FileId,
 }
 
 impl TlvFilestoreResponse {
+    /// Returns the filestore action code from the packed byte.
     pub fn action(&self) -> Result<FilestoreAction, CfdpError> {
         (self.action_and_status_code >> 4).try_into()
     }
 
+    /// Returns the 4-bit status code from the packed byte.
     pub fn status_code(&self) -> u8 {
         self.action_and_status_code & 0x0F
     }
@@ -89,10 +95,12 @@ impl TlvFilestoreResponse {
         Ok((second_file_name, message))
     }
 
+    /// Returns the second file name, if present for the action type.
     pub fn second_file_name(&self) -> Result<Option<&[u8]>, CfdpError> {
         self.parse_after_first_name().map(|(name, _)| name)
     }
 
+    /// Returns the filestore status message bytes.
     pub fn message(&self) -> Result<&[u8], CfdpError> {
         self.parse_after_first_name().map(|(_, msg)| msg)
     }

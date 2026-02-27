@@ -13,7 +13,9 @@ use crate::transport::cfdp::pdu::tlv::fault_handler_override::FaultHandlerSet;
 /// for that source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct TransactionId {
+    /// The entity that originated this transaction.
     pub source_id: EntityId,
+    /// The sequence number assigned by the source entity.
     pub seq_num: TransactionSeqNum,
 }
 

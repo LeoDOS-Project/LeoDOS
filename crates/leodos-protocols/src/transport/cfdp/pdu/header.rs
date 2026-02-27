@@ -110,6 +110,7 @@ use bitmasks::*;
 
 #[bon]
 impl PduHeaderFixedPart {
+    /// Builds a new `PduHeaderFixedPart` with the specified field values.
     #[builder]
     pub fn new(
         version: u8,
@@ -148,16 +149,20 @@ impl PduHeaderFixedPart {
 
 impl PduHeaderFixedPart {
     // --- Accessors for fields within `version_and_flags` ---
+    /// Returns the 3-bit CFDP version number.
     pub fn version(&self) -> u8 {
         get_bits_u8(self.version_and_flags, VERSION_MASK)
     }
+    /// Sets the 3-bit CFDP version number.
     pub fn set_version(&mut self, version: u8) {
         set_bits_u8(&mut self.version_and_flags, VERSION_MASK, version);
     }
 
+    /// Returns the PDU type (File Data or File Directive).
     pub fn pdu_type(&self) -> PduType {
         PduType::from(get_bits_u8(self.version_and_flags, PDU_TYPE_MASK) == 1)
     }
+    /// Sets the PDU type field.
     pub fn set_pdu_type(&mut self, pdu_type: PduType) {
         let val = match pdu_type {
             PduType::FileData => 0,
@@ -166,57 +171,71 @@ impl PduHeaderFixedPart {
         set_bits_u8(&mut self.version_and_flags, PDU_TYPE_MASK, val);
     }
 
+    /// Returns the direction of the PDU.
     pub fn direction(&self) -> Direction {
         Direction::from(get_bits_u8(self.version_and_flags, DIRECTION_MASK) == 1)
     }
+    /// Sets the direction field.
     pub fn set_direction(&mut self, direction: Direction) {
         set_bits_u8(&mut self.version_and_flags, DIRECTION_MASK, direction as u8);
     }
 
+    /// Returns the transmission mode (Acknowledged or Unacknowledged).
     pub fn tx_mode(&self) -> TransmissionMode {
         TransmissionMode::from(get_bits_u8(self.version_and_flags, TX_MODE_MASK) == 1)
     }
+    /// Sets the transmission mode field.
     pub fn set_tx_mode(&mut self, tx_mode: TransmissionMode) {
         set_bits_u8(&mut self.version_and_flags, TX_MODE_MASK, tx_mode as u8);
     }
 
+    /// Returns `true` if the PDU includes a CRC.
     pub fn crc_flag(&self) -> bool {
         get_bits_u8(self.version_and_flags, CRC_FLAG_MASK) == 1
     }
+    /// Sets the CRC flag.
     pub fn set_crc_flag(&mut self, crc_flag: bool) {
         let val = if crc_flag { 1 } else { 0 };
         set_bits_u8(&mut self.version_and_flags, CRC_FLAG_MASK, val);
     }
 
+    /// Returns `true` if this is a large-file transaction (64-bit offsets).
     pub fn large_file_flag(&self) -> bool {
         get_bits_u8(self.version_and_flags, LARGE_FILE_FLAG_MASK) == 1
     }
+    /// Sets the large file flag.
     pub fn set_large_file_flag(&mut self, large_file_flag: bool) {
         let val = if large_file_flag { 1 } else { 0 };
         set_bits_u8(&mut self.version_and_flags, LARGE_FILE_FLAG_MASK, val);
     }
 
     // --- Accessor for `data_field_len` ---
+    /// Returns the length of the PDU data field in bytes.
     pub fn data_field_len(&self) -> usize {
         self.data_field_len.get() as usize
     }
+    /// Sets the PDU data field length.
     pub fn set_data_field_len(&mut self, len: u16) {
         self.data_field_len.set(len);
     }
 
     // --- Accessors for fields within `lengths_and_metadata_flag` ---
+    /// Returns the segmentation control flag.
     pub fn segmentation_control(&self) -> bool {
         get_bits_u8(self.lengths_and_metadata_flag, SEG_CTRL_MASK) == 1
     }
+    /// Sets the segmentation control flag.
     pub fn set_segmentation_control(&mut self, seg_ctrl: bool) {
         let val = if seg_ctrl { 1 } else { 0 };
         set_bits_u8(&mut self.lengths_and_metadata_flag, SEG_CTRL_MASK, val);
     }
 
+    /// Returns the length of entity IDs in bytes (1 to 8).
     pub fn entity_id_len(&self) -> usize {
         let val = get_bits_u8(self.lengths_and_metadata_flag, ENTITY_ID_LEN_MINUS_ONE_MASK);
         val as usize + 1
     }
+    /// Sets the entity ID length (must be 1 to 8).
     pub fn set_entity_id_len(&mut self, len: usize) -> Result<(), CfdpError> {
         if len == 0 || len > 8 {
             return Err(CfdpError::Custom(
@@ -231,14 +250,17 @@ impl PduHeaderFixedPart {
         Ok(())
     }
 
+    /// Returns the segment metadata flag.
     pub fn segment_metadata_flag(&self) -> bool {
         get_bits_u8(self.lengths_and_metadata_flag, SEG_META_FLAG_MASK) == 1
     }
+    /// Sets the segment metadata flag.
     pub fn set_segment_metadata_flag(&mut self, seg_meta_flag: bool) {
         let val = if seg_meta_flag { 1 } else { 0 };
         set_bits_u8(&mut self.lengths_and_metadata_flag, SEG_META_FLAG_MASK, val);
     }
 
+    /// Returns the length of the transaction sequence number in bytes.
     pub fn txn_seq_num_len(&self) -> usize {
         let val = get_bits_u8(
             self.lengths_and_metadata_flag,
@@ -246,6 +268,7 @@ impl PduHeaderFixedPart {
         );
         val as usize + 1
     }
+    /// Sets the transaction sequence number length (must be 1 to 8).
     pub fn set_txn_seq_num_len(&mut self, len: usize) -> Result<(), CfdpError> {
         if len == 0 || len > 8 {
             return Err(CfdpError::Custom(
@@ -260,6 +283,7 @@ impl PduHeaderFixedPart {
         Ok(())
     }
 
+    /// Returns the size of the fixed header portion in bytes.
     pub fn fixed_header_len(&self) -> usize {
         core::mem::size_of::<PduHeaderFixedPart>()
     }
@@ -271,10 +295,12 @@ impl PduHeaderFixedPart {
         entity_id_len * 2 + txn_seq_num_len
     }
 
+    /// Returns the total header length (fixed + variable parts).
     pub fn total_header_len(&self) -> usize {
         self.fixed_header_len() + self.variable_header_len()
     }
 
+    /// Returns the total PDU length (header + data field).
     pub fn total_pdu_len(&self) -> usize {
         self.total_header_len() + self.data_field_len()
     }

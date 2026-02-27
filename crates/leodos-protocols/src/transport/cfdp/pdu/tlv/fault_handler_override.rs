@@ -28,10 +28,14 @@ use bitmasks::*;
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum HandlerCode {
+    /// Cancel the transaction (default).
     #[default]
     Cancel = 0x01,
+    /// Suspend the transaction.
     Suspend = 0x02,
+    /// Ignore the fault and continue.
     Ignore = 0x03,
+    /// Abandon the transaction without further PDUs.
     Abandon = 0x04,
 }
 
@@ -53,6 +57,7 @@ impl TlvFaultHandlerOverride {
     pub fn condition_code(&self) -> Result<ConditionCode, CfdpError> {
         get_bits_u8(self.packed, CONDITION_CODE_MASK).try_into()
     }
+    /// Sets the fault condition code.
     pub fn set_condition_code(&mut self, code: ConditionCode) {
         set_bits_u8(&mut self.packed, CONDITION_CODE_MASK, code as u8);
     }
@@ -61,6 +66,7 @@ impl TlvFaultHandlerOverride {
     pub fn handler_code(&self) -> Result<HandlerCode, CfdpError> {
         get_bits_u8(self.packed, HANDLER_CODE_MASK).try_into()
     }
+    /// Sets the handler action code.
     pub fn set_handler_code(&mut self, code: HandlerCode) {
         set_bits_u8(&mut self.packed, HANDLER_CODE_MASK, code as u8);
     }

@@ -40,6 +40,7 @@ impl KeepAlivePduSmall {
     pub fn progress(&self) -> u32 {
         self.progress.get()
     }
+    /// Sets the progress field.
     pub fn set_progress(&mut self, progress: u32) {
         self.progress.set(progress);
     }
@@ -47,6 +48,7 @@ impl KeepAlivePduSmall {
 
 #[bon]
 impl KeepAlivePduSmall {
+    /// Builds a new small-file Keep Alive PDU in the given buffer.
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],

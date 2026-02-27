@@ -46,13 +46,17 @@ impl WrappedRange {
     }
 }
 
+/// A rectangular area of interest on the satellite torus grid.
 #[derive(Debug, Clone, Copy)]
 pub struct Aoi {
+    /// Upper-left corner of the bounding box (inclusive).
     pub upper_left: Point,
+    /// Lower-right corner of the bounding box (inclusive).
     pub lower_right: Point,
 }
 
 impl Aoi {
+    /// Creates a new AOI from upper-left and lower-right corners.
     pub fn new(upper_left: Point, lower_right: Point) -> Self {
         Self { upper_left, lower_right }
     }
@@ -65,18 +69,22 @@ impl Aoi {
         WrappedRange::new(self.upper_left.sat, self.lower_right.sat, torus.num_sats)
     }
 
+    /// Returns the center point of this AOI on the torus.
     pub fn center(&self, torus: &Torus) -> Point {
         Point::new(self.y_range(torus).midpoint(), self.x_range(torus).midpoint())
     }
 
+    /// Returns whether the given point lies within this AOI.
     pub fn contains(&self, torus: &Torus, point: Point) -> bool {
         self.y_range(torus).contains(point.orb) && self.x_range(torus).contains(point.sat)
     }
 
+    /// Returns the width of this AOI in grid cells.
     pub fn width(&self, torus: &Torus) -> u8 {
         self.x_range(torus).span()
     }
 
+    /// Returns the height of this AOI in grid cells.
     pub fn height(&self, torus: &Torus) -> u8 {
         self.y_range(torus).span()
     }
