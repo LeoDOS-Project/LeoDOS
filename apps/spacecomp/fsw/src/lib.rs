@@ -38,8 +38,6 @@ mod bindings {
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
 
-#[macro_use]
-mod fmt;
 pub mod data;
 mod roles;
 
@@ -77,7 +75,7 @@ fn recv_port(point: Point, direction: Direction) -> u16 {
 }
 
 fn orbit_ip(orbit: u8, out: &mut [u8; 16]) -> Result<usize, core::fmt::Error> {
-    fmt!(out, "172.20.{orbit}.10")
+    leodos_protocols::fmt!(out, "172.20.{orbit}.10")
 }
 
 fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDataLink, Error> {
