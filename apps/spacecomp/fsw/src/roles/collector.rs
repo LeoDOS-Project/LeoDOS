@@ -17,15 +17,13 @@ pub async fn run(
     let partition = data::partition_text(assign.partition_id, crate::NUM_SATS);
 
     for chunk in partition.chunks(MAX_CHUNK) {
-        if let Some(msg) = SpaceCompMessage::builder()
+        let msg = SpaceCompMessage::builder()
             .buffer(&mut bufs.msg)
             .op_code(OpCode::DataChunk)
             .job_id(assign.job_id)
             .payload(chunk)
-            .build()
-        {
-            handle.send(assign.mapper_addr, msg.as_bytes()).await.ok();
-        }
+            .build()?;
+        handle.send(assign.mapper_addr, msg.as_bytes()).await.ok();
     }
 
     Ok(())

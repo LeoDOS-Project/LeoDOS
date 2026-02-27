@@ -23,7 +23,7 @@ pub async fn run(
         let Ok((_, len)) = handle.recv(&mut bufs.recv).await else {
             return Ok(());
         };
-        let Some(msg) = SpaceCompMessage::parse(&bufs.recv[..len]) else {
+        let Ok(msg) = SpaceCompMessage::parse(&bufs.recv[..len]) else {
             continue;
         };
         if msg.op_code() != Ok(OpCode::DataChunk) {
@@ -34,7 +34,7 @@ pub async fn run(
         received += 1;
 
         if received >= assign.mapper_count {
-            emit(handle, bufs, &counts, assign.los_addr, assign.job_id).await;
+            emit(handle, bufs, &counts, assign.los_addr, assign.job_id).await?;
             return Ok(());
         }
     }
@@ -62,7 +62,7 @@ async fn emit(
     counts: &FnvIndexMap<[u8; 16], u32, 64>,
     los_addr: Address,
     job_id: u16,
-) {
+) -> Result<(), SpaceCompError> {
     let max_per_packet = bufs.payload.len() / size_of::<WordCount>();
     let mut idx = 0;
 
@@ -74,29 +74,27 @@ async fn emit(
 
         if idx >= max_per_packet {
             let payload_len = idx * size_of::<WordCount>();
-            if let Some(msg) = SpaceCompMessage::builder()
+            let msg = SpaceCompMessage::builder()
                 .buffer(&mut bufs.msg)
                 .op_code(OpCode::JobResult)
                 .job_id(job_id)
                 .payload(&bufs.payload[..payload_len])
-                .build()
-            {
-                handle.send(los_addr, msg.as_bytes()).await.ok();
-            }
+                .build()?;
+            handle.send(los_addr, msg.as_bytes()).await.ok();
             idx = 0;
         }
     }
 
     if idx > 0 {
         let payload_len = idx * size_of::<WordCount>();
-        if let Some(msg) = SpaceCompMessage::builder()
+        let msg = SpaceCompMessage::builder()
             .buffer(&mut bufs.msg)
             .op_code(OpCode::JobResult)
             .job_id(job_id)
             .payload(&bufs.payload[..payload_len])
-            .build()
-        {
-            handle.send(los_addr, msg.as_bytes()).await.ok();
-        }
+            .build()?;
+        handle.send(los_addr, msg.as_bytes()).await.ok();
     }
+
+    Ok(())
 }

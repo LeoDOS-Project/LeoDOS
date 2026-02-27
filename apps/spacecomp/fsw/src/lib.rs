@@ -11,6 +11,7 @@ use leodos_protocols::application::spacecomp::packet::AssignMapperMessage;
 use leodos_protocols::application::spacecomp::packet::AssignReducerMessage;
 use leodos_protocols::application::spacecomp::packet::BuildError;
 use leodos_protocols::application::spacecomp::packet::OpCode;
+use leodos_protocols::application::spacecomp::packet::ParseError;
 use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::datalink::link::cfs::UdpDataLink;
 use leodos_protocols::network::isl::address::Address;
@@ -51,12 +52,8 @@ pub struct Buffers {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SpaceCompError {
-    #[error("failed to parse message")]
-    ParseMessage,
-    #[error("invalid opcode")]
-    InvalidOpCode,
-    #[error("failed to decode payload")]
-    DecodePayload,
+    #[error("failed to parse: {0}")]
+    Parse(#[from] ParseError),
     #[error("failed to plan job: {0}")]
     Plan(&'static str),
     #[error("failed to build message: {0}")]
@@ -66,12 +63,9 @@ pub enum SpaceCompError {
 impl SpaceCompError {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::ParseMessage => "failed to parse message",
-            Self::InvalidOpCode => "invalid opcode",
-            Self::DecodePayload => "failed to decode payload",
+            Self::Parse(e) => e.as_str(),
             Self::Plan(reason) => reason,
-            Self::Build(BuildError::OutOfRange) => "value out of range",
-            Self::Build(BuildError::BufferTooSmall) => "buffer too small",
+            Self::Build(e) => e.as_str(),
         }
     }
 }
@@ -238,8 +232,8 @@ async fn handle(
     point: Point,
     len: usize,
 ) -> Result<(), SpaceCompError> {
-    let msg = SpaceCompMessage::parse(&bufs.recv[..len]).ok_or(SpaceCompError::ParseMessage)?;
-    let op_code = msg.op_code().map_err(|()| SpaceCompError::InvalidOpCode)?;
+    let msg = SpaceCompMessage::parse(&bufs.recv[..len])?;
+    let op_code = msg.op_code()?;
 
     match op_code {
         OpCode::SubmitJob => {
@@ -247,15 +241,15 @@ async fn handle(
             roles::coordinator::run(channel, bufs, point, job_id).await?
         }
         OpCode::AssignCollector => {
-            let m = AssignCollectorMessage::parse(msg).ok_or(SpaceCompError::DecodePayload)?;
+            let m = AssignCollectorMessage::parse(msg)?;
             roles::collector::run(channel, bufs, m).await?
         }
         OpCode::AssignMapper => {
-            let m = AssignMapperMessage::parse(msg).ok_or(SpaceCompError::DecodePayload)?;
+            let m = AssignMapperMessage::parse(msg)?;
             roles::mapper::run(channel, bufs, m).await?
         }
         OpCode::AssignReducer => {
-            let m = AssignReducerMessage::parse(msg).ok_or(SpaceCompError::DecodePayload)?;
+            let m = AssignReducerMessage::parse(msg)?;
             roles::reducer::run(channel, bufs, m).await?
         }
         _ => {}

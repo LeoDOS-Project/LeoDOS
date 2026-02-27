@@ -38,7 +38,7 @@ pub async fn run(
         let Ok((_, len)) = handle.recv(&mut bufs.recv).await else {
             return Ok(());
         };
-        let Some(msg) = SpaceCompMessage::parse(&bufs.recv[..len]) else {
+        let Ok(msg) = SpaceCompMessage::parse(&bufs.recv[..len]) else {
             continue;
         };
         if msg.op_code() == Ok(OpCode::JobResult) && msg.job_id() == job_id {

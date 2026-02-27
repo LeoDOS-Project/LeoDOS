@@ -99,13 +99,13 @@ impl SpaceCompMessage {
     pub const HEADER_SIZE: usize = size_of::<SpaceCompHeader>();
 
     /// Parses a SpaceCoMP message from a byte slice.
-    pub fn parse(bytes: &[u8]) -> Option<&Self> {
-        Self::ref_from_bytes(bytes).ok()
+    pub fn parse(bytes: &[u8]) -> Result<&Self, ParseError> {
+        Self::ref_from_bytes(bytes).map_err(|_| ParseError::Message)
     }
 
     /// Returns the operation code from the header.
-    pub fn op_code(&self) -> Result<OpCode, ()> {
-        self.header.op_code()
+    pub fn op_code(&self) -> Result<OpCode, ParseError> {
+        self.header.op_code().map_err(|_| ParseError::InvalidOpCode)
     }
 
     /// Returns the job identifier from the header.
@@ -133,11 +133,12 @@ impl SpaceCompMessage {
         op_code: OpCode,
         job_id: u16,
         payload: &[u8],
-    ) -> Option<&'a SpaceCompMessage> {
-        let (msg, _) = Self::mut_from_prefix_with_elems(buffer, payload.len()).ok()?;
+    ) -> Result<&'a SpaceCompMessage, BuildError> {
+        let (msg, _) = Self::mut_from_prefix_with_elems(buffer, payload.len())
+            .map_err(|_| BuildError::BufferTooSmall)?;
         msg.header = SpaceCompHeader::new(op_code, job_id);
         msg.payload.copy_from_slice(payload);
-        Some(msg)
+        Ok(msg)
     }
 }
 
@@ -252,6 +253,40 @@ impl AssignReducerPayload {
     pub fn mapper_count(&self) -> u8 { self.mapper_count }
 }
 
+/// Errors that can occur when parsing a SpaceCoMP message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ParseError {
+    /// The byte slice is not a valid [`SpaceCompMessage`].
+    #[error("invalid message")]
+    Message,
+    /// The opcode byte does not map to a known [`OpCode`].
+    #[error("invalid opcode")]
+    InvalidOpCode,
+    /// The payload is not a valid [`AssignCollectorPayload`].
+    #[error("invalid collector assignment")]
+    AssignCollector,
+    /// The payload is not a valid [`AssignMapperPayload`].
+    #[error("invalid mapper assignment")]
+    AssignMapper,
+    /// The payload is not a valid [`AssignReducerPayload`].
+    #[error("invalid reducer assignment")]
+    AssignReducer,
+}
+
+/// Errors that can occur when parsing a SpaceCoMP message.
+impl ParseError {
+    /// Returns a static string describing the error.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Message => "invalid message",
+            Self::InvalidOpCode => "invalid opcode",
+            Self::AssignCollector => "invalid collector assignment",
+            Self::AssignMapper => "invalid mapper assignment",
+            Self::AssignReducer => "invalid reducer assignment",
+        }
+    }
+}
+
 /// Errors that can occur when constructing a SpaceCoMP message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum BuildError {
@@ -261,6 +296,16 @@ pub enum BuildError {
     /// The provided buffer is too small for the message.
     #[error("buffer too small")]
     BufferTooSmall,
+}
+
+impl BuildError {
+    /// Returns a static string describing the error.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::OutOfRange => "value out of range",
+            Self::BufferTooSmall => "buffer too small",
+        }
+    }
 }
 
 /// Decoded [`OpCode::AssignCollector`] message.
@@ -277,9 +322,10 @@ pub struct AssignCollectorMessage {
 #[bon]
 impl AssignCollectorMessage {
     /// Decodes from a raw [`SpaceCompMessage`].
-    pub fn parse(msg: &SpaceCompMessage) -> Option<Self> {
-        let (p, _) = AssignCollectorPayload::read_from_prefix(msg.payload()).ok()?;
-        Some(Self {
+    pub fn parse(msg: &SpaceCompMessage) -> Result<Self, ParseError> {
+        let (p, _) = AssignCollectorPayload::read_from_prefix(msg.payload())
+            .map_err(|_| ParseError::AssignCollector)?;
+        Ok(Self {
             job_id: msg.job_id(),
             mapper_addr: p.mapper_addr(),
             partition_id: p.partition_id(),
@@ -299,13 +345,12 @@ impl AssignCollectorMessage {
             .mapper_addr(mapper_addr)
             .partition_id(partition_id)
             .build();
-        SpaceCompMessage::builder()
+        Ok(SpaceCompMessage::builder()
             .buffer(buffer)
             .op_code(OpCode::AssignCollector)
             .job_id(job_id)
             .payload(payload.as_bytes())
-            .build()
-            .ok_or(BuildError::BufferTooSmall)
+            .build()?)
     }
 }
 
@@ -323,9 +368,10 @@ pub struct AssignMapperMessage {
 #[bon]
 impl AssignMapperMessage {
     /// Decodes from a raw [`SpaceCompMessage`].
-    pub fn parse(msg: &SpaceCompMessage) -> Option<Self> {
-        let (p, _) = AssignMapperPayload::read_from_prefix(msg.payload()).ok()?;
-        Some(Self {
+    pub fn parse(msg: &SpaceCompMessage) -> Result<Self, ParseError> {
+        let (p, _) = AssignMapperPayload::read_from_prefix(msg.payload())
+            .map_err(|_| ParseError::AssignMapper)?;
+        Ok(Self {
             job_id: msg.job_id(),
             reducer_addr: p.reducer_addr(),
             collector_count: p.collector_count(),
@@ -345,13 +391,12 @@ impl AssignMapperMessage {
             .reducer_addr(reducer_addr)
             .collector_count(collector_count)
             .build();
-        SpaceCompMessage::builder()
+        Ok(SpaceCompMessage::builder()
             .buffer(buffer)
             .op_code(OpCode::AssignMapper)
             .job_id(job_id)
             .payload(payload.as_bytes())
-            .build()
-            .ok_or(BuildError::BufferTooSmall)
+            .build()?)
     }
 }
 
@@ -369,9 +414,10 @@ pub struct AssignReducerMessage {
 #[bon]
 impl AssignReducerMessage {
     /// Decodes from a raw [`SpaceCompMessage`].
-    pub fn parse(msg: &SpaceCompMessage) -> Option<Self> {
-        let (p, _) = AssignReducerPayload::read_from_prefix(msg.payload()).ok()?;
-        Some(Self {
+    pub fn parse(msg: &SpaceCompMessage) -> Result<Self, ParseError> {
+        let (p, _) = AssignReducerPayload::read_from_prefix(msg.payload())
+            .map_err(|_| ParseError::AssignReducer)?;
+        Ok(Self {
             job_id: msg.job_id(),
             los_addr: p.los_addr(),
             mapper_count: p.mapper_count(),
@@ -391,13 +437,12 @@ impl AssignReducerMessage {
             .los_addr(los_addr)
             .mapper_count(mapper_count)
             .build();
-        SpaceCompMessage::builder()
+        Ok(SpaceCompMessage::builder()
             .buffer(buffer)
             .op_code(OpCode::AssignReducer)
             .job_id(job_id)
             .payload(payload.as_bytes())
-            .build()
-            .ok_or(BuildError::BufferTooSmall)
+            .build()?)
     }
 }
 
