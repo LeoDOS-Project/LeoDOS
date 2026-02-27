@@ -4,8 +4,8 @@ use leodos_protocols::application::spacecomp::packet::{
 
 use crate::data;
 use crate::Buffers;
-use crate::SpaceCompError;
 use crate::NodeHandle;
+use crate::SpaceCompError;
 
 const MAX_CHUNK: usize = 256;
 

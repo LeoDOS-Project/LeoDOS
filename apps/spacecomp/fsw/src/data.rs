@@ -1,3 +1,5 @@
+use bon::bon;
+use leodos_protocols::application::spacecomp::packet::{BuildError, OpCode, SpaceCompMessage};
 use zerocopy::network_endian::U32;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
@@ -6,6 +8,36 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 pub struct WordCount {
     pub word: [u8; 16],
     pub count: U32,
+}
+
+#[bon]
+impl WordCount {
+    #[builder]
+    pub fn new(word: &[u8], count: u32) -> Self {
+        let mut buf = [0u8; 16];
+        let len = word.len().min(16);
+        buf[..len].copy_from_slice(&word[..len]);
+        Self {
+            word: buf,
+            count: U32::new(count),
+        }
+    }
+
+    #[builder]
+    pub fn message<'a>(
+        buffer: &'a mut [u8],
+        word: &[u8],
+        count: u32,
+        job_id: u16,
+    ) -> Result<&'a SpaceCompMessage, BuildError> {
+        let wc = Self::builder().word(word).count(count).build();
+        SpaceCompMessage::builder()
+            .buffer(buffer)
+            .op_code(OpCode::DataChunk)
+            .job_id(job_id)
+            .payload(wc.as_bytes())
+            .build()
+    }
 }
 
 pub const SAMPLE_TEXT: &[u8] = b"\

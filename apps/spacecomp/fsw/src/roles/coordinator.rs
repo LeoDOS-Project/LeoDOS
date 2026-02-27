@@ -6,7 +6,6 @@ use leodos_protocols::application::spacecomp::packet::OpCode;
 use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::application::spacecomp::plan::Plan;
 use leodos_protocols::application::spacecomp::plan::ReducerPlacement;
-use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::geo::GeoAoi;
 use leodos_protocols::network::isl::geo::LatLon;
 use leodos_protocols::network::isl::torus::Point;
@@ -40,7 +39,7 @@ pub async fn run(
             .mapper_addr(plan.mappers[plan.assignment[i]])
             .partition_id(i)
             .build()?;
-        handle.send(Address::from(*pt), msg).await.ok();
+        handle.send(*pt, msg).await.ok();
     }
     for (j, pt) in plan.mappers.iter().enumerate() {
         let msg = AssignMapperMessage::builder()
@@ -49,7 +48,7 @@ pub async fn run(
             .reducer_addr(plan.reducer)
             .collector_count(plan.assignment.iter().filter(|&&a| a == j).count())
             .build()?;
-        handle.send(Address::from(*pt), msg).await.ok();
+        handle.send(*pt, msg).await.ok();
     }
     let msg = AssignReducerMessage::builder()
         .buffer(&mut bufs.msg)
@@ -57,7 +56,7 @@ pub async fn run(
         .los_addr(local_point)
         .mapper_count(plan.mappers.len())
         .build()?;
-    handle.send(Address::from(plan.reducer), msg).await.ok();
+    handle.send(plan.reducer, msg).await.ok();
 
     loop {
         let Ok((_, len)) = handle.recv(&mut bufs.recv).await else {

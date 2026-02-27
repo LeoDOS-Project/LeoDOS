@@ -5,7 +5,6 @@ use leodos_protocols::application::spacecomp::packet::{
 use leodos_protocols::network::isl::address::Address;
 use core::mem::size_of;
 use zerocopy::{FromBytes, IntoBytes};
-use zerocopy::network_endian::U32;
 use crate::data::WordCount;
 use crate::Buffers;
 use crate::SpaceCompError;
@@ -17,7 +16,7 @@ pub async fn run(
     assign: AssignReducerMessage,
 ) -> Result<(), SpaceCompError> {
     let mut counts: FnvIndexMap<[u8; 16], u32, 64> = FnvIndexMap::new();
-    let mut received = 0u8;
+    let mut done_count = 0u8;
 
     loop {
         let Ok((_, len)) = handle.recv(&mut bufs.recv).await else {
@@ -26,16 +25,16 @@ pub async fn run(
         let Ok(msg) = SpaceCompMessage::parse(&bufs.recv[..len]) else {
             continue;
         };
-        if msg.op_code() != Ok(OpCode::DataChunk) {
-            continue;
-        }
-
-        ingest(&mut counts, msg.payload());
-        received += 1;
-
-        if received >= assign.mapper_count {
-            emit(handle, bufs, &counts, assign.los_addr, assign.job_id).await?;
-            return Ok(());
+        match msg.op_code() {
+            Ok(OpCode::DataChunk) => ingest(&mut counts, msg.payload()),
+            Ok(OpCode::PhaseDone) => {
+                done_count += 1;
+                if done_count >= assign.mapper_count {
+                    emit(handle, bufs, &counts, assign.los_addr, assign.job_id).await?;
+                    return Ok(());
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -67,7 +66,7 @@ async fn emit(
     let mut idx = 0;
 
     for (word, &count) in counts.iter() {
-        let wc = WordCount { word: *word, count: U32::new(count) };
+        let wc = WordCount::builder().word(word).count(count).build();
         let offset = idx * size_of::<WordCount>();
         bufs.payload[offset..offset + size_of::<WordCount>()].copy_from_slice(wc.as_bytes());
         idx += 1;

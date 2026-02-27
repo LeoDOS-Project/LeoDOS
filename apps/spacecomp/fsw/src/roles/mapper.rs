@@ -1,23 +1,21 @@
 use core::mem::size_of;
-use heapless::index_map::FnvIndexMap;
 use leodos_protocols::application::spacecomp::packet::{
     AssignMapperMessage, OpCode, SpaceCompMessage,
 };
-use leodos_protocols::network::isl::address::Address;
-use zerocopy::network_endian::U32;
 use zerocopy::IntoBytes;
 
 use crate::data::WordCount;
 use crate::Buffers;
-use crate::SpaceCompError;
 use crate::NodeHandle;
+use crate::SpaceCompError;
+
+const MAX_PER_PACKET: usize = 256 / size_of::<WordCount>();
 
 pub async fn run(
     handle: &mut NodeHandle<'_>,
     bufs: &mut Buffers,
     assign: AssignMapperMessage,
 ) -> Result<(), SpaceCompError> {
-    let mut counts: FnvIndexMap<[u8; 16], u32, 64> = FnvIndexMap::new();
     let mut received = 0u8;
 
     loop {
@@ -31,74 +29,53 @@ pub async fn run(
             continue;
         }
 
-        ingest(&mut counts, msg.payload());
-        received += 1;
+        let payload_start = SpaceCompMessage::HEADER_SIZE;
+        let mut idx = 0;
 
-        if received >= assign.collector_count {
-            emit(handle, bufs, &counts, assign.reducer_addr, assign.job_id).await?;
-            return Ok(());
+        for word_bytes in bufs.recv[payload_start..len]
+            .split(|&b| b == b' ' || b == b'\n' || b == b'\t')
+        {
+            if word_bytes.is_empty() || word_bytes.len() > 16 {
+                continue;
+            }
+            let wc = WordCount::builder().word(word_bytes).count(1).build();
+            let offset = idx * size_of::<WordCount>();
+            bufs.payload[offset..offset + size_of::<WordCount>()]
+                .copy_from_slice(wc.as_bytes());
+            idx += 1;
+
+            if idx >= MAX_PER_PACKET {
+                let msg = SpaceCompMessage::builder()
+                    .buffer(&mut bufs.msg)
+                    .op_code(OpCode::DataChunk)
+                    .job_id(assign.job_id)
+                    .payload(&bufs.payload[..idx * size_of::<WordCount>()])
+                    .build()?;
+                handle.send(assign.reducer_addr, msg).await.ok();
+                idx = 0;
+            }
         }
-    }
-}
 
-fn ingest(counts: &mut FnvIndexMap<[u8; 16], u32, 64>, chunk: &[u8]) {
-    for word_bytes in chunk.split(|&b| b == b' ' || b == b'\n' || b == b'\t') {
-        if word_bytes.is_empty() || word_bytes.len() > 16 {
-            continue;
-        }
-        let mut key = [0u8; 16];
-        key[..word_bytes.len()].copy_from_slice(word_bytes);
-
-        if let Some(c) = counts.get_mut(&key) {
-            *c += 1;
-        } else {
-            counts.insert(key, 1).ok();
-        }
-    }
-}
-
-async fn emit(
-    handle: &mut NodeHandle<'_>,
-    bufs: &mut Buffers,
-    counts: &FnvIndexMap<[u8; 16], u32, 64>,
-    reducer_addr: Address,
-    job_id: u16,
-) -> Result<(), SpaceCompError> {
-    let max_per_packet = bufs.payload.len() / size_of::<WordCount>();
-    let mut idx = 0;
-
-    for (&word, &count) in counts.iter() {
-        let wc = WordCount {
-            word,
-            count: U32::new(count),
-        };
-        let offset = idx * size_of::<WordCount>();
-        bufs.payload[offset..offset + size_of::<WordCount>()].copy_from_slice(wc.as_bytes());
-        idx += 1;
-
-        if idx >= max_per_packet {
-            let payload_len = idx * size_of::<WordCount>();
+        if idx > 0 {
             let msg = SpaceCompMessage::builder()
                 .buffer(&mut bufs.msg)
                 .op_code(OpCode::DataChunk)
-                .job_id(job_id)
-                .payload(&bufs.payload[..payload_len])
+                .job_id(assign.job_id)
+                .payload(&bufs.payload[..idx * size_of::<WordCount>()])
                 .build()?;
-            handle.send(reducer_addr, msg).await.ok();
-            idx = 0;
+            handle.send(assign.reducer_addr, msg).await.ok();
+        }
+
+        received += 1;
+        if received >= assign.collector_count {
+            let done = SpaceCompMessage::builder()
+                .buffer(&mut bufs.msg)
+                .op_code(OpCode::PhaseDone)
+                .job_id(assign.job_id)
+                .payload(&[])
+                .build()?;
+            handle.send(assign.reducer_addr, done).await.ok();
+            return Ok(());
         }
     }
-
-    if idx > 0 {
-        let payload_len = idx * size_of::<WordCount>();
-        let msg = SpaceCompMessage::builder()
-            .buffer(&mut bufs.msg)
-            .op_code(OpCode::DataChunk)
-            .job_id(job_id)
-            .payload(&bufs.payload[..payload_len])
-            .build()?;
-        handle.send(reducer_addr, msg).await.ok();
-    }
-
-    Ok(())
 }

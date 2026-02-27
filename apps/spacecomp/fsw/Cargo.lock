@@ -488,6 +488,7 @@ name = "spacecomp"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "bon",
  "heapless",
  "leodos-libcfs",
  "leodos-protocols",
