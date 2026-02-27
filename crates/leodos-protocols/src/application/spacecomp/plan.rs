@@ -41,73 +41,75 @@ pub struct JobPlan<const N: usize> {
     pub estimated_cost: u64,
 }
 
-/// Plans a SpaceCoMP job, producing collector/mapper assignments and
-/// reducer placement. `N` is the maximum number of satellites that can
-/// participate (compile-time bound for heapless allocation).
-pub fn plan<const N: usize>(
-    shell: Shell,
-    reducer_placement: ReducerPlacement,
-    job: &Job,
-    los_node: Point,
-) -> Result<JobPlan<N>, &'static str> {
-    let projection = Projection::new(shell);
+impl Job {
+    /// Plans this job, producing collector/mapper assignments and
+    /// reducer placement. `N` is the maximum number of satellites that can
+    /// participate (compile-time bound for heapless allocation).
+    pub fn plan<const N: usize>(
+        &self,
+        shell: Shell,
+        reducer_placement: ReducerPlacement,
+        los_node: Point,
+    ) -> Result<JobPlan<N>, &'static str> {
+        let projection = Projection::new(shell);
 
-    let all_covering: Vec<Point, N> = projection.satellites_in_geo_aoi(&job.geo_aoi);
-    if all_covering.is_empty() {
-        return Err("no satellites cover the AOI");
+        let all_covering: Vec<Point, N> = projection.satellites_in_geo_aoi(&self.geo_aoi);
+        if all_covering.is_empty() {
+            return Err("no satellites cover the AOI");
+        }
+
+        let collectors = if self.ascending_only {
+            filter_ascending(shell, &all_covering)
+        } else {
+            all_covering
+        };
+        if collectors.is_empty() {
+            return Err("no satellites match direction constraint");
+        }
+
+        let grid_aoi = projection
+            .geo_to_grid_aoi(&self.geo_aoi)
+            .ok_or("failed to compute grid AOI")?;
+
+        let mappers = select_mappers::<N>(shell, &grid_aoi);
+        if mappers.len() < collectors.len() {
+            return Err("not enough mapper nodes for collectors");
+        }
+
+        let assignment = solve_assignment::<N>(shell, &collectors, &mappers, self)?;
+
+        let reducer = match reducer_placement {
+            ReducerPlacement::LineOfSight => los_node,
+            ReducerPlacement::CenterOfAoi => grid_aoi.center(&shell.torus),
+        };
+
+        let params = JobParams {
+            map_processing_factor: self.map_processing_factor,
+            reduce_processing_factor: self.reduce_processing_factor,
+            map_reduction_factor: self.map_reduction_factor,
+            reduce_reduction_factor: self.reduce_reduction_factor,
+            data_volume_bytes: self.data_volume_bytes,
+            ..Default::default()
+        };
+        let estimated_cost = JobCost::total_cost(
+            &shell.torus,
+            &params,
+            collectors.as_slice(),
+            mappers.as_slice(),
+            assignment.as_slice(),
+            reducer,
+            los_node,
+        );
+
+        Ok(JobPlan {
+            collectors,
+            mappers,
+            assignment,
+            reducer,
+            grid_aoi,
+            estimated_cost,
+        })
     }
-
-    let collectors = if job.ascending_only {
-        filter_ascending(shell, &all_covering)
-    } else {
-        all_covering
-    };
-    if collectors.is_empty() {
-        return Err("no satellites match direction constraint");
-    }
-
-    let grid_aoi = projection
-        .geo_to_grid_aoi(&job.geo_aoi)
-        .ok_or("failed to compute grid AOI")?;
-
-    let mappers = select_mappers::<N>(shell, &grid_aoi);
-    if mappers.len() < collectors.len() {
-        return Err("not enough mapper nodes for collectors");
-    }
-
-    let assignment = solve_assignment::<N>(shell, &collectors, &mappers, job)?;
-
-    let reducer = match reducer_placement {
-        ReducerPlacement::LineOfSight => los_node,
-        ReducerPlacement::CenterOfAoi => grid_aoi.center(&shell.torus),
-    };
-
-    let params = JobParams {
-        map_processing_factor: job.map_processing_factor,
-        reduce_processing_factor: job.reduce_processing_factor,
-        map_reduction_factor: job.map_reduction_factor,
-        reduce_reduction_factor: job.reduce_reduction_factor,
-        data_volume_bytes: job.data_volume_bytes,
-        ..Default::default()
-    };
-    let estimated_cost = JobCost::total_cost(
-        &shell.torus,
-        &params,
-        collectors.as_slice(),
-        mappers.as_slice(),
-        assignment.as_slice(),
-        reducer,
-        los_node,
-    );
-
-    Ok(JobPlan {
-        collectors,
-        mappers,
-        assignment,
-        reducer,
-        grid_aoi,
-        estimated_cost,
-    })
 }
 
 fn filter_ascending<const N: usize>(shell: Shell, nodes: &Vec<Point, N>) -> Vec<Point, N> {
@@ -190,7 +192,7 @@ mod tests {
             .data_volume_bytes(1_000_000)
             .build();
 
-        let result = plan::<64>(shell, ReducerPlacement::CenterOfAoi, &job, Point::new(0, 0));
+        let result = job.plan::<64>(shell, ReducerPlacement::CenterOfAoi, Point::new(0, 0));
         assert!(result.is_ok(), "plan failed: {:?}", result.err());
 
         let p = result.unwrap();
@@ -210,8 +212,8 @@ mod tests {
 
         let los = Point::new(0, 36);
 
-        let center_plan = plan::<64>(shell, ReducerPlacement::CenterOfAoi, &job, los).unwrap();
-        let los_plan = plan::<64>(shell, ReducerPlacement::LineOfSight, &job, los).unwrap();
+        let center_plan = job.plan::<64>(shell, ReducerPlacement::CenterOfAoi, los).unwrap();
+        let los_plan = job.plan::<64>(shell, ReducerPlacement::LineOfSight, los).unwrap();
 
         assert!(
             center_plan.estimated_cost <= los_plan.estimated_cost,
