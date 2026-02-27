@@ -40,21 +40,23 @@
 //! // assignment[task_idx] = processor_idx
 //! ```
 
+/// Area of interest on the satellite grid.
 pub mod aoi;
+/// Job cost estimation.
 pub mod cost;
-pub mod hungarian;
-pub mod job;
-pub mod lapjv;
-pub mod solver;
+/// Point-to-point distance/cost models for the assignment solver.
+pub mod distance;
+/// Assignment solver trait and implementations.
+pub mod assignment;
 
 pub use aoi::Aoi;
-pub use cost::manhattan::ManhattanCost;
-pub use cost::spacecomp::SpaceCompCost;
-pub use cost::CostModel;
-pub use hungarian::Hungarian;
-pub use job::{JobCost, JobParams};
-pub use lapjv::JonkerVolgenant;
-pub use solver::{Bounded, Solver};
+pub use assignment::hungarian::Hungarian;
+pub use assignment::lapjv::JonkerVolgenant;
+pub use assignment::{Bounded, Solver};
+pub use cost::hop_distance;
+pub use distance::manhattan::ManhattanCost;
+pub use distance::spacecomp::SpaceCompCost;
+pub use distance::CostModel;
 
 #[cfg(test)]
 mod tests {

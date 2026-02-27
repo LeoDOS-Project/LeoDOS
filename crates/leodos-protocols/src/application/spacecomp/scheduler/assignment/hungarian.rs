@@ -22,7 +22,7 @@ use core::ops::{Add, Sub};
 
 use heapless::Vec;
 
-use super::solver::{Bounded, Solver};
+use super::{Bounded, Solver};
 
 /// Hungarian algorithm solver with pre-allocated working arrays.
 pub struct Hungarian<C, const N: usize> {

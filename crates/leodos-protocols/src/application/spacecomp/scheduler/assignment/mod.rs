@@ -7,6 +7,11 @@
 //! Different algorithms (Hungarian, Jonker-Volgenant, Auction) can implement this
 //! trait, allowing users to swap solvers without changing the rest of their code.
 
+/// Kuhn-Munkres (Hungarian) algorithm.
+pub mod hungarian;
+/// Jonker-Volgenant (LAPJV) algorithm.
+pub mod lapjv;
+
 use heapless::Vec;
 
 /// Solver for the linear sum assignment problem.
