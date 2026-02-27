@@ -1,7 +1,7 @@
 use leodos_protocols::application::spacecomp::job::Job;
-use leodos_protocols::application::spacecomp::roles::coordinator::Coordinator;
-use leodos_protocols::application::spacecomp::roles::coordinator::JobPlan;
-use leodos_protocols::application::spacecomp::roles::coordinator::ReducerPlacement;
+use leodos_protocols::application::spacecomp::plan::Coordinator;
+use leodos_protocols::application::spacecomp::plan::JobPlan;
+use leodos_protocols::application::spacecomp::plan::ReducerPlacement;
 use leodos_protocols::application::spacecomp::packet::AssignCollectorMessage;
 use leodos_protocols::application::spacecomp::packet::AssignMapperMessage;
 use leodos_protocols::application::spacecomp::packet::AssignReducerMessage;

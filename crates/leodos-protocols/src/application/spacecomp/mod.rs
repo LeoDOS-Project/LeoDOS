@@ -7,6 +7,8 @@ pub mod job;
 pub mod roles;
 /// SpaceCoMP wire-format messages.
 pub mod packet;
+/// Job planning: satellite selection, assignment, and cost estimation.
+pub mod plan;
 /// Task-to-satellite assignment algorithms.
 pub mod scheduler;
 /// Zero-copy data schema trait.

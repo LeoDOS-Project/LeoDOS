@@ -51,10 +51,7 @@ pub struct Coordinator {
 impl Coordinator {
     /// Creates a new coordinator for the given orbital shell and reducer strategy.
     pub fn new(shell: Shell, reducer_placement: ReducerPlacement) -> Self {
-        Self {
-            shell,
-            reducer_placement,
-        }
+        Self { shell, reducer_placement }
     }
 
     /// Plans a SpaceCoMP job, producing collector/mapper assignments and
@@ -210,10 +207,7 @@ mod tests {
         let coord = Coordinator::new(shell, ReducerPlacement::CenterOfAoi);
 
         let job = Job::builder()
-            .geo_aoi(GeoAoi::new(
-                LatLon::new(10.0, -5.0),
-                LatLon::new(-10.0, 5.0),
-            ))
+            .geo_aoi(GeoAoi::new(LatLon::new(10.0, -5.0), LatLon::new(-10.0, 5.0)))
             .data_volume_bytes(1_000_000)
             .build();
 
@@ -231,10 +225,7 @@ mod tests {
         let shell = test_shell();
 
         let job = Job::builder()
-            .geo_aoi(GeoAoi::new(
-                LatLon::new(10.0, -5.0),
-                LatLon::new(-10.0, 5.0),
-            ))
+            .geo_aoi(GeoAoi::new(LatLon::new(10.0, -5.0), LatLon::new(-10.0, 5.0)))
             .data_volume_bytes(1_000_000)
             .build();
 
