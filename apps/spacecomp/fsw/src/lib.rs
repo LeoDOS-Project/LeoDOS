@@ -6,12 +6,13 @@ use leodos_libcfs::error::Error;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::Runtime;
-use leodos_protocols::datalink::link::cfs::UdpDataLink;
-use leodos_protocols::application::spacecomp::packet::AssignCollectorPayload;
-use leodos_protocols::application::spacecomp::packet::AssignMapperPayload;
-use leodos_protocols::application::spacecomp::packet::AssignReducerPayload;
+use leodos_protocols::application::spacecomp::packet::AssignCollectorMessage;
+use leodos_protocols::application::spacecomp::packet::AssignMapperMessage;
+use leodos_protocols::application::spacecomp::packet::AssignReducerMessage;
+use leodos_protocols::application::spacecomp::packet::BuildError;
 use leodos_protocols::application::spacecomp::packet::OpCode;
 use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
+use leodos_protocols::datalink::link::cfs::UdpDataLink;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::isl::routing::algorithm::distance_minimizing::DistanceMinimizing;
@@ -28,7 +29,6 @@ use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
 use leodos_protocols::transport::srspp::packet::SrsppDataPacket;
 use leodos_protocols::transport::srspp::rto::FixedRto;
-use zerocopy::FromBytes;
 
 mod bindings {
     #![allow(non_upper_case_globals)]
@@ -42,6 +42,39 @@ pub mod data;
 mod roles;
 
 pub type NodeHandle<'a> = SrsppNodeHandle<'a, LocalLinkError, 8, 4096, 512, 8192, 4>;
+
+pub struct Buffers {
+    pub recv: [u8; 8192],
+    pub msg: [u8; 512],
+    pub payload: [u8; 256],
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SpaceCompError {
+    #[error("failed to parse message")]
+    ParseMessage,
+    #[error("invalid opcode")]
+    InvalidOpCode,
+    #[error("failed to decode payload")]
+    DecodePayload,
+    #[error("failed to plan job: {0}")]
+    Plan(&'static str),
+    #[error("failed to build message: {0}")]
+    Build(#[from] BuildError),
+}
+
+impl SpaceCompError {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ParseMessage => "failed to parse message",
+            Self::InvalidOpCode => "invalid opcode",
+            Self::DecodePayload => "failed to decode payload",
+            Self::Plan(reason) => reason,
+            Self::Build(BuildError::OutOfRange) => "value out of range",
+            Self::Build(BuildError::BufferTooSmall) => "buffer too small",
+        }
+    }
+}
 
 pub const NUM_ORBITS: u8 = bindings::SPACECOMP_NUM_ORBITS as u8;
 pub const NUM_SATS: u8 = bindings::SPACECOMP_NUM_SATS as u8;
@@ -174,74 +207,21 @@ pub extern "C" fn SPACECOMP_AppMain() {
             .build();
 
         let node = SrsppNode::new(sender_config, receiver_config);
-        let (mut handle, mut driver) = node.split(app_link, FixedRto::new(RTO_MS));
+        let (mut channel, mut driver) = node.split(app_link, FixedRto::new(RTO_MS));
+
+        let mut bufs = Buffers {
+            recv: [0u8; 8192],
+            msg: [0u8; 512],
+            payload: [0u8; 256],
+        };
 
         let app_task = async move {
-            let mut recv_buf = [0u8; 8192];
-
             loop {
-                let Ok((_, len)) = handle.recv(&mut recv_buf).await else {
+                let Ok((_, len)) = channel.recv(&mut bufs.recv).await else {
                     break;
                 };
-                let Some(msg) = SpaceCompMessage::parse(&recv_buf[..len]) else {
-                    continue;
-                };
-                let Ok(op_code) = msg.op_code() else {
-                    continue;
-                };
-
-                match op_code {
-                    OpCode::SubmitJob => {
-                        roles::coordinator::run(&mut handle, point, msg.job_id()).await;
-                    }
-                    OpCode::AssignCollector => {
-                        let Some(p) = AssignCollectorPayload::read_from_prefix(msg.payload())
-                            .ok()
-                            .map(|(v, _)| v)
-                        else {
-                            continue;
-                        };
-                        roles::collector::run(
-                            &mut handle,
-                            p.mapper_addr(),
-                            p.partition_id(),
-                            msg.job_id(),
-                        )
-                        .await;
-                    }
-                    OpCode::AssignMapper => {
-                        let Some(p) = AssignMapperPayload::read_from_prefix(msg.payload())
-                            .ok()
-                            .map(|(v, _)| v)
-                        else {
-                            continue;
-                        };
-
-                        roles::mapper::run(
-                            &mut handle,
-                            p.reducer_addr(),
-                            msg.job_id(),
-                            p.collector_count(),
-                        )
-                        .await;
-                    }
-                    OpCode::AssignReducer => {
-                        let Some(p) = AssignReducerPayload::read_from_prefix(msg.payload())
-                            .ok()
-                            .map(|(v, _)| v)
-                        else {
-                            continue;
-                        };
-
-                        roles::reducer::run(
-                            &mut handle,
-                            p.los_addr(),
-                            msg.job_id(),
-                            p.mapper_count(),
-                        )
-                        .await;
-                    }
-                    _ => {}
+                if let Err(e) = handle(&mut channel, &mut bufs, point, len).await {
+                    event::error(0, e.as_str()).ok();
                 }
             }
         };
@@ -250,6 +230,38 @@ pub extern "C" fn SPACECOMP_AppMain() {
 
         Ok(())
     });
+}
+
+async fn handle(
+    channel: &mut NodeHandle<'_>,
+    bufs: &mut Buffers,
+    point: Point,
+    len: usize,
+) -> Result<(), SpaceCompError> {
+    let msg = SpaceCompMessage::parse(&bufs.recv[..len]).ok_or(SpaceCompError::ParseMessage)?;
+    let op_code = msg.op_code().map_err(|()| SpaceCompError::InvalidOpCode)?;
+
+    match op_code {
+        OpCode::SubmitJob => {
+            let job_id = msg.job_id();
+            roles::coordinator::run(channel, bufs, point, job_id).await?
+        }
+        OpCode::AssignCollector => {
+            let m = AssignCollectorMessage::parse(msg).ok_or(SpaceCompError::DecodePayload)?;
+            roles::collector::run(channel, bufs, m).await?
+        }
+        OpCode::AssignMapper => {
+            let m = AssignMapperMessage::parse(msg).ok_or(SpaceCompError::DecodePayload)?;
+            roles::mapper::run(channel, bufs, m).await?
+        }
+        OpCode::AssignReducer => {
+            let m = AssignReducerMessage::parse(msg).ok_or(SpaceCompError::DecodePayload)?;
+            roles::reducer::run(channel, bufs, m).await?
+        }
+        _ => {}
+    }
+
+    Ok(())
 }
 
 #[cfg(not(test))]

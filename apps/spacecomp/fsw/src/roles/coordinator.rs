@@ -1,43 +1,48 @@
 use leodos_protocols::application::spacecomp::job::Job;
-use leodos_protocols::application::spacecomp::mapreduce::proxy::{
-    Coordinator, JobPlan, ReducerPlacement,
-};
-use leodos_protocols::application::spacecomp::packet::{
-    AssignCollectorPayload, AssignMapperPayload, AssignReducerPayload, OpCode, SpaceCompMessage,
-};
+use leodos_protocols::application::spacecomp::mapreduce::proxy::Coordinator;
+use leodos_protocols::application::spacecomp::mapreduce::proxy::JobPlan;
+use leodos_protocols::application::spacecomp::mapreduce::proxy::ReducerPlacement;
+use leodos_protocols::application::spacecomp::packet::AssignCollectorMessage;
+use leodos_protocols::application::spacecomp::packet::AssignMapperMessage;
+use leodos_protocols::application::spacecomp::packet::AssignReducerMessage;
+use leodos_protocols::application::spacecomp::packet::OpCode;
+use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::network::isl::address::Address;
-use leodos_protocols::network::isl::geo::{GeoAoi, LatLon};
+use leodos_protocols::network::isl::geo::GeoAoi;
+use leodos_protocols::network::isl::geo::LatLon;
 use leodos_protocols::network::isl::shell::Shell;
-use leodos_protocols::network::isl::torus::{Point, Torus};
-use zerocopy::IntoBytes;
+use leodos_protocols::network::isl::torus::Point;
+use leodos_protocols::network::isl::torus::Torus;
 
+use crate::Buffers;
 use crate::NodeHandle;
+use crate::SpaceCompError;
 use crate::{NUM_ORBITS, NUM_SATS};
 
 const MAX_SATELLITES: usize = 64;
 const ALTITUDE_M: f32 = 550_000.0;
 const INCLINATION_DEG: f32 = 87.0;
-const MSG_BUF_SIZE: usize = 512;
 
-pub async fn run(handle: &mut NodeHandle<'_>, local_node: Point, job_id: u16) {
-    let plan = match plan(local_node) {
-        Ok(p) => p,
-        Err(_) => return,
-    };
+pub async fn run(
+    handle: &mut NodeHandle<'_>,
+    bufs: &mut Buffers,
+    local_node: Point,
+    job_id: u16,
+) -> Result<(), SpaceCompError> {
+    let plan = plan(local_node).map_err(SpaceCompError::Plan)?;
 
     let local_address = Address::from(local_node);
-    send_assignments(handle, &plan, local_address, job_id).await;
+    send_assignments(handle, bufs, &plan, local_address, job_id).await?;
 
-    let mut recv_buf = [0u8; 8192];
     loop {
-        let Ok((_, len)) = handle.recv(&mut recv_buf).await else {
-            return;
+        let Ok((_, len)) = handle.recv(&mut bufs.recv).await else {
+            return Ok(());
         };
-        let Some(msg) = SpaceCompMessage::parse(&recv_buf[..len]) else {
+        let Some(msg) = SpaceCompMessage::parse(&bufs.recv[..len]) else {
             continue;
         };
         if msg.op_code() == Ok(OpCode::JobResult) && msg.job_id() == job_id {
-            return;
+            return Ok(());
         }
     }
 }
@@ -60,63 +65,46 @@ fn plan(local_node: Point) -> Result<JobPlan<MAX_SATELLITES>, &'static str> {
 
 async fn send_assignments(
     handle: &mut NodeHandle<'_>,
+    bufs: &mut Buffers,
     plan: &JobPlan<MAX_SATELLITES>,
     local_address: Address,
     job_id: u16,
-) {
-    let mut msg_buf = [0u8; MSG_BUF_SIZE];
-
+) -> Result<(), SpaceCompError> {
     for (i, collector_pos) in plan.collectors.iter().enumerate() {
         let mapper_idx = plan.assignment[i];
         let mapper_pos = plan.mappers[mapper_idx];
 
-        let payload = AssignCollectorPayload::builder()
-            .mapper_addr(Address::from(mapper_pos))
-            .partition_id(i as u8)
-            .build();
         let target = Address::from(*collector_pos);
-        if let Some(msg) = SpaceCompMessage::builder()
-            .buffer(&mut msg_buf)
-            .op_code(OpCode::AssignCollector)
+        let msg = AssignCollectorMessage::builder()
+            .buffer(&mut bufs.msg)
             .job_id(job_id)
-            .payload(payload.as_bytes())
-            .build()
-        {
-            handle.send(target, msg.as_bytes()).await.ok();
-        }
+            .mapper_addr(Address::from(mapper_pos))
+            .partition_id(i)
+            .build()?;
+        handle.send(target, msg.as_bytes()).await.ok();
     }
 
     for (j, mapper_pos) in plan.mappers.iter().enumerate() {
         let collector_count = plan.assignment.iter().filter(|&&a| a == j).count();
 
-        let payload = AssignMapperPayload::builder()
-            .reducer_addr(Address::from(plan.reducer))
-            .collector_count(collector_count as u8)
-            .build();
         let target = Address::from(*mapper_pos);
-        if let Some(msg) = SpaceCompMessage::builder()
-            .buffer(&mut msg_buf)
-            .op_code(OpCode::AssignMapper)
+        let msg = AssignMapperMessage::builder()
+            .buffer(&mut bufs.msg)
             .job_id(job_id)
-            .payload(payload.as_bytes())
-            .build()
-        {
-            handle.send(target, msg.as_bytes()).await.ok();
-        }
-    }
-
-    let payload = AssignReducerPayload::builder()
-        .los_addr(local_address)
-        .mapper_count(plan.mappers.len() as u8)
-        .build();
-    let target = Address::from(plan.reducer);
-    if let Some(msg) = SpaceCompMessage::builder()
-        .buffer(&mut msg_buf)
-        .op_code(OpCode::AssignReducer)
-        .job_id(job_id)
-        .payload(payload.as_bytes())
-        .build()
-    {
+            .reducer_addr(Address::from(plan.reducer))
+            .collector_count(collector_count)
+            .build()?;
         handle.send(target, msg.as_bytes()).await.ok();
     }
+
+    let target = Address::from(plan.reducer);
+    let msg = AssignReducerMessage::builder()
+        .buffer(&mut bufs.msg)
+        .job_id(job_id)
+        .los_addr(local_address)
+        .mapper_count(plan.mappers.len())
+        .build()?;
+    handle.send(target, msg.as_bytes()).await.ok();
+
+    Ok(())
 }

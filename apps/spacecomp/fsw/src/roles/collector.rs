@@ -1,38 +1,32 @@
-use leodos_protocols::application::spacecomp::packet::{OpCode, SpaceCompMessage};
-use leodos_protocols::network::isl::address::Address;
+use leodos_protocols::application::spacecomp::packet::{
+    AssignCollectorMessage, OpCode, SpaceCompMessage,
+};
 
 use crate::data;
+use crate::Buffers;
+use crate::SpaceCompError;
 use crate::NodeHandle;
 
 const MAX_CHUNK: usize = 256;
-const MSG_BUF_SIZE: usize = 512;
 
 pub async fn run(
     handle: &mut NodeHandle<'_>,
-    mapper_addr: Address,
-    partition_id: u8,
-    job_id: u16,
-) {
-    let total_partitions = crate::NUM_SATS;
-    let (chunk, chunk_len) = data::partition_text(partition_id, total_partitions);
+    bufs: &mut Buffers,
+    assign: AssignCollectorMessage,
+) -> Result<(), SpaceCompError> {
+    let partition = data::partition_text(assign.partition_id, crate::NUM_SATS);
 
-    if chunk_len == 0 {
-        return;
-    }
-
-    let mut msg_buf = [0u8; MSG_BUF_SIZE];
-    let mut offset = 0;
-    while offset < chunk_len {
-        let end = (offset + MAX_CHUNK).min(chunk_len);
+    for chunk in partition.chunks(MAX_CHUNK) {
         if let Some(msg) = SpaceCompMessage::builder()
-            .buffer(&mut msg_buf)
+            .buffer(&mut bufs.msg)
             .op_code(OpCode::DataChunk)
-            .job_id(job_id)
-            .payload(&chunk[offset..end])
+            .job_id(assign.job_id)
+            .payload(chunk)
             .build()
         {
-            handle.send(mapper_addr, msg.as_bytes()).await.ok();
+            handle.send(assign.mapper_addr, msg.as_bytes()).await.ok();
         }
-        offset = end;
     }
+
+    Ok(())
 }

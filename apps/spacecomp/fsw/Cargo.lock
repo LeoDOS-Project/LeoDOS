@@ -491,6 +491,7 @@ dependencies = [
  "heapless",
  "leodos-libcfs",
  "leodos-protocols",
+ "thiserror",
  "zerocopy",
 ]
 
