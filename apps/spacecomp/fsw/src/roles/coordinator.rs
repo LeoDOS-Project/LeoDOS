@@ -1,5 +1,5 @@
 use leodos_protocols::application::spacecomp::job::Job;
-use leodos_protocols::application::spacecomp::plan::Coordinator;
+use leodos_protocols::application::spacecomp::plan;
 use leodos_protocols::application::spacecomp::plan::JobPlan;
 use leodos_protocols::application::spacecomp::plan::ReducerPlacement;
 use leodos_protocols::application::spacecomp::packet::AssignCollectorMessage;
@@ -49,7 +49,7 @@ fn plan(local_point: Point) -> Result<JobPlan<MAX_SATELLITES>, &'static str> {
         .data_volume_bytes(1024)
         .build();
 
-    Coordinator::new(SHELL, ReducerPlacement::CenterOfAoi).plan(&job, local_point)
+    plan::plan(SHELL, ReducerPlacement::CenterOfAoi, &job, local_point)
 }
 
 async fn send_assignments(
