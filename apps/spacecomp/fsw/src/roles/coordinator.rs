@@ -1,7 +1,7 @@
 use leodos_protocols::application::spacecomp::job::Job;
-use leodos_protocols::application::spacecomp::mapreduce::proxy::Coordinator;
-use leodos_protocols::application::spacecomp::mapreduce::proxy::JobPlan;
-use leodos_protocols::application::spacecomp::mapreduce::proxy::ReducerPlacement;
+use leodos_protocols::application::spacecomp::roles::coordinator::Coordinator;
+use leodos_protocols::application::spacecomp::roles::coordinator::JobPlan;
+use leodos_protocols::application::spacecomp::roles::coordinator::ReducerPlacement;
 use leodos_protocols::application::spacecomp::packet::AssignCollectorMessage;
 use leodos_protocols::application::spacecomp::packet::AssignMapperMessage;
 use leodos_protocols::application::spacecomp::packet::AssignReducerMessage;
@@ -10,29 +10,22 @@ use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::geo::GeoAoi;
 use leodos_protocols::network::isl::geo::LatLon;
-use leodos_protocols::network::isl::shell::Shell;
 use leodos_protocols::network::isl::torus::Point;
-use leodos_protocols::network::isl::torus::Torus;
 
 use crate::Buffers;
 use crate::NodeHandle;
 use crate::SpaceCompError;
-use crate::{NUM_ORBITS, NUM_SATS};
-
-const MAX_SATELLITES: usize = 64;
-const ALTITUDE_M: f32 = 550_000.0;
-const INCLINATION_DEG: f32 = 87.0;
+use crate::MAX_SATELLITES;
+use crate::SHELL;
 
 pub async fn run(
     handle: &mut NodeHandle<'_>,
     bufs: &mut Buffers,
-    local_node: Point,
+    local_point: Point,
     job_id: u16,
 ) -> Result<(), SpaceCompError> {
-    let plan = plan(local_node).map_err(SpaceCompError::Plan)?;
-
-    let local_address = Address::from(local_node);
-    send_assignments(handle, bufs, &plan, local_address, job_id).await?;
+    let plan = plan(local_point).map_err(SpaceCompError::Plan)?;
+    send_assignments(handle, bufs, &plan, local_point, job_id).await?;
 
     loop {
         let Ok((_, len)) = handle.recv(&mut bufs.recv).await else {
@@ -47,10 +40,7 @@ pub async fn run(
     }
 }
 
-fn plan(local_node: Point) -> Result<JobPlan<MAX_SATELLITES>, &'static str> {
-    let torus = Torus::new(NUM_ORBITS, NUM_SATS);
-    let shell = Shell::new(torus, ALTITUDE_M, INCLINATION_DEG);
-
+fn plan(local_point: Point) -> Result<JobPlan<MAX_SATELLITES>, &'static str> {
     let job = Job::builder()
         .geo_aoi(GeoAoi::new(
             LatLon::new(55.0, 10.0),
@@ -59,17 +49,17 @@ fn plan(local_node: Point) -> Result<JobPlan<MAX_SATELLITES>, &'static str> {
         .data_volume_bytes(1024)
         .build();
 
-    let coordinator = Coordinator::new(shell, ReducerPlacement::CenterOfAoi);
-    coordinator.plan(&job, local_node)
+    Coordinator::new(SHELL, ReducerPlacement::CenterOfAoi).plan(&job, local_point)
 }
 
 async fn send_assignments(
     handle: &mut NodeHandle<'_>,
     bufs: &mut Buffers,
     plan: &JobPlan<MAX_SATELLITES>,
-    local_address: Address,
+    local_point: Point,
     job_id: u16,
 ) -> Result<(), SpaceCompError> {
+    let local_address = Address::from(local_point);
     for (i, collector_pos) in plan.collectors.iter().enumerate() {
         let mapper_idx = plan.assignment[i];
         let mapper_pos = plan.mappers[mapper_idx];
