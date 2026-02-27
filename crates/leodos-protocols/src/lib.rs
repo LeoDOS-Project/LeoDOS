@@ -2,12 +2,17 @@
 #![allow(unexpected_cfgs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
-#![warn(missing_docs)]
-// TODO: work toward #![deny(missing_docs)] — ~1045 items remain
+#![deny(missing_docs)]
 
+/// Channel coding, CRC, randomization, and physical layer protocols.
 pub mod coding;
+/// Data link layer framing and transfer frame protocols.
 pub mod datalink;
+/// Application layer protocols and services.
 pub mod application;
+/// Network layer protocols including Space Packet and ISL routing.
 pub mod network;
+/// Transport layer protocols.
 pub mod transport;
+/// Shared bitfield and checksum utilities.
 pub mod utils;
