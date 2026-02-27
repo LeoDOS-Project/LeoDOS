@@ -986,7 +986,7 @@ impl<
     /// Sends data to the given target, waiting for buffer space.
     pub async fn send(
         &mut self,
-        target: Address,
+        target: impl Into<Address>,
         data: &(impl IntoBytes + Immutable + ?Sized),
     ) -> Result<(), Error<E>> {
         let data = data.as_bytes();
@@ -1009,7 +1009,13 @@ impl<
             let SenderState {
                 machine, actions, ..
             } = &mut *state;
-            machine.handle(SenderEvent::SendRequest { target, data }, actions)?;
+            machine.handle(
+                SenderEvent::SendRequest {
+                    target: target.into(),
+                    data,
+                },
+                actions,
+            )?;
         }
         Ok(())
     }
