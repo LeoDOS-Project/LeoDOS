@@ -35,11 +35,16 @@ use crate::transport::srspp::rto::RtoPolicy;
 // Error type
 // ============================================================================
 
+/// Errors from the SRSPP CFS transport layer.
 #[derive(Debug, Clone)]
 pub enum Error<E> {
+    /// The sender state machine reported an error.
     Sender(SenderError),
+    /// The receiver state machine reported an error.
     Receiver(ReceiverError),
+    /// The underlying network link failed.
     Link(E),
+    /// A packet could not be built or parsed.
     Packet(packet::SrsppPacketError),
 }
 
@@ -131,6 +136,7 @@ pub struct SrsppSender<E, const WIN: usize = 8, const BUF: usize = 4096, const M
 }
 
 impl<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize> SrsppSender<E, WIN, BUF, MTU> {
+    /// Creates a new sender with the given configuration.
     pub fn new(config: SenderConfig) -> Self {
         Self {
             state: RefCell::new(SenderState {
@@ -143,6 +149,7 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize> SrsppSender
         }
     }
 
+    /// Splits into a handle for sending and a driver for I/O.
     pub fn split<L: NetworkLayer<Error = E>, P: RtoPolicy>(
         &self,
         link: L,
@@ -478,6 +485,7 @@ pub struct SrsppReceiver<
 impl<E: Clone, const WIN: usize, const BUF: usize, const REASM: usize, const MAX_STREAMS: usize>
     SrsppReceiver<E, WIN, BUF, REASM, MAX_STREAMS>
 {
+    /// Creates a new multi-stream receiver.
     pub fn new(config: ReceiverConfig) -> Self {
         let ack_delay = Duration::from_millis(config.ack_delay_ticks);
         Self {
@@ -492,6 +500,7 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const REASM: usize, const MAX
         }
     }
 
+    /// Splits into a handle for receiving and a driver for I/O.
     pub fn split<L: NetworkLayer<Error = E>, const MTU: usize>(
         &self,
         link: L,
@@ -877,6 +886,7 @@ impl<'a, E: Clone, const WIN: usize, const BUF: usize, const REASM: usize, const
 // SrsppNode — combined sender + receiver over a single link
 // ============================================================================
 
+/// Combined SRSPP sender and receiver over a single link.
 pub struct SrsppNode<
     E,
     const WIN: usize = 8,
@@ -898,6 +908,7 @@ impl<
     const MAX_STREAMS: usize,
 > SrsppNode<E, WIN, BUF, MTU, REASM, MAX_STREAMS>
 {
+    /// Creates a new node with sender and receiver configurations.
     pub fn new(sender_config: SenderConfig, receiver_config: ReceiverConfig) -> Self {
         let ack_delay = Duration::from_millis(receiver_config.ack_delay_ticks);
         Self {
@@ -919,6 +930,7 @@ impl<
         }
     }
 
+    /// Splits into a handle for send/recv and a driver for I/O.
     pub fn split<L: NetworkLayer<Error = E>, P: RtoPolicy>(
         &self,
         link: L,
@@ -941,6 +953,7 @@ impl<
     }
 }
 
+/// Application handle for sending and receiving over an SRSPP node.
 pub struct SrsppNodeHandle<
     'a,
     E,
@@ -963,6 +976,7 @@ impl<
     const MAX_STREAMS: usize,
 > SrsppNodeHandle<'a, E, WIN, BUF, MTU, REASM, MAX_STREAMS>
 {
+    /// Sends data to the given target, waiting for buffer space.
     pub async fn send(&mut self, target: Address, data: &[u8]) -> Result<(), Error<E>> {
         poll_fn(|_cx| {
             let state = self.node.sender.borrow();
@@ -988,6 +1002,7 @@ impl<
         Ok(())
     }
 
+    /// Receives the next message, returning source address and length.
     pub async fn recv(&mut self, buf: &mut [u8]) -> Result<(Address, usize), Error<E>> {
         poll_fn(|_cx| {
             let mut state = self.node.receiver.borrow_mut();
@@ -1007,6 +1022,7 @@ impl<
     }
 }
 
+/// I/O driver for a combined SRSPP sender/receiver node.
 pub struct SrsppNodeDriver<
     'a,
     L: NetworkLayer,
@@ -1039,6 +1055,7 @@ impl<
 where
     L::Error: Clone,
 {
+    /// Runs the combined send/receive I/O loop.
     pub async fn run(&mut self) -> Result<(), Error<L::Error>> {
         loop {
             self.process_sender_transmits().await?;

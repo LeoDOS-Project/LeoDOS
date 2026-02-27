@@ -8,10 +8,18 @@ use leodos_libcfs::os::net::UdpSocket;
 use super::FrameReceiver;
 use super::FrameSender;
 
+/// Errors from CFS data link operations.
 #[derive(Debug, Clone)]
 pub enum CfsLinkError {
+    /// An error from the CFS runtime.
     Cfs(CfsError),
-    BufferTooSmall { required: usize, available: usize },
+    /// The provided buffer is too small.
+    BufferTooSmall {
+        /// Minimum number of bytes needed.
+        required: usize,
+        /// Actual buffer size available.
+        available: usize,
+    },
 }
 
 impl core::fmt::Display for CfsLinkError {
@@ -33,12 +41,14 @@ impl From<CfsError> for CfsLinkError {
     }
 }
 
+/// Sends frames over UDP.
 pub struct UdpFrameSender<'a> {
     socket: &'a UdpSocket,
     target: SocketAddr,
 }
 
 impl<'a> UdpFrameSender<'a> {
+    /// Creates a new sender targeting the given address.
     pub fn new(socket: &'a UdpSocket, target: SocketAddr) -> Self {
         Self { socket, target }
     }
@@ -53,11 +63,13 @@ impl FrameSender for UdpFrameSender<'_> {
     }
 }
 
+/// Receives frames over UDP.
 pub struct UdpFrameReceiver<'a> {
     socket: &'a UdpSocket,
 }
 
 impl<'a> UdpFrameReceiver<'a> {
+    /// Creates a new receiver on the given socket.
     pub fn new(socket: &'a UdpSocket) -> Self {
         Self { socket }
     }
@@ -72,11 +84,13 @@ impl FrameReceiver for UdpFrameReceiver<'_> {
     }
 }
 
+/// Sends frames over a CFS software bus pipe.
 pub struct PipeFrameSender {
     msg_id: MsgId,
 }
 
 impl PipeFrameSender {
+    /// Creates a new sender with the given message ID.
     pub fn new(msg_id: MsgId) -> Self {
         Self { msg_id }
     }
@@ -103,12 +117,14 @@ impl FrameSender for PipeFrameSender {
     }
 }
 
+/// Receives frames from a CFS software bus pipe.
 pub struct PipeFrameReceiver<'a> {
     pipe: &'a mut Pipe,
     header_size: usize,
 }
 
 impl<'a> PipeFrameReceiver<'a> {
+    /// Creates a new receiver on the given pipe.
     pub fn new(pipe: &'a mut Pipe) -> Self {
         Self {
             pipe,
@@ -116,6 +132,7 @@ impl<'a> PipeFrameReceiver<'a> {
         }
     }
 
+    /// Sets a custom header size to skip when receiving.
     pub fn with_header_size(mut self, size: usize) -> Self {
         self.header_size = size;
         self
@@ -146,16 +163,19 @@ impl FrameReceiver for PipeFrameReceiver<'_> {
     }
 }
 
+/// A bidirectional UDP data link.
 pub struct UdpDataLink {
     socket: UdpSocket,
     remote: SocketAddr,
 }
 
 impl UdpDataLink {
+    /// Creates a new data link from an existing socket and remote address.
     pub fn new(socket: UdpSocket, remote: SocketAddr) -> Self {
         Self { socket, remote }
     }
 
+    /// Binds a local socket and creates a data link to the remote address.
     pub fn bind(local: SocketAddr, remote: SocketAddr) -> Result<Self, CfsError> {
         let socket = UdpSocket::bind(local)?;
         Ok(Self { socket, remote })
