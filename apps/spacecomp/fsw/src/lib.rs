@@ -20,6 +20,7 @@ use leodos_protocols::network::isl::routing::algorithm::distance_minimizing::Dis
 use leodos_protocols::network::isl::routing::local::LocalChannel;
 use leodos_protocols::network::isl::routing::local::LocalLinkError;
 use leodos_protocols::network::isl::routing::Router;
+use leodos_protocols::network::isl::shell::Shell;
 use leodos_protocols::network::isl::torus::Direction;
 use leodos_protocols::network::isl::torus::Point;
 use leodos_protocols::network::isl::torus::Torus;
@@ -70,13 +71,20 @@ impl SpaceCompError {
     }
 }
 
-pub const NUM_ORBITS: u8 = bindings::SPACECOMP_NUM_ORBITS as u8;
-pub const NUM_SATS: u8 = bindings::SPACECOMP_NUM_SATS as u8;
-pub const INCLINATION_RAD: f32 = 87.0 * (core::f32::consts::PI / 180.0);
+const NUM_ORBITS: u8 = bindings::SPACECOMP_NUM_ORBITS as u8;
+const NUM_SATS: u8 = bindings::SPACECOMP_NUM_SATS as u8;
+const INCLINATION_RAD: f32 = INCLINATION_DEG * (core::f32::consts::PI / 180.0);
+
+const MAX_SATELLITES: usize = 64;
+const ALTITUDE_M: f32 = 550_000.0;
+const INCLINATION_DEG: f32 = 87.0;
 
 const APID: u16 = bindings::SPACECOMP_APID as u16;
 const PORT_BASE: u16 = 6000;
 const RTO_MS: u32 = 1000;
+
+pub const TORUS: Torus = Torus::new(NUM_ORBITS, NUM_SATS);
+pub const SHELL: Shell = Shell::new(TORUS, ALTITUDE_M, INCLINATION_DEG);
 
 const LOCALHOST: &str = "127.0.0.1";
 
@@ -133,11 +141,10 @@ pub extern "C" fn SPACECOMP_AppMain() {
             return Ok(());
         };
 
-        let torus = Torus::new(NUM_ORBITS, NUM_SATS);
-        let north_point = torus.neighbor(point, Direction::North);
-        let south_point = torus.neighbor(point, Direction::South);
-        let east_point = torus.neighbor(point, Direction::East);
-        let west_point = torus.neighbor(point, Direction::West);
+        let north_point = TORUS.neighbor(point, Direction::North);
+        let south_point = TORUS.neighbor(point, Direction::South);
+        let east_point = TORUS.neighbor(point, Direction::East);
+        let west_point = TORUS.neighbor(point, Direction::West);
 
         let north_link = local_link(
             send_port(point, Direction::North),
@@ -173,7 +180,7 @@ pub extern "C" fn SPACECOMP_AppMain() {
             .ground(ground_link)
             .local(router_link)
             .address(address)
-            .torus(torus)
+            .torus(TORUS)
             .algorithm(algorithm)
             .build();
 

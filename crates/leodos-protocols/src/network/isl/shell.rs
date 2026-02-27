@@ -31,7 +31,7 @@ pub struct Shell {
 
 impl Shell {
     /// Creates a new shell from topology, altitude, and inclination (in degrees).
-    pub fn new(torus: Torus, altitude_m: f32, inclination_deg: f32) -> Self {
+    pub const fn new(torus: Torus, altitude_m: f32, inclination_deg: f32) -> Self {
         Self {
             torus,
             altitude_m,

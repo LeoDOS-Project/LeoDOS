@@ -1,4 +1,4 @@
-/// A generic point on a 2D grid, with x and y coordinates.
+/// A point on a 2D grid.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Point {
     /// Orbital plane index.
@@ -42,7 +42,7 @@ pub struct Torus {
 
 impl Torus {
     /// Creates a new torus with the given dimensions.
-    pub fn new(num_orbs: u8, num_sats: u8) -> Self {
+    pub const fn new(num_orbs: u8, num_sats: u8) -> Self {
         Self { num_orbs, num_sats }
     }
 
