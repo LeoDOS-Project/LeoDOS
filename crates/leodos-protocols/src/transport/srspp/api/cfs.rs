@@ -2,6 +2,8 @@ use core::cell::RefCell;
 use core::future::poll_fn;
 use core::task::Poll;
 
+use zerocopy::{Immutable, IntoBytes};
+
 use leodos_libcfs::cfe::duration::Duration;
 use leodos_libcfs::cfe::time::SysTime;
 use leodos_libcfs::runtime::select_either::Either;
@@ -180,7 +182,12 @@ impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
     SrsppSenderHandle<'a, E, WIN, BUF, MTU>
 {
     /// Send data, waiting for buffer space if needed.
-    pub async fn send(&mut self, target: Address, data: &[u8]) -> Result<(), Error<E>> {
+    pub async fn send(
+        &mut self,
+        target: Address,
+        data: &(impl IntoBytes + Immutable + ?Sized),
+    ) -> Result<(), Error<E>> {
+        let data = data.as_bytes();
         poll_fn(|_cx| {
             let state = self.channel.state.borrow();
 
@@ -977,7 +984,12 @@ impl<
 > SrsppNodeHandle<'a, E, WIN, BUF, MTU, REASM, MAX_STREAMS>
 {
     /// Sends data to the given target, waiting for buffer space.
-    pub async fn send(&mut self, target: Address, data: &[u8]) -> Result<(), Error<E>> {
+    pub async fn send(
+        &mut self,
+        target: Address,
+        data: &(impl IntoBytes + Immutable + ?Sized),
+    ) -> Result<(), Error<E>> {
+        let data = data.as_bytes();
         poll_fn(|_cx| {
             let state = self.node.sender.borrow();
             if let Some(ref e) = state.error {

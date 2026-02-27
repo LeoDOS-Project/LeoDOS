@@ -80,7 +80,7 @@ async fn emit(
                 .job_id(job_id)
                 .payload(&bufs.payload[..payload_len])
                 .build()?;
-            handle.send(los_addr, msg.as_bytes()).await.ok();
+            handle.send(los_addr, msg).await.ok();
             idx = 0;
         }
     }
@@ -93,7 +93,7 @@ async fn emit(
             .job_id(job_id)
             .payload(&bufs.payload[..payload_len])
             .build()?;
-        handle.send(los_addr, msg.as_bytes()).await.ok();
+        handle.send(los_addr, msg).await.ok();
     }
 
     Ok(())

@@ -26,6 +26,8 @@
 //! }
 //! ```
 
+use zerocopy::{Immutable, IntoBytes};
+
 use crate::network::NetworkLayer;
 use crate::network::isl::address::Address;
 use crate::network::spp::Apid;
@@ -136,7 +138,8 @@ impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MT
     /// This returns when all packets have been transmitted (but not necessarily ACKed).
     ///
     /// For guaranteed delivery, call `flush()` after sending.
-    pub async fn send(&mut self, target: Address, data: &[u8]) -> Result<(), SrsppError> {
+    pub async fn send(&mut self, target: Address, data: &(impl IntoBytes + Immutable + ?Sized)) -> Result<(), SrsppError> {
+        let data = data.as_bytes();
         self.machine
             .handle(SenderEvent::SendRequest { target, data }, &mut self.actions)?;
 

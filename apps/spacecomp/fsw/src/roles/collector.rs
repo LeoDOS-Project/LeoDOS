@@ -23,7 +23,7 @@ pub async fn run(
             .job_id(assign.job_id)
             .payload(chunk)
             .build()?;
-        handle.send(assign.mapper_addr, msg.as_bytes()).await.ok();
+        handle.send(assign.mapper_addr, msg).await.ok();
     }
 
     Ok(())
