@@ -44,7 +44,7 @@ mod bindings {
 pub mod data;
 mod roles;
 
-pub type RxHandle<'a> = SrsppRxHandle<'a, LocalLinkError, 8, 4096, 512, 8192, 4>;
+pub type RxHandle<'a> = SrsppRxHandle<'a, LocalLinkError, 8, 4096, 8192, 4>;
 pub type TxHandle<'a> = SrsppTxHandle<'a, LocalLinkError, 8, 4096, 512>;
 
 pub struct Buffers {

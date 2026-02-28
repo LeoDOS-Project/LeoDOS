@@ -112,7 +112,7 @@ fn tx_config() -> SenderConfig {
 }
 
 async fn echo_loop<'a>(
-    rx_handle: &mut leodos_protocols::transport::srspp::api::cfs::SrsppReceiverHandle<
+    rx_handle: &mut leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle<
         'a,
         Error,
         WIN,
@@ -120,7 +120,7 @@ async fn echo_loop<'a>(
         REASM,
         MAX_STREAMS,
     >,
-    tx_handle: &mut leodos_protocols::transport::srspp::api::cfs::SrsppSenderHandle<
+    tx_handle: &mut leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle<
         'a,
         Error,
         WIN,

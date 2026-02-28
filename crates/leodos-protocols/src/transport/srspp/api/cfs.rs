@@ -1,3 +1,4 @@
+use core::cell::Ref;
 use core::cell::RefCell;
 use core::future::poll_fn;
 use core::task::Poll;
@@ -161,11 +162,11 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize> SrsppSender
         link: L,
         rto_policy: P,
     ) -> (
-        SrsppSenderHandle<'_, E, WIN, BUF, MTU>,
+        SrsppTxHandle<'_, E, WIN, BUF, MTU>,
         SrsppSenderDriver<'_, L, P, WIN, BUF, MTU>,
     ) {
         (
-            SrsppSenderHandle { channel: self },
+            SrsppTxHandle { sender: &self.state },
             SrsppSenderDriver {
                 link,
                 rto_policy,
@@ -174,69 +175,6 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize> SrsppSender
                 tx_buffer: [0u8; MTU],
             },
         )
-    }
-}
-
-/// Handle for sending data. Used by the application.
-pub struct SrsppSenderHandle<'a, E, const WIN: usize, const BUF: usize, const MTU: usize> {
-    channel: &'a SrsppSender<E, WIN, BUF, MTU>,
-}
-
-impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
-    SrsppSenderHandle<'a, E, WIN, BUF, MTU>
-{
-    /// Send data, waiting for buffer space if needed.
-    pub async fn send(
-        &mut self,
-        target: Address,
-        data: &(impl IntoBytes + Immutable + ?Sized),
-    ) -> Result<(), Error<E>> {
-        let data = data.as_bytes();
-        poll_fn(|_cx| {
-            let state = self.channel.state.borrow();
-
-            if let Some(ref e) = state.error {
-                return Poll::Ready(Err(e.clone()));
-            }
-
-            if state.machine.available_bytes() >= data.len() && state.machine.available_window() > 0
-            {
-                Poll::Ready(Ok(()))
-            } else {
-                Poll::Pending
-            }
-        })
-        .await?;
-
-        {
-            let mut state = self.channel.state.borrow_mut();
-            let SenderState {
-                machine, actions, ..
-            } = &mut *state;
-            machine.handle(SenderEvent::SendRequest { target, data }, actions)?;
-        }
-        Ok(())
-    }
-
-    /// Signal that no more data will be sent.
-    /// Driver will exit once all pending data is acknowledged.
-    pub fn close(&mut self) {
-        self.channel.state.borrow_mut().closed = true;
-    }
-
-    /// Check available buffer space in bytes.
-    pub fn available_bytes(&self) -> usize {
-        self.channel.state.borrow().machine.available_bytes()
-    }
-
-    /// Check available window slots.
-    pub fn available_window(&self) -> usize {
-        self.channel.state.borrow().machine.available_window()
-    }
-
-    /// Check if all data has been acknowledged.
-    pub fn is_idle(&self) -> bool {
-        self.channel.state.borrow().machine.is_idle()
     }
 }
 
@@ -513,11 +451,11 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const REASM: usize, const MAX
         &self,
         link: L,
     ) -> (
-        SrsppReceiverHandle<'_, E, WIN, BUF, REASM, MAX_STREAMS>,
+        SrsppRxHandle<'_, E, WIN, BUF, REASM, MAX_STREAMS>,
         SrsppReceiverDriver<'_, L, WIN, BUF, MTU, REASM, MAX_STREAMS>,
     ) {
         (
-            SrsppReceiverHandle { channel: self },
+            SrsppRxHandle { receiver: &self.state },
             SrsppReceiverDriver {
                 link,
                 channel: self,
@@ -525,62 +463,6 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const REASM: usize, const MAX
                 ack_buffer: [0u8; 32],
             },
         )
-    }
-}
-
-/// Handle for receiving data. Used by the application.
-pub struct SrsppReceiverHandle<
-    'a,
-    E,
-    const WIN: usize,
-    const BUF: usize,
-    const REASM: usize,
-    const MAX_STREAMS: usize,
-> {
-    channel: &'a SrsppReceiver<E, WIN, BUF, REASM, MAX_STREAMS>,
-}
-
-impl<'a, E: Clone, const WIN: usize, const BUF: usize, const REASM: usize, const MAX_STREAMS: usize>
-    SrsppReceiverHandle<'a, E, WIN, BUF, REASM, MAX_STREAMS>
-{
-    /// Receive next message from any sender, waiting if none available.
-    /// Returns `(source_address, bytes_written)`.
-    pub async fn recv(&mut self, buf: &mut [u8]) -> Result<(Address, usize), Error<E>> {
-        poll_fn(|_cx| {
-            let mut state = self.channel.state.borrow_mut();
-
-            if let Some(ref e) = state.error {
-                return Poll::Ready(Err(e.clone()));
-            }
-
-            for (source, stream) in state.streams.iter_mut() {
-                if let Some(msg) = stream.machine.take_message() {
-                    let len = msg.len().min(buf.len());
-                    buf[..len].copy_from_slice(&msg[..len]);
-                    return Poll::Ready(Ok((*source, len)));
-                }
-            }
-
-            Poll::Pending
-        })
-        .await
-    }
-
-    /// Signal that no more receives are expected.
-    /// Driver will exit.
-    pub fn close(&mut self) {
-        self.channel.state.borrow_mut().closed = true;
-    }
-
-    /// Check if there's a message ready from any sender.
-    pub fn has_message(&self) -> bool {
-        let state = self.channel.state.borrow();
-        state.streams.values().any(|s| s.machine.has_message())
-    }
-
-    /// Get the number of active streams.
-    pub fn stream_count(&self) -> usize {
-        self.channel.state.borrow().streams.len()
     }
 }
 
@@ -879,7 +761,7 @@ where
 // ============================================================================
 
 impl<'a, E: Clone, const WIN: usize, const BUF: usize, const REASM: usize, const MAX_STREAMS: usize>
-    TransportReceiver for SrsppReceiverHandle<'a, E, WIN, BUF, REASM, MAX_STREAMS>
+    TransportReceiver for SrsppRxHandle<'a, E, WIN, BUF, REASM, MAX_STREAMS>
 {
     type Error = Error<E>;
 
@@ -943,7 +825,7 @@ impl<
         link: L,
         rto_policy: P,
     ) -> (
-        SrsppRxHandle<'_, E, WIN, BUF, MTU, REASM, MAX_STREAMS>,
+        SrsppRxHandle<'_, E, WIN, BUF, REASM, MAX_STREAMS>,
         SrsppTxHandle<'_, E, WIN, BUF, MTU>,
         SrsppNodeDriver<'_, L, P, E, WIN, BUF, MTU, REASM, MAX_STREAMS>,
     ) {
@@ -1010,15 +892,35 @@ impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
         }
         Ok(())
     }
+
+    /// Signal that no more data will be sent.
+    /// Driver will exit once all pending data is acknowledged.
+    pub fn close(&mut self) {
+        self.sender.borrow_mut().closed = true;
+    }
+
+    /// Check available buffer space in bytes.
+    pub fn available_bytes(&self) -> usize {
+        self.sender.borrow().machine.available_bytes()
+    }
+
+    /// Check available window slots.
+    pub fn available_window(&self) -> usize {
+        self.sender.borrow().machine.available_window()
+    }
+
+    /// Check if all data has been acknowledged.
+    pub fn is_idle(&self) -> bool {
+        self.sender.borrow().machine.is_idle()
+    }
 }
 
-/// Handle for receiving data from an SRSPP node.
+/// Handle for receiving data from an SRSPP receiver.
 pub struct SrsppRxHandle<
     'a,
     E,
     const WIN: usize,
     const BUF: usize,
-    const MTU: usize,
     const REASM: usize,
     const MAX_STREAMS: usize,
 > {
@@ -1030,12 +932,11 @@ impl<
     E: Clone,
     const WIN: usize,
     const BUF: usize,
-    const MTU: usize,
     const REASM: usize,
     const MAX_STREAMS: usize,
-> SrsppRxHandle<'a, E, WIN, BUF, MTU, REASM, MAX_STREAMS>
+> SrsppRxHandle<'a, E, WIN, BUF, REASM, MAX_STREAMS>
 {
-    /// Receives the next message, returning source address and length.
+    /// Receives the next message, copying it into `buf`.
     pub async fn recv(&mut self, buf: &mut [u8]) -> Result<(Address, usize), Error<E>> {
         poll_fn(|_cx| {
             let mut state = self.receiver.borrow_mut();
@@ -1052,6 +953,52 @@ impl<
             Poll::Pending
         })
         .await
+    }
+
+    /// Receives the next message as a zero-copy reference
+    /// into the receiver's reassembly buffer.
+    ///
+    /// The returned `Ref` holds an immutable borrow on the
+    /// receiver state. Drop it before any `.await` that could
+    /// let the driver run.
+    pub async fn recv_ref(&mut self) -> Result<(Address, Ref<'a, [u8]>), Error<E>> {
+        let (source, len) = poll_fn(|_cx| {
+            let mut state = self.receiver.borrow_mut();
+            if let Some(ref e) = state.error {
+                return Poll::Ready(Err(e.clone()));
+            }
+            for (source, stream) in state.streams.iter_mut() {
+                if let Some(msg) = stream.machine.take_message() {
+                    let len = msg.len();
+                    return Poll::Ready(Ok((*source, len)));
+                }
+            }
+            Poll::Pending
+        })
+        .await?;
+
+        let data = Ref::map(self.receiver.borrow(), |state| {
+            state.streams.get(&source).unwrap().machine.reassembly_data(len)
+        });
+
+        Ok((source, data))
+    }
+
+    /// Signal that no more receives are expected.
+    /// Driver will exit.
+    pub fn close(&mut self) {
+        self.receiver.borrow_mut().closed = true;
+    }
+
+    /// Check if there's a message ready from any sender.
+    pub fn has_message(&self) -> bool {
+        let state = self.receiver.borrow();
+        state.streams.values().any(|s| s.machine.has_message())
+    }
+
+    /// Get the number of active streams.
+    pub fn stream_count(&self) -> usize {
+        self.receiver.borrow().streams.len()
     }
 }
 
