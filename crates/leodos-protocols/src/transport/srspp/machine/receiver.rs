@@ -264,6 +264,14 @@ impl<const WIN: usize, const BUF: usize, const REASM: usize> ReceiverMachine<WIN
             .map(|len| &self.reassembly[..len])
     }
 
+    /// Returns a slice of the reassembly buffer.
+    ///
+    /// The data is valid after `take_message()` until the
+    /// next `handle()` call overwrites the buffer.
+    pub fn reassembly_data(&self, len: usize) -> &[u8] {
+        &self.reassembly[..len]
+    }
+
     /// Check if there's a complete message ready.
     pub fn has_message(&self) -> bool {
         self.complete_message_len.is_some()
