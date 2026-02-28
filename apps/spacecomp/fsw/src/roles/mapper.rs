@@ -20,7 +20,6 @@ pub async fn run(
         let mut writer = BufWriter::<WordCount, _>::new(
             tx,
             &mut bufs.msg,
-            &mut bufs.payload,
             assign.reducer_addr,
             assign.job_id,
             OpCode::DataChunk,
@@ -57,7 +56,7 @@ pub async fn run(
         .buffer(&mut bufs.msg)
         .op_code(OpCode::PhaseDone)
         .job_id(assign.job_id)
-        .payload(&[])
+        .payload_len(0)
         .build()?;
     tx.send(assign.reducer_addr, done).await.ok();
     Ok(())

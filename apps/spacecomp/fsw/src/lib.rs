@@ -50,7 +50,6 @@ pub type TxHandle<'a> = SrsppTxHandle<'a, LocalLinkError, 8, 4096, 512>;
 pub struct Buffers {
     pub recv: [u8; 8192],
     pub msg: [u8; 512],
-    pub payload: [u8; 256],
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -215,7 +214,6 @@ pub extern "C" fn SPACECOMP_AppMain() {
         let mut bufs = Buffers {
             recv: [0u8; 8192],
             msg: [0u8; 512],
-            payload: [0u8; 256],
         };
 
         let app_task = async move {

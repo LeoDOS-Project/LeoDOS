@@ -10,8 +10,11 @@ use leodos_libcfs::runtime::select_either::Either;
 use leodos_libcfs::runtime::select_either::select_either;
 use leodos_libcfs::runtime::time::sleep;
 
+use crate::application::spacecomp::io::writer::MessageSender;
 use crate::network::NetworkLayer;
+use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
+use crate::transport::TransportReceiver;
 use crate::transport::srspp::machine::receiver::ReceiverAction;
 use crate::transport::srspp::machine::receiver::ReceiverActions;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
@@ -32,6 +35,7 @@ use crate::transport::srspp::packet::parse_ack_packet;
 use crate::transport::srspp::packet::parse_data_packet;
 use crate::transport::srspp::packet::parse_srspp_type;
 use crate::transport::srspp::rto::RtoPolicy;
+use heapless::index_map::FnvIndexMap;
 
 // ============================================================================
 // Error type
@@ -450,9 +454,6 @@ where
 // ============================================================================
 // Receiver
 // ============================================================================
-
-use crate::network::isl::address::Address;
-use heapless::index_map::FnvIndexMap;
 
 struct StreamState<const WIN: usize, const BUF: usize, const REASM: usize> {
     machine: ReceiverMachine<WIN, BUF, REASM>,
@@ -878,8 +879,7 @@ where
 // ============================================================================
 
 impl<'a, E: Clone, const WIN: usize, const BUF: usize, const REASM: usize, const MAX_STREAMS: usize>
-    crate::transport::TransportReceiver
-    for SrsppReceiverHandle<'a, E, WIN, BUF, REASM, MAX_STREAMS>
+    TransportReceiver for SrsppReceiverHandle<'a, E, WIN, BUF, REASM, MAX_STREAMS>
 {
     type Error = Error<E>;
 
@@ -948,8 +948,12 @@ impl<
         SrsppNodeDriver<'_, L, P, E, WIN, BUF, MTU, REASM, MAX_STREAMS>,
     ) {
         (
-            SrsppRxHandle { receiver: &self.receiver },
-            SrsppTxHandle { sender: &self.sender },
+            SrsppRxHandle {
+                receiver: &self.receiver,
+            },
+            SrsppTxHandle {
+                sender: &self.sender,
+            },
             SrsppNodeDriver {
                 link,
                 rto_policy,
@@ -963,23 +967,12 @@ impl<
 }
 
 /// Handle for sending data over an SRSPP node.
-pub struct SrsppTxHandle<
-    'a,
-    E,
-    const WIN: usize,
-    const BUF: usize,
-    const MTU: usize,
-> {
+pub struct SrsppTxHandle<'a, E, const WIN: usize, const BUF: usize, const MTU: usize> {
     sender: &'a RefCell<SenderState<E, WIN, BUF, MTU>>,
 }
 
-impl<
-    'a,
-    E: Clone,
-    const WIN: usize,
-    const BUF: usize,
-    const MTU: usize,
-> SrsppTxHandle<'a, E, WIN, BUF, MTU>
+impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
+    SrsppTxHandle<'a, E, WIN, BUF, MTU>
 {
     /// Sends data to the given target, waiting for buffer space.
     pub async fn send(
@@ -1062,17 +1055,12 @@ impl<
     }
 }
 
-impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
-    crate::application::spacecomp::io::writer::MessageSender
+impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize> MessageSender
     for SrsppTxHandle<'a, E, WIN, BUF, MTU>
 {
     type Error = Error<E>;
 
-    async fn send_message(
-        &mut self,
-        target: Address,
-        data: &[u8],
-    ) -> Result<(), Self::Error> {
+    async fn send_message(&mut self, target: Address, data: &[u8]) -> Result<(), Self::Error> {
         self.send(target, data).await
     }
 }

@@ -21,8 +21,9 @@ pub async fn run(
             .buffer(&mut bufs.msg)
             .op_code(OpCode::DataChunk)
             .job_id(assign.job_id)
-            .payload(chunk)
+            .payload_len(chunk.len())
             .build()?;
+        msg.payload_mut().copy_from_slice(chunk);
         tx.send(assign.mapper_addr, msg).await.ok();
     }
 

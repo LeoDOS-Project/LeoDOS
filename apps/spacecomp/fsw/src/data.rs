@@ -31,12 +31,14 @@ impl WordCount {
         job_id: u16,
     ) -> Result<&'a SpaceCompMessage, BuildError> {
         let wc = Self::builder().word(word).count(count).build();
-        SpaceCompMessage::builder()
+        let msg = SpaceCompMessage::builder()
             .buffer(buffer)
             .op_code(OpCode::DataChunk)
             .job_id(job_id)
-            .payload(wc.as_bytes())
-            .build()
+            .payload_len(core::mem::size_of::<Self>())
+            .build()?;
+        msg.payload_mut().copy_from_slice(wc.as_bytes());
+        Ok(msg)
     }
 }
 

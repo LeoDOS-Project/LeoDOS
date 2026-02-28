@@ -118,9 +118,19 @@ impl SpaceCompMessage {
         &self.payload
     }
 
+    /// Returns a mutable reference to the payload.
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        &mut self.payload
+    }
+
     /// Returns the entire message (header + payload) as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
         zerocopy::IntoBytes::as_bytes(self)
+    }
+
+    /// Iterates over fixed-size `T` records in the payload.
+    pub fn records<'a, T: FromBytes + Immutable + KnownLayout + 'a>(&'a self) -> crate::application::spacecomp::io::reader::RecordIter<'a, T> {
+        crate::application::spacecomp::io::reader::RecordIter::new(&self.payload)
     }
 }
 
@@ -128,16 +138,18 @@ impl SpaceCompMessage {
 impl SpaceCompMessage {
     #[builder]
     /// Constructs a new SpaceCoMP message in the provided buffer.
+    ///
+    /// Returns a mutable reference so the caller can write directly
+    /// into the payload, avoiding an extra copy.
     pub fn new<'a>(
         buffer: &'a mut [u8],
         op_code: OpCode,
         job_id: u16,
-        payload: &[u8],
-    ) -> Result<&'a SpaceCompMessage, BuildError> {
-        let (msg, _) = Self::mut_from_prefix_with_elems(buffer, payload.len())
+        payload_len: usize,
+    ) -> Result<&'a mut SpaceCompMessage, BuildError> {
+        let (msg, _) = Self::mut_from_prefix_with_elems(buffer, payload_len)
             .map_err(|_| BuildError::BufferTooSmall)?;
         msg.header = SpaceCompHeader::new(op_code, job_id);
-        msg.payload.copy_from_slice(payload);
         Ok(msg)
     }
 }
@@ -345,12 +357,14 @@ impl AssignCollectorMessage {
             .mapper_addr(mapper_addr.into())
             .partition_id(partition_id)
             .build();
-        Ok(SpaceCompMessage::builder()
+        let msg = SpaceCompMessage::builder()
             .buffer(buffer)
             .op_code(OpCode::AssignCollector)
             .job_id(job_id)
-            .payload(payload.as_bytes())
-            .build()?)
+            .payload_len(size_of::<AssignCollectorPayload>())
+            .build()?;
+        msg.payload.copy_from_slice(payload.as_bytes());
+        Ok(msg)
     }
 }
 
@@ -391,12 +405,14 @@ impl AssignMapperMessage {
             .reducer_addr(reducer_addr.into())
             .collector_count(collector_count)
             .build();
-        Ok(SpaceCompMessage::builder()
+        let msg = SpaceCompMessage::builder()
             .buffer(buffer)
             .op_code(OpCode::AssignMapper)
             .job_id(job_id)
-            .payload(payload.as_bytes())
-            .build()?)
+            .payload_len(size_of::<AssignMapperPayload>())
+            .build()?;
+        msg.payload.copy_from_slice(payload.as_bytes());
+        Ok(msg)
     }
 }
 
@@ -437,12 +453,14 @@ impl AssignReducerMessage {
             .los_addr(los_addr.into())
             .mapper_count(mapper_count)
             .build();
-        Ok(SpaceCompMessage::builder()
+        let msg = SpaceCompMessage::builder()
             .buffer(buffer)
             .op_code(OpCode::AssignReducer)
             .job_id(job_id)
-            .payload(payload.as_bytes())
-            .build()?)
+            .payload_len(size_of::<AssignReducerPayload>())
+            .build()?;
+        msg.payload.copy_from_slice(payload.as_bytes());
+        Ok(msg)
     }
 }
 
