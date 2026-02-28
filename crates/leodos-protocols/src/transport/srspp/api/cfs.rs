@@ -937,17 +937,19 @@ impl<
         }
     }
 
-    /// Splits into a handle for send/recv and a driver for I/O.
+    /// Splits into separate tx/rx handles and a driver for I/O.
     pub fn split<L: NetworkLayer<Error = E>, P: RtoPolicy>(
         &self,
         link: L,
         rto_policy: P,
     ) -> (
-        SrsppNodeHandle<'_, E, WIN, BUF, MTU, REASM, MAX_STREAMS>,
+        SrsppRxHandle<'_, E, WIN, BUF, MTU, REASM, MAX_STREAMS>,
+        SrsppTxHandle<'_, E, WIN, BUF, MTU>,
         SrsppNodeDriver<'_, L, P, E, WIN, BUF, MTU, REASM, MAX_STREAMS>,
     ) {
         (
-            SrsppNodeHandle { node: self },
+            SrsppRxHandle { receiver: &self.receiver },
+            SrsppTxHandle { sender: &self.sender },
             SrsppNodeDriver {
                 link,
                 rto_policy,
@@ -960,17 +962,15 @@ impl<
     }
 }
 
-/// Application handle for sending and receiving over an SRSPP node.
-pub struct SrsppNodeHandle<
+/// Handle for sending data over an SRSPP node.
+pub struct SrsppTxHandle<
     'a,
     E,
     const WIN: usize,
     const BUF: usize,
     const MTU: usize,
-    const REASM: usize,
-    const MAX_STREAMS: usize,
 > {
-    node: &'a SrsppNode<E, WIN, BUF, MTU, REASM, MAX_STREAMS>,
+    sender: &'a RefCell<SenderState<E, WIN, BUF, MTU>>,
 }
 
 impl<
@@ -979,9 +979,7 @@ impl<
     const WIN: usize,
     const BUF: usize,
     const MTU: usize,
-    const REASM: usize,
-    const MAX_STREAMS: usize,
-> SrsppNodeHandle<'a, E, WIN, BUF, MTU, REASM, MAX_STREAMS>
+> SrsppTxHandle<'a, E, WIN, BUF, MTU>
 {
     /// Sends data to the given target, waiting for buffer space.
     pub async fn send(
@@ -991,7 +989,7 @@ impl<
     ) -> Result<(), Error<E>> {
         let data = data.as_bytes();
         poll_fn(|_cx| {
-            let state = self.node.sender.borrow();
+            let state = self.sender.borrow();
             if let Some(ref e) = state.error {
                 return Poll::Ready(Err(e.clone()));
             }
@@ -1005,7 +1003,7 @@ impl<
         .await?;
 
         {
-            let mut state = self.node.sender.borrow_mut();
+            let mut state = self.sender.borrow_mut();
             let SenderState {
                 machine, actions, ..
             } = &mut *state;
@@ -1019,11 +1017,35 @@ impl<
         }
         Ok(())
     }
+}
 
+/// Handle for receiving data from an SRSPP node.
+pub struct SrsppRxHandle<
+    'a,
+    E,
+    const WIN: usize,
+    const BUF: usize,
+    const MTU: usize,
+    const REASM: usize,
+    const MAX_STREAMS: usize,
+> {
+    receiver: &'a RefCell<MultiReceiverState<E, WIN, BUF, REASM, MAX_STREAMS>>,
+}
+
+impl<
+    'a,
+    E: Clone,
+    const WIN: usize,
+    const BUF: usize,
+    const MTU: usize,
+    const REASM: usize,
+    const MAX_STREAMS: usize,
+> SrsppRxHandle<'a, E, WIN, BUF, MTU, REASM, MAX_STREAMS>
+{
     /// Receives the next message, returning source address and length.
     pub async fn recv(&mut self, buf: &mut [u8]) -> Result<(Address, usize), Error<E>> {
         poll_fn(|_cx| {
-            let mut state = self.node.receiver.borrow_mut();
+            let mut state = self.receiver.borrow_mut();
             if let Some(ref e) = state.error {
                 return Poll::Ready(Err(e.clone()));
             }
@@ -1037,6 +1059,21 @@ impl<
             Poll::Pending
         })
         .await
+    }
+}
+
+impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
+    crate::application::spacecomp::io::writer::MessageSender
+    for SrsppTxHandle<'a, E, WIN, BUF, MTU>
+{
+    type Error = Error<E>;
+
+    async fn send_message(
+        &mut self,
+        target: Address,
+        data: &[u8],
+    ) -> Result<(), Self::Error> {
+        self.send(target, data).await
     }
 }
 

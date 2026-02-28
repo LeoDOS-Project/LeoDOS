@@ -4,13 +4,13 @@ use leodos_protocols::application::spacecomp::packet::{
 
 use crate::data;
 use crate::Buffers;
-use crate::NodeHandle;
+use crate::TxHandle;
 use crate::SpaceCompError;
 
 const MAX_CHUNK: usize = 256;
 
 pub async fn run(
-    handle: &mut NodeHandle<'_>,
+    tx: &mut TxHandle<'_>,
     bufs: &mut Buffers,
     assign: AssignCollectorMessage,
 ) -> Result<(), SpaceCompError> {
@@ -23,7 +23,7 @@ pub async fn run(
             .job_id(assign.job_id)
             .payload(chunk)
             .build()?;
-        handle.send(assign.mapper_addr, msg).await.ok();
+        tx.send(assign.mapper_addr, msg).await.ok();
     }
 
     Ok(())

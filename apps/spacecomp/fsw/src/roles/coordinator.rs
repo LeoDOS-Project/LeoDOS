@@ -11,13 +11,15 @@ use leodos_protocols::network::isl::geo::LatLon;
 use leodos_protocols::network::isl::torus::Point;
 
 use crate::Buffers;
-use crate::NodeHandle;
+use crate::RxHandle;
+use crate::TxHandle;
 use crate::SpaceCompError;
 use crate::MAX_SATELLITES;
 use crate::SHELL;
 
 pub async fn run(
-    handle: &mut NodeHandle<'_>,
+    rx: &mut RxHandle<'_>,
+    tx: &mut TxHandle<'_>,
     bufs: &mut Buffers,
     local_point: Point,
     job_id: u16,
@@ -39,7 +41,7 @@ pub async fn run(
             .mapper_addr(plan.mappers[plan.assignment[i]])
             .partition_id(i)
             .build()?;
-        handle.send(*pt, msg).await.ok();
+        tx.send(*pt, msg).await.ok();
     }
     for (j, pt) in plan.mappers.iter().enumerate() {
         let msg = AssignMapperMessage::builder()
@@ -48,7 +50,7 @@ pub async fn run(
             .reducer_addr(plan.reducer)
             .collector_count(plan.assignment.iter().filter(|&&a| a == j).count())
             .build()?;
-        handle.send(*pt, msg).await.ok();
+        tx.send(*pt, msg).await.ok();
     }
     let msg = AssignReducerMessage::builder()
         .buffer(&mut bufs.msg)
@@ -56,10 +58,10 @@ pub async fn run(
         .los_addr(local_point)
         .mapper_count(plan.mappers.len())
         .build()?;
-    handle.send(plan.reducer, msg).await.ok();
+    tx.send(plan.reducer, msg).await.ok();
 
     loop {
-        let Ok((_, len)) = handle.recv(&mut bufs.recv).await else {
+        let Ok((_, len)) = rx.recv(&mut bufs.recv).await else {
             return Ok(());
         };
         let Ok(msg) = SpaceCompMessage::parse(&bufs.recv[..len]) else {

@@ -26,7 +26,8 @@ use leodos_protocols::network::isl::torus::Point;
 use leodos_protocols::network::isl::torus::Torus;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
-use leodos_protocols::transport::srspp::api::cfs::SrsppNodeHandle;
+use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
+use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
 use leodos_protocols::transport::srspp::packet::SrsppDataPacket;
@@ -43,7 +44,8 @@ mod bindings {
 pub mod data;
 mod roles;
 
-pub type NodeHandle<'a> = SrsppNodeHandle<'a, LocalLinkError, 8, 4096, 512, 8192, 4>;
+pub type RxHandle<'a> = SrsppRxHandle<'a, LocalLinkError, 8, 4096, 512, 8192, 4>;
+pub type TxHandle<'a> = SrsppTxHandle<'a, LocalLinkError, 8, 4096, 512>;
 
 pub struct Buffers {
     pub recv: [u8; 8192],
@@ -208,7 +210,7 @@ pub extern "C" fn SPACECOMP_AppMain() {
             .build();
 
         let node = SrsppNode::new(sender_config, receiver_config);
-        let (mut channel, mut driver) = node.split(app_link, FixedRto::new(RTO_MS));
+        let (mut rx, mut tx, mut driver) = node.split(app_link, FixedRto::new(RTO_MS));
 
         let mut bufs = Buffers {
             recv: [0u8; 8192],
@@ -218,10 +220,10 @@ pub extern "C" fn SPACECOMP_AppMain() {
 
         let app_task = async move {
             loop {
-                let Ok((_, len)) = channel.recv(&mut bufs.recv).await else {
+                let Ok((_, len)) = rx.recv(&mut bufs.recv).await else {
                     break;
                 };
-                if let Err(e) = handle(&mut channel, &mut bufs, point, len).await {
+                if let Err(e) = handle(&mut rx, &mut tx, &mut bufs, point, len).await {
                     event::error(0, e.as_str()).ok();
                 }
             }
@@ -234,7 +236,8 @@ pub extern "C" fn SPACECOMP_AppMain() {
 }
 
 async fn handle(
-    channel: &mut NodeHandle<'_>,
+    rx: &mut RxHandle<'_>,
+    tx: &mut TxHandle<'_>,
     bufs: &mut Buffers,
     point: Point,
     len: usize,
@@ -245,19 +248,19 @@ async fn handle(
     match op_code {
         OpCode::SubmitJob => {
             let job_id = msg.job_id();
-            roles::coordinator::run(channel, bufs, point, job_id).await?
+            roles::coordinator::run(rx, tx, bufs, point, job_id).await?
         }
         OpCode::AssignCollector => {
             let m = AssignCollectorMessage::parse(msg)?;
-            roles::collector::run(channel, bufs, m).await?
+            roles::collector::run(tx, bufs, m).await?
         }
         OpCode::AssignMapper => {
             let m = AssignMapperMessage::parse(msg)?;
-            roles::mapper::run(channel, bufs, m).await?
+            roles::mapper::run(rx, tx, bufs, m).await?
         }
         OpCode::AssignReducer => {
             let m = AssignReducerMessage::parse(msg)?;
-            roles::reducer::run(channel, bufs, m).await?
+            roles::reducer::run(rx, tx, bufs, m).await?
         }
         _ => {}
     }
