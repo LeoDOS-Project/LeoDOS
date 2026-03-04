@@ -1,0 +1,506 @@
+use crate::network::isl::address::Address;
+use crate::network::spp::{SequenceCount, SequenceFlag};
+use heapless::Vec;
+
+use super::primitives::GapTracker;
+use super::shell::ReceiverShell;
+use super::{
+    ReceiverAction, ReceiverActions, ReceiverConfig, ReceiverError,
+    ReceiverEvent,
+};
+
+/// Backend B: gap-tracked contiguous reassembly buffer.
+///
+/// Segments are placed at `(seq − base_seq) × MTU` byte offsets.
+/// First and Continuation segments must be exactly `MTU` bytes;
+/// only Last and Unsegmented may be shorter.
+///
+/// * `REASM` — reassembly buffer size
+/// * `WIN` — maximum gap tracker intervals
+/// * `MTU` — maximum segment payload size
+pub struct ReceiverB<const REASM: usize, const WIN: usize, const MTU: usize> {
+    shell: ReceiverShell,
+    message_buf: [u8; REASM],
+    gaps: GapTracker<WIN>,
+    message_ends: Vec<usize, WIN>,
+    base_seq: u16,
+    reassembly_in_progress: bool,
+    complete_message_len: Option<usize>,
+    pending_shift: usize,
+    pending_segs: u16,
+}
+
+impl<const REASM: usize, const WIN: usize, const MTU: usize>
+    ReceiverB<REASM, WIN, MTU>
+{
+    const MAX_SEGS: usize = REASM / MTU;
+
+    /// Create a new receiver for a specific remote sender.
+    pub fn new(config: ReceiverConfig, remote_address: Address) -> Self {
+        Self {
+            shell: ReceiverShell::new(config, remote_address),
+            message_buf: [0u8; REASM],
+            gaps: GapTracker::new(),
+            message_ends: Vec::new(),
+            base_seq: 0,
+            reassembly_in_progress: false,
+            complete_message_len: None,
+            pending_shift: 0,
+            pending_segs: 0,
+        }
+    }
+
+    /// Get the remote address.
+    pub fn remote_address(&self) -> Address {
+        self.shell.remote_address()
+    }
+
+    /// Process an event and produce actions.
+    pub fn handle(
+        &mut self,
+        event: ReceiverEvent<'_>,
+        actions: &mut ReceiverActions,
+    ) -> Result<(), ReceiverError> {
+        self.apply_pending_shift();
+        actions.clear();
+        match event {
+            ReceiverEvent::DataReceived {
+                seq,
+                flags,
+                payload,
+            } => self.handle_data(seq, flags, payload, actions),
+            ReceiverEvent::AckTimeout => {
+                self.shell.handle_ack_timeout(actions);
+                Ok(())
+            }
+            ReceiverEvent::ProgressTimeout => {
+                self.handle_progress_timeout(actions)
+            }
+        }
+    }
+
+    /// Take the complete message.
+    pub fn take_message(&mut self) -> Option<&[u8]> {
+        self.complete_message_len
+            .take()
+            .map(|len| &self.message_buf[..len])
+    }
+
+    fn apply_pending_shift(&mut self) {
+        let shift = self.pending_shift;
+        if shift == 0 {
+            return;
+        }
+        if shift < REASM {
+            self.message_buf.copy_within(shift.., 0);
+        }
+        self.gaps.shift(shift);
+        self.message_ends.retain(|&e| e > shift);
+        for e in self.message_ends.iter_mut() {
+            *e -= shift;
+        }
+        self.base_seq = self
+            .base_seq
+            .wrapping_add(self.pending_segs)
+            & SequenceCount::MAX as u16;
+        self.pending_shift = 0;
+        self.pending_segs = 0;
+    }
+
+    /// Returns a slice of the reassembly buffer.
+    pub fn reassembly_data(&self, len: usize) -> &[u8] {
+        &self.message_buf[..len]
+    }
+
+    /// Check if there's a complete message ready.
+    pub fn has_message(&self) -> bool {
+        self.complete_message_len.is_some()
+    }
+
+    /// Get the current expected sequence number.
+    pub fn expected_seq(&self) -> SequenceCount {
+        self.shell.expected_seq()
+    }
+
+    fn seg_distance(&self, seq: SequenceCount) -> u16 {
+        seq.value().wrapping_sub(self.base_seq) & SequenceCount::MAX
+    }
+
+    fn handle_data(
+        &mut self,
+        seq: SequenceCount,
+        flags: SequenceFlag,
+        payload: &[u8],
+        actions: &mut ReceiverActions,
+    ) -> Result<(), ReceiverError> {
+        let distance = self.shell.distance(seq);
+        let seq_before = self.shell.expected_seq_raw();
+        let max_dist = Self::MAX_SEGS as u16;
+
+        if distance < max_dist {
+            if distance > 0 && self.shell.is_ooo_duplicate(distance)
+            {
+            } else {
+                if distance > 0 {
+                    self.shell.record_ooo(distance);
+                }
+                self.place_segment(seq, flags, payload)?;
+                self.try_deliver(actions)?;
+            }
+        }
+
+        let progressed =
+            self.shell.expected_seq_raw() != seq_before;
+        let has_gap =
+            self.gaps.has_gaps() || !self.message_ends.is_empty();
+        self.shell
+            .apply_post_data_logic(actions, progressed, has_gap);
+        Ok(())
+    }
+
+    fn handle_progress_timeout(
+        &mut self,
+        actions: &mut ReceiverActions,
+    ) -> Result<(), ReceiverError> {
+        if self.reassembly_in_progress {
+            self.gaps.reset();
+            self.message_ends.clear();
+            self.reassembly_in_progress = false;
+        }
+
+        let shift = MTU;
+        if shift < REASM {
+            self.message_buf.copy_within(shift.., 0);
+        }
+        self.gaps.shift(shift);
+        self.message_ends.retain(|&e| e > shift);
+        for e in self.message_ends.iter_mut() {
+            *e -= shift;
+        }
+
+        self.shell.advance();
+        self.base_seq =
+            self.base_seq.wrapping_add(1) & SequenceCount::MAX as u16;
+
+        self.try_deliver(actions)?;
+
+        let has_gap =
+            self.gaps.has_gaps() || !self.message_ends.is_empty();
+        self.shell
+            .apply_post_progress_logic(actions, has_gap);
+        Ok(())
+    }
+
+    fn place_segment(
+        &mut self,
+        seq: SequenceCount,
+        flags: SequenceFlag,
+        payload: &[u8],
+    ) -> Result<(), ReceiverError> {
+        let d = self.seg_distance(seq) as usize;
+        if d >= Self::MAX_SEGS {
+            return Ok(());
+        }
+        let start = d * MTU;
+        let end = start + payload.len();
+        if end > REASM {
+            return Err(ReceiverError::MessageTooLarge);
+        }
+        self.message_buf[start..end].copy_from_slice(payload);
+
+        let slot_end = (start + MTU).min(REASM);
+        self.gaps.fill(start, slot_end);
+
+        match flags {
+            SequenceFlag::First => {
+                self.reassembly_in_progress = true;
+            }
+            SequenceFlag::Last | SequenceFlag::Unsegmented => {
+                let pos = self
+                    .message_ends
+                    .iter()
+                    .position(|&e| e > end)
+                    .unwrap_or(self.message_ends.len());
+                let _ = self.message_ends.insert(pos, end);
+            }
+            SequenceFlag::Continuation => {}
+        }
+
+        Ok(())
+    }
+
+    fn try_deliver(
+        &mut self,
+        actions: &mut ReceiverActions,
+    ) -> Result<(), ReceiverError> {
+        loop {
+            let msg_end;
+
+            if self.pending_shift > 0 {
+                let Some(&pre) = self.message_ends.first() else {
+                    break;
+                };
+                if !self.gaps.is_complete_to(pre) {
+                    break;
+                }
+                self.apply_pending_shift();
+                msg_end = *self.message_ends.first().unwrap();
+            } else {
+                let Some(&end) = self.message_ends.first() else {
+                    break;
+                };
+                if !self.gaps.is_complete_to(end) {
+                    break;
+                }
+                msg_end = end;
+            }
+
+            self.message_ends.remove(0);
+            self.complete_message_len = Some(msg_end);
+            self.reassembly_in_progress = false;
+            actions.push(ReceiverAction::MessageReady);
+
+            let segs = (msg_end + MTU - 1) / MTU;
+            for _ in 0..segs {
+                self.shell.advance();
+            }
+            self.pending_shift = segs * MTU;
+            self.pending_segs = segs as u16;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::*;
+    use super::*;
+
+    fn test_remote() -> Address {
+        Address::satellite(1, 2)
+    }
+
+    fn cfg_immediate() -> ReceiverConfig {
+        ReceiverConfig {
+            local_address: Address::satellite(1, 1),
+            apid: crate::network::spp::Apid::new(0x42).unwrap(),
+            function_code: 0,
+            message_id: 0,
+            action_code: 0,
+            immediate_ack: true,
+            ack_delay_ticks: 20,
+            progress_timeout_ticks: None,
+        }
+    }
+
+    fn cfg_progress(ticks: u32) -> ReceiverConfig {
+        ReceiverConfig {
+            progress_timeout_ticks: Some(ticks),
+            ..cfg_immediate()
+        }
+    }
+
+    const MTU: usize = 64;
+
+    type Rx = ReceiverB<{ 8 * MTU }, 8, MTU>;
+
+    fn make(cfg: ReceiverConfig) -> Rx {
+        Rx::new(cfg, test_remote())
+    }
+
+    #[test]
+    fn single_unsegmented() {
+        let mut rx = make(cfg_immediate());
+        let mut a = ReceiverActions::new();
+        let payload = [42u8; 10];
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(0),
+                flags: SequenceFlag::Unsegmented,
+                payload: &payload,
+            },
+            &mut a,
+        )
+        .unwrap();
+        assert!(rx.has_message());
+        assert_eq!(rx.take_message().unwrap(), &payload);
+    }
+
+    #[test]
+    fn segmented_mtu_aligned() {
+        let mut rx = make(cfg_immediate());
+        let mut a = ReceiverActions::new();
+
+        let first = [1u8; MTU];
+        let cont = [2u8; MTU];
+        let last = [3u8; 10];
+
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(0),
+                flags: SequenceFlag::First,
+                payload: &first,
+            },
+            &mut a,
+        )
+        .unwrap();
+        assert!(!rx.has_message());
+
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(1),
+                flags: SequenceFlag::Continuation,
+                payload: &cont,
+            },
+            &mut a,
+        )
+        .unwrap();
+        assert!(!rx.has_message());
+
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(2),
+                flags: SequenceFlag::Last,
+                payload: &last,
+            },
+            &mut a,
+        )
+        .unwrap();
+        assert!(rx.has_message());
+        let msg = rx.take_message().unwrap();
+        assert_eq!(&msg[..MTU], &first);
+        assert_eq!(&msg[MTU..2 * MTU], &cont);
+        assert_eq!(&msg[2 * MTU..2 * MTU + 10], &last);
+    }
+
+    #[test]
+    fn ooo_delivery() {
+        let mut rx = make(cfg_immediate());
+        let mut a = ReceiverActions::new();
+
+        let p0 = [0xAAu8; 10];
+        let p1 = [0xBBu8; 10];
+
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(1),
+                flags: SequenceFlag::Unsegmented,
+                payload: &p1,
+            },
+            &mut a,
+        )
+        .unwrap();
+        assert!(!rx.has_message());
+
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(0),
+                flags: SequenceFlag::Unsegmented,
+                payload: &p0,
+            },
+            &mut a,
+        )
+        .unwrap();
+
+        let cnt = a
+            .iter()
+            .filter(|a| matches!(a, ReceiverAction::MessageReady))
+            .count();
+        assert_eq!(cnt, 2);
+    }
+
+    #[test]
+    fn progress_timeout_skips_gap() {
+        let mut rx = make(cfg_progress(50));
+        let mut a = ReceiverActions::new();
+
+        let p0 = [0xAA; 10];
+        let p2 = [0xCC; 10];
+
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(0),
+                flags: SequenceFlag::Unsegmented,
+                payload: &p0,
+            },
+            &mut a,
+        )
+        .unwrap();
+        rx.take_message();
+
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(2),
+                flags: SequenceFlag::Unsegmented,
+                payload: &p2,
+            },
+            &mut a,
+        )
+        .unwrap();
+        assert!(!rx.has_message());
+
+        rx.handle(ReceiverEvent::ProgressTimeout, &mut a)
+            .unwrap();
+
+        assert_eq!(rx.expected_seq().value(), 3);
+        assert!(rx.has_message());
+        assert_eq!(rx.take_message().unwrap(), &p2);
+    }
+
+    #[test]
+    fn gap_merge_split() {
+        let mut rx = make(cfg_immediate());
+        let mut a = ReceiverActions::new();
+
+        let p = [0u8; 10];
+
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(0),
+                flags: SequenceFlag::Unsegmented,
+                payload: &p,
+            },
+            &mut a,
+        )
+        .unwrap();
+        rx.take_message();
+
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(3),
+                flags: SequenceFlag::Unsegmented,
+                payload: &p,
+            },
+            &mut a,
+        )
+        .unwrap();
+
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(1),
+                flags: SequenceFlag::Unsegmented,
+                payload: &p,
+            },
+            &mut a,
+        )
+        .unwrap();
+        assert!(rx.has_message());
+        rx.take_message();
+
+        rx.handle(
+            ReceiverEvent::DataReceived {
+                seq: SequenceCount::from(2),
+                flags: SequenceFlag::Unsegmented,
+                payload: &p,
+            },
+            &mut a,
+        )
+        .unwrap();
+
+        let cnt = a
+            .iter()
+            .filter(|a| matches!(a, ReceiverAction::MessageReady))
+            .count();
+        assert_eq!(cnt, 2);
+    }
+}
