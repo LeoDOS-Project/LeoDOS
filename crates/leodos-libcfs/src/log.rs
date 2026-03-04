@@ -1,13 +1,21 @@
 //! Safe, ergonomic logging facilities for cFS.
 //!
-//! This module provides macros (`syslog!`, `printf!`) that mimic the standard
-//! library's `println!` macro, but direct output to the cFE System Log and
-//! the OSAL console, respectively.
+//! ## System log and console
 //!
-//! The `syslog!` macro is generally preferred for in-flight logging as its
-//! output is captured by cFE Executive Services. The `printf!` macro is useful
-//! for development and debugging, as its output typically goes to the console/terminal
-//! where the cFS instance is running.
+//! The [`log!`] and [`printf!`] macros write to the cFE System Log
+//! and the OSAL console, respectively.
+//!
+//! ## Event Services (EVS)
+//!
+//! The [`info!`], [`warn!`], and [`err!`] macros send EVS events
+//! with `println!`-like formatting. The event ID is derived from
+//! the source line number automatically.
+//!
+//! ```rust,ignore
+//! info!("system nominal")?;
+//! warn!("temperature high: {} C", temp)?;
+//! err!("{} failed", subsystem)?;
+//! ```
 
 use crate::error::Error;
 use crate::error::Result;
@@ -166,5 +174,101 @@ macro_rules! printf {
         let _ = write!(&mut buffer, $($arg)*);
 
         $crate::log::printf(&buffer);
+    }};
+}
+
+/// The maximum formatted EVS message size, from cFE mission config.
+pub const EVS_MAX_MSG_SIZE: usize = ffi::CFE_MISSION_EVS_MAX_MESSAGE_LENGTH as usize;
+
+/// Sends an informational EVS event (`EventType::Info`).
+///
+/// Event ID is derived from the call-site line number.
+///
+/// ```rust,ignore
+/// info!("system nominal")?;
+/// info!("processed {} packets", count)?;
+/// ```
+#[macro_export]
+macro_rules! info {
+    ($msg:literal) => {
+        $crate::cfe::evs::event::send(
+            line!() as u16,
+            $crate::cfe::evs::event::EventType::Info,
+            $msg,
+        )
+    };
+    ($($arg:tt)*) => {{
+        use core::fmt::Write;
+        let mut buf: heapless::String<{ $crate::log::EVS_MAX_MSG_SIZE }> = heapless::String::new();
+        if write!(&mut buf, $($arg)*).is_ok() {
+            $crate::cfe::evs::event::send(
+                line!() as u16,
+                $crate::cfe::evs::event::EventType::Info,
+                &buf,
+            )
+        } else {
+            Err($crate::error::Error::CfeStatusValidationFailure)
+        }
+    }};
+}
+
+/// Sends a warning EVS event (`EventType::Error` — non-catastrophic).
+///
+/// cFS EVS has no dedicated warning level; this maps to
+/// `EventType::Error` which is defined as "not catastrophic."
+///
+/// ```rust,ignore
+/// warn!("temperature high: {} C", temp)?;
+/// ```
+#[macro_export]
+macro_rules! warn {
+    ($msg:literal) => {
+        $crate::cfe::evs::event::send(
+            line!() as u16,
+            $crate::cfe::evs::event::EventType::Error,
+            $msg,
+        )
+    };
+    ($($arg:tt)*) => {{
+        use core::fmt::Write;
+        let mut buf: heapless::String<{ $crate::log::EVS_MAX_MSG_SIZE }> = heapless::String::new();
+        if write!(&mut buf, $($arg)*).is_ok() {
+            $crate::cfe::evs::event::send(
+                line!() as u16,
+                $crate::cfe::evs::event::EventType::Error,
+                &buf,
+            )
+        } else {
+            Err($crate::error::Error::CfeStatusValidationFailure)
+        }
+    }};
+}
+
+/// Sends a critical EVS event (`EventType::Critical`).
+///
+/// ```rust,ignore
+/// err!("{} failed", subsystem)?;
+/// ```
+#[macro_export]
+macro_rules! err {
+    ($msg:literal) => {
+        $crate::cfe::evs::event::send(
+            line!() as u16,
+            $crate::cfe::evs::event::EventType::Critical,
+            $msg,
+        )
+    };
+    ($($arg:tt)*) => {{
+        use core::fmt::Write;
+        let mut buf: heapless::String<{ $crate::log::EVS_MAX_MSG_SIZE }> = heapless::String::new();
+        if write!(&mut buf, $($arg)*).is_ok() {
+            $crate::cfe::evs::event::send(
+                line!() as u16,
+                $crate::cfe::evs::event::EventType::Critical,
+                &buf,
+            )
+        } else {
+            Err($crate::error::Error::CfeStatusValidationFailure)
+        }
     }};
 }
