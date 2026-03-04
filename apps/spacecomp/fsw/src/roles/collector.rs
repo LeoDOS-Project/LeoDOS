@@ -1,5 +1,5 @@
 use leodos_protocols::application::spacecomp::packet::{
-    AssignCollectorMessage, OpCode, SpaceCompMessage,
+    AssignCollectorPayload, OpCode, SpaceCompMessage,
 };
 
 use crate::data;
@@ -12,19 +12,20 @@ const MAX_CHUNK: usize = 256;
 pub async fn run(
     tx: &mut TxHandle<'_>,
     bufs: &mut Buffers,
-    assign: AssignCollectorMessage,
+    job_id: u16,
+    assign: AssignCollectorPayload,
 ) -> Result<(), SpaceCompError> {
-    let partition = data::partition_text(assign.partition_id, crate::NUM_SATS);
+    let partition = data::partition_text(assign.partition_id(), crate::NUM_SATS);
 
     for chunk in partition.chunks(MAX_CHUNK) {
-        let msg = SpaceCompMessage::builder()
+        let m = SpaceCompMessage::builder()
             .buffer(&mut bufs.msg)
             .op_code(OpCode::DataChunk)
-            .job_id(assign.job_id)
+            .job_id(job_id)
             .payload_len(chunk.len())
             .build()?;
-        msg.payload_mut().copy_from_slice(chunk);
-        tx.send(assign.mapper_addr, msg).await.ok();
+        m.payload_mut().copy_from_slice(chunk);
+        tx.send(assign.mapper_addr(), m).await.ok();
     }
 
     Ok(())

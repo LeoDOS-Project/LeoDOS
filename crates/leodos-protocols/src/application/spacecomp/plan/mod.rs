@@ -67,12 +67,12 @@ impl Job {
     ) -> Result<Plan<N>, &'static str> {
         let projection = Projection::new(shell);
 
-        let all_covering: Vec<Point, N> = projection.satellites_in_geo_aoi(&self.geo_aoi);
+        let all_covering: Vec<Point, N> = projection.satellites_in_geo_aoi(&self.geo_aoi());
         if all_covering.is_empty() {
             return Err("no satellites cover the AOI");
         }
 
-        let collectors = if self.ascending_only {
+        let collectors = if self.ascending_only() {
             filter_ascending(shell, &all_covering)
         } else {
             all_covering
@@ -82,7 +82,7 @@ impl Job {
         }
 
         let grid_aoi = projection
-            .geo_to_grid_aoi(&self.geo_aoi)
+            .geo_to_grid_aoi(&self.geo_aoi())
             .ok_or("failed to compute grid AOI")?;
 
         let mappers = select_mappers::<N>(shell, &grid_aoi);
@@ -158,7 +158,7 @@ fn solve_assignment<const N: usize>(
     }
 
     let cost_model = SpaceCompCost {
-        data_volume_bytes: job.data_volume_bytes,
+        data_volume_bytes: job.data_volume_bytes(),
         ..Default::default()
     };
 
@@ -169,7 +169,7 @@ fn solve_assignment<const N: usize>(
         }
     }
 
-    let raw = match job.solver {
+    let raw = match job.solver() {
         AssignmentSolver::Hungarian => {
             let mut s = Hungarian::<u64, MAX>::new();
             s.solve(&cost_matrix, collectors.len())

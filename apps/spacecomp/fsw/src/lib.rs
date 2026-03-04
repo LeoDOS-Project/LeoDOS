@@ -3,12 +3,14 @@
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::error::Error;
+use leodos_libcfs::{info, err};
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::Runtime;
-use leodos_protocols::application::spacecomp::packet::AssignCollectorMessage;
-use leodos_protocols::application::spacecomp::packet::AssignMapperMessage;
-use leodos_protocols::application::spacecomp::packet::AssignReducerMessage;
+use leodos_protocols::application::spacecomp::job::Job;
+use leodos_protocols::application::spacecomp::packet::AssignCollectorPayload;
+use leodos_protocols::application::spacecomp::packet::AssignMapperPayload;
+use leodos_protocols::application::spacecomp::packet::AssignReducerPayload;
 use leodos_protocols::application::spacecomp::packet::BuildError;
 use leodos_protocols::application::spacecomp::packet::OpCode;
 use leodos_protocols::application::spacecomp::packet::ParseError;
@@ -134,12 +136,12 @@ fn remote_link(local_port: u16, remote_orbit: u8, remote_port: u16) -> Result<Ud
 pub extern "C" fn SPACECOMP_AppMain() {
     Runtime::new().run(async {
         event::register(&[])?;
-        event::info(0, "SpaceCoMP app starting")?;
+        info!("SpaceCoMP app starting")?;
 
         let scid = SpacecraftId::new(system::get_spacecraft_id());
         let address = scid.to_address(NUM_SATS);
         let Address::Satellite(point) = address else {
-            event::info(0, "Invalid spacecraft ID")?;
+            err!("Invalid spacecraft ID")?;
             return Ok(());
         };
 
@@ -223,7 +225,7 @@ pub extern "C" fn SPACECOMP_AppMain() {
                     break;
                 };
                 if let Err(e) = handle(&mut rx, &mut tx, &mut bufs, point, len).await {
-                    event::error(0, e.as_str()).ok();
+                    err!("{}", e.as_str()).ok();
                 }
             }
         };
@@ -243,23 +245,24 @@ async fn handle(
 ) -> Result<(), SpaceCompError> {
     let msg = SpaceCompMessage::parse(&bufs.recv[..len])?;
     let op_code = msg.op_code()?;
+    let job_id = msg.job_id();
 
     match op_code {
         OpCode::SubmitJob => {
-            let job_id = msg.job_id();
-            roles::coordinator::run(rx, tx, bufs, point, job_id).await?
+            let job: Job = msg.parse_payload(ParseError::SubmitJob)?;
+            roles::coordinator::run(rx, tx, bufs, point, job_id, job).await?
         }
         OpCode::AssignCollector => {
-            let m = AssignCollectorMessage::parse(msg)?;
-            roles::collector::run(tx, bufs, m).await?
+            let p: AssignCollectorPayload = msg.parse_payload(ParseError::AssignCollector)?;
+            roles::collector::run(tx, bufs, job_id, p).await?
         }
         OpCode::AssignMapper => {
-            let m = AssignMapperMessage::parse(msg)?;
-            roles::mapper::run(rx, tx, bufs, m).await?
+            let p: AssignMapperPayload = msg.parse_payload(ParseError::AssignMapper)?;
+            roles::mapper::run(rx, tx, bufs, job_id, p).await?
         }
         OpCode::AssignReducer => {
-            let m = AssignReducerMessage::parse(msg)?;
-            roles::reducer::run(rx, tx, bufs, m).await?
+            let p: AssignReducerPayload = msg.parse_payload(ParseError::AssignReducer)?;
+            roles::reducer::run(rx, tx, bufs, job_id, p).await?
         }
         _ => {}
     }

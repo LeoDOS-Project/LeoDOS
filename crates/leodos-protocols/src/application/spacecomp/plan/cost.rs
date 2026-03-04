@@ -38,7 +38,7 @@ impl Job {
         mappers: &[Point],
         assignment: &[usize],
     ) -> u64 {
-        let processing = (self.map_processing_factor * BASE_PROCESSING_US as f32) as u64;
+        let processing = (self.map_processing_factor() * BASE_PROCESSING_US as f32) as u64;
         collectors
             .iter()
             .enumerate()
@@ -58,7 +58,7 @@ impl Job {
         reducer: Point,
         los: Point,
     ) -> u64 {
-        let processing = (self.reduce_processing_factor * BASE_PROCESSING_US as f32) as u64;
+        let processing = (self.reduce_processing_factor() * BASE_PROCESSING_US as f32) as u64;
 
         let reducer_to_los = hop_cost(hop_distance(torus, reducer, los));
 

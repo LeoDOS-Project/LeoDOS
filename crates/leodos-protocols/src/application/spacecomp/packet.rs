@@ -128,8 +128,19 @@ impl SpaceCompMessage {
         zerocopy::IntoBytes::as_bytes(self)
     }
 
+    /// Parses a fixed-size payload from the message.
+    pub fn parse_payload<T: FromBytes + KnownLayout + Immutable>(
+        &self,
+        err: ParseError,
+    ) -> Result<T, ParseError> {
+        let (val, _) = T::read_from_prefix(&self.payload).map_err(|_| err)?;
+        Ok(val)
+    }
+
     /// Iterates over fixed-size `T` records in the payload.
-    pub fn records<'a, T: FromBytes + Immutable + KnownLayout + 'a>(&'a self) -> crate::application::spacecomp::io::reader::RecordIter<'a, T> {
+    pub fn records<'a, T: FromBytes + Immutable + KnownLayout + 'a>(
+        &'a self,
+    ) -> crate::application::spacecomp::io::reader::RecordIter<'a, T> {
         crate::application::spacecomp::io::reader::RecordIter::new(&self.payload)
     }
 }
@@ -211,14 +222,21 @@ pub struct AssignCollectorPayload {
 impl AssignCollectorPayload {
     #[builder]
     /// Creates a new collector assignment payload.
-    pub fn new(mapper_addr: Address, partition_id: u8) -> Self {
-        Self { mapper_addr: RawAddress::from(mapper_addr), partition_id }
+    pub fn new(mapper_addr: impl Into<Address>, partition_id: u8) -> Self {
+        Self {
+            mapper_addr: RawAddress::from(mapper_addr.into()),
+            partition_id,
+        }
     }
 
     /// Returns the address of the mapper this collector should send data to.
-    pub fn mapper_addr(&self) -> Address { self.mapper_addr.parse() }
+    pub fn mapper_addr(&self) -> Address {
+        self.mapper_addr.parse()
+    }
     /// Returns the partition index assigned to this collector.
-    pub fn partition_id(&self) -> u8 { self.partition_id }
+    pub fn partition_id(&self) -> u8 {
+        self.partition_id
+    }
 }
 
 /// Payload for [`OpCode::AssignMapper`].
@@ -233,14 +251,21 @@ pub struct AssignMapperPayload {
 impl AssignMapperPayload {
     #[builder]
     /// Creates a new mapper assignment payload.
-    pub fn new(reducer_addr: Address, collector_count: u8) -> Self {
-        Self { reducer_addr: RawAddress::from(reducer_addr), collector_count }
+    pub fn new(reducer_addr: impl Into<Address>, collector_count: u8) -> Self {
+        Self {
+            reducer_addr: RawAddress::from(reducer_addr.into()),
+            collector_count,
+        }
     }
 
     /// Returns the address of the reducer this mapper should forward to.
-    pub fn reducer_addr(&self) -> Address { self.reducer_addr.parse() }
+    pub fn reducer_addr(&self) -> Address {
+        self.reducer_addr.parse()
+    }
     /// Returns the number of collectors feeding data to this mapper.
-    pub fn collector_count(&self) -> u8 { self.collector_count }
+    pub fn collector_count(&self) -> u8 {
+        self.collector_count
+    }
 }
 
 /// Payload for [`OpCode::AssignReducer`].
@@ -255,14 +280,21 @@ pub struct AssignReducerPayload {
 impl AssignReducerPayload {
     #[builder]
     /// Creates a new reducer assignment payload.
-    pub fn new(los_addr: Address, mapper_count: u8) -> Self {
-        Self { los_addr: RawAddress::from(los_addr), mapper_count }
+    pub fn new(los_addr: impl Into<Address>, mapper_count: u8) -> Self {
+        Self {
+            los_addr: RawAddress::from(los_addr.into()),
+            mapper_count,
+        }
     }
 
     /// Returns the line-of-sight node address for result delivery.
-    pub fn los_addr(&self) -> Address { self.los_addr.parse() }
+    pub fn los_addr(&self) -> Address {
+        self.los_addr.parse()
+    }
     /// Returns the number of mappers feeding data to this reducer.
-    pub fn mapper_count(&self) -> u8 { self.mapper_count }
+    pub fn mapper_count(&self) -> u8 {
+        self.mapper_count
+    }
 }
 
 /// Errors that can occur when parsing a SpaceCoMP message.
@@ -274,6 +306,9 @@ pub enum ParseError {
     /// The opcode byte does not map to a known [`OpCode`].
     #[error("invalid opcode")]
     InvalidOpCode,
+    /// The payload is not a valid [`Job`].
+    #[error("invalid submit job")]
+    SubmitJob,
     /// The payload is not a valid [`AssignCollectorPayload`].
     #[error("invalid collector assignment")]
     AssignCollector,
@@ -292,6 +327,7 @@ impl ParseError {
         match self {
             Self::Message => "invalid message",
             Self::InvalidOpCode => "invalid opcode",
+            Self::SubmitJob => "invalid submit job",
             Self::AssignCollector => "invalid collector assignment",
             Self::AssignMapper => "invalid mapper assignment",
             Self::AssignReducer => "invalid reducer assignment",
@@ -317,150 +353,6 @@ impl BuildError {
             Self::OutOfRange => "value out of range",
             Self::BufferTooSmall => "buffer too small",
         }
-    }
-}
-
-/// Decoded [`OpCode::AssignCollector`] message.
-#[derive(Debug, Clone, Copy)]
-pub struct AssignCollectorMessage {
-    /// Job identifier.
-    pub job_id: u16,
-    /// Address of the mapper this collector sends data to.
-    pub mapper_addr: Address,
-    /// Partition index assigned to this collector.
-    pub partition_id: u8,
-}
-
-#[bon]
-impl AssignCollectorMessage {
-    /// Decodes from a raw [`SpaceCompMessage`].
-    pub fn parse(msg: &SpaceCompMessage) -> Result<Self, ParseError> {
-        let (p, _) = AssignCollectorPayload::read_from_prefix(msg.payload())
-            .map_err(|_| ParseError::AssignCollector)?;
-        Ok(Self {
-            job_id: msg.job_id(),
-            mapper_addr: p.mapper_addr(),
-            partition_id: p.partition_id(),
-        })
-    }
-
-    /// Constructs a new collector assignment message in the provided buffer.
-    #[builder]
-    pub fn new<'a>(
-        buffer: &'a mut [u8],
-        job_id: u16,
-        mapper_addr: impl Into<Address>,
-        partition_id: usize,
-    ) -> Result<&'a SpaceCompMessage, BuildError> {
-        let partition_id = u8::try_from(partition_id).map_err(|_| BuildError::OutOfRange)?;
-        let payload = AssignCollectorPayload::builder()
-            .mapper_addr(mapper_addr.into())
-            .partition_id(partition_id)
-            .build();
-        let msg = SpaceCompMessage::builder()
-            .buffer(buffer)
-            .op_code(OpCode::AssignCollector)
-            .job_id(job_id)
-            .payload_len(size_of::<AssignCollectorPayload>())
-            .build()?;
-        msg.payload.copy_from_slice(payload.as_bytes());
-        Ok(msg)
-    }
-}
-
-/// Decoded [`OpCode::AssignMapper`] message.
-#[derive(Debug, Clone, Copy)]
-pub struct AssignMapperMessage {
-    /// Job identifier.
-    pub job_id: u16,
-    /// Address of the reducer this mapper forwards to.
-    pub reducer_addr: Address,
-    /// Number of collectors feeding data to this mapper.
-    pub collector_count: u8,
-}
-
-#[bon]
-impl AssignMapperMessage {
-    /// Decodes from a raw [`SpaceCompMessage`].
-    pub fn parse(msg: &SpaceCompMessage) -> Result<Self, ParseError> {
-        let (p, _) = AssignMapperPayload::read_from_prefix(msg.payload())
-            .map_err(|_| ParseError::AssignMapper)?;
-        Ok(Self {
-            job_id: msg.job_id(),
-            reducer_addr: p.reducer_addr(),
-            collector_count: p.collector_count(),
-        })
-    }
-
-    /// Constructs a new mapper assignment message in the provided buffer.
-    #[builder]
-    pub fn new<'a>(
-        buffer: &'a mut [u8],
-        job_id: u16,
-        reducer_addr: impl Into<Address>,
-        collector_count: usize,
-    ) -> Result<&'a SpaceCompMessage, BuildError> {
-        let collector_count = u8::try_from(collector_count).map_err(|_| BuildError::OutOfRange)?;
-        let payload = AssignMapperPayload::builder()
-            .reducer_addr(reducer_addr.into())
-            .collector_count(collector_count)
-            .build();
-        let msg = SpaceCompMessage::builder()
-            .buffer(buffer)
-            .op_code(OpCode::AssignMapper)
-            .job_id(job_id)
-            .payload_len(size_of::<AssignMapperPayload>())
-            .build()?;
-        msg.payload.copy_from_slice(payload.as_bytes());
-        Ok(msg)
-    }
-}
-
-/// Decoded [`OpCode::AssignReducer`] message.
-#[derive(Debug, Clone, Copy)]
-pub struct AssignReducerMessage {
-    /// Job identifier.
-    pub job_id: u16,
-    /// Line-of-sight node address for result delivery.
-    pub los_addr: Address,
-    /// Number of mappers feeding data to this reducer.
-    pub mapper_count: u8,
-}
-
-#[bon]
-impl AssignReducerMessage {
-    /// Decodes from a raw [`SpaceCompMessage`].
-    pub fn parse(msg: &SpaceCompMessage) -> Result<Self, ParseError> {
-        let (p, _) = AssignReducerPayload::read_from_prefix(msg.payload())
-            .map_err(|_| ParseError::AssignReducer)?;
-        Ok(Self {
-            job_id: msg.job_id(),
-            los_addr: p.los_addr(),
-            mapper_count: p.mapper_count(),
-        })
-    }
-
-    /// Constructs a new reducer assignment message in the provided buffer.
-    #[builder]
-    pub fn new<'a>(
-        buffer: &'a mut [u8],
-        job_id: u16,
-        los_addr: impl Into<Address>,
-        mapper_count: usize,
-    ) -> Result<&'a SpaceCompMessage, BuildError> {
-        let mapper_count = u8::try_from(mapper_count).map_err(|_| BuildError::OutOfRange)?;
-        let payload = AssignReducerPayload::builder()
-            .los_addr(los_addr.into())
-            .mapper_count(mapper_count)
-            .build();
-        let msg = SpaceCompMessage::builder()
-            .buffer(buffer)
-            .op_code(OpCode::AssignReducer)
-            .job_id(job_id)
-            .payload_len(size_of::<AssignReducerPayload>())
-            .build()?;
-        msg.payload.copy_from_slice(payload.as_bytes());
-        Ok(msg)
     }
 }
 

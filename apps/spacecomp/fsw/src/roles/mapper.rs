@@ -1,6 +1,6 @@
 use leodos_protocols::application::spacecomp::io::writer::BufWriter;
 use leodos_protocols::application::spacecomp::packet::{
-    AssignMapperMessage, OpCode, SpaceCompMessage,
+    AssignMapperPayload, OpCode, SpaceCompMessage,
 };
 
 use crate::data::WordCount;
@@ -13,15 +13,16 @@ pub async fn run(
     rx: &mut RxHandle<'_>,
     tx: &mut TxHandle<'_>,
     bufs: &mut Buffers,
-    assign: AssignMapperMessage,
+    job_id: u16,
+    assign: AssignMapperPayload,
 ) -> Result<(), SpaceCompError> {
     let mut received = 0u8;
     {
         let mut writer = BufWriter::<WordCount, _>::new(
             tx,
             &mut bufs.msg,
-            assign.reducer_addr,
-            assign.job_id,
+            assign.reducer_addr(),
+            job_id,
             OpCode::DataChunk,
         );
 
@@ -46,7 +47,7 @@ pub async fn run(
             writer.flush().await?;
 
             received += 1;
-            if received >= assign.collector_count {
+            if received >= assign.collector_count() {
                 break;
             }
         }
@@ -55,9 +56,9 @@ pub async fn run(
     let done = SpaceCompMessage::builder()
         .buffer(&mut bufs.msg)
         .op_code(OpCode::PhaseDone)
-        .job_id(assign.job_id)
+        .job_id(job_id)
         .payload_len(0)
         .build()?;
-    tx.send(assign.reducer_addr, done).await.ok();
+    tx.send(assign.reducer_addr(), done).await.ok();
     Ok(())
 }

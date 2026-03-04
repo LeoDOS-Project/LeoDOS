@@ -1,19 +1,20 @@
+use core::mem::size_of;
+
 use leodos_protocols::application::spacecomp::job::Job;
-use leodos_protocols::application::spacecomp::packet::AssignCollectorMessage;
-use leodos_protocols::application::spacecomp::packet::AssignMapperMessage;
-use leodos_protocols::application::spacecomp::packet::AssignReducerMessage;
+use leodos_protocols::application::spacecomp::packet::AssignCollectorPayload;
+use leodos_protocols::application::spacecomp::packet::AssignMapperPayload;
+use leodos_protocols::application::spacecomp::packet::AssignReducerPayload;
 use leodos_protocols::application::spacecomp::packet::OpCode;
 use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::application::spacecomp::plan::Plan;
 use leodos_protocols::application::spacecomp::plan::ReducerPlacement;
-use leodos_protocols::network::isl::geo::GeoAoi;
-use leodos_protocols::network::isl::geo::LatLon;
 use leodos_protocols::network::isl::torus::Point;
+use zerocopy::IntoBytes;
 
 use crate::Buffers;
 use crate::RxHandle;
-use crate::TxHandle;
 use crate::SpaceCompError;
+use crate::TxHandle;
 use crate::MAX_SATELLITES;
 use crate::SHELL;
 
@@ -23,42 +24,55 @@ pub async fn run(
     bufs: &mut Buffers,
     local_point: Point,
     job_id: u16,
+    job: Job,
 ) -> Result<(), SpaceCompError> {
-    let plan: Plan<MAX_SATELLITES> = Job::builder()
-        .geo_aoi(GeoAoi::new(
-            LatLon::new(55.0, 10.0),
-            LatLon::new(50.0, 20.0),
-        ))
-        .data_volume_bytes(1024)
-        .build()
+    let plan: Plan<MAX_SATELLITES> = job
         .plan(SHELL, ReducerPlacement::CenterOfAoi, local_point)
         .map_err(SpaceCompError::Plan)?;
 
     for (i, pt) in plan.collectors.iter().enumerate() {
-        let msg = AssignCollectorMessage::builder()
-            .buffer(&mut bufs.msg)
-            .job_id(job_id)
+        let payload = AssignCollectorPayload::builder()
             .mapper_addr(plan.mappers[plan.assignment[i]])
-            .partition_id(i)
+            .partition_id(i as u8)
+            .build();
+        let m = SpaceCompMessage::builder()
+            .buffer(&mut bufs.msg)
+            .op_code(OpCode::AssignCollector)
+            .job_id(job_id)
+            .payload_len(size_of::<AssignCollectorPayload>())
             .build()?;
-        tx.send(*pt, msg).await.ok();
+        m.payload_mut().copy_from_slice(payload.as_bytes());
+        tx.send(*pt, m).await.ok();
     }
     for (j, pt) in plan.mappers.iter().enumerate() {
-        let msg = AssignMapperMessage::builder()
-            .buffer(&mut bufs.msg)
-            .job_id(job_id)
+        let count = plan.assignment.iter().filter(|&&a| a == j).count() as u8;
+        let payload = AssignMapperPayload::builder()
             .reducer_addr(plan.reducer)
-            .collector_count(plan.assignment.iter().filter(|&&a| a == j).count())
+            .collector_count(count)
+            .build();
+        let m = SpaceCompMessage::builder()
+            .buffer(&mut bufs.msg)
+            .op_code(OpCode::AssignMapper)
+            .job_id(job_id)
+            .payload_len(size_of::<AssignMapperPayload>())
             .build()?;
-        tx.send(*pt, msg).await.ok();
+        m.payload_mut().copy_from_slice(payload.as_bytes());
+        tx.send(*pt, m).await.ok();
     }
-    let msg = AssignReducerMessage::builder()
-        .buffer(&mut bufs.msg)
-        .job_id(job_id)
-        .los_addr(local_point)
-        .mapper_count(plan.mappers.len())
-        .build()?;
-    tx.send(plan.reducer, msg).await.ok();
+    {
+        let payload = AssignReducerPayload::builder()
+            .los_addr(local_point)
+            .mapper_count(plan.mappers.len() as u8)
+            .build();
+        let m = SpaceCompMessage::builder()
+            .buffer(&mut bufs.msg)
+            .op_code(OpCode::AssignReducer)
+            .job_id(job_id)
+            .payload_len(size_of::<AssignReducerPayload>())
+            .build()?;
+        m.payload_mut().copy_from_slice(payload.as_bytes());
+        tx.send(plan.reducer, m).await.ok();
+    }
 
     loop {
         let Ok(token) = rx.wait_for_message().await else {

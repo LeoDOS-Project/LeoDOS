@@ -1,7 +1,7 @@
 use heapless::index_map::FnvIndexMap;
 use leodos_protocols::application::spacecomp::io::writer::BufWriter;
 use leodos_protocols::application::spacecomp::packet::{
-    AssignReducerMessage, OpCode, SpaceCompMessage,
+    AssignReducerPayload, OpCode, SpaceCompMessage,
 };
 
 use crate::data::WordCount;
@@ -14,7 +14,8 @@ pub async fn run(
     rx: &mut RxHandle<'_>,
     tx: &mut TxHandle<'_>,
     bufs: &mut Buffers,
-    assign: AssignReducerMessage,
+    job_id: u16,
+    assign: AssignReducerPayload,
 ) -> Result<(), SpaceCompError> {
     let mut counts: FnvIndexMap<[u8; 16], u32, 64> = FnvIndexMap::new();
     let mut done_count = 0u8;
@@ -49,12 +50,12 @@ pub async fn run(
         });
         if let Outcome::Done = outcome {
             done_count += 1;
-            if done_count >= assign.mapper_count {
+            if done_count >= assign.mapper_count() {
                 let mut writer = BufWriter::<WordCount, _>::new(
                     tx,
                     &mut bufs.msg,
-                    assign.los_addr,
-                    assign.job_id,
+                    assign.los_addr(),
+                    job_id,
                     OpCode::JobResult,
                 );
 
