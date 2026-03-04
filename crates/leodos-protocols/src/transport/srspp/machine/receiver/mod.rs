@@ -1,25 +1,30 @@
 //! Receiver state machine for SRSPP.
 //!
-//! Three backends behind the same public API:
-//! - [`ReceiverA`]: indexed slots (`seq % WIN`), fixed MTU-sized slots
-//! - [`ReceiverB`]: gap-tracked contiguous buffer, direct byte placement
-//! - [`ReceiverC`]: indexed slab, append-only bump allocator
+//! Three backends behind the same [`ReceiverBackend`] trait:
 //!
-//! [`ReceiverMachine`] is a type alias for [`ReceiverC`].
+//! | | Fast | Lite | Packed |
+//! |---|---|---|---|
+//! | OOO insert | O(1) | O(WIN) | O(1) |
+//! | Delivery | O(1) advance | O(REASM) shift | O(MSG) copy |
+//! | Per-segment use | MTU (fixed) | MTU (fixed) | payload len |
+//! | Static memory | WIN×MTU + REASM | REASM | BUF + REASM |
+//!
+//! [`ReceiverMachine`] is a type alias for [`PackedReceiver`].
 
-mod primitives;
+/// Shared data structures used by receiver backends.
+pub mod utils;
 mod shell;
 
-/// Backend A: indexed slots with fixed MTU-sized payloads.
-pub mod indexed_slots;
-/// Backend B: gap-tracked contiguous reassembly buffer.
-pub mod gap_tracked;
-/// Backend C: indexed slab with append-only bump allocator.
-pub mod indexed_slab;
+/// Fastest backend — O(1) insert and delivery.
+pub mod fast_receiver;
+/// Half-memory backend — single shared buffer.
+pub mod lite_receiver;
+/// Packed backend — efficient for small payloads.
+pub mod packed_receiver;
 
-pub use gap_tracked::ReceiverB;
-pub use indexed_slab::ReceiverC;
-pub use indexed_slots::ReceiverA;
+pub use fast_receiver::FastReceiver;
+pub use lite_receiver::LiteReceiver;
+pub use packed_receiver::PackedReceiver;
 
 use crate::network::isl::address::Address;
 use crate::network::spp::{Apid, SequenceCount, SequenceFlag};
@@ -165,18 +170,16 @@ pub struct ReceiverConfig {
     pub progress_timeout_ticks: Option<u32>,
 }
 
-/// Receiver state machine (alias for [`ReceiverC`]).
+/// Default receiver backend (alias for [`PackedReceiver`]).
 ///
-/// Handles reordering, reassembly, and ACK generation.
-///
-/// * `WIN` — Maximum number of out-of-order packets to buffer
-/// * `BUF` — Total reorder buffer size in bytes
-/// * `REASM` — Maximum reassembled message size
+/// * `WIN` — maximum number of out-of-order packets to buffer
+/// * `BUF` — reorder slab capacity in bytes
+/// * `REASM` — maximum reassembled message size
 pub type ReceiverMachine<
     const WIN: usize,
     const BUF: usize,
     const REASM: usize,
-> = ReceiverC<WIN, BUF, REASM>;
+> = PackedReceiver<WIN, BUF, REASM>;
 
 /// Trait abstracting over receiver backends.
 pub trait ReceiverBackend: Sized {
@@ -199,6 +202,11 @@ pub trait ReceiverBackend: Sized {
     fn reassembly_data(&self, len: usize) -> &[u8];
     /// Check if there's a complete message ready.
     fn has_message(&self) -> bool;
+    /// Returns the length of the pending message, if any.
+    fn message_len(&self) -> Option<usize>;
+    /// Pass the pending message to `f` and mark it consumed.
+    fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
+        where F: FnOnce(&[u8]) -> Ret;
     /// Get the current expected sequence number.
     fn expected_seq(&self) -> SequenceCount;
 }
@@ -208,7 +216,7 @@ impl<
     const MTU: usize,
     const REASM: usize,
     const TOTAL: usize,
-> ReceiverBackend for ReceiverA<WIN, MTU, REASM, TOTAL>
+> ReceiverBackend for FastReceiver<WIN, MTU, REASM, TOTAL>
 {
     fn new(config: ReceiverConfig, remote_address: Address) -> Self {
         Self::new(config, remote_address)
@@ -231,6 +239,15 @@ impl<
     }
     fn has_message(&self) -> bool {
         self.has_message()
+    }
+    fn message_len(&self) -> Option<usize> {
+        self.message_len()
+    }
+    fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
+    where
+        F: FnOnce(&[u8]) -> Ret,
+    {
+        self.consume_message(f)
     }
     fn expected_seq(&self) -> SequenceCount {
         self.expected_seq()
@@ -238,7 +255,7 @@ impl<
 }
 
 impl<const REASM: usize, const WIN: usize, const MTU: usize>
-    ReceiverBackend for ReceiverB<REASM, WIN, MTU>
+    ReceiverBackend for LiteReceiver<REASM, WIN, MTU>
 {
     fn new(config: ReceiverConfig, remote_address: Address) -> Self {
         Self::new(config, remote_address)
@@ -261,6 +278,15 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
     }
     fn has_message(&self) -> bool {
         self.has_message()
+    }
+    fn message_len(&self) -> Option<usize> {
+        self.message_len()
+    }
+    fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
+    where
+        F: FnOnce(&[u8]) -> Ret,
+    {
+        self.consume_message(f)
     }
     fn expected_seq(&self) -> SequenceCount {
         self.expected_seq()
@@ -268,7 +294,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
 }
 
 impl<const WIN: usize, const BUF: usize, const REASM: usize>
-    ReceiverBackend for ReceiverC<WIN, BUF, REASM>
+    ReceiverBackend for PackedReceiver<WIN, BUF, REASM>
 {
     fn new(config: ReceiverConfig, remote_address: Address) -> Self {
         Self::new(config, remote_address)
@@ -291,6 +317,15 @@ impl<const WIN: usize, const BUF: usize, const REASM: usize>
     }
     fn has_message(&self) -> bool {
         self.has_message()
+    }
+    fn message_len(&self) -> Option<usize> {
+        self.message_len()
+    }
+    fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
+    where
+        F: FnOnce(&[u8]) -> Ret,
+    {
+        self.consume_message(f)
     }
     fn expected_seq(&self) -> SequenceCount {
         self.expected_seq()
@@ -713,15 +748,15 @@ mod tests {
     }
 
     receiver_tests!(
-        receiver_c_tests,
-        ReceiverC<8, 4096, 8192>,
-        ReceiverC::new
+        packed_receiver_tests,
+        PackedReceiver<8, 4096, 8192>,
+        PackedReceiver::new
     );
 
     receiver_tests!(
-        receiver_a_tests,
-        ReceiverA<8, 512, 8192, 4096>,
-        ReceiverA::new
+        fast_receiver_tests,
+        FastReceiver<8, 512, 8192, 4096>,
+        FastReceiver::new
     );
 
     // Legacy alias tests
@@ -743,9 +778,9 @@ mod tests {
     }
 
     #[test]
-    fn receiver_a_seq_wraparound() {
-        let mut rx: ReceiverA<8, 512, 8192, 4096> =
-            ReceiverA::new(make_config(), test_remote_address());
+    fn fast_receiver_seq_wraparound() {
+        let mut rx: FastReceiver<8, 512, 8192, 4096> =
+            FastReceiver::new(make_config(), test_remote_address());
         let mut a = ReceiverActions::new();
 
         for i in 0..SequenceCount::MAX {
@@ -786,9 +821,9 @@ mod tests {
     }
 
     #[test]
-    fn receiver_c_slab_reset() {
-        let mut rx: ReceiverC<8, 128, 8192> =
-            ReceiverC::new(make_config(), test_remote_address());
+    fn packed_receiver_slab_reset() {
+        let mut rx: PackedReceiver<8, 128, 8192> =
+            PackedReceiver::new(make_config(), test_remote_address());
         let mut a = ReceiverActions::new();
 
         let big = [0xAA; 60];

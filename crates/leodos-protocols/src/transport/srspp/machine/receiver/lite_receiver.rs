@@ -2,37 +2,52 @@ use crate::network::isl::address::Address;
 use crate::network::spp::{SequenceCount, SequenceFlag};
 use heapless::Vec;
 
-use super::primitives::GapTracker;
+use super::utils::GapTracker;
 use super::shell::ReceiverShell;
 use super::{
     ReceiverAction, ReceiverActions, ReceiverConfig, ReceiverError,
     ReceiverEvent,
 };
 
-/// Backend B: gap-tracked contiguous reassembly buffer.
+/// Half-memory backend — reorder and reassembly share one buffer.
 ///
-/// Segments are placed at `(seq − base_seq) × MTU` byte offsets.
-/// First and Continuation segments must be exactly `MTU` bytes;
-/// only Last and Unsegmented may be shorter.
+/// Use when memory is scarce: segments are placed directly at
+/// their final byte offset in a single flat buffer, so there is
+/// no separate reorder stage. Static memory is just `REASM`.
 ///
-/// * `REASM` — reassembly buffer size
+/// Trade-off: each delivery requires an O(REASM) byte shift to
+/// reclaim the consumed prefix, and OOO insert is O(WIN) for
+/// gap bookkeeping. Segments tile at MTU boundaries, so each
+/// slot reserves a full MTU regardless of payload size.
+///
+/// * `REASM` — reassembly buffer size (the only buffer)
 /// * `WIN` — maximum gap tracker intervals
 /// * `MTU` — maximum segment payload size
-pub struct ReceiverB<const REASM: usize, const WIN: usize, const MTU: usize> {
+pub struct LiteReceiver<const REASM: usize, const WIN: usize, const MTU: usize> {
+    /// Shared receiver state (sequence tracking, timers, ACK logic).
     shell: ReceiverShell,
+    /// Contiguous buffer where segments are placed at computed offsets.
     message_buf: [u8; REASM],
+    /// Tracks unfilled byte ranges in the reassembly buffer.
     gaps: GapTracker<WIN>,
+    /// Sorted list of byte offsets where complete messages end.
     message_ends: Vec<usize, WIN>,
+    /// Sequence number corresponding to byte offset 0 in the buffer.
     base_seq: u16,
+    /// Whether a multi-segment reassembly is in progress.
     reassembly_in_progress: bool,
+    /// Length of a fully reassembled message, if one is ready.
     complete_message_len: Option<usize>,
+    /// Deferred byte shift to apply before the next operation.
     pending_shift: usize,
+    /// Number of segments consumed by the pending shift.
     pending_segs: u16,
 }
 
 impl<const REASM: usize, const WIN: usize, const MTU: usize>
-    ReceiverB<REASM, WIN, MTU>
+    LiteReceiver<REASM, WIN, MTU>
 {
+    /// Maximum number of segments that fit in the reassembly buffer.
     const MAX_SEGS: usize = REASM / MTU;
 
     /// Create a new receiver for a specific remote sender.
@@ -56,12 +71,20 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
     }
 
     /// Process an event and produce actions.
+    ///
+    /// The pending buffer shift is deferred while a message awaits
+    /// consumption.  This keeps the message data at the front of
+    /// `message_buf` stable so that [`consume_message`] can hand
+    /// out a valid `&[u8]` even when the driver keeps calling
+    /// `handle` in between.
     pub fn handle(
         &mut self,
         event: ReceiverEvent<'_>,
         actions: &mut ReceiverActions,
     ) -> Result<(), ReceiverError> {
-        self.apply_pending_shift();
+        if self.complete_message_len.is_none() {
+            self.apply_pending_shift();
+        }
         actions.clear();
         match event {
             ReceiverEvent::DataReceived {
@@ -86,6 +109,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
             .map(|len| &self.message_buf[..len])
     }
 
+    /// Shift the buffer and metadata to consume delivered messages.
     fn apply_pending_shift(&mut self) {
         let shift = self.pending_shift;
         if shift == 0 {
@@ -117,15 +141,35 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
         self.complete_message_len.is_some()
     }
 
+    /// Returns the length of the pending message, if any.
+    pub fn message_len(&self) -> Option<usize> {
+        self.complete_message_len
+    }
+
+    /// Pass the pending message to `f` and mark it consumed.
+    ///
+    /// The message occupies `&message_buf[..len]` and is stable
+    /// as long as `handle` has not been called since the last
+    /// `take_message` / `consume_message`.
+    pub fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
+    where
+        F: FnOnce(&[u8]) -> Ret,
+    {
+        let len = self.complete_message_len.take()?;
+        Some(f(&self.message_buf[..len]))
+    }
+
     /// Get the current expected sequence number.
     pub fn expected_seq(&self) -> SequenceCount {
         self.shell.expected_seq()
     }
 
+    /// Compute the segment distance from `base_seq` to `seq` with wrapping.
     fn seg_distance(&self, seq: SequenceCount) -> u16 {
         seq.value().wrapping_sub(self.base_seq) & SequenceCount::MAX
     }
 
+    /// Process an incoming data segment, placing it and attempting delivery.
     fn handle_data(
         &mut self,
         seq: SequenceCount,
@@ -158,6 +202,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
         Ok(())
     }
 
+    /// Handle a progress timeout by discarding partial reassembly and advancing.
     fn handle_progress_timeout(
         &mut self,
         actions: &mut ReceiverActions,
@@ -191,6 +236,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
         Ok(())
     }
 
+    /// Copy a segment's payload into the reassembly buffer at its computed offset.
     fn place_segment(
         &mut self,
         seq: SequenceCount,
@@ -229,6 +275,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
         Ok(())
     }
 
+    /// Deliver complete messages whose gaps have all been filled.
     fn try_deliver(
         &mut self,
         actions: &mut ReceiverActions,
@@ -302,7 +349,7 @@ mod tests {
 
     const MTU: usize = 64;
 
-    type Rx = ReceiverB<{ 8 * MTU }, 8, MTU>;
+    type Rx = LiteReceiver<{ 8 * MTU }, 8, MTU>;
 
     fn make(cfg: ReceiverConfig) -> Rx {
         Rx::new(cfg, test_remote())
