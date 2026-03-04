@@ -6,6 +6,7 @@ pub trait RtoPolicy {
 
 /// Fixed retransmission timeout that ignores orbital dynamics.
 pub struct FixedRto {
+    /// Constant timeout value in ticks.
     rto_ticks: u32,
 }
 
@@ -35,6 +36,7 @@ pub struct ContactWindow {
 
 /// Ordered schedule of ground station contact windows.
 pub struct ContactSchedule<const N: usize> {
+    /// Chronologically ordered list of contact windows.
     windows: heapless::Vec<ContactWindow, N>,
 }
 
@@ -72,8 +74,11 @@ impl<const N: usize> ContactSchedule<N> {
 
 /// RTO policy that adapts timeout based on orbital contact windows.
 pub struct OrbitAwareRto<const N: usize> {
+    /// RTO used during active ISL contact windows.
     isl_rto_ticks: u32,
+    /// Extra margin added to the wait-for-window timeout.
     margin_ticks: u32,
+    /// Ground station contact schedule.
     schedule: ContactSchedule<N>,
 }
 

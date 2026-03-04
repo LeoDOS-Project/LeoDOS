@@ -22,18 +22,31 @@ use super::ticks_to_duration;
 /// Receives messages reliably over the link, handling reordering and reassembly.
 /// Sends ACKs to the remote sender.
 pub struct SrsppReceiver<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> {
+    /// Network link for receiving data and sending ACKs.
     link: L,
+    /// Local address used as the source in outgoing ACKs.
     local_address: Address,
+    /// APID used in outgoing ACK packets.
     apid: Apid,
+    /// Function code used in outgoing ACK packets.
     function_code: u8,
+    /// Message ID used in outgoing ACK packets.
     message_id: u8,
+    /// Action code used in outgoing ACK packets.
     action_code: u8,
+    /// Receiver state machine handling reordering and reassembly.
     machine: R,
+    /// Pending actions from the state machine.
     actions: ReceiverActions,
+    /// Deadline for the delayed ACK timer.
     ack_timer: Option<Instant>,
+    /// Deadline for the progress (inactivity) timer.
     progress_timer: Option<Instant>,
+    /// Tick rate used to convert timer ticks to durations.
     ticks_per_sec: u32,
+    /// Buffer for receiving data packets from the link.
     recv_buffer: [u8; MTU],
+    /// Buffer for building outgoing ACK packets.
     ack_buffer: [u8; 32],
 }
 
@@ -93,6 +106,26 @@ impl<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, 
         })
     }
 
+    /// Wait for a complete message to become available.
+    ///
+    /// Returns a [`DeliveryToken`] that borrows `&mut self`,
+    /// preventing further receives while the token is held.
+    /// Call [`DeliveryToken::consume`] with a synchronous closure
+    /// to read the message data without an intermediate copy.
+    pub async fn wait_for_message(
+        &mut self,
+    ) -> Result<DeliveryToken<'_, L, R, MTU>, SrsppError> {
+        loop {
+            if let Some(len) = self.machine.message_len() {
+                return Ok(DeliveryToken {
+                    rx: self,
+                    msg_len: len,
+                });
+            }
+            self.poll().await?;
+        }
+    }
+
     /// Poll for incoming data and handle timers.
     pub async fn poll(&mut self) -> Result<(), SrsppError> {
         tokio::select! {
@@ -115,6 +148,7 @@ impl<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, 
         Ok(())
     }
 
+    /// Parses an incoming packet and processes it if it is a data packet.
     async fn handle_incoming(&mut self, packet: &[u8]) -> Result<(), SrsppError> {
         let srspp_type =
             parse_srspp_type(packet).map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
@@ -138,6 +172,7 @@ impl<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, 
         Ok(())
     }
 
+    /// Fires when the delayed ACK timer expires and sends an ACK.
     async fn handle_ack_timeout(&mut self) -> Result<(), SrsppError> {
         self.ack_timer = None;
         self.machine
@@ -146,6 +181,7 @@ impl<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, 
         Ok(())
     }
 
+    /// Fires when the progress timer expires due to sender inactivity.
     async fn handle_progress_timeout(&mut self) -> Result<(), SrsppError> {
         self.progress_timer = None;
         self.machine
@@ -154,6 +190,7 @@ impl<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, 
         Ok(())
     }
 
+    /// Executes pending actions: sends ACKs and manages timers.
     async fn process_actions(&mut self) -> Result<(), SrsppError> {
         for action in self.actions.iter() {
             match action {
@@ -200,5 +237,35 @@ impl<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, 
             }
         }
         Ok(())
+    }
+}
+
+/// Zero-copy delivery token returned by
+/// [`SrsppReceiver::wait_for_message`].
+///
+/// Holds `&mut SrsppReceiver`, preventing any I/O while the
+/// token is alive.  Call [`consume`](Self::consume) with a
+/// synchronous closure to read the message and release the
+/// token in one step.
+pub struct DeliveryToken<'a, L: NetworkLayer, R: ReceiverBackend, const MTU: usize> {
+    rx: &'a mut SrsppReceiver<L, R, MTU>,
+    msg_len: usize,
+}
+
+impl<'a, L: NetworkLayer, R: ReceiverBackend, const MTU: usize>
+    DeliveryToken<'a, L, R, MTU>
+{
+    /// Byte length of the pending message.
+    pub fn len(&self) -> usize {
+        self.msg_len
+    }
+
+    /// Pass the message data to `f`, consume the token, and
+    /// return whatever `f` returns.
+    pub fn consume<F, Ret>(self, f: F) -> Ret
+    where
+        F: FnOnce(&[u8]) -> Ret,
+    {
+        self.rx.machine.consume_message(f).unwrap()
     }
 }

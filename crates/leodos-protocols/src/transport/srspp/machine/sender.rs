@@ -171,22 +171,33 @@ pub struct SenderConfig {
 /// State of a packet slot.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
 enum SlotState {
+    /// Slot is unused and available.
     #[default]
     Empty,
+    /// Packet is queued but not yet transmitted.
     PendingTransmit,
+    /// Packet has been transmitted and is awaiting acknowledgement.
     AwaitingAck,
 }
 
 /// Metadata for a packet in the send buffer.
 #[derive(Clone, Copy)]
 struct PacketMeta {
+    /// Current state of this slot.
     state: SlotState,
+    /// Sequence number assigned to this packet.
     seq: u16,
+    /// Segmentation flags for this packet.
     flags: SequenceFlag,
+    /// Destination address in raw form.
     target: RawAddress,
+    /// Number of retransmission attempts so far.
     retransmit_count: u8,
+    /// Byte offset into the send buffer.
     offset: usize,
+    /// Length of the payload in bytes.
     len: usize,
+    /// Whether this packet belongs to a segmented message.
     is_segmented: bool,
 }
 
@@ -216,11 +227,17 @@ impl Default for PacketMeta {
 /// * `BUF` - Total send buffer size in bytes
 /// * `MTU` - Maximum transmission unit (packet size)
 pub struct SenderMachine<const WIN: usize, const BUF: usize, const MTU: usize> {
+    /// Sender configuration.
     config: SenderConfig,
+    /// Per-slot metadata for each window entry.
     meta: [PacketMeta; WIN],
+    /// Contiguous send buffer holding all packet payloads.
     data: [u8; BUF],
+    /// Current write position in the send buffer.
     write_pos: usize,
+    /// Next sequence number to assign.
     next_seq: u16,
+    /// Lowest unacknowledged sequence number.
     send_base: u16,
 }
 
@@ -309,6 +326,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         Ok(())
     }
 
+    /// Segment data if needed and queue packets for transmission.
     fn handle_send_request(
         &mut self,
         target: Address,
@@ -351,6 +369,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         Ok(())
     }
 
+    /// Allocate a slot and buffer space, then emit a Transmit action.
     fn queue_packet(
         &mut self,
         target: Address,
@@ -399,6 +418,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         Ok(())
     }
 
+    /// Process cumulative and selective ACKs, freeing acknowledged slots.
     fn handle_ack(
         &mut self,
         cumulative_ack: SequenceCount,
@@ -446,6 +466,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         }
     }
 
+    /// Retransmit or declare loss when a retransmission timer expires.
     fn handle_timeout(&mut self, seq: SequenceCount, actions: &mut SenderActions) {
         let seq_val = seq.value();
         let mut lost_segmented = false;
@@ -488,6 +509,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         }
     }
 
+    /// Recalculate `send_base` from the lowest unacknowledged sequence.
     fn update_send_base(&mut self) {
         let mut min_unacked = self.next_seq;
         let mut found = false;
@@ -505,6 +527,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
         self.send_base = if found { min_unacked } else { self.next_seq };
     }
 
+    /// Compact the send buffer by shifting live payloads to the front.
     fn compact(&mut self) {
         let mut indices: [Option<usize>; WIN] = [None; WIN];
         let mut count = 0;

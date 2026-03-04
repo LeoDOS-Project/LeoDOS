@@ -29,6 +29,7 @@ use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
 use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
 use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
+use leodos_protocols::transport::srspp::machine::receiver::ReceiverMachine;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
 use leodos_protocols::transport::srspp::packet::SrsppDataPacket;
 use leodos_protocols::transport::srspp::rto::FixedRto;
@@ -44,7 +45,7 @@ mod bindings {
 pub mod data;
 mod roles;
 
-pub type RxHandle<'a> = SrsppRxHandle<'a, LocalLinkError, 8, 4096, 8192, 4>;
+pub type RxHandle<'a> = SrsppRxHandle<'a, LocalLinkError, ReceiverMachine<8, 4096, 8192>, 4>;
 pub type TxHandle<'a> = SrsppTxHandle<'a, LocalLinkError, 8, 4096, 512>;
 
 pub struct Buffers {

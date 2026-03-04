@@ -28,16 +28,23 @@ use crate::transport::srspp::rto::RtoPolicy;
 use super::Error;
 use super::TimerSet;
 
+/// Shared mutable state for the sender channel.
 pub(super) struct SenderState<E, const WIN: usize, const BUF: usize, const MTU: usize> {
+    /// Sender state machine.
     pub(super) machine: SenderMachine<WIN, BUF, MTU>,
+    /// Pending actions produced by the state machine.
     pub(super) actions: SenderActions,
+    /// Retransmission timers for in-flight packets.
     pub(super) timers: TimerSet<WIN>,
+    /// Whether the handle has signaled no more data.
     pub(super) closed: bool,
+    /// First error encountered, propagated to the handle.
     pub(super) error: Option<Error<E>>,
 }
 
 /// Channel that owns the sender state. Split into handle + driver.
 pub struct SrsppSender<E, const WIN: usize = 8, const BUF: usize = 4096, const MTU: usize = 512> {
+    /// Interior-mutable sender state shared between handle and driver.
     state: RefCell<SenderState<E, WIN, BUF, MTU>>,
 }
 
@@ -86,10 +93,15 @@ pub struct SrsppSenderDriver<
     const BUF: usize,
     const MTU: usize,
 > {
+    /// Network link for sending and receiving packets.
     link: L,
+    /// Policy for computing retransmission timeouts.
     rto_policy: P,
+    /// Reference to the shared sender channel.
     channel: &'a SrsppSender<L::Error, WIN, BUF, MTU>,
+    /// Buffer for receiving ACK packets from the link.
     recv_buffer: [u8; MTU],
+    /// Buffer for building outgoing data packets.
     tx_buffer: [u8; MTU],
 }
 
@@ -134,6 +146,7 @@ where
         }
     }
 
+    /// Computes the duration until the next retransmission timeout.
     fn duration_until_next_timeout(&self) -> Duration {
         let now = SysTime::now();
         self.channel
@@ -151,6 +164,7 @@ where
             .unwrap_or(Duration::from_secs(60))
     }
 
+    /// Sends all pending transmit actions over the link.
     async fn process_transmits(&mut self) -> Result<(), Error<L::Error>> {
         let now = SysTime::now();
 
@@ -223,6 +237,7 @@ where
         Ok(())
     }
 
+    /// Processes a received ACK packet and updates sender state.
     fn handle_ack(&mut self, len: usize) -> Result<(), Error<L::Error>> {
         let packet = &self.recv_buffer[..len];
 
@@ -254,6 +269,7 @@ where
         Ok(())
     }
 
+    /// Processes expired retransmission timers and retransmits packets.
     async fn handle_timeouts(&mut self) -> Result<(), Error<L::Error>> {
         let now = SysTime::now();
 
@@ -285,6 +301,7 @@ where
 
 /// Handle for sending data over an SRSPP node.
 pub struct SrsppTxHandle<'a, E, const WIN: usize, const BUF: usize, const MTU: usize> {
+    /// Reference to the shared sender state.
     pub(super) sender: &'a RefCell<SenderState<E, WIN, BUF, MTU>>,
 }
 

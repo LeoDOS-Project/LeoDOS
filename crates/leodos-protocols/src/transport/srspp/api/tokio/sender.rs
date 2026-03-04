@@ -26,14 +26,23 @@ use super::ticks_to_duration;
 /// Sends messages reliably over the link, handling segmentation and retransmission.
 /// Receives ACKs from the remote receiver.
 pub struct SrsppSender<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize> {
+    /// Network link for sending data and receiving ACKs.
     link: L,
+    /// Policy for computing retransmission timeouts.
     rto_policy: P,
+    /// Sender state machine.
     machine: SenderMachine<WIN, BUF, MTU>,
+    /// Pending actions from the state machine.
     actions: SenderActions,
+    /// Per-packet retransmission deadlines keyed by sequence number.
     retransmit_timers: HashMap<u16, Instant>,
+    /// Tick rate used to convert RTO ticks to durations.
     ticks_per_sec: u32,
+    /// Instant when this sender was created, used for elapsed time.
     start_time: Instant,
+    /// Buffer for receiving ACK packets from the link.
     recv_buffer: [u8; MTU],
+    /// Buffer for building outgoing data packets.
     tx_buffer: [u8; MTU],
 }
 
@@ -110,6 +119,7 @@ impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MT
         self.machine.available_bytes()
     }
 
+    /// Executes pending actions: transmits packets and manages timers.
     async fn process_actions(&mut self) -> Result<(), SrsppError> {
         let actions: heapless::Vec<SenderAction, 32> =
             self.actions.iter().copied().collect();
@@ -190,6 +200,7 @@ impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MT
         Ok(())
     }
 
+    /// Parses an incoming packet and processes it if it is an ACK.
     async fn handle_incoming(&mut self, packet: &[u8]) -> Result<(), SrsppError> {
         let srspp_type =
             parse_srspp_type(packet).map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
@@ -212,6 +223,7 @@ impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MT
         Ok(())
     }
 
+    /// Retransmits packets whose retransmission timers have expired.
     async fn handle_timeouts(&mut self) -> Result<(), SrsppError> {
         let now = Instant::now();
 
@@ -236,6 +248,7 @@ impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MT
         Ok(())
     }
 
+    /// Returns the earliest retransmission deadline, if any.
     fn next_timer_deadline(&self) -> Option<Instant> {
         self.retransmit_timers.values().min().copied()
     }

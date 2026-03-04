@@ -27,18 +27,29 @@ use heapless::index_map::FnvIndexMap;
 
 use super::Error;
 
+/// Per-stream receiver state for a single remote sender.
 pub(super) struct StreamState<R: ReceiverBackend> {
+    /// Receiver state machine for this stream.
     pub(super) machine: R,
+    /// Deadline for the delayed ACK timer.
     pub(super) ack_deadline: Option<SysTime>,
+    /// Deadline for the progress (inactivity) timer.
     pub(super) progress_deadline: Option<SysTime>,
 }
 
+/// Shared mutable state for the multi-stream receiver channel.
 pub(super) struct MultiReceiverState<E, R: ReceiverBackend, const MAX_STREAMS: usize> {
+    /// Configuration shared across all streams.
     pub(super) config: ReceiverConfig,
+    /// Per-sender stream states keyed by source address.
     pub(super) streams: FnvIndexMap<Address, StreamState<R>, MAX_STREAMS>,
+    /// Pending actions produced by stream state machines.
     pub(super) actions: ReceiverActions,
+    /// Delayed ACK duration.
     pub(super) ack_delay: Duration,
+    /// Whether the handle has signaled no more receives.
     pub(super) closed: bool,
+    /// First error encountered, propagated to the handle.
     pub(super) error: Option<Error<E>>,
 }
 
@@ -51,6 +62,7 @@ pub struct SrsppReceiver<
     R: ReceiverBackend = ReceiverMachine<8, 4096, 8192>,
     const MAX_STREAMS: usize = 4,
 > {
+    /// Interior-mutable receiver state shared between handle and driver.
     state: RefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
 }
 
@@ -100,9 +112,13 @@ pub struct SrsppReceiverDriver<
     const MTU: usize,
     const MAX_STREAMS: usize,
 > {
+    /// Network link for sending ACKs and receiving data packets.
     link: L,
+    /// Reference to the shared receiver channel.
     channel: &'a SrsppReceiver<L::Error, R, MAX_STREAMS>,
+    /// Buffer for receiving data packets from the link.
     recv_buffer: [u8; MTU],
+    /// Buffer for building outgoing ACK packets.
     ack_buffer: [u8; 32],
 }
 
@@ -149,6 +165,7 @@ where
         }
     }
 
+    /// Computes the duration until the next ACK or progress timeout.
     fn duration_until_next_timeout(&self) -> Duration {
         let now = SysTime::now();
         let state = self.channel.state.borrow();
@@ -168,6 +185,7 @@ where
             .unwrap_or(Duration::from_secs(60))
     }
 
+    /// Processes a received data packet and dispatches to the correct stream.
     async fn handle_data(&mut self, len: usize) -> Result<(), Error<L::Error>> {
         let packet = &self.recv_buffer[..len];
 
@@ -214,6 +232,7 @@ where
         Ok(())
     }
 
+    /// Processes expired ACK and progress timers across all streams.
     async fn handle_timeouts(&mut self) -> Result<(), Error<L::Error>> {
         let now = SysTime::now();
 
@@ -275,6 +294,7 @@ where
         Ok(())
     }
 
+    /// Sends ACKs and updates timers for the given stream's pending actions.
     async fn process_actions_for_stream(&mut self, source: Address) -> Result<(), Error<L::Error>> {
         let (ack_to_send, timer_actions, ack_delay) = {
             let state = self.channel.state.borrow();
@@ -380,6 +400,7 @@ where
 
 /// Handle for receiving data from an SRSPP receiver.
 pub struct SrsppRxHandle<'a, E, R: ReceiverBackend, const MAX_STREAMS: usize> {
+    /// Reference to the shared multi-stream receiver state.
     pub(super) receiver: &'a RefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
 }
 
@@ -449,6 +470,77 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     /// Get the number of active streams.
     pub fn stream_count(&self) -> usize {
         self.receiver.borrow().streams.len()
+    }
+
+    /// Wait for a complete message to become available.
+    ///
+    /// Returns a [`DeliveryToken`] that borrows `&mut self`,
+    /// preventing further receives while the token is held.
+    /// The driver keeps running — the `RefCell` is **not**
+    /// borrowed until [`DeliveryToken::consume`] is called.
+    pub async fn wait_for_message(
+        &mut self,
+    ) -> Result<DeliveryToken<'_, 'a, E, R, MAX_STREAMS>, Error<E>> {
+        let (source, msg_len) = poll_fn(|_cx| {
+            let state = self.receiver.borrow();
+            if let Some(ref e) = state.error {
+                return Poll::Ready(Err(e.clone()));
+            }
+            for (source, stream) in state.streams.iter() {
+                if let Some(len) = stream.machine.message_len() {
+                    return Poll::Ready(Ok((*source, len)));
+                }
+            }
+            Poll::Pending
+        })
+        .await?;
+        Ok(DeliveryToken {
+            rx: self,
+            source,
+            msg_len,
+        })
+    }
+}
+
+/// Zero-copy delivery token returned by
+/// [`SrsppRxHandle::wait_for_message`].
+///
+/// Holds `&mut SrsppRxHandle`, preventing another receive while
+/// the token is alive.  The `RefCell` is **not** borrowed — the
+/// driver freely delivers new segments in the background.
+///
+/// Call [`consume`](Self::consume) with a synchronous closure to
+/// read the message and release the token in one step.
+pub struct DeliveryToken<'a, 'rx, E, R: ReceiverBackend, const MAX_STREAMS: usize> {
+    rx: &'a mut SrsppRxHandle<'rx, E, R, MAX_STREAMS>,
+    source: Address,
+    msg_len: usize,
+}
+
+impl<'a, 'rx, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
+    DeliveryToken<'a, 'rx, E, R, MAX_STREAMS>
+{
+    /// Byte length of the pending message.
+    pub fn len(&self) -> usize {
+        self.msg_len
+    }
+
+    /// Source address of the sender that produced this message.
+    pub fn source(&self) -> Address {
+        self.source
+    }
+
+    /// Pass the message data to `f`, consume the token, and
+    /// return whatever `f` returns.
+    ///
+    /// The `RefCell` is borrowed only for the duration of `f`.
+    pub fn consume<F, Ret>(self, f: F) -> Ret
+    where
+        F: FnOnce(&[u8]) -> Ret,
+    {
+        let mut state = self.rx.receiver.borrow_mut();
+        let stream = state.streams.get_mut(&self.source).unwrap();
+        stream.machine.consume_message(f).unwrap()
     }
 }
 

@@ -26,12 +26,14 @@
 //! }
 //! ```
 
+/// Async SRSPP receiver.
 mod receiver;
+/// Async SRSPP sender.
 mod sender;
 #[cfg(test)]
 mod tests;
 
-pub use receiver::SrsppReceiver;
+pub use receiver::{DeliveryToken, SrsppReceiver};
 pub use sender::SrsppSender;
 
 use crate::transport::srspp::machine::receiver::ReceiverError;
@@ -63,10 +65,12 @@ pub enum SrsppError {
     ReceiverError(#[from] ReceiverError),
 }
 
+/// Converts a tick count to a `Duration` given the tick rate.
 fn ticks_to_duration(ticks: u32, ticks_per_sec: u32) -> Duration {
     Duration::from_millis((ticks as u64 * 1000) / ticks_per_sec as u64)
 }
 
+/// Sleeps until the given deadline, or forever if `None`.
 async fn sleep_until(deadline: Option<Instant>) {
     match deadline {
         Some(d) => tokio::time::sleep_until(d.into()).await,

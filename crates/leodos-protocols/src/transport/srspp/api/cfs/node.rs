@@ -43,7 +43,9 @@ pub struct SrsppNode<
     const MTU: usize = 512,
     const MAX_STREAMS: usize = 4,
 > {
+    /// Interior-mutable sender state.
     sender: RefCell<SenderState<E, WIN, BUF, MTU>>,
+    /// Interior-mutable multi-stream receiver state.
     receiver: RefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
 }
 
@@ -119,11 +121,17 @@ pub struct SrsppNodeDriver<
     const MTU: usize,
     const MAX_STREAMS: usize,
 > {
+    /// Network link for bidirectional packet I/O.
     link: L,
+    /// Policy for computing retransmission timeouts.
     rto_policy: P,
+    /// Reference to the owning node.
     node: &'a SrsppNode<E, R, WIN, BUF, MTU, MAX_STREAMS>,
+    /// Buffer for receiving packets from the link.
     recv_buffer: [u8; MTU],
+    /// Buffer for building outgoing data packets.
     tx_buffer: [u8; MTU],
+    /// Buffer for building outgoing ACK packets.
     ack_buffer: [u8; 32],
 }
 
@@ -165,6 +173,7 @@ where
         }
     }
 
+    /// Computes the duration until the next sender or receiver timeout.
     fn next_timeout(&self) -> Duration {
         let now = SysTime::now();
         let sender_deadline = self.node.sender.borrow().timers.next_deadline();
@@ -194,6 +203,7 @@ where
             .unwrap_or(Duration::from_secs(60))
     }
 
+    /// Dispatches an incoming packet to the ACK or data handler.
     async fn handle_incoming(&mut self, len: usize) -> Result<(), Error<L::Error>> {
         let packet = &self.recv_buffer[..len];
         match parse_srspp_type(packet) {
@@ -206,6 +216,7 @@ where
         }
     }
 
+    /// Processes a received ACK packet and updates sender state.
     fn handle_ack(&mut self, len: usize) -> Result<(), Error<L::Error>> {
         let packet = &self.recv_buffer[..len];
         if let Ok(ack) = parse_ack_packet(packet) {
@@ -232,6 +243,7 @@ where
         Ok(())
     }
 
+    /// Processes a received data packet and dispatches to the correct stream.
     async fn handle_data(&mut self, len: usize) -> Result<(), Error<L::Error>> {
         let packet = &self.recv_buffer[..len];
         if let Ok(data) = parse_data_packet(packet) {
@@ -274,6 +286,7 @@ where
         Ok(())
     }
 
+    /// Sends all pending transmit actions over the link.
     async fn process_sender_transmits(&mut self) -> Result<(), Error<L::Error>> {
         let now = SysTime::now();
 
@@ -346,6 +359,7 @@ where
         Ok(())
     }
 
+    /// Processes expired sender retransmission timers.
     async fn handle_sender_timeouts(&mut self) -> Result<(), Error<L::Error>> {
         let now = SysTime::now();
 
@@ -373,6 +387,7 @@ where
         Ok(())
     }
 
+    /// Processes expired receiver ACK and progress timers.
     async fn handle_receiver_timeouts(&mut self) -> Result<(), Error<L::Error>> {
         let now = SysTime::now();
 
@@ -434,6 +449,7 @@ where
         Ok(())
     }
 
+    /// Sends ACKs and updates timers for the given stream's pending actions.
     async fn process_receiver_actions(&mut self, source: Address) -> Result<(), Error<L::Error>> {
         let (ack_to_send, timer_actions, ack_delay) = {
             let state = self.node.receiver.borrow();

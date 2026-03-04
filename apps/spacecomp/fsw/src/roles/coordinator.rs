@@ -61,13 +61,15 @@ pub async fn run(
     tx.send(plan.reducer, msg).await.ok();
 
     loop {
-        let Ok((_, len)) = rx.recv(&mut bufs.recv).await else {
+        let Ok(token) = rx.wait_for_message().await else {
             return Ok(());
         };
-        let Ok(msg) = SpaceCompMessage::parse(&bufs.recv[..len]) else {
-            continue;
-        };
-        if msg.op_code() == Ok(OpCode::JobResult) && msg.job_id() == job_id {
+        let is_result = token.consume(|data| {
+            SpaceCompMessage::parse(data)
+                .map(|msg| msg.op_code() == Ok(OpCode::JobResult) && msg.job_id() == job_id)
+                .unwrap_or(false)
+        });
+        if is_result {
             return Ok(());
         }
     }

@@ -41,26 +41,33 @@ impl SrsppType {
     }
 }
 
+/// Wire-format SRSPP header following the ISL routing header.
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
 pub(crate) struct SrsppHeader {
+    /// Source address of the sender.
     source_address: RawAddress,
+    /// Raw SRSPP packet type discriminator byte.
     packet_type: u8,
 }
 
 impl SrsppHeader {
+    /// Parse the packet type field into an `SrsppType`.
     pub(crate) fn srspp_type(&self) -> Option<SrsppType> {
         SrsppType::from_u8(self.packet_type)
     }
 
+    /// Returns the parsed source address.
     pub(crate) fn source_address(&self) -> Address {
         self.source_address.parse()
     }
 
+    /// Sets the source address field.
     pub(crate) fn set_source_address(&mut self, address: Address) {
         self.source_address = RawAddress::from(address);
     }
 
+    /// Sets the packet type discriminator.
     pub(crate) fn set_srspp_type(&mut self, srspp_type: SrsppType) {
         self.packet_type = srspp_type as u8;
     }
@@ -70,11 +77,14 @@ impl SrsppHeader {
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
 pub struct AckPayload {
+    /// Sequence number up to which all packets are acknowledged.
     cumulative_ack: network_endian::U16,
+    /// Bitmap of selectively acknowledged packets beyond the cumulative ack.
     selective_ack_bitmap: network_endian::U16,
 }
 
 impl AckPayload {
+    /// Creates a new ACK payload with the given cumulative ack and bitmap.
     pub(crate) fn new(cumulative_ack: u16, bitmap: u16) -> Self {
         Self {
             cumulative_ack: network_endian::U16::new(cumulative_ack),
@@ -82,10 +92,12 @@ impl AckPayload {
         }
     }
 
+    /// Returns the cumulative acknowledgment sequence number.
     pub(crate) fn cumulative_ack(&self) -> SequenceCount {
         SequenceCount::from(self.cumulative_ack.get())
     }
 
+    /// Returns the selective acknowledgment bitmap.
     pub(crate) fn selective_ack_bitmap(&self) -> u16 {
         self.selective_ack_bitmap.get()
     }
@@ -107,7 +119,9 @@ pub struct SrsppDataPacket {
     pub primary: PrimaryHeader,
     /// cFE telecommand secondary header.
     pub secondary: TelecommandSecondaryHeader,
+    /// ISL routing header for inter-satellite addressing.
     pub(crate) isl_header: IslRoutingTelecommandHeader,
+    /// SRSPP protocol header.
     pub(crate) srspp_header: SrsppHeader,
     /// Variable-length application payload.
     pub payload: [u8],
@@ -153,8 +167,11 @@ pub struct SrsppAckPacket {
     pub primary: PrimaryHeader,
     /// cFE telecommand secondary header.
     pub secondary: TelecommandSecondaryHeader,
+    /// ISL routing header for inter-satellite addressing.
     pub(crate) isl_header: IslRoutingTelecommandHeader,
+    /// SRSPP protocol header.
     pub(crate) srspp_header: SrsppHeader,
+    /// Acknowledgment payload with cumulative ack and selective bitmap.
     pub(crate) ack_payload: AckPayload,
 }
 
