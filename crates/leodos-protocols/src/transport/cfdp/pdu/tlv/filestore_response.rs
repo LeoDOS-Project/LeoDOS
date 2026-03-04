@@ -12,6 +12,7 @@ use crate::transport::cfdp::pdu::tlv::FilestoreAction;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct TlvFilestoreResponse {
+    /// Packed byte with the 4-bit action code and 4-bit status code.
     action_and_status_code: u8,
     /// Contains LV-encoded file names and an LV-encoded message.
     rest: [u8],
@@ -56,6 +57,7 @@ impl TlvFilestoreResponse {
 
     /// Parses the rest of the TLV value to find the second file name and the message.
     /// Returns `(second_file_name, message, remainder)`
+    /// Parses the second file name and status message from after the first LV name.
     fn parse_after_first_name(&self) -> Result<(Option<&[u8]>, &[u8]), CfdpError> {
         let first_lv_len = 1 + self.first_file_name()?.len();
         let mut remainder = self

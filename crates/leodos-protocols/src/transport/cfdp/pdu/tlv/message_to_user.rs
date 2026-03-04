@@ -8,6 +8,7 @@ use zerocopy::Unaligned;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct TlvMessageToUser {
+    /// The variable-length message payload bytes.
     rest: [u8],
 }
 

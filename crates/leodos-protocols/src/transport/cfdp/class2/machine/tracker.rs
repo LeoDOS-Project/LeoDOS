@@ -8,6 +8,7 @@ use crate::transport::cfdp::CfdpError;
 /// This limits the size of a NAK PDU.
 const MAX_GAPS: usize = 4;
 
+/// Sentinel value representing an unused slot in the received ranges array.
 const EMPTY_SLOT: (u64, u64) = (u64::MAX, u64::MAX);
 
 /// A data structure to track received segments of a file.
@@ -19,6 +20,7 @@ pub struct SegmentTracker {
     /// A sorted list of disjoint ranges representing received data.
     /// Invariant: For any two ranges (s1, e1) and (s2, e2) in the list, e1 < s2.
     received_ranges: [(u64, u64); MAX_GAPS],
+    /// The total expected size of the file in bytes.
     file_size: u64,
 }
 

@@ -32,6 +32,7 @@ use zerocopy::network_endian::U32;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct KeepAlivePduSmall {
+    /// The 32-bit progress indicator (bytes received so far).
     progress: U32,
 }
 

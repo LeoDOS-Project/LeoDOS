@@ -34,7 +34,9 @@ use zerocopy::network_endian::U64;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct NakPduLarge {
+    /// The 64-bit start of scope offset.
     start_of_scope: U64,
+    /// The 64-bit end of scope offset.
     end_of_scope: U64,
     /// Contains a sequence of zero or more `NakSegmentLarge` structs.
     rest: [u8],

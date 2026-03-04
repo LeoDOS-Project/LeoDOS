@@ -11,6 +11,7 @@ use crate::transport::cfdp::pdu::EntityId;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct TlvEntityId {
+    /// The variable-length entity ID bytes.
     rest: [u8],
 }
 

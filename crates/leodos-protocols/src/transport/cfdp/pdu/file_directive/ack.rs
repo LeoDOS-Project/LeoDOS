@@ -49,12 +49,17 @@ pub struct AckPdu {
 }
 
 #[rustfmt::skip]
+/// Bit masks for the ACK PDU's packed fields.
 mod bitmasks {
+    /// Mask for the 4-bit directive code of the acknowledged PDU.
     pub const ACK_DIR_CODE_MASK: u8 =         0b_11110000;
+    /// Mask for the 4-bit directive subtype code.
     pub const ACK_DIR_SUBTYPE_CODE_MASK: u8 = 0b_00001111;
-    // Second packed octet in ACK PDU
+    /// Mask for the 4-bit condition code.
     pub const ACK_CC_MASK: u8 =                 0b_11110000;
+    /// Mask for the 2-bit reserved field (unused).
     pub const _ACK_RESERVED_MASK: u8 =          0b_00001100;
+    /// Mask for the 2-bit transaction status.
     pub const ACK_TRANSACTION_STATUS_MASK: u8 = 0b_00000011;
 }
 
@@ -114,6 +119,7 @@ impl AckPdu {
     fn directive_code_of_acked_pdu(&self) -> Result<AckedDirectiveCode, CfdpError> {
         AckedDirectiveCode::try_from(get_bits_u8(self.packed_codes, ACK_DIR_CODE_MASK))
     }
+    /// Sets the directive code of the PDU being acknowledged.
     fn set_directive_code_of_acked_pdu(&mut self, code: AckedDirectiveCode) {
         set_bits_u8(&mut self.packed_codes, ACK_DIR_CODE_MASK, code as u8);
     }
@@ -122,6 +128,7 @@ impl AckPdu {
     fn directive_subtype_code(&self) -> u8 {
         get_bits_u8(self.packed_codes, ACK_DIR_SUBTYPE_CODE_MASK)
     }
+    /// Sets the directive subtype code.
     fn set_directive_subtype_code(&mut self, subtype: u8) {
         set_bits_u8(&mut self.packed_codes, ACK_DIR_SUBTYPE_CODE_MASK, subtype);
     }

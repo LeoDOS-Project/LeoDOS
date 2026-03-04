@@ -15,6 +15,7 @@ use crate::utils::set_bits_u8;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct TlvFilestoreRequest {
+    /// Packed byte with the 4-bit action code and 4 spare bits.
     action_code_and_spare: u8,
     /// Contains LV-encoded file names.
     rest: [u8],
@@ -32,8 +33,11 @@ pub struct FilestoreRequest {
 }
 
 #[rustfmt::skip]
+/// Bit masks for the filestore request's packed byte.
 mod bitmasks {
+    /// Mask for the 4-bit action code.
     pub const ACTION_CODE_MASK: u8 = 0b1111_0000;
+    /// Mask for the 4-bit spare field (unused).
     pub const _SPARE_MASK: u8 =      0b0000_1111;
 }
 

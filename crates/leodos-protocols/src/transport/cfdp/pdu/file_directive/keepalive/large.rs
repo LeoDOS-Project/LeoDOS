@@ -32,6 +32,7 @@ use crate::transport::cfdp::pdu::header::TransmissionMode;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct KeepAlivePduLarge {
+    /// The 64-bit progress indicator (bytes received so far).
     progress: U64,
 }
 

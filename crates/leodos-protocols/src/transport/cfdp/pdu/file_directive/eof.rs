@@ -58,7 +58,9 @@ pub struct EofPdu {
     rest: [u8],
 }
 
+/// Bit masks for the EOF PDU's packed fields.
 mod bitmasks {
+    /// Mask for the 4-bit condition code.
     pub const EOF_CC_MASK: u8 = 0b_11110000;
 }
 

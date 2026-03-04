@@ -8,22 +8,30 @@ use core::net::SocketAddr;
 #[cfg(feature = "tokio")]
 use tokio::sync::mpsc;
 
+/// Capacity of the internal event queue.
 const INTERNAL_EVENT_QUEUE_SIZE: usize = 16;
+/// Capacity of the command queue.
 const COMMAND_QUEUE_SIZE: usize = 4;
 
+/// High-level sender that manages outgoing CFDP file transfers.
 #[cfg(feature = "tokio")]
 pub struct CfdpSender {
+    /// The underlying sender runner containing the state machine.
     runner: SenderRunner,
+    /// Channel for submitting put commands.
     command_tx: mpsc::Sender<Command>,
 }
 
+/// High-level sender that manages outgoing CFDP file transfers.
 #[cfg(feature = "cfs")]
 pub struct CfdpSender<'a> {
+    /// The underlying sender runner containing the state machine.
     runner: SenderRunner<'a>,
 }
 
 #[cfg(feature = "tokio")]
 impl CfdpSender {
+    /// Creates a new sender with the given local entity ID.
     pub fn new(my_entity_id: u32) -> Self {
         let (internal_event_tx, internal_event_rx) = mpsc::channel(INTERNAL_EVENT_QUEUE_SIZE);
         let (command_tx, command_rx) = mpsc::channel(COMMAND_QUEUE_SIZE);
@@ -41,6 +49,7 @@ impl CfdpSender {
         }
     }
 
+    /// Initiates a file transfer and returns a stream to await its completion.
     pub async fn put(
         &mut self,
         sender_file_name: &[u8],
@@ -65,6 +74,7 @@ impl CfdpSender {
         Ok(CfdpStream::new(result_rx))
     }
 
+    /// Runs the sender event loop, processing commands and I/O indefinitely.
     pub async fn run<F, S>(&mut self, filestore: F, socket: &S) -> !
     where
         F: FileStore + Clone + Send + 'static,
@@ -76,12 +86,14 @@ impl CfdpSender {
 
 #[cfg(feature = "cfs")]
 impl<'a> CfdpSender<'a> {
+    /// Creates a new sender with the given local entity ID.
     pub fn new(my_entity_id: u32) -> Self {
         Self {
             runner: SenderRunner::new(my_entity_id),
         }
     }
 
+    /// Initiates a file transfer and returns a stream to await its completion.
     pub async fn put(
         &mut self,
         sender_file_name: &[u8],
@@ -92,6 +104,7 @@ impl<'a> CfdpSender<'a> {
         todo!("Implement put method for cfs feature")
     }
 
+    /// Runs the sender event loop, processing commands and I/O indefinitely.
     pub async fn run<F, S>(&mut self, filestore: F, socket: &S) -> !
     where
         F: FileStore,

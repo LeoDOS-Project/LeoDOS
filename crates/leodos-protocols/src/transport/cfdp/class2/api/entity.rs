@@ -12,6 +12,7 @@ use crate::cfdp::machine::SenderMachine;
 
 /// The main user-facing entry point for the CFDP API. Create this once.
 pub struct CfdpEntity {
+    /// Channel for sending commands to the runner task.
     command_sender: mpsc::Sender<Command>,
 }
 

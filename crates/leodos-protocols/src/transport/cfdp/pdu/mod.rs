@@ -84,7 +84,9 @@ use zerocopy::Unaligned;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct Pdu {
+    /// The fixed-size portion of the PDU header.
     header_fixed: PduHeaderFixedPart,
+    /// Variable header and data field bytes.
     rest: [u8],
 }
 
@@ -109,6 +111,7 @@ pub enum PduVariant<'a> {
     KeepAlive(KeepAlivePdu<'a>),
 }
 
+/// Writes a `u64` value into a variable-length byte slice in big-endian order.
 fn write_to_slice(val: u64, slice: &mut [u8]) -> Result<(), CfdpError> {
     let len = slice.len();
     if len == 0 || len > 8 {
@@ -321,6 +324,7 @@ impl Pdu {
         }
     }
 
+    /// Returns the variable-length portion of the PDU header as a byte slice.
     pub(crate) fn variable_header(&self) -> Result<&[u8], CfdpError> {
         let len = self.header_fixed.variable_header_len();
         self.rest
@@ -328,6 +332,7 @@ impl Pdu {
             .ok_or_else(|| CfdpError::Custom("Invalid variable header slice"))
     }
 
+    /// Returns a mutable reference to the variable-length portion of the PDU header.
     pub(crate) fn variable_header_mut(&mut self) -> Result<&mut [u8], CfdpError> {
         let len = self.header_fixed.variable_header_len();
         self.rest

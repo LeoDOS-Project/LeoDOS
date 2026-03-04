@@ -49,8 +49,11 @@ pub struct FileDataPduWithMeta {
 }
 
 #[rustfmt::skip]
+/// Bit masks for the File Data PDU's administrative octet.
 mod bitmasks {
+    /// Mask for the 2-bit record continuation state.
     pub const FILE_DATA_REC_CONT_STATE_MASK: u8 = 0b_11000000;
+    /// Mask for the 6-bit segment metadata length.
     pub const FILE_DATA_SEG_META_LEN_MASK: u8 =   0b_00111111;
 }
 

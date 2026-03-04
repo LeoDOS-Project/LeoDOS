@@ -33,8 +33,11 @@ use zerocopy::network_endian::U32;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct NakPduSmall {
+    /// The 32-bit start of scope offset.
     start_of_scope: U32,
+    /// The 32-bit end of scope offset.
     end_of_scope: U32,
+    /// Contains zero or more `NakSegmentSmall` segment requests.
     rest: [u8],
 }
 

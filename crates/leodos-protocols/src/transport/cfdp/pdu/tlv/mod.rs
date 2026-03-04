@@ -24,8 +24,11 @@ use crate::transport::cfdp::pdu::CfdpError;
 #[repr(C)]
 #[derive(FromBytes, IntoBytes, Unaligned, Immutable, KnownLayout)]
 pub struct Tlv {
+    /// The TLV type code byte.
     tlv_type: u8,
+    /// The length of the value field in bytes.
     length: u8,
+    /// The variable-length value payload.
     value: [u8],
 }
 

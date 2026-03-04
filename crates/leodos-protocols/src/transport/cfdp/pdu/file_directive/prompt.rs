@@ -34,12 +34,16 @@ use zerocopy::Unaligned;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct PromptPdu {
+    /// Packed byte containing the response-required bit and spare bits.
     packed_flags: u8,
 }
 
 #[rustfmt::skip]
+/// Bit masks for the Prompt PDU's packed fields.
 mod bitmasks {
+    /// Mask for the 1-bit response required flag.
     pub const PROMPT_RESPONSE_REQUIRED_MASK: u8 = 0b_10000000;
+    /// Mask for the 7-bit spare field (unused).
     pub const _PROMPT_RESPONSE_RESERVED: u8 =     0b_01111111;
 }
 

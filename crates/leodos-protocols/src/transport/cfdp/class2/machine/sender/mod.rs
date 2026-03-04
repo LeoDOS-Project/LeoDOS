@@ -72,6 +72,7 @@ impl SenderMachine {
         }
     }
 
+    /// Creates a new transaction and registers it in the active transactions map.
     fn create_transation<'a>(
         &mut self,
         destination_id: EntityId,
@@ -168,6 +169,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Dispatches a prompt request to the appropriate handler.
     fn handle_prompt<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -181,6 +183,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Sends a Prompt(KeepAlive) if the transaction is actively sending data.
     fn handle_prompt_keep_alive<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -206,6 +209,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Routes a received PDU to the appropriate handler based on its variant.
     fn handle_pdu_received<'a>(
         &mut self,
         pdu: &'a Pdu,
@@ -230,6 +234,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Processes a ready data segment by sending it and requesting the next chunk.
     fn handle_data_segment_ready<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -269,6 +274,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Initiates a new file transfer by creating a transaction and sending metadata.
     fn handle_put_request<'a>(
         &mut self,
         destination_id: EntityId,
@@ -301,6 +307,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Stores the computed checksum and sends the EOF PDU.
     fn handle_checksum<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -314,6 +321,7 @@ impl SenderMachine {
         self.send_eof(transaction_id, checksum, actions)
     }
 
+    /// Handles timer expiry by retrying or faulting based on timer type.
     fn handle_timer_expired<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -355,6 +363,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Sends a Prompt(NAK) if the transaction is in the data-sending phase.
     fn handle_prompt_nak<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -374,6 +383,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Suspends a transaction by stopping its timers and marking it suspended.
     fn handle_suspend<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -394,6 +404,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Resumes a suspended transaction from its current state.
     fn handle_resume<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -442,6 +453,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Processes a Finished PDU by sending an ACK and terminating the transaction.
     fn handle_finished<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -477,6 +489,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Sends an EOF PDU and starts the ACK timer.
     fn send_eof<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -502,6 +515,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Processes an ACK PDU, transitioning state on EOF acknowledgment.
     fn handle_ack<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -529,6 +543,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Handles a NAK by scheduling retransmission of the requested segments.
     fn handle_nak<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -549,6 +564,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Processes a KeepAlive PDU and checks for keep-alive limit violations.
     fn handle_keep_alive<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -581,6 +597,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Removes a transaction and emits a termination action.
     fn handle_terminate<'a>(
         &mut self,
         id: TransactionId,
@@ -597,6 +614,7 @@ impl SenderMachine {
         Ok(())
     }
 
+    /// Dispatches a fault condition to the configured fault handler.
     fn handle_fault<'a>(
         &mut self,
         transaction_id: TransactionId,

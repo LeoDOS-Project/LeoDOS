@@ -24,7 +24,9 @@ pub enum NakPdu<'a> {
 /// A size-independent representation of a single NAK segment request.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct NakSegmentRequest {
+    /// Start offset of the missing data segment.
     start_offset: u64,
+    /// End offset of the missing data segment.
     end_offset: u64,
 }
 

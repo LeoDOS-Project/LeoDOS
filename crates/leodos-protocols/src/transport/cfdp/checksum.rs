@@ -15,7 +15,9 @@ pub mod modular {
 
     /// A CCSDS Modular Checksum calculator (sum of big-endian 32-bit words).
     pub struct ModularChecksum {
+        /// Running 32-bit checksum accumulator.
         sum: u32,
+        /// Buffer for incomplete trailing bytes not yet forming a full word.
         pending: Vec<u8, 4>,
     }
 
@@ -87,6 +89,7 @@ pub mod crc {
 
     /// A CRC-32 checksum calculator supporting CRC-32C and IEEE variants.
     pub struct CrcChecksum {
+        /// The underlying CRC digest state.
         digest: Digest<'static, u32>,
     }
 

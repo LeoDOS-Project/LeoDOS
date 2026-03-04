@@ -158,6 +158,7 @@ pub enum Action<'a> {
 
 /// A bounded collection of actions produced by processing a single event.
 pub struct Actions<'a> {
+    /// The bounded buffer of actions.
     actions: Vec<Action<'a>, MAX_ACTIONS_PER_EVENT, u8>,
 }
 

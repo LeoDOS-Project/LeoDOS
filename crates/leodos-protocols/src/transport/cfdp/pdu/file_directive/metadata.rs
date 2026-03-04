@@ -58,10 +58,15 @@ pub struct MetadataPdu {
 }
 
 #[rustfmt::skip]
+/// Bit masks for the Metadata PDU's packed fields.
 mod bitmasks {
+    /// Mask for the 1-bit reserved field (unused).
     pub const _META_RESERVED_MASK_1: u8 =   0b_10000000;
+    /// Mask for the 1-bit closure requested flag.
     pub const META_CLOSURE_REQ_MASK: u8 =   0b_01000000;
+    /// Mask for the 2-bit reserved field (unused).
     pub const _META_RESERVED_MASK_2: u8 =   0b_00110000;
+    /// Mask for the 4-bit checksum type.
     pub const META_CHECKSUM_TYPE_MASK: u8 = 0b_00001111;
 }
 

@@ -36,7 +36,9 @@ pub mod prompt;
 #[repr(C)]
 #[derive(FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct FileDirectivePdu {
+    /// The raw directive code byte.
     directive_code: u8,
+    /// The directive-specific data following the code byte.
     rest: [u8],
 }
 

@@ -53,6 +53,7 @@ use heapless::Vec;
 pub struct ReceiverMachine {
     /// A map of active transactions, keyed by their unique `TransactionId`.
     transactions: LinearMap<TransactionId, Transaction, MAX_CONCURRENT_TRANSACTIONS>,
+    /// The CFDP Entity ID of this local entity.
     id: EntityId,
 }
 
@@ -108,6 +109,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Processes filestore responses and completes the transaction.
     fn handle_filestore_responses<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -147,6 +149,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Suspends a transaction by stopping its timers and marking it suspended.
     fn handle_suspend_request<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -167,6 +170,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Resumes a suspended transaction by restarting the appropriate timers.
     fn handle_resume_request<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -212,6 +216,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Dispatches a timer expiry to the appropriate handler based on timer type.
     fn handle_timer_expired<'a>(
         &mut self,
         timer_type: TimerType,
@@ -243,6 +248,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Updates the transaction's progress and segment tracker after a write.
     fn handle_file_data_written<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -258,6 +264,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Routes a received PDU to the appropriate handler based on its variant.
     fn handle_pdu_received<'a>(
         &mut self,
         file_store: &mut impl FileStore,
@@ -309,6 +316,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Creates a new receiving transaction and registers it in the active map.
     fn create_transaction(
         &mut self,
         file_store: &mut impl FileStore,
@@ -347,6 +355,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Processes a Metadata PDU by creating a transaction and starting timers.
     fn handle_metadata<'a>(
         &mut self,
         file_store: &mut impl FileStore,
@@ -405,6 +414,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Processes incoming file data by scheduling a write to the filestore.
     fn handle_file_data<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -434,6 +444,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Processes an EOF PDU by verifying completeness or requesting missing data.
     fn handle_eof<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -499,6 +510,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Handles the result of checksum verification, completing or faulting.
     fn handle_checksum_verified<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -548,6 +560,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Sends a NAK PDU for missing segments and starts the NAK timer.
     fn send_nak<'a>(
         &mut self,
         transaction_id: TransactionId,
@@ -571,6 +584,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Retries the NAK or faults if the retry limit is exceeded.
     fn handle_nak_timeout<'a>(
         &mut self,
         id: TransactionId,
@@ -588,6 +602,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Raises a keep-alive limit fault due to inactivity timeout.
     fn handle_inactivity<'a>(
         &mut self,
         id: TransactionId,
@@ -596,6 +611,7 @@ impl ReceiverMachine {
         self.handle_fault(id, ConditionCode::KeepAliveLimitReached, actions)
     }
 
+    /// Removes a transaction and emits a termination action.
     fn terminate_transaction<'a>(
         &mut self,
         id: TransactionId,
@@ -612,6 +628,7 @@ impl ReceiverMachine {
         Ok(())
     }
 
+    /// Dispatches a fault condition to the configured fault handler.
     fn handle_fault<'a>(
         &mut self,
         transaction_id: TransactionId,

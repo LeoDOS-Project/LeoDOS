@@ -8,6 +8,7 @@ use zerocopy::Unaligned;
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct TlvFlowLabel {
+    /// The variable-length flow label bytes.
     rest: [u8],
 }
 

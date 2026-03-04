@@ -15,55 +15,86 @@ use tokio::sync::{mpsc, oneshot};
 #[cfg(feature = "tokio")]
 use tokio::time::{sleep, Duration, Instant};
 
+/// Maximum number of concurrent pending timers.
 const MAX_PENDING_TIMERS: usize = 16;
+/// Maximum number of remote entity endpoint mappings.
 const MAX_ENDPOINT_MAP_SIZE: usize = 16;
+/// Maximum number of outstanding result channels for pending puts.
 const MAX_RESULT_CHANNELS: usize = 16;
+/// Maximum number of put requests awaiting file size resolution.
 const MAX_PENDING_PUTS: usize = 4;
 
+/// A timer waiting to fire for a specific transaction.
 #[derive(Debug, Clone, Copy)]
 struct PendingTimer {
+    /// The kind of timer (ACK, NAK, inactivity, etc.).
     timer_type: TimerType,
+    /// The transaction this timer belongs to.
     transaction_id: TransactionId,
+    /// The instant at which this timer expires.
     expires_at: Instant,
 }
 
+/// A put request waiting for its file size to be resolved.
 #[derive(Debug)]
 struct PendingPut {
+    /// Temporary ID to correlate the file size response.
     temp_id: u32,
+    /// Source file path in the local filestore.
     sender_file_name: heapless::String<256>,
+    /// Destination file path in the remote filestore.
     receiver_file_name: heapless::String<256>,
+    /// The CFDP entity ID of the destination.
     dest_entity_id: EntityId,
+    /// Channel to report the transaction result back to the caller.
     result_sender: oneshot::Sender<Result<TransactionFinishedParams, CfdpError>>,
 }
 
+/// Drives the sender state machine with async I/O, timers, and command processing.
 #[cfg(feature = "tokio")]
 pub(crate) struct SenderRunner {
+    /// Local CFDP entity ID.
     my_entity_id: u32,
+    /// The synchronous sender state machine.
     source_handler: SenderMachine,
+    /// Sender half for posting internal events.
     internal_event_tx: mpsc::Sender<InternalEvent>,
+    /// Receiver half for consuming internal events.
     internal_event_rx: mpsc::Receiver<InternalEvent>,
+    /// Receiver half for user commands.
     command_rx: mpsc::Receiver<Command>,
+    /// Maps transaction IDs to their result channels.
     result_channels: FnvIndexMap<
         TransactionId,
         oneshot::Sender<Result<TransactionFinishedParams, CfdpError>>,
         MAX_RESULT_CHANNELS,
     >,
+    /// Maps entity IDs to their network addresses.
     endpoint_map: FnvIndexMap<EntityId, core::net::SocketAddr, MAX_ENDPOINT_MAP_SIZE>,
+    /// Active timers awaiting expiry.
     pending_timers: Vec<PendingTimer, MAX_PENDING_TIMERS>,
+    /// Put requests awaiting file size resolution.
     pending_puts: Vec<PendingPut, MAX_PENDING_PUTS>,
+    /// Counter for generating temporary IDs for pending puts.
     next_temp_id: u32,
+    /// The transaction ID most recently created by a put request.
     last_created_tx_id: Option<TransactionId>,
 }
 
+/// Drives the sender state machine with async I/O (cFS variant).
 #[cfg(feature = "cfs")]
 pub(crate) struct SenderRunner<'a> {
+    /// Local CFDP entity ID.
     my_entity_id: u32,
+    /// The synchronous sender state machine.
     source_handler: SenderMachine,
+    /// Phantom data for lifetime parameter.
     _phantom: core::marker::PhantomData<&'a ()>,
 }
 
 #[cfg(feature = "tokio")]
 impl SenderRunner {
+    /// Creates a new `SenderRunner` with the given channels and entity ID.
     pub(crate) fn new(
         my_entity_id: u32,
         internal_event_tx: mpsc::Sender<InternalEvent>,
@@ -85,10 +116,12 @@ impl SenderRunner {
         }
     }
 
+    /// Returns the transaction ID of the most recently created transaction.
     fn get_latest_transaction_id(&mut self) -> Option<TransactionId> {
         self.last_created_tx_id
     }
 
+    /// Serializes a PDU header into the buffer and returns the header size.
     fn build_pdu_header(
         &self,
         buffer: &mut [u8],
@@ -121,6 +154,7 @@ impl SenderRunner {
         Ok(header_size)
     }
 
+    /// Runs the sender event loop, processing commands, packets, and timers.
     pub(crate) async fn run<F, S>(&mut self, filestore: F, socket: &S) -> !
     where
         F: FileStore + Clone + Send + 'static,
@@ -153,6 +187,7 @@ impl SenderRunner {
         }
     }
 
+    /// Returns the earliest timer deadline, or one hour from now if none.
     fn next_timer_deadline(&self) -> Instant {
         self.pending_timers
             .iter()
@@ -161,6 +196,7 @@ impl SenderRunner {
             .unwrap_or_else(|| Instant::now() + Duration::from_secs(3600))
     }
 
+    /// Checks all pending timers and fires expired ones.
     async fn check_timers<F, S>(&mut self, filestore: &F, socket: &S)
     where
         F: FileStore + Clone + Send + 'static,
@@ -186,6 +222,7 @@ impl SenderRunner {
         }
     }
 
+    /// Processes a user command (e.g., a put request).
     async fn handle_command<F>(&mut self, command: Command, filestore: &F)
     where
         F: FileStore + Clone + Send + 'static,
@@ -251,6 +288,7 @@ impl SenderRunner {
         }
     }
 
+    /// Parses an incoming packet and feeds it to the sender state machine.
     async fn handle_packet<F, S>(
         &mut self,
         buffer: &[u8],
@@ -291,6 +329,7 @@ impl SenderRunner {
         }
     }
 
+    /// Feeds a timer expiry event to the sender state machine.
     async fn handle_timer_expiry<F, S>(
         &mut self,
         timer_type: TimerType,
@@ -314,6 +353,7 @@ impl SenderRunner {
         }
     }
 
+    /// Processes an internal event from a spawned I/O task.
     async fn handle_internal_event<F, S>(&mut self, event: InternalEvent, filestore: &F, socket: &S)
     where
         F: FileStore + Clone + Send + 'static,
@@ -407,6 +447,7 @@ impl SenderRunner {
         }
     }
 
+    /// Executes sender actions by performing I/O, managing timers, etc.
     async fn process_source_actions<F, S>(
         &mut self,
         actions: Vec<SenderAction, 8>,
@@ -689,6 +730,7 @@ impl SenderRunner {
 
 #[cfg(feature = "cfs")]
 impl<'a> SenderRunner<'a> {
+    /// Creates a new `SenderRunner` with the given entity ID.
     pub(crate) fn new(my_entity_id: u32) -> Self {
         Self {
             my_entity_id,
@@ -697,6 +739,7 @@ impl<'a> SenderRunner<'a> {
         }
     }
 
+    /// Placeholder run loop for the cFS platform (not yet implemented).
     pub(crate) async fn run<F, S>(&mut self, _filestore: F, _socket: &S) -> !
     where
         F: FileStore,

@@ -11,8 +11,11 @@ use heapless::Vec;
 /// A lightweight, cloneable handle for interacting with a specific remote CFDP peer.
 #[derive(Clone)]
 pub struct CfdpConnection {
+    /// Channel for sending commands to the runner task.
     pub(crate) command_sender: mpsc::Sender<Command>,
+    /// The CFDP entity ID of the remote peer.
     pub(crate) dest_entity_id: EntityId,
+    /// Network address of the remote peer.
     pub(crate) dest_endpoint: std::net::SocketAddr,
 }
 

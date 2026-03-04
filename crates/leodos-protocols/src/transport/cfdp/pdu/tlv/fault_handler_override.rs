@@ -13,12 +13,16 @@ use crate::utils::set_bits_u8;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 pub struct TlvFaultHandlerOverride {
+    /// Packed byte with condition code (upper 4 bits) and handler code (lower 4 bits).
     packed: u8,
 }
 
 #[rustfmt::ignore]
+/// Bit masks for the fault handler override's packed byte.
 mod bitmasks {
+    /// Mask for the 4-bit condition code.
     pub const CONDITION_CODE_MASK: u8 = 0b_11110000;
+    /// Mask for the 4-bit handler code.
     pub const HANDLER_CODE_MASK: u8 = 0b_00001111;
 }
 
@@ -146,6 +150,7 @@ impl FaultHandlerSet {
 // 10 -> Ignore
 // 11 -> Abandon
 // NOTE: `HandlerCode` enum values are 1, 2, 3, 4. We map them to 0, 1, 2, 3.
+/// Maps a `HandlerCode` to its 2-bit packed representation.
 const fn handler_to_bits(handler: HandlerCode) -> u32 {
     match handler {
         HandlerCode::Cancel => 0b00,
@@ -155,6 +160,7 @@ const fn handler_to_bits(handler: HandlerCode) -> u32 {
     }
 }
 
+/// Maps a 2-bit packed value back to a `HandlerCode`.
 const fn bits_to_handler(bits: u32) -> HandlerCode {
     match bits {
         0b00 => HandlerCode::Cancel,

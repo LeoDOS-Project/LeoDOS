@@ -54,10 +54,15 @@ pub struct FinishedPdu {
 }
 
 #[rustfmt::skip]
+/// Bit masks for the Finished PDU's packed fields.
 mod bitmasks {
+    /// Mask for the 4-bit condition code.
     pub const FINISHED_CONDITION_CODE_MASK: u8 = 0b_11110000;
+    /// Mask for the 1-bit reserved field (unused).
     pub const _FINISHED_RESERVED_MASK: u8 =      0b_00001000;
+    /// Mask for the 1-bit delivery code.
     pub const FINISHED_DELIVERY_CODE_MASK: u8 =  0b_00000100;
+    /// Mask for the 2-bit file status.
     pub const FINISHED_FILE_STATUS_MASK: u8 =    0b_00000011;
 }
 

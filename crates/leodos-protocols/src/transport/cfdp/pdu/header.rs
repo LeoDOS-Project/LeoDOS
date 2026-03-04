@@ -90,19 +90,28 @@ impl From<bool> for TransmissionMode {
 }
 
 #[rustfmt::skip]
+/// Bit masks for extracting fields from the PDU header's packed bytes.
 mod bitmasks {
-    // Bit masks for the initial flags of PduHeaderFixedPart.
+    /// Mask for the 3-bit CFDP version number.
     pub const VERSION_MASK: u8 =         0b_11100000;
+    /// Mask for the PDU type bit.
     pub const PDU_TYPE_MASK: u8 =        0b_00010000;
+    /// Mask for the direction bit.
     pub const DIRECTION_MASK: u8 =       0b_00001000;
+    /// Mask for the transmission mode bit.
     pub const TX_MODE_MASK: u8 =         0b_00000100;
+    /// Mask for the CRC flag bit.
     pub const CRC_FLAG_MASK: u8 =        0b_00000010;
+    /// Mask for the large file flag bit.
     pub const LARGE_FILE_FLAG_MASK: u8 = 0b_00000001;
 
-    // Bit masks for the length flags of PduHeaderFixedPart.
+    /// Mask for the segmentation control bit.
     pub const SEG_CTRL_MASK: u8 =                  0b_10000000;
+    /// Mask for the 3-bit entity ID length (minus one).
     pub const ENTITY_ID_LEN_MINUS_ONE_MASK: u8 =   0b_01110000;
+    /// Mask for the segment metadata flag bit.
     pub const SEG_META_FLAG_MASK: u8 =             0b_00001000;
+    /// Mask for the 3-bit transaction sequence number length (minus one).
     pub const TXN_SEQ_NUM_LEN_MINUS_ONE_MASK: u8 = 0b_00000111;
 }
 
