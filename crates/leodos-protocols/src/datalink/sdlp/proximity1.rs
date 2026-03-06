@@ -471,6 +471,190 @@ impl Proximity1Header {
     }
 }
 
+// ── Proximity Link Control Word (PLCW) ──────────────────────────
+//
+// The PLCW is a 16-bit fixed-length SPDU (Type F1) carried in the
+// data field of a P-frame. It reports the receiver's state back to
+// the sender for COP-P sequence control.
+//
+// Layout (Figure 3-5, CCSDS 211.0-B-6):
+//
+//   Bit 0:      SPDU Format ID       (1 = fixed-length)
+//   Bit 1:      SPDU Type Identifier (0 = PLCW)
+//   Bit 2:      Retransmit Flag
+//   Bit 3:      PCID
+//   Bit 4:      Reserved Spare       (always 0)
+//   Bits 5-7:   Expedited Frame Counter (mod-8)
+//   Bits 8-15:  Report Value V(R)
+
+/// Bitmasks for the 16-bit PLCW.
+#[rustfmt::skip]
+pub mod plcw_bitmask {
+    /// SPDU Format ID (bit 0) — always 1 for fixed-length.
+    pub const FORMAT_ID_MASK: u16     = 0b_1000_0000_0000_0000;
+    /// SPDU Type Identifier (bit 1) — 0 = PLCW.
+    pub const TYPE_ID_MASK: u16       = 0b_0100_0000_0000_0000;
+    /// Retransmit Flag (bit 2).
+    pub const RETRANSMIT_MASK: u16    = 0b_0010_0000_0000_0000;
+    /// PCID (bit 3).
+    pub const PLCW_PCID_MASK: u16     = 0b_0001_0000_0000_0000;
+    /// Reserved Spare (bit 4) — always 0.
+    pub const _RESERVED_MASK: u16     = 0b_0000_1000_0000_0000;
+    /// Expedited Frame Counter (bits 5-7), mod-8.
+    pub const EXP_COUNTER_MASK: u16   = 0b_0000_0111_0000_0000;
+    /// Report Value V(R) (bits 8-15).
+    pub const REPORT_VALUE_MASK: u16  = 0b_0000_0000_1111_1111;
+}
+
+/// A Proximity Link Control Word (PLCW).
+///
+/// This is a 16-bit fixed-length SPDU that reports the receiver's
+/// state (V(R), retransmit flag, expedited frame counter) back to
+/// the sender via a P-frame.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct Plcw(u16);
+
+impl Plcw {
+    /// Creates a new PLCW with the given fields.
+    pub fn new(
+        retransmit: bool,
+        pcid: bool,
+        expedited_counter: u8,
+        report_value: u8,
+    ) -> Self {
+        use plcw_bitmask::*;
+        let mut val = 0u16;
+        // Format ID = 1 (fixed-length SPDU)
+        val |= FORMAT_ID_MASK;
+        // Type ID = 0 (PLCW) — already 0
+        if retransmit {
+            val |= RETRANSMIT_MASK;
+        }
+        if pcid {
+            val |= PLCW_PCID_MASK;
+        }
+        val |= ((expedited_counter & 0x07) as u16)
+            << EXP_COUNTER_MASK.trailing_zeros();
+        val |= report_value as u16;
+        Self(val)
+    }
+
+    /// Parses a PLCW from a 2-byte big-endian slice.
+    pub fn from_bytes(bytes: &[u8; 2]) -> Self {
+        Self(u16::from_be_bytes(*bytes))
+    }
+
+    /// Encodes the PLCW as 2 big-endian bytes.
+    pub fn to_bytes(self) -> [u8; 2] {
+        self.0.to_be_bytes()
+    }
+
+    /// Returns the raw 16-bit value.
+    pub fn raw(self) -> u16 {
+        self.0
+    }
+
+    /// Returns true if the Retransmit Flag is set.
+    ///
+    /// When set, the sender should retransmit the expected frame.
+    pub fn retransmit(&self) -> bool {
+        self.0 & plcw_bitmask::RETRANSMIT_MASK != 0
+    }
+
+    /// Returns the PCID field.
+    pub fn pcid(&self) -> bool {
+        self.0 & plcw_bitmask::PLCW_PCID_MASK != 0
+    }
+
+    /// Returns the 3-bit Expedited Frame Counter (mod-8).
+    pub fn expedited_counter(&self) -> u8 {
+        ((self.0 & plcw_bitmask::EXP_COUNTER_MASK)
+            >> plcw_bitmask::EXP_COUNTER_MASK.trailing_zeros())
+            as u8
+    }
+
+    /// Returns the 8-bit Report Value V(R).
+    ///
+    /// This is the next expected sequence-controlled FSN.
+    pub fn report_value(&self) -> u8 {
+        (self.0 & plcw_bitmask::REPORT_VALUE_MASK) as u8
+    }
+}
+
+impl core::fmt::Display for Plcw {
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        write!(
+            f,
+            "PLCW[rt={} pcid={} exp={} vr={}]",
+            self.retransmit() as u8,
+            self.pcid() as u8,
+            self.expedited_counter(),
+            self.report_value(),
+        )
+    }
+}
+
+// ── Segment Header ──────────────────────────────────────────────
+//
+// When DFC ID = 01 (Segments), the data field starts with an 8-bit
+// segment header (§3.2.3.3):
+//
+//   Bits 0-1: Sequence Flags
+//   Bits 2-7: Pseudo Packet ID
+
+/// Sequence flags for segmented data units.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u8)]
+pub enum SequenceFlag {
+    /// First segment of a packet (binary '01').
+    First = 0b01,
+    /// Continuation segment (binary '00').
+    Continuation = 0b00,
+    /// Last segment of a packet (binary '10').
+    Last = 0b10,
+    /// No segmentation — entire packet (binary '11').
+    Unsegmented = 0b11,
+}
+
+/// An 8-bit segment header prepended to the data when DFC ID = 01.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct SegmentHeader(u8);
+
+impl SegmentHeader {
+    /// Creates a new segment header.
+    pub fn new(flags: SequenceFlag, pseudo_packet_id: u8) -> Self {
+        Self((flags as u8) << 6 | (pseudo_packet_id & 0x3F))
+    }
+
+    /// Parses a segment header from a byte.
+    pub fn from_byte(b: u8) -> Self {
+        Self(b)
+    }
+
+    /// Returns the raw byte value.
+    pub fn to_byte(self) -> u8 {
+        self.0
+    }
+
+    /// Returns the sequence flags.
+    pub fn flags(&self) -> SequenceFlag {
+        match self.0 >> 6 {
+            0b01 => SequenceFlag::First,
+            0b00 => SequenceFlag::Continuation,
+            0b10 => SequenceFlag::Last,
+            _ => SequenceFlag::Unsegmented,
+        }
+    }
+
+    /// Returns the 6-bit pseudo packet identifier.
+    pub fn pseudo_packet_id(&self) -> u8 {
+        self.0 & 0x3F
+    }
+}
+
 // ── Display ─────────────────────────────────────────────────────
 
 impl core::fmt::Display for Proximity1Header {
@@ -776,5 +960,82 @@ mod tests {
         let s = core::str::from_utf8(&out[..n]).unwrap();
         assert!(s.contains("scid=100"));
         assert!(s.contains("fsn=77"));
+    }
+
+    // ── PLCW tests ──────────────────────────────────────────────
+
+    #[test]
+    fn plcw_roundtrip() {
+        let plcw = Plcw::new(true, false, 5, 0xAB);
+        assert!(plcw.retransmit());
+        assert!(!plcw.pcid());
+        assert_eq!(plcw.expedited_counter(), 5);
+        assert_eq!(plcw.report_value(), 0xAB);
+
+        let bytes = plcw.to_bytes();
+        let parsed = Plcw::from_bytes(&bytes);
+        assert_eq!(parsed, plcw);
+    }
+
+    #[test]
+    fn plcw_format_id_always_set() {
+        let plcw = Plcw::new(false, false, 0, 0);
+        // Bit 0 (MSB) should always be 1
+        assert!(plcw.raw() & plcw_bitmask::FORMAT_ID_MASK != 0);
+        // Type ID should be 0 for PLCW
+        assert!(plcw.raw() & plcw_bitmask::TYPE_ID_MASK == 0);
+    }
+
+    #[test]
+    fn plcw_all_fields() {
+        let plcw = Plcw::new(false, true, 7, 255);
+        assert!(!plcw.retransmit());
+        assert!(plcw.pcid());
+        assert_eq!(plcw.expedited_counter(), 7);
+        assert_eq!(plcw.report_value(), 255);
+    }
+
+    #[test]
+    fn plcw_display() {
+        let plcw = Plcw::new(true, false, 3, 42);
+        let mut out = [0u8; 64];
+        let n = crate::fmt!(&mut out, "{}", plcw).unwrap();
+        let s = core::str::from_utf8(&out[..n]).unwrap();
+        assert!(s.contains("rt=1"));
+        assert!(s.contains("vr=42"));
+    }
+
+    // ── Segment Header tests ────────────────────────────────────
+
+    #[test]
+    fn segment_header_roundtrip() {
+        let hdr = SegmentHeader::new(SequenceFlag::First, 42);
+        assert_eq!(hdr.flags(), SequenceFlag::First);
+        assert_eq!(hdr.pseudo_packet_id(), 42);
+
+        let b = hdr.to_byte();
+        let parsed = SegmentHeader::from_byte(b);
+        assert_eq!(parsed, hdr);
+    }
+
+    #[test]
+    fn segment_header_all_flags() {
+        for (flag, expected_bits) in [
+            (SequenceFlag::First, 0b01),
+            (SequenceFlag::Continuation, 0b00),
+            (SequenceFlag::Last, 0b10),
+            (SequenceFlag::Unsegmented, 0b11),
+        ] {
+            let hdr = SegmentHeader::new(flag, 0);
+            assert_eq!(hdr.flags(), flag);
+            assert_eq!(hdr.to_byte() >> 6, expected_bits);
+        }
+    }
+
+    #[test]
+    fn segment_header_pseudo_id_masked() {
+        // Only 6 bits should be kept
+        let hdr = SegmentHeader::new(SequenceFlag::Unsegmented, 0xFF);
+        assert_eq!(hdr.pseudo_packet_id(), 0x3F);
     }
 }
