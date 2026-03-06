@@ -1,8 +1,8 @@
 use heapless::index_map::FnvIndexMap;
 use leodos_protocols::application::spacecomp::io::writer::BufWriter;
-use leodos_protocols::application::spacecomp::packet::{
-    AssignReducerPayload, OpCode, SpaceCompMessage,
-};
+use leodos_protocols::application::spacecomp::packet::AssignReducerPayload;
+use leodos_protocols::application::spacecomp::packet::OpCode;
+use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
 
 use crate::data::WordCount;
 use crate::Buffers;
@@ -20,35 +20,32 @@ pub async fn run(
     let mut counts: FnvIndexMap<[u8; 16], u32, 64> = FnvIndexMap::new();
     let mut done_count = 0u8;
 
-    enum Outcome {
-        Continue,
-        Done,
-    }
-
     loop {
-        let Ok(token) = rx.wait_for_message().await else {
+        let Ok(op) = rx
+            .recv_with(|data| {
+                let Ok(msg) = SpaceCompMessage::parse(data) else {
+                    return None;
+                };
+                match msg.op_code() {
+                    Ok(OpCode::DataChunk) => {
+                        for wc in msg.records::<WordCount>() {
+                            counts
+                                .entry(wc.word)
+                                .and_modify(|c| *c += wc.count.get())
+                                .or_insert_with(|| wc.count.get())
+                                .ok();
+                        }
+                        None
+                    }
+                    Ok(op) => Some(op),
+                    _ => None,
+                }
+            })
+            .await
+        else {
             return Ok(());
         };
-        let outcome = token.consume(|data| {
-            let Ok(msg) = SpaceCompMessage::parse(data) else {
-                return Outcome::Continue;
-            };
-            match msg.op_code() {
-                Ok(OpCode::DataChunk) => {
-                    for wc in msg.records::<WordCount>() {
-                        counts
-                            .entry(wc.word)
-                            .and_modify(|c| *c += wc.count.get())
-                            .or_insert_with(|| wc.count.get())
-                            .ok();
-                    }
-                    Outcome::Continue
-                }
-                Ok(OpCode::PhaseDone) => Outcome::Done,
-                _ => Outcome::Continue,
-            }
-        });
-        if let Outcome::Done = outcome {
+        if op == Some(OpCode::PhaseDone) {
             done_count += 1;
             if done_count >= assign.mapper_count() {
                 let mut writer = BufWriter::<WordCount, _>::new(

@@ -19,3 +19,16 @@ services:
       - BUILD_DIR=/cFS/build
     sysctls:
       - fs.mqueue.msg_max=1000
+
+  cfs-test:
+    build: .
+    image: cfs-build:latest
+    volumes:
+      - .:/cFS
+    working_dir: /cFS
+    environment:
+      - CFE_DIR=/cFS/cfe
+      - OSAL_DIR=/cFS/osal
+      - PSP_DIR=/cFS/psp
+      - BUILD_DIR=/cFS/build
+      - SYSROOT=

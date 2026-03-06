@@ -143,6 +143,11 @@ impl SpaceCompMessage {
     ) -> crate::application::spacecomp::io::reader::RecordIter<'a, T> {
         crate::application::spacecomp::io::reader::RecordIter::new(&self.payload)
     }
+
+    /// Returns a reference to the message header.
+    pub fn header(&self) -> &SpaceCompHeader {
+        &self.header
+    }
 }
 
 #[bon]
@@ -178,14 +183,15 @@ impl SpaceCompMessage {
 /// ```
 #[repr(C)]
 #[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable, Clone, Copy)]
-pub(crate) struct SpaceCompHeader {
+pub struct SpaceCompHeader {
     op_code: u8,
     _reserved: u8,
     job_id: U16,
 }
 
 impl SpaceCompHeader {
-    pub(crate) fn new(op_code: OpCode, job_id: u16) -> Self {
+    /// Creates a new SpaceCoMP header with the given opcode and job ID.
+    pub fn new(op_code: OpCode, job_id: u16) -> Self {
         Self {
             op_code: op_code as u8,
             _reserved: 0,
@@ -193,19 +199,23 @@ impl SpaceCompHeader {
         }
     }
 
-    pub(crate) fn op_code(&self) -> Result<OpCode, ()> {
+    /// Returns the operation code from the header.
+    pub fn op_code(&self) -> Result<OpCode, ()> {
         self.op_code.try_into()
     }
 
-    pub(crate) fn set_op_code(&mut self, op_code: OpCode) {
+    /// Sets the operation code in the header.
+    pub fn set_op_code(&mut self, op_code: OpCode) {
         self.op_code = op_code as u8;
     }
 
-    pub(crate) fn job_id(&self) -> u16 {
+    /// Returns the job identifier from the header.
+    pub fn job_id(&self) -> u16 {
         self.job_id.get()
     }
 
-    pub(crate) fn set_job_id(&mut self, job_id: u16) {
+    /// Sets the job identifier in the header.
+    pub fn set_job_id(&mut self, job_id: u16) {
         self.job_id = U16::new(job_id);
     }
 }
@@ -318,6 +328,9 @@ pub enum ParseError {
     /// The payload is not a valid [`AssignReducerPayload`].
     #[error("invalid reducer assignment")]
     AssignReducer,
+    /// The message was valid but not the expected type.
+    #[error("unexpected message")]
+    UnexpectedMessage,
 }
 
 /// Errors that can occur when parsing a SpaceCoMP message.
@@ -331,6 +344,7 @@ impl ParseError {
             Self::AssignCollector => "invalid collector assignment",
             Self::AssignMapper => "invalid mapper assignment",
             Self::AssignReducer => "invalid reducer assignment",
+            Self::UnexpectedMessage => "unexpected message",
         }
     }
 }

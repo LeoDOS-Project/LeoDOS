@@ -11,6 +11,8 @@ pub mod tc;
 /// Telemetry (TM) Transfer Frame protocol.
 pub mod tm;
 
+/// Re-export of the Proximity-1 Version-3 Transfer Frame.
+pub use proximity1::Proximity1TransferFrame;
 /// Re-export of the Telecommand Transfer Frame.
 pub use tc::TelecommandTransferFrame;
 /// Re-export of the Telemetry Transfer Frame.

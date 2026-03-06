@@ -3,10 +3,10 @@
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::error::Error;
-use leodos_libcfs::{info, err};
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::Runtime;
+use leodos_libcfs::{err, info};
 use leodos_protocols::application::spacecomp::job::Job;
 use leodos_protocols::application::spacecomp::packet::AssignCollectorPayload;
 use leodos_protocols::application::spacecomp::packet::AssignMapperPayload;
@@ -27,6 +27,7 @@ use leodos_protocols::network::isl::torus::Direction;
 use leodos_protocols::network::isl::torus::Point;
 use leodos_protocols::network::isl::torus::Torus;
 use leodos_protocols::network::spp::Apid;
+use leodos_protocols::transport::srspp::api::cfs::Error as TransportError;
 use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
 use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
 use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
@@ -63,17 +64,10 @@ pub enum SpaceCompError {
     Plan(&'static str),
     #[error("failed to build message: {0}")]
     Build(#[from] BuildError),
+    #[error("transport: {0}")]
+    Transport(#[from] TransportError<LocalLinkError>),
 }
 
-impl SpaceCompError {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Parse(e) => e.as_str(),
-            Self::Plan(reason) => reason,
-            Self::Build(e) => e.as_str(),
-        }
-    }
-}
 
 const NUM_ORBITS: u8 = bindings::SPACECOMP_NUM_ORBITS as u8;
 const NUM_SATS: u8 = bindings::SPACECOMP_NUM_SATS as u8;
@@ -221,11 +215,11 @@ pub extern "C" fn SPACECOMP_AppMain() {
 
         let app_task = async move {
             loop {
-                let Ok((_, len)) = rx.recv(&mut bufs.recv).await else {
+                let Ok((source, len)) = rx.recv(&mut bufs.recv).await else {
                     break;
                 };
-                if let Err(e) = handle(&mut rx, &mut tx, &mut bufs, point, len).await {
-                    err!("{}", e.as_str()).ok();
+                if let Err(e) = handle(&mut rx, &mut tx, &mut bufs, point, source, len).await {
+                    err!("{}", e).ok();
                 }
             }
         };
@@ -241,6 +235,7 @@ async fn handle(
     tx: &mut TxHandle<'_>,
     bufs: &mut Buffers,
     point: Point,
+    source: Address,
     len: usize,
 ) -> Result<(), SpaceCompError> {
     let msg = SpaceCompMessage::parse(&bufs.recv[..len])?;
@@ -250,7 +245,7 @@ async fn handle(
     match op_code {
         OpCode::SubmitJob => {
             let job: Job = msg.parse_payload(ParseError::SubmitJob)?;
-            roles::coordinator::run(rx, tx, bufs, point, job_id, job).await?
+            roles::coordinator::run(rx, tx, bufs, point, job_id, job, source).await?
         }
         OpCode::AssignCollector => {
             let p: AssignCollectorPayload = msg.parse_payload(ParseError::AssignCollector)?;

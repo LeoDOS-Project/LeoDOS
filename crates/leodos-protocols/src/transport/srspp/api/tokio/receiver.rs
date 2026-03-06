@@ -126,6 +126,19 @@ impl<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, 
         }
     }
 
+    /// Wait for a message and process it in-place with a closure.
+    ///
+    /// Equivalent to `wait_for_message().await?.consume(f)` but
+    /// more concise when you don't need the [`DeliveryToken`]
+    /// metadata.
+    pub async fn recv_with<F, Ret>(&mut self, f: F) -> Result<Ret, SrsppError>
+    where
+        F: FnOnce(&[u8]) -> Ret,
+    {
+        let token = self.wait_for_message().await?;
+        Ok(token.consume(f))
+    }
+
     /// Poll for incoming data and handle timers.
     pub async fn poll(&mut self) -> Result<(), SrsppError> {
         tokio::select! {

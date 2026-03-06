@@ -147,8 +147,7 @@ pub struct PayloadInfo<'a> {
 }
 
 /// Configuration for the sender.
-#[derive(Debug, Clone)]
-#[derive(bon::Builder)]
+#[derive(Debug, Clone, bon::Builder)]
 pub struct SenderConfig {
     /// Local source address for outgoing packets.
     pub source_address: Address,
@@ -228,7 +227,7 @@ impl Default for PacketMeta {
 /// * `MTU` - Maximum transmission unit (packet size)
 pub struct SenderMachine<const WIN: usize, const BUF: usize, const MTU: usize> {
     /// Sender configuration.
-    config: SenderConfig,
+    pub(crate) config: SenderConfig,
     /// Per-slot metadata for each window entry.
     meta: [PacketMeta; WIN],
     /// Contiguous send buffer holding all packet payloads.
@@ -500,9 +499,8 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
     ///
     /// Call this after sending a packet from a `Transmit` action.
     pub fn mark_transmitted(&mut self, seq: SequenceCount) {
-        let seq_val = seq.value();
         for meta in &mut self.meta {
-            if meta.state == SlotState::PendingTransmit && meta.seq == seq_val {
+            if meta.state == SlotState::PendingTransmit && meta.seq == seq.value() {
                 meta.state = SlotState::AwaitingAck;
                 break;
             }
@@ -604,7 +602,13 @@ mod tests {
         let mut actions = SenderActions::new();
 
         sender
-            .handle(SenderEvent::SendRequest { target: target(), data: &[1, 2, 3] }, &mut actions)
+            .handle(
+                SenderEvent::SendRequest {
+                    target: target(),
+                    data: &[1, 2, 3],
+                },
+                &mut actions,
+            )
             .unwrap();
 
         // Should have one Transmit action
@@ -625,7 +629,13 @@ mod tests {
         let mut actions = SenderActions::new();
 
         sender
-            .handle(SenderEvent::SendRequest { target: target(), data: &[1, 2, 3] }, &mut actions)
+            .handle(
+                SenderEvent::SendRequest {
+                    target: target(),
+                    data: &[1, 2, 3],
+                },
+                &mut actions,
+            )
             .unwrap();
 
         // Before marking - packet is PendingTransmit
@@ -644,7 +654,13 @@ mod tests {
         let mut actions = SenderActions::new();
 
         sender
-            .handle(SenderEvent::SendRequest { target: target(), data: &[1, 2, 3] }, &mut actions)
+            .handle(
+                SenderEvent::SendRequest {
+                    target: target(),
+                    data: &[1, 2, 3],
+                },
+                &mut actions,
+            )
             .unwrap();
         sender.mark_transmitted(SequenceCount::from(0));
 
@@ -677,7 +693,13 @@ mod tests {
         let mut actions = SenderActions::new();
 
         sender
-            .handle(SenderEvent::SendRequest { target: target(), data: &[1, 2, 3] }, &mut actions)
+            .handle(
+                SenderEvent::SendRequest {
+                    target: target(),
+                    data: &[1, 2, 3],
+                },
+                &mut actions,
+            )
             .unwrap();
         sender.mark_transmitted(SequenceCount::from(0));
 
@@ -705,7 +727,13 @@ mod tests {
         let mut actions = SenderActions::new();
 
         sender
-            .handle(SenderEvent::SendRequest { target: target(), data: &[1, 2, 3] }, &mut actions)
+            .handle(
+                SenderEvent::SendRequest {
+                    target: target(),
+                    data: &[1, 2, 3],
+                },
+                &mut actions,
+            )
             .unwrap();
         sender.mark_transmitted(SequenceCount::from(0));
 
@@ -747,7 +775,13 @@ mod tests {
 
         let data = [0u8; 150];
         sender
-            .handle(SenderEvent::SendRequest { target: target(), data: &data }, &mut actions)
+            .handle(
+                SenderEvent::SendRequest {
+                    target: target(),
+                    data: &data,
+                },
+                &mut actions,
+            )
             .unwrap();
 
         let max_payload = 64 - SrsppDataPacket::HEADER_SIZE;
@@ -817,7 +851,13 @@ mod tests {
 
         let data = [0u8; 150];
         sender
-            .handle(SenderEvent::SendRequest { target: target(), data: &data }, &mut actions)
+            .handle(
+                SenderEvent::SendRequest {
+                    target: target(),
+                    data: &data,
+                },
+                &mut actions,
+            )
             .unwrap();
 
         let transmit_count = actions
@@ -851,11 +891,15 @@ mod tests {
             )
             .unwrap();
 
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, SenderAction::PacketLost { seq } if seq.value() == 1)));
-        assert!(actions
-            .iter()
-            .any(|a| matches!(a, SenderAction::MessageLost)));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, SenderAction::PacketLost { seq } if seq.value() == 1))
+        );
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, SenderAction::MessageLost))
+        );
     }
 }

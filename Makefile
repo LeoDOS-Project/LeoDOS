@@ -75,7 +75,7 @@ endif
 
 # The "LOCALTGTS" defines the top-level targets that are implemented in this makefile
 # Any other target may also be given, in that case it will simply be passed through.
-LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov docker-build docker-prep docker-all docker-install docker-run docker-shell constellation-build constellation-gen constellation-up constellation-down
+LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test constellation-build constellation-gen constellation-up constellation-down
 OTHERTGTS := $(filter-out $(LOCALTGTS),$(MAKECMDGOALS))
 
 # As this makefile does not build any real files, treat everything as a PHONY target
@@ -160,7 +160,7 @@ osalguide:
 # that is used to indicate the prep step has been done.  This way
 # the prep step does not need to be done explicitly by the user
 # as long as the default options are sufficient.
-$(filter-out prep distclean docker-build docker-prep docker-all docker-install docker-run docker-shell constellation-build constellation-gen constellation-up constellation-down,$(LOCALTGTS)): $(O)/.prep
+$(filter-out prep distclean docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test constellation-build constellation-gen constellation-up constellation-down,$(LOCALTGTS)): $(O)/.prep
 
 # Docker targets for building on macOS
 docker-build:
@@ -180,6 +180,10 @@ docker-run:
 
 docker-shell:
 	docker compose run --rm cfs-build bash
+
+docker-test:
+	docker compose run --rm cfs-test bash -c \
+		"[ -f build/.prep ] || make SIMULATION=native prep && cd crates/leodos-protocols && cargo test --features=cfs"
 
 # Constellation targets
 MAX_ORB ?= 3

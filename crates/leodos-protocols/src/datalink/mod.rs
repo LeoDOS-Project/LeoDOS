@@ -2,13 +2,16 @@
 
 use core::future::Future;
 
-mod cop1;
+/// COP-1 (CCSDS 232.1-B-2) hop-by-hop reliable frame delivery.
+pub mod cop1;
 /// Async frame sender/receiver traits and TC/TM link channels.
 pub mod link;
 /// Space Data Link Protocol frame definitions (TC, TM, AOS).
 pub mod sdlp;
-mod sdls;
-mod uslp;
+/// Space Data Link Security (CCSDS 355.0-B-2).
+pub mod sdls;
+/// Unified Space Data Link Protocol (CCSDS 732.1-B-3).
+pub mod uslp;
 
 /// Trait for the underlying link.
 ///

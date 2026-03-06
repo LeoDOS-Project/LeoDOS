@@ -5,9 +5,11 @@ use leodos_protocols::application::spacecomp::packet::AssignCollectorPayload;
 use leodos_protocols::application::spacecomp::packet::AssignMapperPayload;
 use leodos_protocols::application::spacecomp::packet::AssignReducerPayload;
 use leodos_protocols::application::spacecomp::packet::OpCode;
+use leodos_protocols::application::spacecomp::packet::ParseError;
 use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::application::spacecomp::plan::Plan;
 use leodos_protocols::application::spacecomp::plan::ReducerPlacement;
+use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::torus::Point;
 use zerocopy::IntoBytes;
 
@@ -25,6 +27,7 @@ pub async fn run(
     local_point: Point,
     job_id: u16,
     job: Job,
+    reply_to: Address,
 ) -> Result<(), SpaceCompError> {
     let plan: Plan<MAX_SATELLITES> = job
         .plan(SHELL, ReducerPlacement::CenterOfAoi, local_point)
@@ -59,32 +62,35 @@ pub async fn run(
         m.payload_mut().copy_from_slice(payload.as_bytes());
         tx.send(*pt, m).await.ok();
     }
-    {
-        let payload = AssignReducerPayload::builder()
-            .los_addr(local_point)
-            .mapper_count(plan.mappers.len() as u8)
-            .build();
-        let m = SpaceCompMessage::builder()
-            .buffer(&mut bufs.msg)
-            .op_code(OpCode::AssignReducer)
-            .job_id(job_id)
-            .payload_len(size_of::<AssignReducerPayload>())
-            .build()?;
-        m.payload_mut().copy_from_slice(payload.as_bytes());
-        tx.send(plan.reducer, m).await.ok();
-    }
+    let payload = AssignReducerPayload::builder()
+        .los_addr(local_point)
+        .mapper_count(plan.mappers.len() as u8)
+        .build();
+    let m = SpaceCompMessage::builder()
+        .buffer(&mut bufs.msg)
+        .op_code(OpCode::AssignReducer)
+        .job_id(job_id)
+        .payload_len(size_of::<AssignReducerPayload>())
+        .build()?;
+    m.payload_mut().copy_from_slice(payload.as_bytes());
+    tx.send(plan.reducer, m).await.ok();
 
     loop {
-        let Ok(token) = rx.wait_for_message().await else {
-            return Ok(());
+        let Ok(len) = rx
+            .recv_with(|data| -> Result<usize, ParseError> {
+                let msg = SpaceCompMessage::parse(data)?;
+                if msg.op_code()? != OpCode::JobResult || msg.job_id() != job_id {
+                    return Err(ParseError::UnexpectedMessage);
+                }
+                let n = data.len().min(bufs.msg.len());
+                bufs.msg[..n].copy_from_slice(&data[..n]);
+                Ok(n)
+            })
+            .await?
+        else {
+            continue;
         };
-        let is_result = token.consume(|data| {
-            SpaceCompMessage::parse(data)
-                .map(|msg| msg.op_code() == Ok(OpCode::JobResult) && msg.job_id() == job_id)
-                .unwrap_or(false)
-        });
-        if is_result {
-            return Ok(());
-        }
+        tx.send(reply_to, &bufs.msg[..len]).await?;
+        return Ok(());
     }
 }

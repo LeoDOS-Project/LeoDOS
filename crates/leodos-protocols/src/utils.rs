@@ -1,4 +1,4 @@
-use zerocopy::network_endian::U16;
+use zerocopy::network_endian::{U16, U32};
 
 /// Returns the bits from `bitmap` specified by `mask`, right-aligned.
 pub const fn get_bits_u16(bitmap: U16, mask: u16) -> u16 {
@@ -7,6 +7,16 @@ pub const fn get_bits_u16(bitmap: U16, mask: u16) -> u16 {
 
 /// Returns `bitmap` with the bits specified by `mask` set to `value`.
 pub fn set_bits_u16(bitmap: &mut U16, mask: u16, value: u16) {
+    bitmap.set((bitmap.get() & !mask) | (value << mask.trailing_zeros()));
+}
+
+/// Returns the bits from `bitmap` specified by `mask`, right-aligned.
+pub const fn get_bits_u32(bitmap: U32, mask: u32) -> u32 {
+    (bitmap.get() & mask) >> mask.trailing_zeros()
+}
+
+/// Returns `bitmap` with the bits specified by `mask` set to `value`.
+pub fn set_bits_u32(bitmap: &mut U32, mask: u32, value: u32) {
     bitmap.set((bitmap.get() & !mask) | (value << mask.trailing_zeros()));
 }
 
