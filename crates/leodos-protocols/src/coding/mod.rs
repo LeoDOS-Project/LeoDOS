@@ -1,4 +1,5 @@
-mod cadu;
+/// Channel Access Data Unit — ASM framing and frame sync (CCSDS 131.0-B-5).
+pub mod cadu;
 mod checksum;
 /// Communications Link Transmission Unit (CLTU) encoding.
 pub mod cltu;

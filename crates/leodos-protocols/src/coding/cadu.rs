@@ -1,3 +1,329 @@
-//! CCSDS Channel Access Data Unit (CADU) Protocol
+//! Channel Access Data Unit (CADU) — TM Synchronization and Channel Coding
 //!
-//! Spec: https://ccsds.org/Pubs/131x0b5.pdf
+//! Spec: CCSDS 131.0-B-5 (TM Synchronization and Channel Coding)
+//!
+//! A CADU is the unit produced by the Coding & Synchronization sublayer
+//! on the downlink (TM/AOS direction). It consists of:
+//!
+//! ```text
+//! ┌──────────┬────────────────────────┐
+//! │  ASM     │  Transfer Frame        │
+//! │ (4 bytes)│  (fixed-length)        │
+//! └──────────┴────────────────────────┘
+//! ```
+//!
+//! The **Attached Sync Marker (ASM)** is a fixed 32-bit pattern that
+//! the receiver uses to locate frame boundaries in the continuous
+//! bitstream. The standard ASM for TM/AOS is `0x1ACFFC1D`.
+//!
+//! Proximity-1 uses a 24-bit ASM (`0xFAF320`) as defined in
+//! CCSDS 211.2-B-3.
+//!
+//! This module provides:
+//! - ASM constants for TM, AOS, and Proximity-1
+//! - CADU encoding (prepend ASM to a frame)
+//! - Frame synchronization (find ASM in a bitstream)
+
+/// Standard 32-bit ASM for TM and AOS frames (CCSDS 131.0-B-5).
+pub const ASM_TM: [u8; 4] = [0x1A, 0xCF, 0xFC, 0x1D];
+
+/// Inverted 32-bit ASM used for the odd frames when Convolutional
+/// coding with ambiguity resolution is employed.
+pub const ASM_TM_INVERTED: [u8; 4] = [0xE5, 0x30, 0x03, 0xE2];
+
+/// 24-bit ASM for Proximity-1 links (CCSDS 211.2-B-3).
+pub const ASM_PROXIMITY1: [u8; 3] = [0xFA, 0xF3, 0x20];
+
+/// Errors that can occur during CADU operations.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum CaduError {
+    /// The output buffer is too small for the CADU.
+    BufferTooSmall {
+        /// Minimum number of bytes needed.
+        required: usize,
+        /// Actual buffer size provided.
+        provided: usize,
+    },
+    /// The input is too short to contain an ASM and frame.
+    InputTooShort,
+    /// The expected ASM was not found at the start of the data.
+    AsmMismatch,
+}
+
+/// Encodes a transfer frame into a CADU by prepending the ASM.
+///
+/// Writes `asm | frame` into `output` and returns the total bytes
+/// written.
+pub fn encode_cadu(
+    asm: &[u8],
+    frame: &[u8],
+    output: &mut [u8],
+) -> Result<usize, CaduError> {
+    let total = asm.len() + frame.len();
+    if output.len() < total {
+        return Err(CaduError::BufferTooSmall {
+            required: total,
+            provided: output.len(),
+        });
+    }
+    output[..asm.len()].copy_from_slice(asm);
+    output[asm.len()..total].copy_from_slice(frame);
+    Ok(total)
+}
+
+/// Strips the ASM from a CADU and returns the frame payload.
+///
+/// Verifies that the leading bytes match the expected `asm` pattern.
+pub fn decode_cadu<'a>(
+    asm: &[u8],
+    cadu: &'a [u8],
+) -> Result<&'a [u8], CaduError> {
+    if cadu.len() < asm.len() {
+        return Err(CaduError::InputTooShort);
+    }
+    if &cadu[..asm.len()] != asm {
+        return Err(CaduError::AsmMismatch);
+    }
+    Ok(&cadu[asm.len()..])
+}
+
+/// A frame synchronizer that searches for ASM patterns in a byte
+/// stream to locate frame boundaries.
+///
+/// This implements a simple byte-aligned ASM search suitable for
+/// simulation. A real receiver would do bit-level correlation with
+/// an allowable bit-error threshold.
+pub struct FrameSync<'a> {
+    asm: &'a [u8],
+    frame_len: usize,
+}
+
+impl<'a> FrameSync<'a> {
+    /// Creates a new frame synchronizer.
+    ///
+    /// - `asm`: the sync marker pattern to search for
+    /// - `frame_len`: expected frame length *excluding* the ASM
+    pub fn new(asm: &'a [u8], frame_len: usize) -> Self {
+        Self { asm, frame_len }
+    }
+
+    /// Returns the total CADU length (ASM + frame).
+    pub fn cadu_len(&self) -> usize {
+        self.asm.len() + self.frame_len
+    }
+
+    /// Searches `data` for the next ASM-aligned frame.
+    ///
+    /// Returns `Some((offset, frame))` where `offset` is the byte
+    /// position of the ASM in `data` and `frame` is the frame
+    /// payload (after the ASM). Returns `None` if no complete frame
+    /// is found.
+    pub fn find_frame<'b>(
+        &self,
+        data: &'b [u8],
+    ) -> Option<(usize, &'b [u8])> {
+        let cadu_len = self.cadu_len();
+        if data.len() < cadu_len {
+            return None;
+        }
+
+        let search_end = data.len() - cadu_len + 1;
+        for offset in 0..search_end {
+            if &data[offset..offset + self.asm.len()] == self.asm {
+                let frame_start = offset + self.asm.len();
+                let frame_end = frame_start + self.frame_len;
+                return Some((offset, &data[frame_start..frame_end]));
+            }
+        }
+        None
+    }
+
+    /// Finds all ASM-aligned frames in `data`.
+    ///
+    /// Returns an iterator of `(offset, frame_slice)` pairs.
+    /// Frames may overlap if the data contains spurious ASM
+    /// matches; callers should validate frame contents.
+    pub fn find_all_frames<'b>(
+        &'b self,
+        data: &'b [u8],
+    ) -> FrameIter<'b> {
+        FrameIter {
+            sync: self,
+            data,
+            pos: 0,
+        }
+    }
+}
+
+/// Iterator over frames found by [`FrameSync::find_all_frames`].
+pub struct FrameIter<'a> {
+    sync: &'a FrameSync<'a>,
+    data: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Iterator for FrameIter<'a> {
+    type Item = (usize, &'a [u8]);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let remaining = &self.data[self.pos..];
+        let result = self.sync.find_frame(remaining);
+        if let Some((rel_offset, frame)) = result {
+            let abs_offset = self.pos + rel_offset;
+            // Advance past this ASM to avoid finding it again
+            self.pos = abs_offset + self.sync.asm.len();
+            Some((abs_offset, frame))
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encode_tm_cadu() {
+        let frame = [0xAA; 16];
+        let mut buf = [0u8; 20];
+        let len = encode_cadu(&ASM_TM, &frame, &mut buf).unwrap();
+
+        assert_eq!(len, 20);
+        assert_eq!(&buf[..4], &ASM_TM);
+        assert_eq!(&buf[4..20], &frame);
+    }
+
+    #[test]
+    fn encode_proximity1_cadu() {
+        let frame = [0xBB; 10];
+        let mut buf = [0u8; 13];
+        let len =
+            encode_cadu(&ASM_PROXIMITY1, &frame, &mut buf).unwrap();
+
+        assert_eq!(len, 13);
+        assert_eq!(&buf[..3], &ASM_PROXIMITY1);
+        assert_eq!(&buf[3..13], &frame);
+    }
+
+    #[test]
+    fn encode_buffer_too_small() {
+        let frame = [0u8; 16];
+        let mut buf = [0u8; 10]; // need 20
+        let err = encode_cadu(&ASM_TM, &frame, &mut buf);
+        assert!(matches!(
+            err,
+            Err(CaduError::BufferTooSmall {
+                required: 20,
+                provided: 10,
+            })
+        ));
+    }
+
+    #[test]
+    fn decode_tm_cadu() {
+        let mut cadu = [0u8; 20];
+        cadu[..4].copy_from_slice(&ASM_TM);
+        cadu[4..].fill(0xCC);
+
+        let frame = decode_cadu(&ASM_TM, &cadu).unwrap();
+        assert_eq!(frame.len(), 16);
+        assert!(frame.iter().all(|&b| b == 0xCC));
+    }
+
+    #[test]
+    fn decode_asm_mismatch() {
+        let cadu = [0u8; 20]; // all zeros, not ASM_TM
+        let err = decode_cadu(&ASM_TM, &cadu);
+        assert!(matches!(err, Err(CaduError::AsmMismatch)));
+    }
+
+    #[test]
+    fn decode_input_too_short() {
+        let cadu = [0x1A, 0xCF]; // only 2 bytes
+        let err = decode_cadu(&ASM_TM, &cadu);
+        assert!(matches!(err, Err(CaduError::InputTooShort)));
+    }
+
+    #[test]
+    fn frame_sync_find_single() {
+        let frame_len = 8;
+        let sync = FrameSync::new(&ASM_TM, frame_len);
+
+        // Build: garbage + ASM + frame data
+        let mut data = [0u8; 32];
+        data[5..9].copy_from_slice(&ASM_TM);
+        data[9..17].fill(0xDD);
+
+        let (offset, frame) = sync.find_frame(&data).unwrap();
+        assert_eq!(offset, 5);
+        assert_eq!(frame.len(), 8);
+        assert!(frame.iter().all(|&b| b == 0xDD));
+    }
+
+    #[test]
+    fn frame_sync_find_multiple() {
+        let frame_len = 4;
+        let sync = FrameSync::new(&ASM_TM, frame_len);
+        let cadu_len = sync.cadu_len(); // 8
+
+        // Two back-to-back CADUs
+        let mut data = [0u8; 16];
+        // First CADU at offset 0
+        data[0..4].copy_from_slice(&ASM_TM);
+        data[4..8].fill(0x11);
+        // Second CADU at offset 8
+        data[8..12].copy_from_slice(&ASM_TM);
+        data[12..16].fill(0x22);
+
+        let frames: heapless::Vec<(usize, &[u8]), 4> =
+            sync.find_all_frames(&data).collect();
+
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].0, 0);
+        assert!(frames[0].1.iter().all(|&b| b == 0x11));
+        assert_eq!(frames[1].0, cadu_len);
+        assert!(frames[1].1.iter().all(|&b| b == 0x22));
+    }
+
+    #[test]
+    fn frame_sync_no_match() {
+        let sync = FrameSync::new(&ASM_TM, 8);
+        let data = [0u8; 32]; // no ASM present
+        assert!(sync.find_frame(&data).is_none());
+    }
+
+    #[test]
+    fn frame_sync_incomplete_frame() {
+        let sync = FrameSync::new(&ASM_TM, 100);
+        // ASM present but not enough data for full frame
+        let mut data = [0u8; 20];
+        data[0..4].copy_from_slice(&ASM_TM);
+        assert!(sync.find_frame(&data).is_none());
+    }
+
+    #[test]
+    fn roundtrip_encode_decode() {
+        let frame = [0x42; 64];
+        let mut cadu_buf = [0u8; 68];
+
+        let len =
+            encode_cadu(&ASM_TM, &frame, &mut cadu_buf).unwrap();
+        let decoded = decode_cadu(&ASM_TM, &cadu_buf[..len]).unwrap();
+
+        assert_eq!(decoded, &frame);
+    }
+
+    #[test]
+    fn proximity1_roundtrip() {
+        let frame = [0x77; 32];
+        let mut cadu_buf = [0u8; 35];
+
+        let len = encode_cadu(&ASM_PROXIMITY1, &frame, &mut cadu_buf)
+            .unwrap();
+        let decoded =
+            decode_cadu(&ASM_PROXIMITY1, &cadu_buf[..len]).unwrap();
+
+        assert_eq!(decoded, &frame);
+    }
+}

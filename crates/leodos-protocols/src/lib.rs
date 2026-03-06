@@ -14,5 +14,7 @@ pub mod application;
 pub mod network;
 /// Transport layer protocols.
 pub mod transport;
+/// CCSDS time code formats (CCSDS 301.0-B-4).
+pub mod time;
 /// Shared bitfield and checksum utilities.
 pub mod utils;
