@@ -16,7 +16,8 @@ use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
 use zerocopy::byteorder::network_endian;
 
-mod encapsulation;
+/// CCSDS Encapsulation Packet Protocol (CCSDS 133.1-B-3).
+pub mod encapsulation;
 mod handler;
 /// Segmentation and reassembly of large data across multiple Space Packets.
 pub mod segmentation;
