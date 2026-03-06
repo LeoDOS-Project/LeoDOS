@@ -12,6 +12,7 @@ bon = { version = "3.8.1", default-features = false }
 futures = { version = "0.3.31", default-features = false, features = ["async-await"] }
 pin-utils = { version = "0.1.0" }
 libm = "0.2.15"
+aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
 
 # Optional dependencies
 tokio = { version = "1.48.0", features = ["net", "rt-multi-thread", "macros", "time", "sync"], optional = true }

@@ -9,8 +9,10 @@
 //! which is identified by the Security Parameter Index (SPI) in the
 //! Security Header.
 
+mod gcm;
 mod security_header;
 
+pub use gcm::AesGcmCrypto;
 pub use security_header::SecurityHeader;
 pub use security_header::SecurityTrailer;
 
@@ -159,34 +161,44 @@ impl core::error::Error for Error {}
 ///
 /// Implementations provide the actual encryption, decryption, and
 /// MAC computation. The SDLS framing layer is algorithm-agnostic;
-/// concrete algorithms (AES-GCM, HMAC, etc.) are supplied here.
+/// concrete algorithms (AES-GCM, CMAC, etc.) are supplied here.
+///
+/// For AEAD ciphers (AES-GCM), `encrypt` and `decrypt` handle
+/// both confidentiality and authentication via `aad` and `tag`.
+/// For authentication-only mode (CMAC), use `compute_mac`.
 pub trait CryptoProvider {
-    /// Encrypt the plaintext in place, returning the number of
-    /// padding bytes added. The `iv` is the current initialization
-    /// vector from the SA.
+    /// Encrypt data in place (AEAD). `aad` is additional
+    /// authenticated data (frame headers). The authentication
+    /// tag is written to `tag_out`. Returns padding byte count
+    /// (0 for GCM/CTR).
     fn encrypt(
         &self,
         sa: &SecurityAssociation,
         iv: &[u8],
-        plaintext: &mut [u8],
+        aad: &[u8],
+        data: &mut [u8],
+        tag_out: &mut [u8],
     ) -> Result<usize, Error>;
 
-    /// Decrypt the ciphertext in place. Returns the number of
-    /// padding bytes that were added during encryption (to be
-    /// stripped by the caller).
+    /// Decrypt data in place (AEAD). Verifies the authentication
+    /// tag against `aad` and ciphertext. Returns padding byte
+    /// count.
     fn decrypt(
         &self,
         sa: &SecurityAssociation,
         iv: &[u8],
-        ciphertext: &mut [u8],
+        aad: &[u8],
+        data: &mut [u8],
+        tag: &[u8],
     ) -> Result<usize, Error>;
 
-    /// Compute a MAC over the authentication payload.
-    /// The result is written into `mac_out` (length = `sa.mac_len`).
+    /// Compute a MAC for authentication-only mode. The `iv` is
+    /// passed for algorithms that need it (e.g. GMAC).
     fn compute_mac(
         &self,
         sa: &SecurityAssociation,
-        auth_payload: &[u8],
+        iv: &[u8],
+        payload: &[u8],
         mac_out: &mut [u8],
     ) -> Result<(), Error>;
 }
@@ -203,16 +215,20 @@ impl CryptoProvider for ClearModeCrypto {
         &self,
         _sa: &SecurityAssociation,
         _iv: &[u8],
-        _plaintext: &mut [u8],
+        _aad: &[u8],
+        _data: &mut [u8],
+        _tag_out: &mut [u8],
     ) -> Result<usize, Error> {
-        Ok(0) // no padding
+        Ok(0)
     }
 
     fn decrypt(
         &self,
         _sa: &SecurityAssociation,
         _iv: &[u8],
-        _ciphertext: &mut [u8],
+        _aad: &[u8],
+        _data: &mut [u8],
+        _tag: &[u8],
     ) -> Result<usize, Error> {
         Ok(0)
     }
@@ -220,10 +236,10 @@ impl CryptoProvider for ClearModeCrypto {
     fn compute_mac(
         &self,
         sa: &SecurityAssociation,
-        _auth_payload: &[u8],
+        _iv: &[u8],
+        _payload: &[u8],
         mac_out: &mut [u8],
     ) -> Result<(), Error> {
-        // Fill MAC with zeros in clear mode.
         let len = sa.mac_len as usize;
         mac_out[..len].fill(0);
         Ok(())
@@ -309,15 +325,10 @@ pub fn parse_security_header<'a>(
 /// Given a frame buffer with the transfer frame header already
 /// written, this function:
 /// 1. Writes the Security Header after `header_end`
-/// 2. Encrypts the data field if needed
+/// 2. Encrypts the data field if needed (AEAD for GCM)
 /// 3. Computes and writes the MAC if needed
 ///
 /// The caller must have left room for the security overhead.
-///
-/// `frame` is the complete frame buffer.
-/// `header_end` is the offset where the Security Header starts.
-/// `data_start` is the offset where the Frame Data Field starts.
-/// `data_end` is the offset where the Frame Data Field ends.
 pub fn apply_security(
     sa: &mut SecurityAssociation,
     crypto: &impl CryptoProvider,
@@ -331,7 +342,8 @@ pub fn apply_security(
     }
 
     let trailer_start = data_end;
-    let trailer_end = trailer_start + sa.trailer_size();
+    let mac_len = sa.mac_len as usize;
+    let trailer_end = trailer_start + mac_len;
     if frame.len() < trailer_end {
         return Err(Error::BufferTooSmall {
             required: trailer_end,
@@ -339,13 +351,12 @@ pub fn apply_security(
         });
     }
 
-    // Prepare IV and SN
+    // Prepare IV and SN from sequence number
     let mut iv_buf = [0u8; MAX_IV_SIZE];
     let mut sn_buf = [0u8; MAX_SN_SIZE];
     let iv_len = sa.iv_len as usize;
     let sn_len = sa.sn_len as usize;
 
-    // Write current IV from SA sequence state
     if iv_len > 0 {
         let sn_bytes = sa.sequence_number.to_be_bytes();
         let start = 8usize.saturating_sub(iv_len);
@@ -355,79 +366,93 @@ pub fn apply_security(
             .copy_from_slice(&sn_bytes[start..start + copy_len]);
     }
 
-    // Write sequence number
     if sn_len > 0 {
         let sn_bytes = sa.sequence_number.to_be_bytes();
         let start = 8 - sn_len;
         sn_buf[..sn_len].copy_from_slice(&sn_bytes[start..]);
     }
 
-    // Encrypt if needed
-    let mut pad_len: u16 = 0;
-    let needs_encrypt = matches!(
-        sa.service_type,
-        ServiceType::Encryption | ServiceType::AuthenticatedEncryption
-    );
-    if needs_encrypt {
-        pad_len = crypto.encrypt(
-            sa,
-            &iv_buf[..iv_len],
-            &mut frame[data_start..data_end],
-        )? as u16;
-    }
-
-    // Write Security Header
+    // Write Security Header first (needed as AAD for AEAD).
+    // pad_len is always 0 for GCM/CTR (CCSDS stream ciphers).
     write_security_header(
         sa,
         &iv_buf[..iv_len],
         &sn_buf[..sn_len],
-        pad_len,
+        0,
         &mut frame[header_end..data_start],
     )?;
 
-    // Compute MAC if needed
-    let needs_auth = matches!(
-        sa.service_type,
-        ServiceType::Authentication
-            | ServiceType::AuthenticatedEncryption
-    );
-    if needs_auth {
-        let mac_len = sa.mac_len as usize;
-        let mut mac_buf = [0u8; MAX_MAC_SIZE];
+    let mut mac_buf = [0u8; MAX_MAC_SIZE];
 
-        // Build authentication payload by applying the mask.
-        // The auth payload covers: Primary Header through end
-        // of Frame Data Field (before MAC).
-        let auth_end = data_end;
-        let auth_data = &frame[..auth_end];
-
-        // Apply mask if provided, else use raw data
-        if sa.auth_mask.len() >= auth_end {
-            let mut masked =
-                heapless::Vec::<u8, 2048>::new();
-            masked.resize(auth_end, 0).ok();
-            for i in 0..auth_end {
-                masked[i] = auth_data[i] & sa.auth_mask[i];
+    match sa.service_type {
+        ServiceType::Authentication => {
+            let auth_end = data_end;
+            if sa.auth_mask.len() >= auth_end {
+                let mut masked =
+                    heapless::Vec::<u8, 2048>::new();
+                masked.resize(auth_end, 0).ok();
+                for i in 0..auth_end {
+                    masked[i] = frame[i] & sa.auth_mask[i];
+                }
+                crypto.compute_mac(
+                    sa,
+                    &iv_buf[..iv_len],
+                    &masked[..auth_end],
+                    &mut mac_buf[..mac_len],
+                )?;
+            } else {
+                crypto.compute_mac(
+                    sa,
+                    &iv_buf[..iv_len],
+                    &frame[..auth_end],
+                    &mut mac_buf[..mac_len],
+                )?;
             }
-            crypto.compute_mac(
+            frame[trailer_start..trailer_start + mac_len]
+                .copy_from_slice(&mac_buf[..mac_len]);
+        }
+        ServiceType::Encryption => {
+            crypto.encrypt(
                 sa,
-                &masked[..auth_end],
-                &mut mac_buf[..mac_len],
-            )?;
-        } else {
-            crypto.compute_mac(
-                sa,
-                auth_data,
-                &mut mac_buf[..mac_len],
+                &iv_buf[..iv_len],
+                &[],
+                &mut frame[data_start..data_end],
+                &mut [],
             )?;
         }
+        ServiceType::AuthenticatedEncryption => {
+            // AAD = frame header + security header (before data)
+            let (aad_part, rest) =
+                frame.split_at_mut(data_start);
+            let data_len = data_end - data_start;
 
-        // Write MAC into Security Trailer
-        frame[trailer_start..trailer_start + mac_len]
-            .copy_from_slice(&mac_buf[..mac_len]);
+            if sa.auth_mask.len() >= data_start {
+                let mut masked_aad = [0u8; 256];
+                for i in 0..aad_part.len() {
+                    masked_aad[i] =
+                        aad_part[i] & sa.auth_mask[i];
+                }
+                crypto.encrypt(
+                    sa,
+                    &iv_buf[..iv_len],
+                    &masked_aad[..aad_part.len()],
+                    &mut rest[..data_len],
+                    &mut mac_buf[..mac_len],
+                )?;
+            } else {
+                crypto.encrypt(
+                    sa,
+                    &iv_buf[..iv_len],
+                    aad_part,
+                    &mut rest[..data_len],
+                    &mut mac_buf[..mac_len],
+                )?;
+            }
+            rest[data_len..data_len + mac_len]
+                .copy_from_slice(&mac_buf[..mac_len]);
+        }
     }
 
-    // Increment sequence number for next frame
     sa.sequence_number = sa.sequence_number.wrapping_add(1);
 
     Ok(())
@@ -435,9 +460,9 @@ pub fn apply_security(
 
 /// Process security on a received frame (receiving side).
 ///
-/// Verifies the SA, checks MAC and sequence number, decrypts if
-/// needed. Returns the range of the cleartext data field within
-/// the frame buffer.
+/// Verifies authentication, checks anti-replay, and decrypts.
+/// For AEAD (AES-GCM), tag verification and decryption are
+/// combined in a single `decrypt` call.
 pub fn process_security(
     sa: &mut SecurityAssociation,
     crypto: &impl CryptoProvider,
@@ -446,7 +471,6 @@ pub fn process_security(
     data_start: usize,
     data_end: usize,
 ) -> Result<(), Error> {
-    // Read and validate SPI
     let spi = read_spi(&frame[header_end..])?;
     if spi != sa.spi {
         return Err(Error::UnknownSpi(spi));
@@ -459,8 +483,6 @@ pub fn process_security(
         return Err(Error::FrameTooShort);
     }
 
-    // Parse security header and extract values we need before
-    // taking a mutable borrow on frame.
     let (received_sn, iv_copy) = {
         let sec_hdr = SecurityHeader::parse(
             sa,
@@ -473,80 +495,120 @@ pub fn process_security(
         (sn_val, iv_buf)
     };
 
-    // Verify MAC if needed
-    let needs_auth = matches!(
-        sa.service_type,
-        ServiceType::Authentication
-            | ServiceType::AuthenticatedEncryption
-    );
-    if needs_auth {
-        let mut mac_buf = [0u8; MAX_MAC_SIZE];
-        let auth_end = data_end;
+    let iv_len = sa.iv_len as usize;
+    let sn_len = sa.sn_len as usize;
 
-        if sa.auth_mask.len() >= auth_end {
-            let mut masked =
-                heapless::Vec::<u8, 2048>::new();
-            masked.resize(auth_end, 0).ok();
-            for i in 0..auth_end {
-                masked[i] = frame[i] & sa.auth_mask[i];
+    match sa.service_type {
+        ServiceType::Authentication => {
+            let mut mac_buf = [0u8; MAX_MAC_SIZE];
+            let auth_end = data_end;
+
+            if sa.auth_mask.len() >= auth_end {
+                let mut masked =
+                    heapless::Vec::<u8, 2048>::new();
+                masked.resize(auth_end, 0).ok();
+                for i in 0..auth_end {
+                    masked[i] = frame[i] & sa.auth_mask[i];
+                }
+                crypto.compute_mac(
+                    sa,
+                    &iv_copy[..iv_len],
+                    &masked[..auth_end],
+                    &mut mac_buf[..mac_len],
+                )?;
+            } else {
+                crypto.compute_mac(
+                    sa,
+                    &iv_copy[..iv_len],
+                    &frame[..auth_end],
+                    &mut mac_buf[..mac_len],
+                )?;
             }
-            crypto.compute_mac(
+
+            let received_mac =
+                &frame[trailer_start..trailer_start + mac_len];
+            if received_mac != &mac_buf[..mac_len] {
+                return Err(Error::MacVerificationFailed);
+            }
+
+            if sn_len > 0 {
+                check_sequence_number(sa, received_sn)?;
+            }
+        }
+        ServiceType::Encryption => {
+            crypto.decrypt(
                 sa,
-                &masked[..auth_end],
-                &mut mac_buf[..mac_len],
-            )?;
-        } else {
-            crypto.compute_mac(
-                sa,
-                &frame[..auth_end],
-                &mut mac_buf[..mac_len],
+                &iv_copy[..iv_len],
+                &[],
+                &mut frame[data_start..data_end],
+                &[],
             )?;
         }
+        ServiceType::AuthenticatedEncryption => {
+            // Copy tag from trailer before splitting
+            let mut tag = [0u8; MAX_MAC_SIZE];
+            tag[..mac_len].copy_from_slice(
+                &frame[trailer_start..trailer_start + mac_len],
+            );
 
-        // Compare received MAC with computed MAC
-        let received_mac =
-            &frame[trailer_start..trailer_start + mac_len];
-        if received_mac != &mac_buf[..mac_len] {
-            return Err(Error::MacVerificationFailed);
-        }
+            // AEAD decrypt + tag verification
+            let (aad_part, rest) =
+                frame.split_at_mut(data_start);
+            let data_len = data_end - data_start;
 
-        // Check anti-replay sequence number
-        let sn_len = sa.sn_len as usize;
-        if sn_len > 0 {
-            let expected = sa.sequence_number;
-            if received_sn < expected {
-                return Err(Error::SequenceNumberRejected {
-                    received: received_sn,
-                    expected,
-                });
+            if sa.auth_mask.len() >= data_start {
+                let mut masked_aad = [0u8; 256];
+                for i in 0..aad_part.len() {
+                    masked_aad[i] =
+                        aad_part[i] & sa.auth_mask[i];
+                }
+                crypto.decrypt(
+                    sa,
+                    &iv_copy[..iv_len],
+                    &masked_aad[..aad_part.len()],
+                    &mut rest[..data_len],
+                    &tag[..mac_len],
+                )?;
+            } else {
+                crypto.decrypt(
+                    sa,
+                    &iv_copy[..iv_len],
+                    aad_part,
+                    &mut rest[..data_len],
+                    &tag[..mac_len],
+                )?;
             }
-            let window = sa.sequence_window;
-            if window > 0
-                && received_sn > expected.wrapping_add(window)
-            {
-                return Err(Error::SequenceNumberRejected {
-                    received: received_sn,
-                    expected,
-                });
+
+            if sn_len > 0 {
+                check_sequence_number(sa, received_sn)?;
             }
-            sa.sequence_number = received_sn.wrapping_add(1);
         }
     }
 
-    // Decrypt if needed
-    let needs_decrypt = matches!(
-        sa.service_type,
-        ServiceType::Encryption | ServiceType::AuthenticatedEncryption
-    );
-    if needs_decrypt {
-        let iv_len = sa.iv_len as usize;
-        crypto.decrypt(
-            sa,
-            &iv_copy[..iv_len],
-            &mut frame[data_start..data_end],
-        )?;
-    }
+    Ok(())
+}
 
+fn check_sequence_number(
+    sa: &mut SecurityAssociation,
+    received: u64,
+) -> Result<(), Error> {
+    let expected = sa.sequence_number;
+    if received < expected {
+        return Err(Error::SequenceNumberRejected {
+            received,
+            expected,
+        });
+    }
+    let window = sa.sequence_window;
+    if window > 0
+        && received > expected.wrapping_add(window)
+    {
+        return Err(Error::SequenceNumberRejected {
+            received,
+            expected,
+        });
+    }
+    sa.sequence_number = received.wrapping_add(1);
     Ok(())
 }
 
@@ -754,5 +816,211 @@ mod tests {
         let hdr = SecurityHeader::parse(&sa, &buf[..written]).unwrap();
         assert_eq!(hdr.spi(), 10);
         assert_eq!(hdr.pad_length(), 42);
+    }
+
+    fn aes_gcm_sa() -> SecurityAssociation {
+        SecurityAssociation {
+            spi: 5,
+            service_type: ServiceType::AuthenticatedEncryption,
+            iv_len: 12,
+            sn_len: 0,
+            pl_len: 0,
+            mac_len: 16,
+            sequence_number: 1,
+            sequence_window: 100,
+            auth_mask: heapless::Vec::new(),
+        }
+    }
+
+    #[test]
+    fn aes_gcm_128_roundtrip() {
+        let key = [0x42u8; 16];
+        let crypto = AesGcmCrypto::new_128(&key);
+        let sa = aes_gcm_sa();
+
+        let iv = [0u8; 12];
+        let aad = [0xC0, 0x00, 0x2A];
+        let original = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        let mut data = original;
+        let mut tag = [0u8; 16];
+
+        crypto
+            .encrypt(&sa, &iv, &aad, &mut data, &mut tag)
+            .unwrap();
+        assert_ne!(data, original);
+
+        crypto
+            .decrypt(&sa, &iv, &aad, &mut data, &tag)
+            .unwrap();
+        assert_eq!(data, original);
+    }
+
+    #[test]
+    fn aes_gcm_256_roundtrip() {
+        let key = [0x7Fu8; 32];
+        let crypto = AesGcmCrypto::new_256(&key);
+        let sa = aes_gcm_sa();
+
+        let iv = [0u8; 12];
+        let aad = b"header";
+        let original = *b"secret!!";
+        let mut data = original;
+        let mut tag = [0u8; 16];
+
+        crypto
+            .encrypt(&sa, &iv, aad, &mut data, &mut tag)
+            .unwrap();
+        crypto
+            .decrypt(&sa, &iv, aad, &mut data, &tag)
+            .unwrap();
+        assert_eq!(data, original);
+    }
+
+    #[test]
+    fn aes_gcm_tampered_ciphertext() {
+        let key = [0x42u8; 16];
+        let crypto = AesGcmCrypto::new_128(&key);
+        let sa = aes_gcm_sa();
+
+        let iv = [0u8; 12];
+        let aad = [0xC0];
+        let mut data = [1u8, 2, 3, 4];
+        let mut tag = [0u8; 16];
+
+        crypto
+            .encrypt(&sa, &iv, &aad, &mut data, &mut tag)
+            .unwrap();
+
+        data[0] ^= 0xFF; // tamper
+        let err = crypto
+            .decrypt(&sa, &iv, &aad, &mut data, &tag)
+            .unwrap_err();
+        assert_eq!(err, Error::MacVerificationFailed);
+    }
+
+    #[test]
+    fn aes_gcm_tampered_aad() {
+        let key = [0x42u8; 16];
+        let crypto = AesGcmCrypto::new_128(&key);
+        let sa = aes_gcm_sa();
+
+        let iv = [0u8; 12];
+        let aad = [0xC0];
+        let mut data = [1u8, 2, 3, 4];
+        let mut tag = [0u8; 16];
+
+        crypto
+            .encrypt(&sa, &iv, &aad, &mut data, &mut tag)
+            .unwrap();
+
+        let bad_aad = [0xC1]; // tampered
+        let err = crypto
+            .decrypt(&sa, &iv, &bad_aad, &mut data, &tag)
+            .unwrap_err();
+        assert_eq!(err, Error::MacVerificationFailed);
+    }
+
+    #[test]
+    fn aes_gcm_apply_process_roundtrip() {
+        let key = [0xABu8; 16];
+        let crypto = AesGcmCrypto::new_128(&key);
+
+        let mut sa_send = aes_gcm_sa();
+        let mut sa_recv = aes_gcm_sa();
+
+        // Frame layout:
+        // [5B header][14B sec hdr][10B data][16B MAC]
+        // sec hdr = SPI(2) + IV(12) + SN(0) + PL(0) = 14
+        let header_end = 5;
+        let data_start = header_end + sa_send.header_size();
+        let data_end = data_start + 10;
+        let total = data_end + sa_send.trailer_size();
+        let mut frame = [0u8; 64];
+
+        // Fake frame header
+        frame[0..5]
+            .copy_from_slice(&[0xC0, 0x00, 0x2A, 0x00, 0x28]);
+        // Payload
+        frame[data_start..data_end]
+            .copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+        apply_security(
+            &mut sa_send,
+            &crypto,
+            &mut frame,
+            header_end,
+            data_start,
+            data_end,
+        )
+        .unwrap();
+
+        assert_eq!(sa_send.sequence_number, 2);
+        // Data should be encrypted (not cleartext)
+        assert_ne!(
+            &frame[data_start..data_end],
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        );
+        // MAC should be non-zero
+        assert_ne!(&frame[data_end..total], &[0u8; 16]);
+
+        // Process on receive side
+        process_security(
+            &mut sa_recv,
+            &crypto,
+            &mut frame,
+            header_end,
+            data_start,
+            data_end,
+        )
+        .unwrap();
+
+        // Data should be decrypted back
+        assert_eq!(
+            &frame[data_start..data_end],
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        );
+    }
+
+    #[test]
+    fn aes_gcm_detect_tampered_frame() {
+        let key = [0xABu8; 16];
+        let crypto = AesGcmCrypto::new_128(&key);
+
+        let mut sa_send = aes_gcm_sa();
+        let mut sa_recv = aes_gcm_sa();
+
+        let header_end = 5;
+        let data_start = header_end + sa_send.header_size();
+        let data_end = data_start + 10;
+        let mut frame = [0u8; 64];
+
+        frame[0..5]
+            .copy_from_slice(&[0xC0, 0x00, 0x2A, 0x00, 0x28]);
+        frame[data_start..data_end]
+            .copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+        apply_security(
+            &mut sa_send,
+            &crypto,
+            &mut frame,
+            header_end,
+            data_start,
+            data_end,
+        )
+        .unwrap();
+
+        // Tamper with encrypted data
+        frame[data_start] ^= 0xFF;
+
+        let err = process_security(
+            &mut sa_recv,
+            &crypto,
+            &mut frame,
+            header_end,
+            data_start,
+            data_end,
+        )
+        .unwrap_err();
+        assert_eq!(err, Error::MacVerificationFailed);
     }
 }
