@@ -12,7 +12,7 @@ use core::mem::MaybeUninit;
 /// Created via [`Spi::open`]. Automatically closes the device
 /// when dropped.
 pub struct Spi {
-    inner: ffi::spi_info_t,
+    pub(crate) inner: ffi::spi_info_t,
 }
 
 impl Spi {

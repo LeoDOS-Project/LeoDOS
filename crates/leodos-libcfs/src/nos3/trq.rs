@@ -20,7 +20,7 @@ pub enum TrqDirection {
 ///
 /// Created via [`Torquer::open`]. Automatically closed on drop.
 pub struct Torquer {
-    inner: ffi::trq_info_t,
+    pub(crate) inner: ffi::trq_info_t,
 }
 
 impl Torquer {

@@ -23,7 +23,7 @@ pub enum Access {
 /// Created via [`Uart::open`]. Automatically closes the port
 /// when dropped.
 pub struct Uart {
-    inner: ffi::uart_info_t,
+    pub(crate) inner: ffi::uart_info_t,
 }
 
 impl Uart {

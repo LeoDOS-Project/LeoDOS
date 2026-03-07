@@ -12,7 +12,7 @@ use core::mem::MaybeUninit;
 /// Created via [`I2cBus::open`]. Automatically closes the bus
 /// when dropped.
 pub struct I2cBus {
-    inner: ffi::i2c_bus_info_t,
+    pub(crate) inner: ffi::i2c_bus_info_t,
 }
 
 impl I2cBus {

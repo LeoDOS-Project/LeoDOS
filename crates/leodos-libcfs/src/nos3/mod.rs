@@ -12,6 +12,7 @@ pub mod can;
 pub mod socket;
 pub mod trq;
 pub mod mem;
+pub mod components;
 
 use crate::ffi;
 

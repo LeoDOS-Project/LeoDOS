@@ -1,0 +1,34 @@
+//! Generic FSS (Fine Sun Sensor) device driver wrapper.
+//!
+//! Wraps the `GENERIC_FSS_*` device functions for
+//! precise sun angle measurement over an SPI bus.
+
+use crate::ffi;
+use crate::nos3::{check_spi, SpiError};
+use crate::nos3::spi::Spi;
+
+/// FSS measurement data.
+#[derive(Debug, Clone, Default)]
+pub struct FssData {
+    /// Sun angle alpha (radians).
+    pub alpha: f32,
+    /// Sun angle beta (radians).
+    pub beta: f32,
+    /// Error code (0 = valid, 1 = invalid).
+    pub error_code: u8,
+}
+
+/// Requests sun angle data from the FSS.
+pub fn request_data(
+    device: &mut Spi,
+) -> Result<FssData, SpiError> {
+    let mut raw = ffi::GENERIC_FSS_Device_Data_tlm_t::default();
+    check_spi(unsafe {
+        ffi::GENERIC_FSS_RequestData(&mut device.inner, &mut raw)
+    })?;
+    Ok(FssData {
+        alpha: raw.Alpha,
+        beta: raw.Beta,
+        error_code: raw.ErrorCode,
+    })
+}

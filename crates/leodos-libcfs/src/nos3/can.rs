@@ -12,7 +12,7 @@ use core::mem::MaybeUninit;
 /// Created via [`Can::open`]. Automatically closes the device
 /// when dropped.
 pub struct Can {
-    inner: ffi::can_info_t,
+    pub(crate) inner: ffi::can_info_t,
 }
 
 impl Can {

@@ -38,7 +38,7 @@ pub enum Category {
 ///
 /// Created via [`Socket::create`]. Automatically closed on drop.
 pub struct Socket {
-    inner: ffi::socket_info_t,
+    pub(crate) inner: ffi::socket_info_t,
 }
 
 impl Socket {
