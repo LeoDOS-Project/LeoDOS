@@ -8,25 +8,10 @@ pub mod uart;
 pub mod i2c;
 pub mod spi;
 pub mod gpio;
-
-/// Raw FFI re-exports for advanced use.
-pub mod ffi {
-    pub use crate::ffi::{
-        uart_access_flag, uart_info_t,
-        i2c_bus_info_t,
-        spi_info_t, spi_mutex_t,
-        gpio_info_t,
-        canid_t, can_info_t,
-        can_init_dev, can_set_modes, can_write, can_read,
-        can_close_device, can_master_transaction,
-        socket_info_t, addr_fam_e, type_e, category_e,
-        socket_create, socket_listen, socket_accept,
-        socket_connect, socket_send, socket_recv, socket_close,
-        trq_info_t, trq_init, trq_command, trq_close,
-        trq_set_time_high, trq_set_period, trq_set_direction,
-        devmem_write, devmem_read,
-    };
-}
+pub mod can;
+pub mod socket;
+pub mod trq;
+pub mod mem;
 
 /// Errors from hwlib operations.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
