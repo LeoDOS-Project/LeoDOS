@@ -3,7 +3,7 @@
 //! Wraps the hwlib `trq_*` functions with RAII lifetime
 //! management. The torquer is closed automatically on drop.
 
-use super::{check, HwError};
+use super::{check_trq, TrqError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 
@@ -31,13 +31,13 @@ impl Torquer {
     pub fn open(
         num: u8,
         period_ns: u32,
-    ) -> Result<Self, HwError> {
+    ) -> Result<Self, TrqError> {
         let mut info: ffi::trq_info_t = unsafe {
             MaybeUninit::zeroed().assume_init()
         };
         info.trq_num = num;
         info.timer_period_ns = period_ns;
-        check(unsafe { ffi::trq_init(&mut info) })?;
+        check_trq(unsafe { ffi::trq_init(&mut info) })?;
         Ok(Self { inner: info })
     }
 
@@ -48,9 +48,9 @@ impl Torquer {
         &mut self,
         percent_high: u8,
         direction: TrqDirection,
-    ) -> Result<(), HwError> {
+    ) -> Result<(), TrqError> {
         let pos = matches!(direction, TrqDirection::Positive);
-        check(unsafe {
+        check_trq(unsafe {
             ffi::trq_command(&mut self.inner, percent_high, pos)
         })
     }
@@ -59,15 +59,15 @@ impl Torquer {
     pub fn set_time_high(
         &mut self,
         ns: u32,
-    ) -> Result<(), HwError> {
-        check(unsafe {
+    ) -> Result<(), TrqError> {
+        check_trq(unsafe {
             ffi::trq_set_time_high(&mut self.inner, ns)
         })
     }
 
     /// Applies the configured timer period.
-    pub fn set_period(&mut self) -> Result<(), HwError> {
-        check(unsafe {
+    pub fn set_period(&mut self) -> Result<(), TrqError> {
+        check_trq(unsafe {
             ffi::trq_set_period(&mut self.inner)
         })
     }
@@ -76,9 +76,9 @@ impl Torquer {
     pub fn set_direction(
         &mut self,
         direction: TrqDirection,
-    ) -> Result<(), HwError> {
+    ) -> Result<(), TrqError> {
         let pos = matches!(direction, TrqDirection::Positive);
-        check(unsafe {
+        check_trq(unsafe {
             ffi::trq_set_direction(&mut self.inner, pos)
         })
     }

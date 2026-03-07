@@ -3,7 +3,7 @@
 //! Wraps the hwlib `i2c_*` functions with RAII lifetime
 //! management. The bus is closed automatically on drop.
 
-use super::{check, HwError};
+use super::{check_i2c, I2cError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 
@@ -20,14 +20,14 @@ impl I2cBus {
     ///
     /// `addr` is the default slave address. `speed` is the bus
     /// speed in kbps.
-    pub fn open(addr: i32, speed: u32) -> Result<Self, HwError> {
+    pub fn open(addr: i32, speed: u32) -> Result<Self, I2cError> {
         let mut info: ffi::i2c_bus_info_t = unsafe {
             MaybeUninit::zeroed().assume_init()
         };
         info.addr = addr;
         info.speed = speed;
         info.isOpen = 0;
-        check(unsafe { ffi::i2c_master_init(&mut info) })?;
+        check_i2c(unsafe { ffi::i2c_master_init(&mut info) })?;
         Ok(Self { inner: info })
     }
 
@@ -41,8 +41,8 @@ impl I2cBus {
         tx: &[u8],
         rx: &mut [u8],
         timeout: u16,
-    ) -> Result<(), HwError> {
-        check(unsafe {
+    ) -> Result<(), I2cError> {
+        check_i2c(unsafe {
             ffi::i2c_master_transaction(
                 &mut self.inner,
                 addr,
@@ -61,8 +61,8 @@ impl I2cBus {
         addr: u8,
         rx: &mut [u8],
         timeout: u8,
-    ) -> Result<(), HwError> {
-        check(unsafe {
+    ) -> Result<(), I2cError> {
+        check_i2c(unsafe {
             ffi::i2c_read_transaction(
                 &mut self.inner,
                 addr,
@@ -79,8 +79,8 @@ impl I2cBus {
         addr: u8,
         tx: &[u8],
         timeout: u8,
-    ) -> Result<(), HwError> {
-        check(unsafe {
+    ) -> Result<(), I2cError> {
+        check_i2c(unsafe {
             ffi::i2c_write_transaction(
                 &mut self.inner,
                 addr,

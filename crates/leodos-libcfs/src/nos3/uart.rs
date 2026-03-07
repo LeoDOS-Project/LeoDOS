@@ -3,7 +3,7 @@
 //! Wraps the hwlib `uart_*` functions with RAII lifetime
 //! management. The port is closed automatically on drop.
 
-use super::{check, check_count, HwError};
+use super::{check_uart, check_uart_count, UartError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 
@@ -35,7 +35,7 @@ impl Uart {
         device: &core::ffi::CStr,
         baud: u32,
         access: Access,
-    ) -> Result<Self, HwError> {
+    ) -> Result<Self, UartError> {
         let mut info: ffi::uart_info_t = unsafe {
             MaybeUninit::zeroed().assume_init()
         };
@@ -43,18 +43,18 @@ impl Uart {
         info.baud = baud;
         info.isOpen = 0;
         info.access_option = match access {
-            Access::ReadOnly => ffi::uart_access_flag::uart_access_flag_RDONLY,
-            Access::WriteOnly => ffi::uart_access_flag::uart_access_flag_WRONLY,
-            Access::ReadWrite => ffi::uart_access_flag::uart_access_flag_RDWR,
+            Access::ReadOnly => ffi::uart_access_flag_uart_access_flag_RDONLY,
+            Access::WriteOnly => ffi::uart_access_flag_uart_access_flag_WRONLY,
+            Access::ReadWrite => ffi::uart_access_flag_uart_access_flag_RDWR,
         };
-        check(unsafe { ffi::uart_init_port(&mut info) })?;
+        check_uart(unsafe { ffi::uart_init_port(&mut info) })?;
         Ok(Self { inner: info })
     }
 
     /// Reads up to `buf.len()` bytes from the port.
     ///
     /// Returns the number of bytes actually read.
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, HwError> {
+    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, UartError> {
         let rc = unsafe {
             ffi::uart_read_port(
                 &mut self.inner,
@@ -62,13 +62,13 @@ impl Uart {
                 buf.len() as u32,
             )
         };
-        check_count(rc)
+        check_uart_count(rc)
     }
 
     /// Writes bytes to the port.
     ///
     /// Returns the number of bytes actually written.
-    pub fn write(&mut self, data: &[u8]) -> Result<usize, HwError> {
+    pub fn write(&mut self, data: &[u8]) -> Result<usize, UartError> {
         let rc = unsafe {
             ffi::uart_write_port(
                 &mut self.inner,
@@ -76,20 +76,20 @@ impl Uart {
                 data.len() as u32,
             )
         };
-        check_count(rc)
+        check_uart_count(rc)
     }
 
     /// Returns the number of bytes waiting to be read.
-    pub fn bytes_available(&mut self) -> Result<usize, HwError> {
+    pub fn bytes_available(&mut self) -> Result<usize, UartError> {
         let rc = unsafe {
             ffi::uart_bytes_available(&mut self.inner)
         };
-        check_count(rc)
+        check_uart_count(rc)
     }
 
     /// Flushes the receive buffer.
-    pub fn flush(&mut self) -> Result<(), HwError> {
-        check(unsafe { ffi::uart_flush(&mut self.inner) })
+    pub fn flush(&mut self) -> Result<(), UartError> {
+        check_uart(unsafe { ffi::uart_flush(&mut self.inner) })
     }
 }
 

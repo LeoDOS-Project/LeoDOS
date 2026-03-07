@@ -3,7 +3,7 @@
 //! Wraps the hwlib `spi_*` functions with RAII lifetime
 //! management. The device is closed automatically on drop.
 
-use super::{check, check_count, HwError};
+use super::{check_spi, SpiError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 
@@ -31,7 +31,7 @@ impl Spi {
         baudrate: u32,
         spi_mode: u8,
         bits_per_word: u8,
-    ) -> Result<Self, HwError> {
+    ) -> Result<Self, SpiError> {
         let mut info: ffi::spi_info_t = unsafe {
             MaybeUninit::zeroed().assume_init()
         };
@@ -42,13 +42,13 @@ impl Spi {
         info.spi_mode = spi_mode;
         info.bits_per_word = bits_per_word;
         info.isOpen = 0;
-        check(unsafe { ffi::spi_init_dev(&mut info) })?;
+        check_spi(unsafe { ffi::spi_init_dev(&mut info) })?;
         Ok(Self { inner: info })
     }
 
     /// Writes bytes to the SPI device.
-    pub fn write(&mut self, data: &[u8]) -> Result<(), HwError> {
-        check(unsafe {
+    pub fn write(&mut self, data: &[u8]) -> Result<(), SpiError> {
+        check_spi(unsafe {
             ffi::spi_write(
                 &mut self.inner,
                 data.as_ptr() as *mut u8,
@@ -61,8 +61,8 @@ impl Spi {
     pub fn read(
         &mut self,
         buf: &mut [u8],
-    ) -> Result<(), HwError> {
-        check(unsafe {
+    ) -> Result<(), SpiError> {
+        check_spi(unsafe {
             ffi::spi_read(
                 &mut self.inner,
                 buf.as_mut_ptr(),
@@ -87,7 +87,7 @@ impl Spi {
         delay: u16,
         bits: u8,
         deselect: bool,
-    ) -> Result<(), HwError> {
+    ) -> Result<(), SpiError> {
         let tx_ptr = if tx.is_empty() {
             core::ptr::null_mut()
         } else {
@@ -98,7 +98,7 @@ impl Spi {
         } else {
             rx.as_mut_ptr()
         };
-        check(unsafe {
+        check_spi(unsafe {
             ffi::spi_transaction(
                 &mut self.inner,
                 tx_ptr,
@@ -112,13 +112,13 @@ impl Spi {
     }
 
     /// Manually asserts chip-select.
-    pub fn select(&mut self) -> Result<(), HwError> {
-        check(unsafe { ffi::spi_select_chip(&mut self.inner) })
+    pub fn select(&mut self) -> Result<(), SpiError> {
+        check_spi(unsafe { ffi::spi_select_chip(&mut self.inner) })
     }
 
     /// Manually deasserts chip-select.
-    pub fn deselect(&mut self) -> Result<(), HwError> {
-        check(unsafe {
+    pub fn deselect(&mut self) -> Result<(), SpiError> {
+        check_spi(unsafe {
             ffi::spi_unselect_chip(&mut self.inner)
         })
     }

@@ -3,7 +3,7 @@
 //! Wraps the hwlib `socket_*` functions with RAII lifetime
 //! management. The socket is closed automatically on drop.
 
-use super::{check, HwError};
+use super::{check_socket, SocketError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 
@@ -57,38 +57,38 @@ impl Socket {
         sock_type: SockType,
         category: Category,
         blocking: bool,
-    ) -> Result<Self, HwError> {
+    ) -> Result<Self, SocketError> {
         let mut info: ffi::socket_info_t = unsafe {
             MaybeUninit::zeroed().assume_init()
         };
         info.ip_address = ip.as_ptr() as *mut _;
         info.port_num = port;
         info.address_family = match family {
-            AddrFamily::V4 => ffi::addr_fam_e::ip_ver_4,
-            AddrFamily::V6 => ffi::addr_fam_e::ip_ver_6,
+            AddrFamily::V4 => ffi::addr_fam_e_ip_ver_4,
+            AddrFamily::V6 => ffi::addr_fam_e_ip_ver_6,
         };
         info.type_ = match sock_type {
-            SockType::Stream => ffi::type_e::stream,
-            SockType::Dgram => ffi::type_e::dgram,
+            SockType::Stream => ffi::type_e_stream,
+            SockType::Dgram => ffi::type_e_dgram,
         };
         info.category = match category {
-            Category::Server => ffi::category_e::server,
-            Category::Client => ffi::category_e::client,
+            Category::Server => ffi::category_e_server,
+            Category::Client => ffi::category_e_client,
         };
         info.block = blocking;
         info.created = false;
-        check(unsafe { ffi::socket_create(&mut info) })?;
+        check_socket(unsafe { ffi::socket_create(&mut info) })?;
         Ok(Self { inner: info })
     }
 
     /// Starts listening for connections (server, stream only).
-    pub fn listen(&mut self) -> Result<(), HwError> {
-        check(unsafe { ffi::socket_listen(&mut self.inner) })
+    pub fn listen(&mut self) -> Result<(), SocketError> {
+        check_socket(unsafe { ffi::socket_listen(&mut self.inner) })
     }
 
     /// Accepts an incoming connection (server, stream only).
-    pub fn accept(&mut self) -> Result<(), HwError> {
-        check(unsafe { ffi::socket_accept(&mut self.inner) })
+    pub fn accept(&mut self) -> Result<(), SocketError> {
+        check_socket(unsafe { ffi::socket_accept(&mut self.inner) })
     }
 
     /// Connects to a remote address (client).
@@ -96,8 +96,8 @@ impl Socket {
         &mut self,
         remote_ip: &core::ffi::CStr,
         remote_port: i32,
-    ) -> Result<(), HwError> {
-        check(unsafe {
+    ) -> Result<(), SocketError> {
+        check_socket(unsafe {
             ffi::socket_connect(
                 &mut self.inner,
                 remote_ip.as_ptr() as *mut _,
@@ -116,9 +116,9 @@ impl Socket {
         data: &[u8],
         remote_ip: &core::ffi::CStr,
         remote_port: i32,
-    ) -> Result<usize, HwError> {
+    ) -> Result<usize, SocketError> {
         let mut bytes_sent: usize = 0;
-        check(unsafe {
+        check_socket(unsafe {
             ffi::socket_send(
                 &mut self.inner,
                 data.as_ptr() as *mut _,
@@ -137,9 +137,9 @@ impl Socket {
     pub fn recv(
         &mut self,
         buf: &mut [u8],
-    ) -> Result<usize, HwError> {
+    ) -> Result<usize, SocketError> {
         let mut bytes_recvd: usize = 0;
-        check(unsafe {
+        check_socket(unsafe {
             ffi::socket_recv(
                 &mut self.inner,
                 buf.as_mut_ptr(),

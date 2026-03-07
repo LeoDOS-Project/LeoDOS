@@ -3,7 +3,7 @@
 //! Wraps the hwlib `gpio_*` functions with RAII lifetime
 //! management. The pin is closed automatically on drop.
 
-use super::{check, HwError};
+use super::{check_gpio, GpioError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 
@@ -32,7 +32,7 @@ impl Gpio {
     pub fn open(
         pin: u32,
         direction: Direction,
-    ) -> Result<Self, HwError> {
+    ) -> Result<Self, GpioError> {
         let mut info: ffi::gpio_info_t = unsafe {
             MaybeUninit::zeroed().assume_init()
         };
@@ -42,22 +42,22 @@ impl Gpio {
             Direction::Output => 1,
         };
         info.isOpen = 0;
-        check(unsafe { ffi::gpio_init(&mut info) })?;
+        check_gpio(unsafe { ffi::gpio_init(&mut info) })?;
         Ok(Self { inner: info })
     }
 
     /// Reads the current value of the pin.
-    pub fn read(&mut self) -> Result<u8, HwError> {
+    pub fn read(&mut self) -> Result<u8, GpioError> {
         let mut value: u8 = 0;
-        check(unsafe {
+        check_gpio(unsafe {
             ffi::gpio_read(&mut self.inner, &mut value)
         })?;
         Ok(value)
     }
 
     /// Writes a value (0 or 1) to the pin.
-    pub fn write(&mut self, value: u8) -> Result<(), HwError> {
-        check(unsafe {
+    pub fn write(&mut self, value: u8) -> Result<(), GpioError> {
+        check_gpio(unsafe {
             ffi::gpio_write(&mut self.inner, value)
         })
     }
