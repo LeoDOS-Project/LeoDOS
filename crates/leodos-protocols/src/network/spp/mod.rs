@@ -347,15 +347,6 @@ impl DerefMut for SpacePacket {
     }
 }
 
-impl crate::utils::Header<PrimaryHeader> for PrimaryHeader {
-    fn get(&self) -> &PrimaryHeader {
-        self
-    }
-    fn get_mut(&mut self) -> &mut PrimaryHeader {
-        self
-    }
-}
-
 #[bon]
 impl SpacePacket {
     /// Constructs a new `SpacePacket` in the provided buffer.

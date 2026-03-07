@@ -16,8 +16,8 @@
 //! | Primary Header (fixed part)         | 7 bytes |
 //! |   TFVN + SCID + Src/Dst + VCID      |         |
 //! |   + MAP ID + EOFPH Flag             | 4 bytes |
-//! |   Frame Length                       | 2 bytes |
-//! |   Flags + VCF Count Length           | 1 byte  |
+//! |   Frame Length                      | 2 bytes |
+//! |   Flags + VCF Count Length          | 1 byte  |
 //! | Primary Header (VCF Count)          | 0-7 B   |
 //! +-------------------------------------+---------+
 //! | Insert Zone (optional)              | Varies  |
@@ -212,7 +212,7 @@ pub enum ParseError {
 /// | TFVN   | SCID     | S/D  | VCID | MAP  | EOFPH|
 /// | 4 bits | 16 bits  | 1b   | 6b   | 4b   | 1b   |
 /// +--------+----------+------+------+------+------+
-/// | Frame Length              | Flags byte         |
+/// | Frame Length             | Flags byte         |
 /// | 16 bits                  | Byp PCC Sp OCF VCL |
 /// +--------+----------+------+------+------+------+
 /// ```

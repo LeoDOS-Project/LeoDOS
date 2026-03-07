@@ -221,12 +221,3 @@ impl IslRoutingTelecommand {
         Self::from_telecommand(tc)
     }
 }
-
-impl crate::utils::Header<PrimaryHeader> for IslRoutingTelecommand {
-    fn get(&self) -> &PrimaryHeader {
-        &self.primary
-    }
-    fn get_mut(&mut self) -> &mut PrimaryHeader {
-        &mut self.primary
-    }
-}

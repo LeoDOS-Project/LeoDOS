@@ -1,3 +1,5 @@
+//! Bitfield extraction, checksums, and header trait.
+
 use zerocopy::network_endian::{U16, U32};
 
 /// Returns the bits from `bitmap` specified by `mask`, right-aligned.
@@ -48,45 +50,4 @@ pub fn checksum_u8(bytes: &[u8]) -> u8 {
 /// Returns true if the XOR checksum of the slice (including the checksum byte) is zero.
 pub fn validate_checksum_u8(bytes: &[u8]) -> bool {
     checksum_u8(bytes) == 0
-}
-
-/// Trait for types that contain a protocol header of type `H`.
-pub trait Header<H> {
-    /// Returns a reference to the header.
-    fn get(&self) -> &H;
-    /// Returns a mutable reference to the header.
-    fn get_mut(&mut self) -> &mut H;
-}
-
-/// A `no_std`-compatible [`core::fmt::Write`] adapter over a byte slice.
-pub struct BufWriter<'a> {
-    /// The output buffer.
-    pub buf: &'a mut [u8],
-    /// Current write position.
-    pub pos: usize,
-}
-
-impl core::fmt::Write for BufWriter<'_> {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let b = s.as_bytes();
-        let end = self.pos + b.len();
-        if end > self.buf.len() {
-            return Err(core::fmt::Error);
-        }
-        self.buf[self.pos..end].copy_from_slice(b);
-        self.pos = end;
-        Ok(())
-    }
-}
-
-/// Formats into a byte buffer using [`core::fmt::Write`], returning bytes written.
-#[macro_export]
-macro_rules! fmt {
-    ($buf:expr, $($arg:tt)*) => {{
-        let mut w = $crate::utils::BufWriter { buf: $buf, pos: 0 };
-        match core::fmt::Write::write_fmt(&mut w, format_args!($($arg)*)) {
-            Ok(()) => Ok(w.pos),
-            Err(_) => Err(core::fmt::Error),
-        }
-    }};
 }
