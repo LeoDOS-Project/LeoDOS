@@ -13,6 +13,16 @@ pub mod crc;
 pub mod physical;
 /// CCSDS pseudo-randomization for TC and TM frames.
 pub mod randomizer;
+/// CCSDS 121.0-B-3 Lossless Data Compression (Rice coding).
+pub mod rice;
+/// CCSDS 123.0-B-2 Low-Complexity Lossless Multispectral &
+/// Hyperspectral Image Compression.
+pub mod ccsds123;
+/// CCSDS 122.0-B-2 Image Data Compression (wavelet-based).
+pub mod ccsds122;
+/// CCSDS convolutional code (rate 1/2, K=7) with Viterbi decoding
+/// (CCSDS 131.0-B-5).
+pub mod convolutional;
 
 /// Synchronous trait for transmitting raw bytes on the physical layer.
 pub trait PhysicalWriter {
