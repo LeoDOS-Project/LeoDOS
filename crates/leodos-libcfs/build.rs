@@ -9,11 +9,18 @@ use std::rc::Rc;
 
 // Filter out public macros from the CFE/OSAL APIs.
 fn is_api_macro(name: &str) -> bool {
+    #[cfg(not(feature = "nos3"))]
     let prefixes = ["CFE_", "OSAL_", "OS_", "CF_"];
     #[cfg(feature = "nos3")]
     let prefixes = [
         "CFE_", "OSAL_", "OS_", "CF_", "UART_", "I2C_", "SPI_",
         "CAN_", "GPIO_", "SOCKET_", "MEM_", "TRQ_", "HWLIB_",
+        "GENERIC_RADIO_", "GENERIC_EPS_", "GENERIC_ADCS_",
+        "GENERIC_CSS_", "GENERIC_FSS_", "GENERIC_IMU_",
+        "GENERIC_MAG_", "GENERIC_STAR_TRACKER_",
+        "GENERIC_RW_", "GENERIC_REACTION_WHEEL_",
+        "GENERIC_TORQUER_", "GENERIC_THRUSTER_",
+        "NOVATEL_OEM615_", "CAM_",
     ];
     prefixes.iter().any(|p| name.starts_with(p))
         && name
@@ -202,6 +209,8 @@ fn main() {
     let cf_dir = env::var("CF_DIR").ok().map(PathBuf::from);
     #[cfg(feature = "nos3")]
     let hwlib_dir = env::var("HWLIB_DIR").ok().map(PathBuf::from);
+    #[cfg(feature = "nos3")]
+    let nos3_comp_dir = env::var("NOS3_COMPONENTS_DIR").ok().map(PathBuf::from);
     let debug = env::var("DEBUG").as_deref() == Ok("1");
 
     if debug {
@@ -298,23 +307,103 @@ fn main() {
             .header(header(cf, "fsw/src/cf_app.h"));
     }
 
+    // Provide stub struct can_frame for non-Linux hosts so
+    // bindgen can parse libcan.h (which embeds it in can_info_t).
+    // We write a physical file and force-include it via -include
+    // so it is guaranteed to be processed before any header.
+    #[cfg(feature = "nos3")]
+    {
+        let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+        let compat_h = out_dir.join("nos3_compat.h");
+        fs::write(&compat_h, "\
+#include <stdint.h>\n\
+#if !defined(__linux__) && !defined(__rtems__)\n\
+struct can_frame { uint32_t can_id; uint8_t can_dlc; \
+uint8_t __pad; uint8_t __res0; uint8_t __res1; \
+uint8_t data[8]; };\n\
+#endif\n").unwrap();
+        builder = builder
+            .clang_arg("-include")
+            .clang_arg(compat_h.display().to_string());
+    }
+
     #[cfg(feature = "nos3")]
     if let Some(ref hw) = hwlib_dir {
-        // Provide stub struct can_frame for non-Linux hosts so
-        // bindgen can parse libcan.h (which embeds it in can_info_t).
         builder = builder
-            .header_contents("nos3_compat.h", "\
-                #include <stdint.h>\n\
-                #if !defined(__linux__) && !defined(__rtems__)\n\
-                struct can_frame { uint32_t can_id; uint8_t can_dlc; \
-                uint8_t __pad; uint8_t __res0; uint8_t __res1; \
-                uint8_t data[8]; };\n\
-                #endif\n")
             .header(header(hw, "fsw/public_inc/hwlib.h"))
             .allowlist_function("uart_.*|i2c_.*|spi_.*|can_.*|gpio_.*|socket_.*|devmem_.*|trq_.*|HostToIp")
             .allowlist_type("uart_.*|i2c_.*|spi_.*|can_.*|gpio_.*|socket_.*|trq_.*|canid_t|addr_fam_e|type_e|category_e")
             .allowlist_var("UART_.*|I2C_.*|SPI_.*|CAN_.*|GPIO_.*|SOCKET_.*|MEM_.*|TRQ_.*|PORT_.*|NUM_.*|HWLIB_.*");
-        let _ = hw; // suppress unused warning
+        let _ = hw;
+    }
+
+    // NOS3 simulator component bindings (device drivers + message structs)
+    #[cfg(feature = "nos3")]
+    if let Some(ref comp) = nos3_comp_dir {
+        // Each component has: standalone/device_cfg.h, cfs/platform_inc/, shared/*_device.h, cfs/src/*_msg.h
+        let components = [
+            ("generic_radio",          "generic_radio",          "GENERIC_RADIO"),
+            ("generic_eps",            "generic_eps",            "GENERIC_EPS"),
+            ("generic_adcs",           "generic_adcs",           "Generic_ADCS|GENERIC_ADCS"),
+            ("generic_css",            "generic_css",            "GENERIC_CSS"),
+            ("generic_fss",            "generic_fss",            "GENERIC_FSS"),
+            ("generic_imu",            "generic_imu",            "GENERIC_IMU"),
+            ("generic_mag",            "generic_mag",            "GENERIC_MAG"),
+            ("generic_star_tracker",   "generic_star_tracker",   "GENERIC_STAR_TRACKER"),
+            ("generic_reaction_wheel", "generic_reaction_wheel", "GENERIC_RW|GENERIC_REACTION_WHEEL"),
+            ("generic_torquer",        "generic_torquer",        "GENERIC_TORQUER"),
+            ("generic_thruster",       "generic_thruster",       "GENERIC_THRUSTER"),
+            ("novatel_oem615",         "novatel_oem615",         "NOVATEL_OEM615|GPGGA"),
+            ("arducam",                "cam",                    "CAM"),
+        ];
+
+        for (dir, _, _) in &components {
+            let base = comp.join(dir);
+            let standalone = base.join("fsw/standalone");
+            let platform = base.join("fsw/cfs/platform_inc");
+            let shared = base.join("fsw/shared");
+            if standalone.exists() {
+                builder = builder.clang_arg(format!("-I{}", standalone.display()));
+            }
+            if platform.exists() {
+                builder = builder.clang_arg(format!("-I{}", platform.display()));
+            }
+            if shared.exists() {
+                builder = builder.clang_arg(format!("-I{}", shared.display()));
+            }
+        }
+
+        // Add device and message headers
+        for (dir, prefix, _) in &components {
+            let base = comp.join(dir);
+            let device_h = base.join(format!("fsw/shared/{}_device.h", prefix));
+            let msg_h = base.join(format!("fsw/cfs/src/{}_msg.h", prefix));
+            if device_h.exists() {
+                builder = builder.header(device_h.display().to_string());
+            }
+            if msg_h.exists() {
+                builder = builder.header(msg_h.display().to_string());
+            }
+        }
+
+        // Build combined allowlist patterns from all component prefixes.
+        // Each prefix needs `.*` because bindgen anchors the regex.
+        let fn_patterns: Vec<String> = components
+            .iter()
+            .map(|(_, _, p)| {
+                // Handle alternatives like "Generic_ADCS|GENERIC_ADCS"
+                p.split('|')
+                    .map(|s| format!("{}.*", s))
+                    .collect::<Vec<_>>()
+                    .join("|")
+            })
+            .collect();
+        let fn_regex = fn_patterns.join("|");
+        builder = builder
+            .allowlist_function(&format!("{}|GetCurrentMomentum|SetRWTorque|take_picture", fn_regex))
+            .allowlist_type(&fn_regex)
+            .allowlist_var(&fn_regex);
+        let _ = comp;
     }
 
     let bindings = builder.generate().expect("Unable to generate bindings!");

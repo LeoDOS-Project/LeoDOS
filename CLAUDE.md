@@ -14,6 +14,32 @@
 - [x] CCSDS 123.0-B-2 — lossless multispectral/hyperspectral image compression
 - [x] CCSDS 122.0-B-2 — wavelet-based image data compression (integer 5/3 DWT)
 
+## NOS3 component bindings TODO
+
+Generate bindgen bindings + safe Rust wrappers in `leodos-libcfs`
+(behind the `nos3` feature flag) for these NOS3 simulator components.
+Everything except CryptoLib (we already have SDLS in Rust).
+
+- [x] generic_radio — ground/ISL RF link simulation (bindings)
+- [x] generic_eps — electrical power system (bindings)
+- [x] generic_adcs — attitude determination & control (bindings)
+- [x] generic_css — coarse sun sensor (bindings)
+- [x] generic_fss — fine sun sensor (bindings)
+- [x] generic_imu — gyroscope/accelerometer (bindings)
+- [x] generic_mag — magnetometer (bindings)
+- [x] generic_star_tracker — attitude determination (bindings)
+- [x] generic_reaction_wheel — momentum/torque control (bindings)
+- [x] generic_torquer — magnetic desaturation (bindings)
+- [x] generic_thruster — orbit/attitude maneuvers (bindings)
+- [x] novatel_oem615 — GPS receiver (bindings)
+- [x] arducam — camera/imaging (bindings)
+- [ ] nos_time_driver — synchronized simulation clock (C++, skip)
+- [ ] truth_42_sim — orbital mechanics (C++, skip)
+
+Each component has `*_msg.h` (command/telemetry structs) and
+`*_device.h` (device driver API) headers to bind.
+Safe Rust wrappers still needed for all 13 components.
+
 ## Docker testing
 
 Run `make docker-build` once to build the image, then
