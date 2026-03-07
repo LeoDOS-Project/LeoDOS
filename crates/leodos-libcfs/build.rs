@@ -9,10 +9,13 @@ use std::rc::Rc;
 
 // Filter out public macros from the CFE/OSAL APIs.
 fn is_api_macro(name: &str) -> bool {
-    (name.starts_with("CFE_")
-        || name.starts_with("OSAL_")
-        || name.starts_with("OS_")
-        || name.starts_with("CF_"))
+    let prefixes = ["CFE_", "OSAL_", "OS_", "CF_"];
+    #[cfg(feature = "nos3")]
+    let prefixes = [
+        "CFE_", "OSAL_", "OS_", "CF_", "UART_", "I2C_", "SPI_",
+        "CAN_", "GPIO_", "SOCKET_", "MEM_", "TRQ_", "HWLIB_",
+    ];
+    prefixes.iter().any(|p| name.starts_with(p))
         && name
             .chars()
             .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
@@ -191,12 +194,15 @@ fn parse_simple_cast_macro(value: &str) -> Option<(String, String)> {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=nos3_hwlib_wrapper.h");
 
     let cfe_dir = get_path("CFE_DIR");
     let osal_dir = get_path("OSAL_DIR");
     let psp_dir = get_path("PSP_DIR");
     let build_dir = get_path("BUILD_DIR");
     let cf_dir = env::var("CF_DIR").ok().map(PathBuf::from);
+    #[cfg(feature = "nos3")]
+    let hwlib_dir = env::var("HWLIB_DIR").ok().map(PathBuf::from);
     let debug = env::var("DEBUG").as_deref() == Ok("1");
 
     if debug {
@@ -206,6 +212,10 @@ fn main() {
         println!("cargo::warning=BUILD_DIR={}", build_dir.display());
         if let Some(ref cf) = cf_dir {
             println!("cargo::warning=CF_DIR={}", cf.display());
+        }
+        #[cfg(feature = "nos3")]
+        if let Some(ref hw) = hwlib_dir {
+            println!("cargo::warning=HWLIB_DIR={}", hw.display());
         }
     }
 
@@ -248,6 +258,11 @@ fn main() {
         include_paths.push(cf.join("config"));
     }
 
+    #[cfg(feature = "nos3")]
+    if let Some(ref hw) = hwlib_dir {
+        include_paths.push(hw.join("fsw/public_inc"));
+    }
+
     let mut builder = bindgen::Builder::default()
         .header(header(&cfe_dir, "modules/core_api/fsw/inc/cfe.h"))
         .header(header(&cfe_dir, "modules/core_api/fsw/inc/cfe_error.h"))
@@ -282,6 +297,18 @@ fn main() {
             .header(header(cf, "fsw/src/cf_cfdp_types.h"))
             .header(header(cf, "fsw/src/cf_cfdp.h"))
             .header(header(cf, "fsw/src/cf_app.h"));
+    }
+
+    #[cfg(feature = "nos3")]
+    if let Some(ref hw) = hwlib_dir {
+        // Use wrapper header that provides stub types for non-Linux hosts
+        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+        builder = builder
+            .header(manifest_dir.join("nos3_hwlib_wrapper.h").display().to_string())
+            .allowlist_function("uart_.*|i2c_.*|spi_.*|can_.*|gpio_.*|socket_.*|devmem_.*|trq_.*|HostToIp")
+            .allowlist_type("uart_.*|i2c_.*|spi_.*|can_.*|gpio_.*|socket_.*|trq_.*|canid_t|addr_fam_e|type_e|category_e")
+            .allowlist_var("UART_.*|I2C_.*|SPI_.*|CAN_.*|GPIO_.*|SOCKET_.*|MEM_.*|TRQ_.*|PORT_.*|NUM_.*|HWLIB_.*");
+        let _ = hw; // suppress unused warning
     }
 
     let bindings = builder.generate().expect("Unable to generate bindings!");

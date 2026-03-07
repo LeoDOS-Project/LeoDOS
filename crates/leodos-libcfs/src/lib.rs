@@ -32,3 +32,5 @@ pub mod runtime;
 pub mod macros;
 #[cfg(feature = "cfdp")]
 pub mod cf;
+#[cfg(feature = "nos3")]
+pub mod nos3;

@@ -4,3 +4,4 @@ OSAL_DIR = { value = "../../osal/", relative = true }
 PSP_DIR = { value = "../../psp/", relative = true  }
 BUILD_DIR = { value = "../../build/", relative = true }
 CF_DIR = { value = "../../libs/cf/", relative = true }
+HWLIB_DIR = { value = "../../libs/nos3/fsw/apps/hwlib/", relative = true }

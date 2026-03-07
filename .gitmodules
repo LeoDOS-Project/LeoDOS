@@ -52,3 +52,6 @@
 [submodule "libs/wamr"]
 	path = libs/wamr
 	url = https://github.com/bytecodealliance/wasm-micro-runtime.git
+[submodule "libs/nos3"]
+	path = libs/nos3
+	url = https://github.com/nasa/nos3.git

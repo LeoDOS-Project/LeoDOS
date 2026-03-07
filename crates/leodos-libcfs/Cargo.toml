@@ -7,6 +7,7 @@ edition = "2021"
 default = []
 std = []
 cfdp = []
+nos3 = []
 
 [dependencies]
 libc = { version = "0.2", default-features = false }
