@@ -194,7 +194,6 @@ fn parse_simple_cast_macro(value: &str) -> Option<(String, String)> {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=nos3_hwlib_wrapper.h");
 
     let cfe_dir = get_path("CFE_DIR");
     let osal_dir = get_path("OSAL_DIR");
@@ -301,10 +300,17 @@ fn main() {
 
     #[cfg(feature = "nos3")]
     if let Some(ref hw) = hwlib_dir {
-        // Use wrapper header that provides stub types for non-Linux hosts
-        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+        // Provide stub struct can_frame for non-Linux hosts so
+        // bindgen can parse libcan.h (which embeds it in can_info_t).
         builder = builder
-            .header(manifest_dir.join("nos3_hwlib_wrapper.h").display().to_string())
+            .header_contents("nos3_compat.h", "\
+                #include <stdint.h>\n\
+                #if !defined(__linux__) && !defined(__rtems__)\n\
+                struct can_frame { uint32_t can_id; uint8_t can_dlc; \
+                uint8_t __pad; uint8_t __res0; uint8_t __res1; \
+                uint8_t data[8]; };\n\
+                #endif\n")
+            .header(header(hw, "fsw/public_inc/hwlib.h"))
             .allowlist_function("uart_.*|i2c_.*|spi_.*|can_.*|gpio_.*|socket_.*|devmem_.*|trq_.*|HostToIp")
             .allowlist_type("uart_.*|i2c_.*|spi_.*|can_.*|gpio_.*|socket_.*|trq_.*|canid_t|addr_fam_e|type_e|category_e")
             .allowlist_var("UART_.*|I2C_.*|SPI_.*|CAN_.*|GPIO_.*|SOCKET_.*|MEM_.*|TRQ_.*|PORT_.*|NUM_.*|HWLIB_.*");
