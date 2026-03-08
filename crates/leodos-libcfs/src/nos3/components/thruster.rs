@@ -1,7 +1,8 @@
-//! Generic thruster device driver wrapper.
+//! Thruster (chemical or cold-gas).
 //!
-//! Wraps the `GENERIC_THRUSTER_*` device function for
-//! orbit/attitude maneuvers over a UART bus.
+//! Commands individual thrusters to a duty-cycle percentage
+//! for orbit maintenance, station-keeping, and coarse attitude
+//! manoeuvres. Communicates over UART.
 
 use crate::ffi;
 use crate::nos3::{check_uart, UartError};

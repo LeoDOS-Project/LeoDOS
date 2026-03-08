@@ -1,7 +1,8 @@
-//! Safe torquer (magnetorquer) wrapper.
+//! Magnetorquer (torque rod) PWM driver.
 //!
-//! Wraps the hwlib `trq_*` functions with RAII lifetime
-//! management. The torquer is closed automatically on drop.
+//! Magnetorquers generate a magnetic dipole to interact with
+//! Earth's magnetic field, providing low-power attitude control
+//! and reaction wheel desaturation. Closed on drop.
 
 use super::{check_trq, TrqError};
 use crate::ffi;
@@ -17,8 +18,6 @@ pub enum TrqDirection {
 }
 
 /// An initialised magnetorquer.
-///
-/// Created via [`Torquer::open`]. Automatically closed on drop.
 pub struct Torquer {
     pub(crate) inner: ffi::trq_info_t,
 }

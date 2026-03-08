@@ -1,16 +1,15 @@
-//! Safe CAN bus wrapper.
+//! CAN (Controller Area Network) bus.
 //!
-//! Wraps the hwlib `can_*` functions with RAII lifetime
-//! management. The device is closed automatically on drop.
+//! CAN is a multi-master serial bus originally designed for
+//! automotive use, adopted in spacecraft for robust,
+//! prioritised messaging between subsystems such as IMUs.
+//! The device is closed on drop.
 
 use super::{check_can, CanError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 
 /// An open CAN bus device.
-///
-/// Created via [`Can::open`]. Automatically closes the device
-/// when dropped.
 pub struct Can {
     pub(crate) inner: ffi::can_info_t,
 }

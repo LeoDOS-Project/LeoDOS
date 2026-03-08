@@ -1,7 +1,8 @@
-//! Generic CSS (Coarse Sun Sensor) device driver wrapper.
+//! Coarse Sun Sensor (CSS).
 //!
-//! Wraps the `GENERIC_CSS_*` device functions for
-//! sun vector estimation over an I2C bus.
+//! An array of six photodiodes that measure solar irradiance
+//! from different directions, giving a coarse estimate of the
+//! sun vector for safe-mode attitude determination. Uses I2C.
 
 use crate::ffi;
 use crate::nos3::{check_i2c, I2cError};

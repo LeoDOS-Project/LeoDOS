@@ -1,7 +1,8 @@
-//! Generic FSS (Fine Sun Sensor) device driver wrapper.
+//! Fine Sun Sensor (FSS).
 //!
-//! Wraps the `GENERIC_FSS_*` device functions for
-//! precise sun angle measurement over an SPI bus.
+//! Measures the sun direction with high angular precision
+//! (alpha/beta angles) using a position-sensitive detector.
+//! Used for fine attitude determination. Communicates via SPI.
 
 use crate::ffi;
 use crate::nos3::{check_spi, SpiError};

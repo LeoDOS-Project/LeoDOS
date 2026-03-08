@@ -1,7 +1,8 @@
-//! Generic MAG (Magnetometer) device driver wrapper.
+//! Three-axis magnetometer.
 //!
-//! Wraps the `GENERIC_MAG_*` device functions for
-//! magnetic field measurement over an SPI bus.
+//! Measures the local geomagnetic field vector, used for
+//! coarse attitude determination and magnetorquer control
+//! law computation. Communicates via SPI.
 
 use crate::ffi;
 use crate::nos3::{check_spi, SpiError};

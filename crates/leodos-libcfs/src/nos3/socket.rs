@@ -1,7 +1,8 @@
-//! Safe socket wrapper.
+//! Network socket (TCP/UDP).
 //!
-//! Wraps the hwlib `socket_*` functions with RAII lifetime
-//! management. The socket is closed automatically on drop.
+//! Sockets provide IP-based communication used in NOS3 to
+//! simulate RF links (ground station, inter-satellite) and
+//! other network-attached subsystems. Closed on drop.
 
 use super::{check_socket, SocketError};
 use crate::ffi;
@@ -35,8 +36,6 @@ pub enum Category {
 }
 
 /// An open network socket.
-///
-/// Created via [`Socket::create`]. Automatically closed on drop.
 pub struct Socket {
     pub(crate) inner: ffi::socket_info_t,
 }

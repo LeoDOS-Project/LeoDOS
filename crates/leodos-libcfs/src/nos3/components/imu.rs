@@ -1,7 +1,8 @@
-//! Generic IMU (Inertial Measurement Unit) device driver wrapper.
+//! Inertial Measurement Unit (IMU).
 //!
-//! Wraps the `GENERIC_IMU_*` device functions for
-//! gyroscope/accelerometer data over a CAN bus.
+//! Combines a three-axis gyroscope and accelerometer to
+//! measure angular rates and linear acceleration for attitude
+//! propagation and manoeuvre detection. Uses a CAN bus.
 
 use crate::ffi;
 use crate::nos3::{check_can, CanError};

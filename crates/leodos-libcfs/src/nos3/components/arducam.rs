@@ -1,8 +1,9 @@
-//! ArduCam camera device driver wrapper.
+//! ArduCam imaging payload.
 //!
-//! Wraps the `CAM_*` and `take_picture` device functions.
-//! The camera uses global I2C/SPI bus state internally,
-//! so these are free functions (no device parameter).
+//! Controls an OV2640/OV5640/OV5642 camera module for Earth
+//! observation or inspection imagery. Configuration runs over
+//! I2C; image data is read from an on-chip FIFO via SPI.
+//! Uses global bus state, so all functions are free-standing.
 
 use crate::ffi;
 

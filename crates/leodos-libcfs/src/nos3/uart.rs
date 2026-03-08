@@ -1,7 +1,8 @@
-//! Safe UART (serial port) wrapper.
+//! UART (Universal Asynchronous Receiver-Transmitter) bus.
 //!
-//! Wraps the hwlib `uart_*` functions with RAII lifetime
-//! management. The port is closed automatically on drop.
+//! UART is a serial communication interface used by spacecraft
+//! subsystems such as star trackers, reaction wheels, GPS
+//! receivers, and thrusters. The port is closed on drop.
 
 use super::{check_uart, check_uart_count, UartError};
 use crate::ffi;
@@ -19,9 +20,6 @@ pub enum Access {
 }
 
 /// An open UART port.
-///
-/// Created via [`Uart::open`]. Automatically closes the port
-/// when dropped.
 pub struct Uart {
     pub(crate) inner: ffi::uart_info_t,
 }

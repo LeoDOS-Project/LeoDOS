@@ -1,7 +1,8 @@
-//! Generic EPS (Electrical Power System) device driver wrapper.
+//! Electrical Power System (EPS).
 //!
-//! Wraps the `GENERIC_EPS_*` device functions for
-//! power-aware scheduling over an I2C bus.
+//! Manages battery charging, solar array regulation, and
+//! switched power distribution to spacecraft loads. Reports
+//! bus voltages, temperatures, and per-switch status over I2C.
 
 use crate::ffi;
 use crate::nos3::{check_i2c, I2cError};

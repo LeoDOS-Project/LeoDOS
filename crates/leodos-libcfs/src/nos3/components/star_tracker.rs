@@ -1,7 +1,8 @@
-//! Generic star tracker device driver wrapper.
+//! Star tracker.
 //!
-//! Wraps the `GENERIC_STAR_TRACKER_*` device functions for
-//! attitude determination over a UART bus.
+//! Captures star field images and matches them against a
+//! catalogue to produce a high-accuracy attitude quaternion.
+//! The primary attitude sensor for fine pointing. Uses UART.
 
 use crate::ffi;
 use crate::nos3::{check_uart, UartError};

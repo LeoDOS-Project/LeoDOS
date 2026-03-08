@@ -1,7 +1,7 @@
-//! Safe device memory access wrappers.
+//! Device memory (memory-mapped I/O).
 //!
-//! Wraps the hwlib `devmem_*` functions for reading and writing
-//! physical memory-mapped registers.
+//! Reads and writes physical memory addresses for direct
+//! register access on FPGA or SoC peripherals.
 
 use super::{check_mem, MemError};
 use crate::ffi;

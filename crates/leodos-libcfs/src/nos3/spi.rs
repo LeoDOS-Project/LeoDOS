@@ -1,16 +1,14 @@
-//! Safe SPI device wrapper.
+//! SPI (Serial Peripheral Interface) bus.
 //!
-//! Wraps the hwlib `spi_*` functions with RAII lifetime
-//! management. The device is closed automatically on drop.
+//! SPI is a high-speed synchronous serial bus used by
+//! spacecraft subsystems such as fine sun sensors (FSS),
+//! magnetometers, and cameras. The device is closed on drop.
 
 use super::{check_spi, SpiError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 
 /// An open SPI device.
-///
-/// Created via [`Spi::open`]. Automatically closes the device
-/// when dropped.
 pub struct Spi {
     pub(crate) inner: ffi::spi_info_t,
 }

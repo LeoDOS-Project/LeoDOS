@@ -1,7 +1,8 @@
-//! NovAtel OEM615 GPS receiver device driver wrapper.
+//! NovAtel OEM615 GPS receiver.
 //!
-//! Wraps the `NOVATEL_OEM615_*` device functions for
-//! GPS position/velocity data over a UART bus.
+//! Provides ECEF position/velocity and geodetic coordinates
+//! (lat/lon/alt) from GPS constellation signals. Used for
+//! orbit determination and time synchronisation. Uses UART.
 
 use crate::ffi;
 use crate::nos3::{check_uart, UartError};

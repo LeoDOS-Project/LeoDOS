@@ -1,7 +1,8 @@
-//! Generic radio device driver wrapper.
+//! Radio transceiver (ground and inter-satellite links).
 //!
-//! Wraps the `GENERIC_RADIO_*` device functions for
-//! ground/ISL RF link simulation over a socket bus.
+//! Simulates an RF front-end for uplink/downlink to a ground
+//! station and proximity links between satellites.
+//! Communicates over a socket bus.
 
 use crate::ffi;
 use crate::nos3::{check_socket, SocketError};

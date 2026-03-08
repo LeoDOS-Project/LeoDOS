@@ -1,16 +1,14 @@
-//! Safe I2C master wrapper.
+//! I2C (Inter-Integrated Circuit) master bus.
 //!
-//! Wraps the hwlib `i2c_*` functions with RAII lifetime
-//! management. The bus is closed automatically on drop.
+//! I2C is a two-wire serial bus used by spacecraft subsystems
+//! such as power systems (EPS), sun sensors (CSS), and cameras.
+//! The bus is closed on drop.
 
 use super::{check_i2c, I2cError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 
 /// An open I2C master bus.
-///
-/// Created via [`I2cBus::open`]. Automatically closes the bus
-/// when dropped.
 pub struct I2cBus {
     pub(crate) inner: ffi::i2c_bus_info_t,
 }

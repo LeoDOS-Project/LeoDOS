@@ -1,7 +1,8 @@
-//! Generic reaction wheel device driver wrapper.
+//! Reaction wheel.
 //!
-//! Wraps the `GetCurrentMomentum` and `SetRWTorque` device
-//! functions for momentum/torque control over a UART bus.
+//! A flywheel spun by a brushless motor to exchange angular
+//! momentum with the spacecraft, providing precise three-axis
+//! attitude control. Communicates over UART.
 
 use crate::ffi;
 use crate::nos3::{check_uart, UartError};

@@ -1,8 +1,8 @@
-//! NOS3 hardware library (hwlib) safe wrappers.
+//! NOS3 (NASA Operational Simulator for Small Sats) interfaces.
 //!
-//! Provides RAII-based, safe Rust interfaces for the NOS3 hwlib
-//! bus drivers. Each device is opened via a constructor and
-//! automatically closed on drop.
+//! Bus drivers (UART, I2C, SPI, CAN, GPIO, socket, torquer,
+//! memory-mapped I/O) and simulated spacecraft component
+//! drivers (sensors, actuators, radio, GPS, camera).
 
 pub mod uart;
 pub mod i2c;

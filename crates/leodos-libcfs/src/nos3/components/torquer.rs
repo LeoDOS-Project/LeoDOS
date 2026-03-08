@@ -1,7 +1,8 @@
-//! Generic torquer (magnetorquer) component driver wrapper.
+//! Magnetorquer component driver.
 //!
-//! Wraps the `GENERIC_TORQUER_*` device function for
-//! magnetic desaturation using the hwlib torquer bus.
+//! Higher-level interface to the magnetorquer hardware,
+//! combining duty-cycle and direction into a single config
+//! command and returning telemetry.
 
 use crate::ffi;
 use crate::nos3::{check_trq, TrqError};

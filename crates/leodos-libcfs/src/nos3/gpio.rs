@@ -1,7 +1,9 @@
-//! Safe GPIO pin wrapper.
+//! GPIO (General-Purpose Input/Output) pin control.
 //!
-//! Wraps the hwlib `gpio_*` functions with RAII lifetime
-//! management. The pin is closed automatically on drop.
+//! GPIO pins provide digital signal lines for discrete
+//! spacecraft hardware control — enable/disable switches,
+//! deployment indicators, and status lines. The pin is
+//! closed on drop.
 
 use super::{check_gpio, GpioError};
 use crate::ffi;
@@ -17,9 +19,6 @@ pub enum Direction {
 }
 
 /// An open GPIO pin.
-///
-/// Created via [`Gpio::open`]. Automatically closes the pin
-/// when dropped.
 pub struct Gpio {
     inner: ffi::gpio_info_t,
 }
@@ -29,13 +28,8 @@ impl Gpio {
     ///
     /// `pin` is the hardware pin number. `direction` selects
     /// input or output mode.
-    pub fn open(
-        pin: u32,
-        direction: Direction,
-    ) -> Result<Self, GpioError> {
-        let mut info: ffi::gpio_info_t = unsafe {
-            MaybeUninit::zeroed().assume_init()
-        };
+    pub fn open(pin: u32, direction: Direction) -> Result<Self, GpioError> {
+        let mut info: ffi::gpio_info_t = unsafe { MaybeUninit::zeroed().assume_init() };
         info.pin = pin;
         info.direction = match direction {
             Direction::Input => 0,
@@ -49,22 +43,20 @@ impl Gpio {
     /// Reads the current value of the pin.
     pub fn read(&mut self) -> Result<u8, GpioError> {
         let mut value: u8 = 0;
-        check_gpio(unsafe {
-            ffi::gpio_read(&mut self.inner, &mut value)
-        })?;
+        check_gpio(unsafe { ffi::gpio_read(&mut self.inner, &mut value) })?;
         Ok(value)
     }
 
     /// Writes a value (0 or 1) to the pin.
     pub fn write(&mut self, value: u8) -> Result<(), GpioError> {
-        check_gpio(unsafe {
-            ffi::gpio_write(&mut self.inner, value)
-        })
+        check_gpio(unsafe { ffi::gpio_write(&mut self.inner, value) })
     }
 }
 
 impl Drop for Gpio {
     fn drop(&mut self) {
-        unsafe { ffi::gpio_close(&mut self.inner); }
+        unsafe {
+            ffi::gpio_close(&mut self.inner);
+        }
     }
 }
