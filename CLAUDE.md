@@ -4,7 +4,7 @@
 
 - [x] SDLS crypto — AES-GCM 128/256 (CCSDS 355.0-B-2)
 - [x] Modulation — BPSK/QPSK modulate, demodulate, LLR output
-- [ ] Physical/NOS3 bridge — connecting to NOS Engine bus
+- [x] Physical/NOS3 bridge — Docker Compose + Makefile targets
 - [x] LDPC — encoder, decoder, syndrome check (all 6 codes)
 - [x] Reed-Solomon (255,223)
 - [x] CADU / ASM frame sync
@@ -46,3 +46,22 @@ Run `make docker-build` once to build the image, then
 `make docker-test` to run `cargo test --features=cfs` for
 `leodos-protocols` inside a Linux container. It auto-preps
 the cFS build directory if needed.
+
+## NOS3 simulation
+
+Uses `ivvitc/nos3-64` Docker image (NOS Engine SDK pre-installed).
+
+```
+make nos3-build      # build Docker image (adds Rust toolchain)
+make nos3-config     # generate NOS3 build configuration
+make nos3-build-sim  # build simulators (C++)
+make nos3-build-fsw  # build flight software (cFS + Rust)
+make nos3-launch     # start all containers
+make nos3-stop       # stop all containers
+make nos3-shell      # interactive shell in FSW container
+```
+
+The hwlib sim sources (`libs/nos3/fsw/apps/hwlib/sim/src/`)
+implement the same bus API (uart, i2c, spi, can) but route
+through NOS Engine TCP instead of real hardware. Our Rust
+wrappers work transparently — no code changes needed.
