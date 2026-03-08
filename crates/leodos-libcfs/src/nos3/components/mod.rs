@@ -1,8 +1,11 @@
-//! NOS3 simulator component device driver wrappers.
+//! NOS3 spacecraft subsystem simulators.
 //!
-//! Safe Rust interfaces for the NOS3 component device drivers.
-//! Each module wraps the `*_device.h` functions for one component.
+//! Each module provides a safe interface to one simulated
+//! hardware component — sensors, actuators, and payloads
+//! used in the NASA Operational Simulator for Small Sats.
 
+pub mod adcs;
+pub mod adcs_math;
 pub mod radio;
 pub mod eps;
 pub mod css;

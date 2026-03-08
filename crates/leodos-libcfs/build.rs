@@ -21,6 +21,7 @@ fn is_api_macro(name: &str) -> bool {
         "GENERIC_RW_", "GENERIC_REACTION_WHEEL_",
         "GENERIC_TORQUER_", "GENERIC_THRUSTER_",
         "NOVATEL_OEM615_", "CAM_",
+        "PASSIVE_", "BDOT_", "SUNSAFE_", "INERTIAL_",
     ];
     prefixes.iter().any(|p| name.starts_with(p))
         && name
@@ -373,16 +374,25 @@ uint8_t data[8]; };\n\
             }
         }
 
-        // Add device and message headers
+        // Add device, message, utility, and ADAC headers.
+        // Message headers must come before ADAC headers (type deps).
         for (dir, prefix, _) in &components {
             let base = comp.join(dir);
             let device_h = base.join(format!("fsw/shared/{}_device.h", prefix));
             let msg_h = base.join(format!("fsw/cfs/src/{}_msg.h", prefix));
+            let utils_h = base.join(format!("fsw/shared/{}_utilities.h", prefix));
+            let adac_h = base.join(format!("fsw/shared/{}_adac.h", prefix));
             if device_h.exists() {
                 builder = builder.header(device_h.display().to_string());
             }
             if msg_h.exists() {
                 builder = builder.header(msg_h.display().to_string());
+            }
+            if utils_h.exists() {
+                builder = builder.header(utils_h.display().to_string());
+            }
+            if adac_h.exists() {
+                builder = builder.header(adac_h.display().to_string());
             }
         }
 
@@ -400,7 +410,11 @@ uint8_t data[8]; };\n\
             .collect();
         let fn_regex = fn_patterns.join("|");
         builder = builder
-            .allowlist_function(&format!("{}|GetCurrentMomentum|SetRWTorque|take_picture", fn_regex))
+            .allowlist_function(&format!(
+                "{}|GetCurrentMomentum|SetRWTorque|take_picture\
+                |VoV|VxV|SxV|MAGV|UNITV|CopyUnitV\
+                |QxQ|QxQT|QxV|QTxV|UNITQ|RECTIFYQ\
+                |arccos|Limit", fn_regex))
             .allowlist_type(&fn_regex)
             .allowlist_var(&fn_regex);
         let _ = comp;
