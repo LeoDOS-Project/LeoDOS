@@ -18,6 +18,8 @@
 //! With interleaving depth I, the total codeblock is I×255 symbols
 //! and can correct up to I×16 symbol errors.
 
+use crate::physical::{AsyncPhysicalReader, AsyncPhysicalWriter};
+
 /// Number of symbols in a full RS codeword.
 pub const N: usize = 255;
 /// Number of data symbols per codeword.

@@ -9,8 +9,6 @@ pub mod reed_solomon;
 pub mod cltu;
 /// CRC-protected Space Packet wrapper.
 pub mod crc;
-/// Async physical channel traits and CLTU writer.
-pub mod physical;
 /// CCSDS pseudo-randomization for TC and TM frames.
 pub mod randomizer;
 /// CCSDS 121.0-B-3 Lossless Data Compression (Rice coding).

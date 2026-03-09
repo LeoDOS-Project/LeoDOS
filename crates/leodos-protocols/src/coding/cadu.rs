@@ -24,6 +24,8 @@
 //! - CADU encoding (prepend ASM to a frame)
 //! - Frame synchronization (find ASM in a bitstream)
 
+use crate::physical::{AsyncPhysicalReader, AsyncPhysicalWriter};
+
 /// Standard 32-bit ASM for TM and AOS frames (CCSDS 131.0-B-5).
 pub const ASM_TM: [u8; 4] = [0x1A, 0xCF, 0xFC, 0x1D];
 
@@ -176,6 +178,153 @@ impl<'a> Iterator for FrameIter<'a> {
         } else {
             None
         }
+    }
+}
+
+/// Wraps an [`AsyncPhysicalWriter`] to prepend an ASM before writing.
+pub struct AsmWriter<W, const BUF: usize> {
+    writer: W,
+    asm: &'static [u8],
+    buffer: [u8; BUF],
+}
+
+/// Errors from ASM writer operations.
+#[derive(Debug, Clone)]
+pub enum AsmWriterError<E> {
+    /// CADU encoding error.
+    Cadu(CaduError),
+    /// The underlying writer returned an error.
+    Writer(E),
+}
+
+impl<E: core::fmt::Display> core::fmt::Display for AsmWriterError<E> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Cadu(e) => write!(f, "ASM: {e:?}"),
+            Self::Writer(e) => write!(f, "writer: {e}"),
+        }
+    }
+}
+
+impl<E: core::error::Error> core::error::Error for AsmWriterError<E> {}
+
+impl<W, const BUF: usize> AsmWriter<W, BUF> {
+    /// Creates a writer that prepends the TM ASM (`1ACFFC1D`).
+    pub fn tm(writer: W) -> Self {
+        Self {
+            writer,
+            asm: &ASM_TM,
+            buffer: [0u8; BUF],
+        }
+    }
+
+    /// Creates a writer that prepends the Proximity-1 ASM.
+    pub fn proximity1(writer: W) -> Self {
+        Self {
+            writer,
+            asm: &ASM_PROXIMITY1,
+            buffer: [0u8; BUF],
+        }
+    }
+}
+
+impl<W: AsyncPhysicalWriter, const BUF: usize> AsyncPhysicalWriter
+    for AsmWriter<W, BUF>
+{
+    type Error = AsmWriterError<W::Error>;
+
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+        let len = encode_cadu(self.asm, data, &mut self.buffer)
+            .map_err(AsmWriterError::Cadu)?;
+        self.writer
+            .write(&self.buffer[..len])
+            .await
+            .map_err(AsmWriterError::Writer)
+    }
+}
+
+/// Wraps an [`AsyncPhysicalReader`] to find and strip ASM from
+/// incoming data.
+pub struct FrameSyncReader<R, const BUF: usize> {
+    reader: R,
+    asm: &'static [u8],
+    frame_len: usize,
+    buffer: [u8; BUF],
+}
+
+/// Errors from frame sync reader operations.
+#[derive(Debug, Clone)]
+pub enum FrameSyncReaderError<E> {
+    /// No valid frame found in received data.
+    NoFrame,
+    /// The underlying reader returned an error.
+    Reader(E),
+}
+
+impl<E: core::fmt::Display> core::fmt::Display
+    for FrameSyncReaderError<E>
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NoFrame => write!(f, "no ASM-aligned frame found"),
+            Self::Reader(e) => write!(f, "reader: {e}"),
+        }
+    }
+}
+
+impl<E: core::error::Error> core::error::Error
+    for FrameSyncReaderError<E>
+{
+}
+
+impl<R, const BUF: usize> FrameSyncReader<R, BUF> {
+    /// Creates a reader that searches for TM ASM and extracts
+    /// frames of the given length.
+    pub fn tm(reader: R, frame_len: usize) -> Self {
+        Self {
+            reader,
+            asm: &ASM_TM,
+            frame_len,
+            buffer: [0u8; BUF],
+        }
+    }
+
+    /// Creates a reader for Proximity-1 ASM.
+    pub fn proximity1(reader: R, frame_len: usize) -> Self {
+        Self {
+            reader,
+            asm: &ASM_PROXIMITY1,
+            frame_len,
+            buffer: [0u8; BUF],
+        }
+    }
+}
+
+impl<R: AsyncPhysicalReader, const BUF: usize> AsyncPhysicalReader
+    for FrameSyncReader<R, BUF>
+{
+    type Error = FrameSyncReaderError<R::Error>;
+
+    async fn read(
+        &mut self,
+        output: &mut [u8],
+    ) -> Result<usize, Self::Error> {
+        let len = self
+            .reader
+            .read(&mut self.buffer)
+            .await
+            .map_err(FrameSyncReaderError::Reader)?;
+
+        let sync = FrameSync::new(self.asm, self.frame_len);
+        let Some((_offset, frame)) =
+            sync.find_frame(&self.buffer[..len])
+        else {
+            return Err(FrameSyncReaderError::NoFrame);
+        };
+
+        let copy_len = frame.len().min(output.len());
+        output[..copy_len].copy_from_slice(&frame[..copy_len]);
+        Ok(copy_len)
     }
 }
 
