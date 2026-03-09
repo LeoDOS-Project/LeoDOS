@@ -181,6 +181,61 @@ impl<'a> Iterator for FrameIter<'a> {
     }
 }
 
+/// ASM framer implementing [`Framer`](super::Framer).
+pub struct AsmFramer {
+    asm: &'static [u8],
+}
+
+impl AsmFramer {
+    /// Creates a TM/AOS ASM framer.
+    pub fn tm() -> Self {
+        Self { asm: &ASM_TM }
+    }
+
+    /// Creates a Proximity-1 ASM framer.
+    pub fn proximity1() -> Self {
+        Self { asm: &ASM_PROXIMITY1 }
+    }
+}
+
+impl super::Framer for AsmFramer {
+    type Error = CaduError;
+
+    fn frame(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
+        encode_cadu(self.asm, data, output)
+    }
+}
+
+/// ASM deframer implementing [`Deframer`](super::Deframer).
+pub struct AsmDeframer {
+    asm: &'static [u8],
+    frame_len: usize,
+}
+
+impl AsmDeframer {
+    /// Creates a TM/AOS ASM deframer for the given frame length.
+    pub fn tm(frame_len: usize) -> Self {
+        Self { asm: &ASM_TM, frame_len }
+    }
+
+    /// Creates a Proximity-1 ASM deframer for the given frame length.
+    pub fn proximity1(frame_len: usize) -> Self {
+        Self { asm: &ASM_PROXIMITY1, frame_len }
+    }
+}
+
+impl super::Deframer for AsmDeframer {
+    type Error = CaduError;
+
+    fn deframe<'a>(&self, data: &'a [u8], output: &mut [u8]) -> Result<usize, Self::Error> {
+        let sync = FrameSync::new(self.asm, self.frame_len);
+        let (_offset, frame) = sync.find_frame(data).ok_or(CaduError::AsmMismatch)?;
+        let len = frame.len().min(output.len());
+        output[..len].copy_from_slice(&frame[..len]);
+        Ok(len)
+    }
+}
+
 /// Wraps an [`PhysicalWriter`] to prepend an ASM before writing.
 pub struct AsmWriter<W, const BUF: usize> {
     writer: W,

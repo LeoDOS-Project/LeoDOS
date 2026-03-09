@@ -1319,6 +1319,52 @@ pub fn llr_to_bytes(llr: &[i16], bytes: &mut [u8], n_bits: usize) {
     }
 }
 
+/// LDPC encoder implementing [`FecEncoder`](super::FecEncoder).
+pub struct LdpcFecEncoder {
+    code: &'static LdpcCode,
+}
+
+impl LdpcFecEncoder {
+    /// Creates an encoder for the given LDPC code.
+    pub fn new(code: &'static LdpcCode) -> Self {
+        Self { code }
+    }
+}
+
+impl super::FecEncoder for LdpcFecEncoder {
+    type Error = LdpcError;
+
+    fn encode(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
+        encode(self.code, data, output)?;
+        Ok(self.code.codeword_bytes())
+    }
+}
+
+/// LDPC hard-decision decoder implementing [`FecDecoder`](super::FecDecoder).
+pub struct LdpcFecDecoder {
+    code: &'static LdpcCode,
+    max_iters: usize,
+}
+
+impl LdpcFecDecoder {
+    /// Creates a decoder for the given LDPC code and iteration limit.
+    pub fn new(code: &'static LdpcCode, max_iters: usize) -> Self {
+        Self { code, max_iters }
+    }
+}
+
+impl super::FecDecoder for LdpcFecDecoder {
+    type Error = LdpcError;
+
+    fn decode(&self, data: &mut [u8]) -> Result<usize, Self::Error> {
+        let mut decoded = [0u8; 512]; // k/8 max = 4096/8 = 512
+        let iters = decode_hard(self.code, data, &mut decoded, self.max_iters)?;
+        let k_bytes = self.code.info_bytes();
+        data[..k_bytes].copy_from_slice(&decoded[..k_bytes]);
+        Ok(iters)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -111,6 +111,17 @@ mod bch {
     }
 }
 
+/// CLTU framer implementing [`Framer`](super::Framer).
+pub struct CltuFramer;
+
+impl super::Framer for CltuFramer {
+    type Error = CltuError;
+
+    fn frame(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
+        encode_cltu(data, output)
+    }
+}
+
 /// Errors that can occur when writing CLTU-encoded frames.
 #[derive(Debug, Clone)]
 pub enum CltuWriterError<E> {

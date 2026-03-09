@@ -494,6 +494,58 @@ pub fn decode_interleaved(
     Ok(total_corrected)
 }
 
+/// RS(255,223) encoder implementing [`FecEncoder`](super::FecEncoder).
+pub struct ReedSolomonEncoder {
+    interleave_depth: u8,
+}
+
+impl ReedSolomonEncoder {
+    /// Creates an encoder with the given interleave depth (1..=5).
+    pub fn new(interleave_depth: u8) -> Self {
+        Self { interleave_depth }
+    }
+}
+
+impl super::FecEncoder for ReedSolomonEncoder {
+    type Error = RsError;
+
+    fn encode(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
+        if self.interleave_depth <= 1 {
+            encode(data, output)
+        } else {
+            encode_interleaved(data, self.interleave_depth, output)
+        }
+    }
+}
+
+/// RS(255,223) decoder implementing [`FecDecoder`](super::FecDecoder).
+pub struct ReedSolomonDecoder {
+    interleave_depth: u8,
+}
+
+impl ReedSolomonDecoder {
+    /// Creates a decoder with the given interleave depth (1..=5).
+    pub fn new(interleave_depth: u8) -> Self {
+        Self { interleave_depth }
+    }
+}
+
+impl super::FecDecoder for ReedSolomonDecoder {
+    type Error = RsError;
+
+    fn decode(&self, data: &mut [u8]) -> Result<usize, Self::Error> {
+        if self.interleave_depth <= 1 {
+            if data.len() < N {
+                return Err(RsError::BufferTooShort { required: N, provided: data.len() });
+            }
+            let codeword: &mut [u8; N] = (&mut data[..N]).try_into().unwrap();
+            decode(codeword)
+        } else {
+            decode_interleaved(data, self.interleave_depth)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

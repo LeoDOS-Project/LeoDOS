@@ -301,6 +301,43 @@ pub fn decode(llrs: &[i16], output: &mut [u8]) -> Result<usize, ConvError> {
     Ok(out_bytes)
 }
 
+/// Convolutional encoder implementing [`FecEncoder`](super::FecEncoder).
+pub struct ConvolutionalEncoder;
+
+impl super::FecEncoder for ConvolutionalEncoder {
+    type Error = ConvError;
+
+    fn encode(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
+        encode(data, output)
+    }
+}
+
+/// Hard-decision Viterbi decoder implementing [`FecDecoder`](super::FecDecoder).
+pub struct ViterbiDecoder {
+    llr_magnitude: i16,
+}
+
+impl ViterbiDecoder {
+    /// Creates a decoder with the given hard-decision LLR magnitude.
+    pub fn new(llr_magnitude: i16) -> Self {
+        Self { llr_magnitude }
+    }
+}
+
+impl super::FecDecoder for ViterbiDecoder {
+    type Error = ConvError;
+
+    fn decode(&self, data: &mut [u8]) -> Result<usize, Self::Error> {
+        let num_bits = data.len() * 8;
+        let mut llrs = [0i16; 8192];
+        hard_to_llr(data, num_bits, self.llr_magnitude, &mut llrs[..num_bits]);
+        let mut output = [0u8; 1024];
+        let len = decode(&llrs[..num_bits], &mut output)?;
+        data[..len].copy_from_slice(&output[..len]);
+        Ok(len)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
