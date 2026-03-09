@@ -39,6 +39,41 @@ impl Scheme {
     }
 }
 
+// ── Group traits ──────────────────────────────────────────────
+
+/// Maps coded bits to baseband symbols for transmission.
+pub trait Modulator {
+    /// Modulates `n_bits` from `bits` (MSB-first) into `symbols`.
+    ///
+    /// For real-valued schemes (BPSK), symbols are one `f32` per
+    /// bit. For complex schemes (QPSK, OQPSK, 8PSK, GMSK),
+    /// symbols are interleaved I/Q pairs: `[I₀, Q₀, I₁, Q₁, …]`.
+    ///
+    /// Returns the number of `f32` values written to `symbols`.
+    fn modulate(
+        &self,
+        bits: &[u8],
+        n_bits: usize,
+        symbols: &mut [f32],
+    ) -> usize;
+}
+
+/// Converts received symbols to soft-decision LLRs for the decoder.
+pub trait Demodulator {
+    /// Demodulates `symbols` into `n_bits` soft-decision i16 LLRs.
+    ///
+    /// Positive LLR → probably bit 0, negative → probably bit 1.
+    /// Symbol layout matches the corresponding [`Modulator`].
+    fn demodulate_soft(
+        &self,
+        symbols: &[f32],
+        n_bits: usize,
+        llr: &mut [i16],
+    );
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+
 /// Clamps a float to the i16 range (−32767..32767) and truncates.
 pub fn clamp_i16(v: f32) -> i16 {
     if v > 32767.0 {

@@ -91,6 +91,47 @@ pub fn demodulate_oqpsk(
     }
 }
 
+/// OQPSK modulator/demodulator with configurable noise parameters.
+pub struct Oqpsk {
+    noise_var: f32,
+    scale: f32,
+}
+
+impl Oqpsk {
+    /// Creates an OQPSK modem with the given noise variance and
+    /// LLR scale factor.
+    pub fn new(noise_var: f32, scale: f32) -> Self {
+        Self { noise_var, scale }
+    }
+}
+
+impl super::Modulator for Oqpsk {
+    fn modulate(
+        &self,
+        bits: &[u8],
+        n_bits: usize,
+        symbols: &mut [f32],
+    ) -> usize {
+        let (si, sq) = symbols.split_at_mut(n_bits);
+        modulate_oqpsk(bits, n_bits, si, sq);
+        n_bits * 2
+    }
+}
+
+impl super::Demodulator for Oqpsk {
+    fn demodulate_soft(
+        &self,
+        symbols: &[f32],
+        n_bits: usize,
+        llr: &mut [i16],
+    ) {
+        let (si, sq) = symbols.split_at(n_bits);
+        demodulate_oqpsk(
+            si, sq, n_bits, self.noise_var, self.scale, llr,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

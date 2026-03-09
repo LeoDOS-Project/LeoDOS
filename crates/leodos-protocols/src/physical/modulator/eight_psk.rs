@@ -183,6 +183,49 @@ pub fn demodulate_8psk(
     }
 }
 
+/// 8PSK modulator/demodulator with configurable noise parameters.
+pub struct EightPsk {
+    noise_var: f32,
+    scale: f32,
+}
+
+impl EightPsk {
+    /// Creates an 8PSK modem with the given noise variance and
+    /// LLR scale factor.
+    pub fn new(noise_var: f32, scale: f32) -> Self {
+        Self { noise_var, scale }
+    }
+}
+
+impl super::Modulator for EightPsk {
+    fn modulate(
+        &self,
+        bits: &[u8],
+        n_bits: usize,
+        symbols: &mut [f32],
+    ) -> usize {
+        let n_sym = n_bits / BITS_PER_SYMBOL;
+        let (si, sq) = symbols.split_at_mut(n_sym);
+        modulate_8psk(bits, n_bits, si, sq);
+        n_sym * 2
+    }
+}
+
+impl super::Demodulator for EightPsk {
+    fn demodulate_soft(
+        &self,
+        symbols: &[f32],
+        n_bits: usize,
+        llr: &mut [i16],
+    ) {
+        let n_sym = n_bits / BITS_PER_SYMBOL;
+        let (si, sq) = symbols.split_at(n_sym);
+        demodulate_8psk(
+            si, sq, n_bits, self.noise_var, self.scale, llr,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -176,6 +176,56 @@ pub fn demodulate_gmsk(
     }
 }
 
+/// GMSK modulator/demodulator with configurable parameters.
+pub struct Gmsk {
+    bt: f32,
+    sps: usize,
+    noise_var: f32,
+    scale: f32,
+}
+
+impl Gmsk {
+    /// Creates a GMSK modem.
+    ///
+    /// - `bt`: Gaussian bandwidth-time product (e.g. 0.25)
+    /// - `sps`: samples per symbol (≤ 32)
+    /// - `noise_var`: noise variance σ²
+    /// - `scale`: LLR quantization scale factor
+    pub fn new(bt: f32, sps: usize, noise_var: f32, scale: f32) -> Self {
+        Self { bt, sps, noise_var, scale }
+    }
+}
+
+impl super::Modulator for Gmsk {
+    fn modulate(
+        &self,
+        bits: &[u8],
+        n_bits: usize,
+        symbols: &mut [f32],
+    ) -> usize {
+        let n_out = output_len(n_bits, self.sps);
+        let (oi, oq) = symbols.split_at_mut(n_out);
+        modulate_gmsk(bits, n_bits, self.bt, self.sps, oi, oq);
+        n_out * 2
+    }
+}
+
+impl super::Demodulator for Gmsk {
+    fn demodulate_soft(
+        &self,
+        symbols: &[f32],
+        n_bits: usize,
+        llr: &mut [i16],
+    ) {
+        let n_out = output_len(n_bits, self.sps);
+        let (ii, iq) = symbols.split_at(n_out);
+        demodulate_gmsk(
+            ii, iq, n_bits, self.sps,
+            self.noise_var, self.scale, llr,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

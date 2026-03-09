@@ -1,5 +1,5 @@
-use leodos_libcfs::nos3::uart::Uart;
 use leodos_libcfs::nos3::UartError;
+use leodos_libcfs::nos3::uart::Uart;
 
 use crate::physical::{PhysicalReader, PhysicalWriter};
 
@@ -37,10 +37,7 @@ impl UartChannel {
 impl PhysicalWriter for UartChannel {
     type Error = UartError;
 
-    async fn write(
-        &mut self,
-        data: &[u8],
-    ) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         let mut offset = 0;
         while offset < data.len() {
             let n = self.uart.write(&data[offset..])?;
@@ -53,10 +50,7 @@ impl PhysicalWriter for UartChannel {
 impl PhysicalReader for UartChannel {
     type Error = UartError;
 
-    async fn read(
-        &mut self,
-        buffer: &mut [u8],
-    ) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         self.uart.read(buffer)
     }
 }

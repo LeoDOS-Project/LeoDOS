@@ -72,6 +72,47 @@ pub fn demodulate(
     }
 }
 
+/// QPSK modulator/demodulator with configurable noise parameters.
+pub struct Qpsk {
+    noise_var: f32,
+    scale: f32,
+}
+
+impl Qpsk {
+    /// Creates a QPSK modem with the given noise variance and
+    /// LLR scale factor.
+    pub fn new(noise_var: f32, scale: f32) -> Self {
+        Self { noise_var, scale }
+    }
+}
+
+impl super::Modulator for Qpsk {
+    fn modulate(
+        &self,
+        bits: &[u8],
+        n_bits: usize,
+        symbols: &mut [f32],
+    ) -> usize {
+        let n_sym = n_bits / 2;
+        let (si, sq) = symbols.split_at_mut(n_sym);
+        modulate(bits, n_bits, si, sq);
+        n_sym * 2
+    }
+}
+
+impl super::Demodulator for Qpsk {
+    fn demodulate_soft(
+        &self,
+        symbols: &[f32],
+        n_bits: usize,
+        llr: &mut [i16],
+    ) {
+        let n_sym = n_bits / 2;
+        let (si, sq) = symbols.split_at(n_sym);
+        demodulate(si, sq, n_bits, self.noise_var, self.scale, llr);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

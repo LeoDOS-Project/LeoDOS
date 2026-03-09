@@ -50,6 +50,43 @@ pub fn demodulate(
     }
 }
 
+/// BPSK modulator/demodulator with configurable noise parameters.
+pub struct Bpsk {
+    noise_var: f32,
+    scale: f32,
+}
+
+impl Bpsk {
+    /// Creates a BPSK modem with the given noise variance and
+    /// LLR scale factor.
+    pub fn new(noise_var: f32, scale: f32) -> Self {
+        Self { noise_var, scale }
+    }
+}
+
+impl super::Modulator for Bpsk {
+    fn modulate(
+        &self,
+        bits: &[u8],
+        n_bits: usize,
+        symbols: &mut [f32],
+    ) -> usize {
+        modulate(bits, n_bits, symbols);
+        n_bits
+    }
+}
+
+impl super::Demodulator for Bpsk {
+    fn demodulate_soft(
+        &self,
+        symbols: &[f32],
+        n_bits: usize,
+        llr: &mut [i16],
+    ) {
+        demodulate(symbols, n_bits, self.noise_var, self.scale, llr);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
