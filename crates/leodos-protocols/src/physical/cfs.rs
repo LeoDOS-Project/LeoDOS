@@ -1,7 +1,7 @@
 use leodos_libcfs::nos3::uart::Uart;
 use leodos_libcfs::nos3::UartError;
 
-use super::{AsyncPhysicalReader, AsyncPhysicalWriter};
+use super::{PhysicalReader, PhysicalWriter};
 
 /// Physical channel backed by a hwlib UART port.
 ///
@@ -34,7 +34,7 @@ impl UartChannel {
     }
 }
 
-impl AsyncPhysicalWriter for UartChannel {
+impl PhysicalWriter for UartChannel {
     type Error = UartError;
 
     async fn write(
@@ -50,7 +50,7 @@ impl AsyncPhysicalWriter for UartChannel {
     }
 }
 
-impl AsyncPhysicalReader for UartChannel {
+impl PhysicalReader for UartChannel {
     type Error = UartError;
 
     async fn read(

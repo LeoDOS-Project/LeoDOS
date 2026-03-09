@@ -21,11 +21,3 @@ pub mod ccsds122;
 /// CCSDS convolutional code (rate 1/2, K=7) with Viterbi decoding
 /// (CCSDS 131.0-B-5).
 pub mod convolutional;
-
-/// Synchronous trait for transmitting raw bytes on the physical layer.
-pub trait PhysicalWriter {
-    /// Error type for transmit operations.
-    type Error;
-    /// Transmits the given data bytes.
-    fn transmit(&mut self, data: &[u8]) -> Result<(), Self::Error>;
-}

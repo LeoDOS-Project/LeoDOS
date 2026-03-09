@@ -20,7 +20,7 @@ pub mod gmsk;
 pub mod cfs;
 
 /// Async trait for writing raw bytes to a physical channel.
-pub trait AsyncPhysicalWriter {
+pub trait PhysicalWriter {
     /// Error type for write operations.
     type Error;
 
@@ -29,7 +29,7 @@ pub trait AsyncPhysicalWriter {
 }
 
 /// Async trait for reading raw bytes from a physical channel.
-pub trait AsyncPhysicalReader {
+pub trait PhysicalReader {
     /// Error type for read operations.
     type Error;
 

@@ -24,7 +24,7 @@
 //! - CADU encoding (prepend ASM to a frame)
 //! - Frame synchronization (find ASM in a bitstream)
 
-use crate::physical::{AsyncPhysicalReader, AsyncPhysicalWriter};
+use crate::physical::{PhysicalReader, PhysicalWriter};
 
 /// Standard 32-bit ASM for TM and AOS frames (CCSDS 131.0-B-5).
 pub const ASM_TM: [u8; 4] = [0x1A, 0xCF, 0xFC, 0x1D];
@@ -181,7 +181,7 @@ impl<'a> Iterator for FrameIter<'a> {
     }
 }
 
-/// Wraps an [`AsyncPhysicalWriter`] to prepend an ASM before writing.
+/// Wraps an [`PhysicalWriter`] to prepend an ASM before writing.
 pub struct AsmWriter<W, const BUF: usize> {
     writer: W,
     asm: &'static [u8],
@@ -228,7 +228,7 @@ impl<W, const BUF: usize> AsmWriter<W, BUF> {
     }
 }
 
-impl<W: AsyncPhysicalWriter, const BUF: usize> AsyncPhysicalWriter
+impl<W: PhysicalWriter, const BUF: usize> PhysicalWriter
     for AsmWriter<W, BUF>
 {
     type Error = AsmWriterError<W::Error>;
@@ -243,7 +243,7 @@ impl<W: AsyncPhysicalWriter, const BUF: usize> AsyncPhysicalWriter
     }
 }
 
-/// Wraps an [`AsyncPhysicalReader`] to find and strip ASM from
+/// Wraps an [`PhysicalReader`] to find and strip ASM from
 /// incoming data.
 pub struct FrameSyncReader<R, const BUF: usize> {
     reader: R,
@@ -300,7 +300,7 @@ impl<R, const BUF: usize> FrameSyncReader<R, BUF> {
     }
 }
 
-impl<R: AsyncPhysicalReader, const BUF: usize> AsyncPhysicalReader
+impl<R: PhysicalReader, const BUF: usize> PhysicalReader
     for FrameSyncReader<R, BUF>
 {
     type Error = FrameSyncReaderError<R::Error>;
