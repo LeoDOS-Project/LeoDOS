@@ -1,6 +1,60 @@
 - Commit changes incrementally — each commit should be a single logical change
 
-## Missing layers (between DataLink and NOS3)
+## Communication stack composition
+
+Five trait boundaries stitch the stack together:
+
+```
+TransportSender / TransportReceiver    (transport/)
+        ↕
+NetworkLayer                           (network/)
+        ↕
+DataLink = FrameSender + FrameReceiver (datalink/link/)
+        ↕
+  ??? gap — trait mismatch ???
+        ↕
+AsyncPhysicalWriter / AsyncPhysicalReader (physical/)
+```
+
+### Actual type composition (what exists today)
+
+Transport holds `L: NetworkLayer`, calls `link.send()`:
+  SrsppSender<Router<N,S,E,W,G,L,R>>
+
+Network holds `D: DataLink` per direction:
+  Router<UdpDataLink, UdpDataLink, ..., PassThrough<UdpDataLink>>
+
+DataLink drivers hold `W: FrameSender`:
+  TmSenderDriver<UdpFrameSender>
+  TcSenderDriver<UdpFrameSender>
+
+Physical has `UartChannel` (behind `cfs` feature):
+  UartChannel wraps hwlib Uart
+
+Coding has standalone encode/decode functions + composable
+wrappers that impl AsyncPhysicalWriter/AsyncPhysicalReader:
+  RandomizerWriter<RsWriter<AsmWriter<UartChannel>>>
+
+### What does not compose yet
+
+- [ ] FrameSender/FrameReceiver ↔ AsyncPhysicalWriter/Reader:
+  DataLink outputs frames via FrameSender. Coding wrappers
+  accept bytes via AsyncPhysicalWriter. These are different
+  traits. Need an adapter that impl FrameSender by calling
+  AsyncPhysicalWriter::write(), and impl FrameReceiver by
+  calling AsyncPhysicalReader::read().
+- [ ] COP-1 state machines (FARM/FOP) — module stubs exist
+  in datalink/cop1/ but are not implemented.
+- [ ] Coding wrappers (RandomizerWriter, RsWriter, AsmWriter,
+  CltuWriter, FrameSyncReader, RsReader, DerandomizerReader)
+  are defined but not yet added to their coding modules.
+  They need to go in coding/randomizer.rs, coding/reed_solomon.rs,
+  coding/cadu.rs, coding/cltu.rs respectively.
+- [ ] Modulation (physical/modulation.rs etc.) is standalone
+  fn(bits) → symbols. Not in the writer chain. On real HW the
+  radio handles modulation, so only needed for software sim.
+
+## Coding/FEC primitives (all implemented)
 
 - [x] SDLS crypto — AES-GCM 128/256 (CCSDS 355.0-B-2)
 - [x] Modulation — BPSK/QPSK modulate, demodulate, LLR output
