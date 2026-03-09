@@ -7,10 +7,12 @@ use crate::error::Error;
 use crate::status::{self, Status};
 use core::ffi::CStr;
 
+/// Returns the current engine sequence number.
 pub fn engine_seq_num() -> u32 {
     unsafe { ffi::CF_AppData.engine.seq_num }
 }
 
+/// Finds a transaction by sequence number and source entity ID.
 pub fn find_transaction_by_seq(seq_num: u32, src_eid: u32) -> Option<&'static Transaction> {
     unsafe {
         ffi::CF_AppData.engine.transactions.iter().find(|t| {
@@ -22,6 +24,7 @@ pub fn find_transaction_by_seq(seq_num: u32, src_eid: u32) -> Option<&'static Tr
     .map(|t| unsafe { &*(t as *const ffi::CF_Transaction as *const Transaction) })
 }
 
+/// Finds a transaction mutably by sequence number and source entity ID.
 pub fn find_transaction_by_seq_mut(seq_num: u32, src_eid: u32) -> Option<&'static mut Transaction> {
     unsafe {
         ffi::CF_AppData
@@ -37,6 +40,7 @@ pub fn find_transaction_by_seq_mut(seq_num: u32, src_eid: u32) -> Option<&'stati
     }
 }
 
+/// Returns the raw transaction state for a given sequence/entity.
 pub fn transaction_state_raw(seq_num: u32, src_eid: u32) -> Option<TxnState> {
     find_transaction_by_seq(seq_num, src_eid).map(|t| t.state())
 }

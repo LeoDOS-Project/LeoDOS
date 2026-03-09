@@ -8,9 +8,12 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
+/// Errors from a CFDP file transfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransferError {
+    /// The transfer could not be initiated.
     InitFailed(Error),
+    /// The transfer failed after starting.
     TransferFailed(TxnStatus),
 }
 
@@ -26,23 +29,28 @@ impl From<TxnStatus> for TransferError {
     }
 }
 
+/// High-level CFDP engine handle.
 pub struct CfEngine {
     local_entity_id: u32,
 }
 
 impl CfEngine {
+    /// Creates a new engine handle for the given entity ID.
     pub fn new(local_entity_id: u32) -> Self {
         Self { local_entity_id }
     }
 
+    /// Returns the local entity ID.
     pub fn local_entity_id(&self) -> u32 {
         self.local_entity_id
     }
 
+    /// Runs one engine cycle.
     pub fn cycle(&self) {
         engine::cycle();
     }
 
+    /// Initiates a file transfer, returning a pollable future.
     pub fn send_file(
         &self,
         src: &CStr,
@@ -64,16 +72,19 @@ impl CfEngine {
     }
 }
 
+/// Future that resolves when a CFDP transfer completes.
 pub struct TransferFuture {
     seq_num: u32,
     src_eid: u32,
 }
 
 impl TransferFuture {
+    /// Returns the transaction sequence number.
     pub fn seq_num(&self) -> u32 {
         self.seq_num
     }
 
+    /// Returns the source entity ID.
     pub fn src_eid(&self) -> u32 {
         self.src_eid
     }
