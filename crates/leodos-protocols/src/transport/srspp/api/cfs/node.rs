@@ -3,7 +3,7 @@ use leodos_libcfs::runtime::select_either::Either;
 use leodos_libcfs::runtime::select_either::select_either;
 use leodos_libcfs::runtime::time::sleep;
 
-use crate::network::NetworkLayer;
+use crate::network::{NetworkReader, NetworkWriter};
 use crate::transport::srspp::machine::receiver::ReceiverActions;
 use crate::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
@@ -73,7 +73,7 @@ impl<
     }
 
     /// Splits into separate tx/rx handles and a driver for I/O.
-    pub fn split<L: NetworkLayer<Error = E>, P: RtoPolicy>(
+    pub fn split<L: NetworkWriter<Error = E> + NetworkReader<Error = E>, P: RtoPolicy>(
         &self,
         link: L,
         rto_policy: P,
@@ -104,7 +104,7 @@ impl<
 /// I/O driver for a combined SRSPP sender/receiver node.
 pub struct SrsppNodeDriver<
     'a,
-    L: NetworkLayer,
+    L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>,
     P: RtoPolicy,
     E,
     R: ReceiverBackend,
@@ -129,19 +129,19 @@ pub struct SrsppNodeDriver<
 
 impl<
     'a,
-    L: NetworkLayer,
+    L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>,
     P: RtoPolicy,
     R: ReceiverBackend,
     const WIN: usize,
     const BUF: usize,
     const MTU: usize,
     const MAX_STREAMS: usize,
-> SrsppNodeDriver<'a, L, P, L::Error, R, WIN, BUF, MTU, MAX_STREAMS>
+> SrsppNodeDriver<'a, L, P, <L as NetworkWriter>::Error, R, WIN, BUF, MTU, MAX_STREAMS>
 where
-    L::Error: Clone,
+    <L as NetworkWriter>::Error: Clone,
 {
     /// Runs the combined send/receive I/O loop.
-    pub async fn run(&mut self) -> Result<(), Error<L::Error>> {
+    pub async fn run(&mut self) -> Result<(), Error<<L as NetworkWriter>::Error>> {
         loop {
             if let Err(e) = drive_transmits(
                 &self.node.sender,
@@ -199,7 +199,7 @@ where
     }
 
     /// Dispatches an incoming packet to the ACK or data handler.
-    async fn handle_incoming(&mut self, len: usize) -> Result<(), Error<L::Error>> {
+    async fn handle_incoming(&mut self, len: usize) -> Result<(), Error<<L as NetworkWriter>::Error>> {
         let Self {
             recv_buffer,
             ack_buffer,
@@ -227,7 +227,7 @@ where
         duration_until(deadline)
     }
 
-    fn set_both_errors(&self, err: Error<L::Error>) {
+    fn set_both_errors(&self, err: Error<<L as NetworkWriter>::Error>) {
         self.node.sender.with_mut(|s| s.error = Some(err.clone()));
         self.node.receiver.with_mut(|s| s.error = Some(err));
     }

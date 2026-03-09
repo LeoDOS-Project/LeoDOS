@@ -10,7 +10,7 @@ use leodos_libcfs::runtime::select_either::select_either;
 use leodos_libcfs::runtime::time::sleep;
 
 use crate::application::spacecomp::io::writer::MessageSender;
-use crate::network::NetworkLayer;
+use crate::network::{NetworkReader, NetworkWriter};
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
 use crate::transport::srspp::machine::sender::SenderAction;
@@ -47,7 +47,7 @@ pub(super) struct SenderState<E, const WIN: usize, const BUF: usize, const MTU: 
 /// Sends all pending transmit actions over the link.
 pub(super) async fn drive_transmits<
     E: Clone,
-    L: NetworkLayer<Error = E>,
+    L: NetworkWriter<Error = E> + NetworkReader<Error = E>,
     P: RtoPolicy,
     const WIN: usize,
     const BUF: usize,
@@ -169,7 +169,7 @@ pub(super) fn drive_ack<
 /// Processes expired retransmission timers and retransmits.
 pub(super) async fn drive_sender_timeouts<
     E: Clone,
-    L: NetworkLayer<Error = E>,
+    L: NetworkWriter<Error = E> + NetworkReader<Error = E>,
     P: RtoPolicy,
     const WIN: usize,
     const BUF: usize,
@@ -239,7 +239,7 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize> SrsppSender
     }
 
     /// Splits into a handle for sending and a driver for I/O.
-    pub fn split<L: NetworkLayer<Error = E>, P: RtoPolicy>(
+    pub fn split<L: NetworkWriter<Error = E> + NetworkReader<Error = E>, P: RtoPolicy>(
         &self,
         link: L,
         rto_policy: P,
@@ -265,7 +265,7 @@ impl<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize> SrsppSender
 /// Driver that handles I/O. Runs as a concurrent task.
 pub struct SrsppSenderDriver<
     'a,
-    L: NetworkLayer,
+    L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>,
     P: RtoPolicy,
     const WIN: usize,
     const BUF: usize,
@@ -276,20 +276,20 @@ pub struct SrsppSenderDriver<
     /// Policy for computing retransmission timeouts.
     rto_policy: P,
     /// Reference to the shared sender channel.
-    channel: &'a SrsppSender<L::Error, WIN, BUF, MTU>,
+    channel: &'a SrsppSender<<L as NetworkWriter>::Error, WIN, BUF, MTU>,
     /// Buffer for receiving ACK packets from the link.
     recv_buffer: [u8; MTU],
     /// Buffer for building outgoing data packets.
     tx_buffer: [u8; MTU],
 }
 
-impl<'a, L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize>
+impl<'a, L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize>
     SrsppSenderDriver<'a, L, P, WIN, BUF, MTU>
 where
-    L::Error: Clone,
+    <L as NetworkWriter>::Error: Clone,
 {
     /// Run the driver loop.
-    pub async fn run(&mut self) -> Result<(), Error<L::Error>> {
+    pub async fn run(&mut self) -> Result<(), Error<<L as NetworkWriter>::Error>> {
         let state = &self.channel.state;
         loop {
             if state.with(|s| s.closed && s.machine.is_idle()) {

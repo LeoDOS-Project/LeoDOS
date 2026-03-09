@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use crate::network::NetworkLayer;
+use crate::network::{NetworkReader, NetworkWriter};
 use crate::network::isl::address::Address;
 use crate::network::spp::Apid;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
@@ -45,13 +45,17 @@ struct MockLinkB {
     recv_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
 }
 
-impl NetworkLayer for MockLinkA {
+impl NetworkWriter for MockLinkA {
     type Error = std::io::Error;
 
     async fn send(&mut self, packet: &[u8]) -> Result<(), Self::Error> {
         self.send_queue.lock().await.push_back(packet.to_vec());
         Ok(())
     }
+}
+
+impl NetworkReader for MockLinkA {
+    type Error = std::io::Error;
 
     async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         loop {
@@ -65,13 +69,17 @@ impl NetworkLayer for MockLinkA {
     }
 }
 
-impl NetworkLayer for MockLinkB {
+impl NetworkWriter for MockLinkB {
     type Error = std::io::Error;
 
     async fn send(&mut self, packet: &[u8]) -> Result<(), Self::Error> {
         self.send_queue.lock().await.push_back(packet.to_vec());
         Ok(())
     }
+}
+
+impl NetworkReader for MockLinkB {
+    type Error = std::io::Error;
 
     async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         loop {

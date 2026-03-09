@@ -1,4 +1,4 @@
-use crate::network::NetworkLayer;
+use crate::network::{NetworkReader, NetworkWriter};
 use crate::network::isl::address::Address;
 use crate::network::spp::Apid;
 use crate::network::spp::SequenceCount;
@@ -21,7 +21,7 @@ use super::ticks_to_duration;
 ///
 /// Receives messages reliably over the link, handling reordering and reassembly.
 /// Sends ACKs to the remote sender.
-pub struct SrsppReceiver<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> {
+pub struct SrsppReceiver<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: ReceiverBackend, const MTU: usize> {
     /// Network link for receiving data and sending ACKs.
     link: L,
     /// Local address used as the source in outgoing ACKs.
@@ -50,7 +50,7 @@ pub struct SrsppReceiver<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> 
     ack_buffer: [u8; 32],
 }
 
-impl<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, MTU> {
+impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, MTU> {
     /// Create a new receiver for a specific remote sender.
     pub fn new(
         config: ReceiverConfig,
@@ -260,12 +260,12 @@ impl<L: NetworkLayer, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, 
 /// token is alive.  Call [`consume`](Self::consume) with a
 /// synchronous closure to read the message and release the
 /// token in one step.
-pub struct DeliveryToken<'a, L: NetworkLayer, R: ReceiverBackend, const MTU: usize> {
+pub struct DeliveryToken<'a, L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: ReceiverBackend, const MTU: usize> {
     rx: &'a mut SrsppReceiver<L, R, MTU>,
     msg_len: usize,
 }
 
-impl<'a, L: NetworkLayer, R: ReceiverBackend, const MTU: usize>
+impl<'a, L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: ReceiverBackend, const MTU: usize>
     DeliveryToken<'a, L, R, MTU>
 {
     /// Byte length of the pending message.

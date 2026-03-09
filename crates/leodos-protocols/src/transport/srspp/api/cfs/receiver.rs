@@ -7,7 +7,7 @@ use leodos_libcfs::runtime::select_either::Either;
 use leodos_libcfs::runtime::select_either::select_either;
 use leodos_libcfs::runtime::time::sleep;
 
-use crate::network::NetworkLayer;
+use crate::network::{NetworkReader, NetworkWriter};
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
 use crate::transport::TransportReceiver;
@@ -59,7 +59,7 @@ pub(super) struct MultiReceiverState<E, R: ReceiverBackend, const MAX_STREAMS: u
 pub(super) async fn drive_data<
     E: Clone,
     R: ReceiverBackend,
-    L: NetworkLayer<Error = E>,
+    L: NetworkWriter<Error = E> + NetworkReader<Error = E>,
     const MAX_STREAMS: usize,
 >(
     state: &SharedCell<MultiReceiverState<E, R, MAX_STREAMS>>,
@@ -114,7 +114,7 @@ pub(super) async fn drive_data<
 pub(super) async fn drive_receiver_timeouts<
     E: Clone,
     R: ReceiverBackend,
-    L: NetworkLayer<Error = E>,
+    L: NetworkWriter<Error = E> + NetworkReader<Error = E>,
     const MAX_STREAMS: usize,
 >(
     state: &SharedCell<MultiReceiverState<E, R, MAX_STREAMS>>,
@@ -203,7 +203,7 @@ pub(super) fn receiver_next_deadline<
 async fn drive_actions<
     E: Clone,
     R: ReceiverBackend,
-    L: NetworkLayer<Error = E>,
+    L: NetworkWriter<Error = E> + NetworkReader<Error = E>,
     const MAX_STREAMS: usize,
 >(
     state: &SharedCell<MultiReceiverState<E, R, MAX_STREAMS>>,
@@ -342,7 +342,7 @@ impl<E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     }
 
     /// Splits into a handle for receiving and a driver for I/O.
-    pub fn split<L: NetworkLayer<Error = E>, const MTU: usize>(
+    pub fn split<L: NetworkWriter<Error = E> + NetworkReader<Error = E>, const MTU: usize>(
         &self,
         link: L,
     ) -> (
@@ -364,7 +364,7 @@ impl<E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
 /// Driver that handles I/O. Runs as a concurrent task.
 pub struct SrsppReceiverDriver<
     'a,
-    L: NetworkLayer,
+    L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>,
     R: ReceiverBackend,
     const MTU: usize,
     const MAX_STREAMS: usize,
@@ -372,7 +372,7 @@ pub struct SrsppReceiverDriver<
     /// Network link for sending ACKs and receiving data packets.
     link: L,
     /// Reference to the shared receiver channel.
-    channel: &'a SrsppReceiver<L::Error, R, MAX_STREAMS>,
+    channel: &'a SrsppReceiver<<L as NetworkWriter>::Error, R, MAX_STREAMS>,
     /// Buffer for receiving data packets from the link.
     recv_buffer: [u8; MTU],
     /// Buffer for building outgoing ACK packets.
@@ -381,16 +381,16 @@ pub struct SrsppReceiverDriver<
 
 impl<
     'a,
-    L: NetworkLayer,
+    L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>,
     R: ReceiverBackend,
     const MTU: usize,
     const MAX_STREAMS: usize,
 > SrsppReceiverDriver<'a, L, R, MTU, MAX_STREAMS>
 where
-    L::Error: Clone,
+    <L as NetworkWriter>::Error: Clone,
 {
     /// Run the driver loop.
-    pub async fn run(&mut self) -> Result<(), Error<L::Error>> {
+    pub async fn run(&mut self) -> Result<(), Error<<L as NetworkWriter>::Error>> {
         let state = &self.channel.state;
         loop {
             if state.with(|s| s.closed) {

@@ -1,5 +1,5 @@
 use super::{FrameReceiver, FrameSender};
-use crate::datalink::DataLink;
+use crate::datalink::{DataLinkReader, DataLinkWriter};
 
 /// A data link composed of separate sender and receiver halves.
 pub struct AsymmetricLink<S, R> {
@@ -39,7 +39,7 @@ impl<SE: core::error::Error, RE: core::error::Error> core::error::Error
 {
 }
 
-impl<S, R> DataLink for AsymmetricLink<S, R>
+impl<S, R> DataLinkWriter for AsymmetricLink<S, R>
 where
     S: FrameSender,
     R: FrameReceiver,
@@ -49,6 +49,14 @@ where
     async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         self.sender.send(data).await.map_err(AsymmetricLinkError::Send)
     }
+}
+
+impl<S, R> DataLinkReader for AsymmetricLink<S, R>
+where
+    S: FrameSender,
+    R: FrameReceiver,
+{
+    type Error = AsymmetricLinkError<S::Error, R::Error>;
 
     async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         self.receiver

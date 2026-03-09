@@ -4,8 +4,8 @@ use core::task::Poll;
 
 use heapless::Deque;
 
-use crate::datalink::DataLink;
-use crate::network::NetworkLayer;
+use crate::datalink::{DataLinkReader, DataLinkWriter};
+use crate::network::{NetworkReader, NetworkWriter};
 
 /// Error from a local in-process channel.
 #[derive(Debug, Clone)]
@@ -80,7 +80,7 @@ pub struct LocalAppHandle<'a, const QUEUE: usize, const MTU: usize> {
     channel: &'a LocalChannel<QUEUE, MTU>,
 }
 
-impl<'a, const QUEUE: usize, const MTU: usize> NetworkLayer for LocalAppHandle<'a, QUEUE, MTU> {
+impl<'a, const QUEUE: usize, const MTU: usize> NetworkWriter for LocalAppHandle<'a, QUEUE, MTU> {
     type Error = LocalLinkError;
 
     async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -106,6 +106,10 @@ impl<'a, const QUEUE: usize, const MTU: usize> NetworkLayer for LocalAppHandle<'
         })
         .await
     }
+}
+
+impl<'a, const QUEUE: usize, const MTU: usize> NetworkReader for LocalAppHandle<'a, QUEUE, MTU> {
+    type Error = LocalLinkError;
 
     async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         poll_fn(|_cx| {
@@ -132,7 +136,7 @@ pub struct LocalRouterHandle<'a, const QUEUE: usize, const MTU: usize> {
     channel: &'a LocalChannel<QUEUE, MTU>,
 }
 
-impl<'a, const QUEUE: usize, const MTU: usize> DataLink for LocalRouterHandle<'a, QUEUE, MTU> {
+impl<'a, const QUEUE: usize, const MTU: usize> DataLinkWriter for LocalRouterHandle<'a, QUEUE, MTU> {
     type Error = LocalLinkError;
 
     async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -158,6 +162,10 @@ impl<'a, const QUEUE: usize, const MTU: usize> DataLink for LocalRouterHandle<'a
         })
         .await
     }
+}
+
+impl<'a, const QUEUE: usize, const MTU: usize> DataLinkReader for LocalRouterHandle<'a, QUEUE, MTU> {
+    type Error = LocalLinkError;
 
     async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         poll_fn(|_cx| {

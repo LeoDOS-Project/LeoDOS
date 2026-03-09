@@ -1,6 +1,6 @@
 use zerocopy::IntoBytes;
 
-use crate::datalink::DataLink;
+use crate::datalink::{DataLinkReader, DataLinkWriter};
 use crate::application::colonies::messages::*;
 use crate::network::spp::{Apid, SequenceCount};
 
@@ -29,7 +29,7 @@ pub struct ColoniesClient<T> {
 
 impl<T> ColoniesClient<T>
 where
-    T: DataLink,
+    T: DataLinkWriter + DataLinkReader<Error = <T as DataLinkWriter>::Error>,
 {
     /// Creates a new client with the given transport and APID.
     pub fn new(transport: T, apid: u16) -> Self {
@@ -46,7 +46,7 @@ where
         buffer: &mut [u8],
         msg_id: u32,
         executor_prv_key: &str,
-    ) -> Result<usize, ClientError<T::Error>> {
+    ) -> Result<usize, ClientError<<T as DataLinkWriter>::Error>> {
         self.rpc(buffer, ColoniesOpCode::AssignRequest, msg_id, |writer| {
             writer.write_str(executor_prv_key)
         })
@@ -60,7 +60,7 @@ where
         op_code: ColoniesOpCode,
         msg_id: u32,
         payload_fn: F,
-    ) -> Result<usize, ClientError<T::Error>>
+    ) -> Result<usize, ClientError<<T as DataLinkWriter>::Error>>
     where
         F: FnOnce(&mut PayloadWriter) -> Result<(), ()>,
     {
@@ -75,7 +75,7 @@ where
         op_code: ColoniesOpCode,
         msg_id: u32,
         payload_fn: F,
-    ) -> Result<(), ClientError<T::Error>>
+    ) -> Result<(), ClientError<<T as DataLinkWriter>::Error>>
     where
         F: FnOnce(&mut PayloadWriter) -> Result<(), ()>,
     {
@@ -108,7 +108,7 @@ where
     }
 
     /// Receives and validates a packet. Returns valid length on success.
-    pub async fn receive(&mut self, buffer: &mut [u8]) -> Result<usize, ClientError<T::Error>> {
+    pub async fn receive(&mut self, buffer: &mut [u8]) -> Result<usize, ClientError<<T as DataLinkWriter>::Error>> {
         let len = self
             .transport
             .recv(buffer)

@@ -1,6 +1,6 @@
 use zerocopy::{Immutable, IntoBytes};
 
-use crate::network::NetworkLayer;
+use crate::network::{NetworkReader, NetworkWriter};
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
 use crate::transport::srspp::machine::sender::SenderAction;
@@ -25,7 +25,7 @@ use super::ticks_to_duration;
 ///
 /// Sends messages reliably over the link, handling segmentation and retransmission.
 /// Receives ACKs from the remote receiver.
-pub struct SrsppSender<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize> {
+pub struct SrsppSender<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize> {
     /// Network link for sending data and receiving ACKs.
     link: L,
     /// Policy for computing retransmission timeouts.
@@ -46,7 +46,7 @@ pub struct SrsppSender<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BU
     tx_buffer: [u8; MTU],
 }
 
-impl<L: NetworkLayer, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize>
+impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize>
     SrsppSender<L, P, WIN, BUF, MTU>
 {
     /// Create a new sender.

@@ -182,13 +182,17 @@ impl UdpDataLink {
     }
 }
 
-impl crate::datalink::DataLink for UdpDataLink {
+impl crate::datalink::DataLinkWriter for UdpDataLink {
     type Error = CfsError;
 
     async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         self.socket.send(data, &self.remote).await?;
         Ok(())
     }
+}
+
+impl crate::datalink::DataLinkReader for UdpDataLink {
+    type Error = CfsError;
 
     async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         let (len, _addr) = self.socket.recv(buffer).await?;

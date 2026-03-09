@@ -1,7 +1,7 @@
 use zerocopy::FromBytes;
 use zerocopy::IntoBytes as _;
 
-use crate::datalink::DataLink;
+use crate::datalink::{DataLinkReader, DataLinkWriter};
 use crate::network::spp;
 use crate::network::spp::Apid;
 use crate::network::spp::PacketType;
@@ -20,14 +20,14 @@ pub struct SpacePacketSender<L2> {
 }
 
 /// Errors from space packet send/receive operations.
-pub enum Error<L2: DataLink> {
+pub enum Error<L2: DataLinkWriter> {
     /// The data link layer returned an error.
     DatalinkError(L2::Error),
     /// Failed to build a space packet.
     SpacePacketError(spp::BuildError),
 }
 
-impl<L2: DataLink> SpacePacketSender<L2> {
+impl<L2: DataLinkWriter> SpacePacketSender<L2> {
     /// Creates a new sender over the given data link.
     pub fn new(datalink: L2, apid: u16, packet_type: PacketType) -> Self {
         Self {
@@ -40,7 +40,7 @@ impl<L2: DataLink> SpacePacketSender<L2> {
     }
 }
 
-impl<L2: DataLink> SpacePacketSender<L2> {
+impl<L2: DataLinkWriter> SpacePacketSender<L2> {
     /// Sends a payload as a space packet.
     pub async fn send(
         &mut self,
@@ -87,7 +87,7 @@ pub struct SpacePacketReceiver<L2> {
     my_apid: Apid,
 }
 
-impl<L2: DataLink> SpacePacketReceiver<L2> {
+impl<L2: DataLinkReader> SpacePacketReceiver<L2> {
     /// Creates a new receiver filtering for the given APID.
     pub fn new(datalink: L2, apid: u16) -> Self {
         Self {
@@ -97,7 +97,7 @@ impl<L2: DataLink> SpacePacketReceiver<L2> {
     }
 }
 
-impl<L2: DataLink> SpacePacketReceiver<L2> {
+impl<L2: DataLinkReader> SpacePacketReceiver<L2> {
     /// Receives the next space packet matching this receiver's APID.
     pub async fn recv<'a>(
         &mut self,

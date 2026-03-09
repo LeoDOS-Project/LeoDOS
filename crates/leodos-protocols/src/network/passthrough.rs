@@ -1,5 +1,5 @@
-use crate::datalink::DataLink;
-use crate::network::NetworkLayer;
+use crate::datalink::{DataLinkReader, DataLinkWriter};
+use crate::network::{NetworkReader, NetworkWriter};
 
 /// A network layer that forwards directly to a datalink with no framing.
 pub struct PassThrough<L> {
@@ -18,14 +18,18 @@ impl<L> PassThrough<L> {
     }
 }
 
-impl<L: DataLink> NetworkLayer for PassThrough<L> {
+impl<L: DataLinkWriter> NetworkWriter for PassThrough<L> {
     type Error = L::Error;
 
     async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        self.link.send(data).await
+        DataLinkWriter::send(&mut self.link, data).await
     }
+}
+
+impl<L: DataLinkReader> NetworkReader for PassThrough<L> {
+    type Error = L::Error;
 
     async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
-        self.link.recv(buffer).await
+        DataLinkReader::recv(&mut self.link, buffer).await
     }
 }

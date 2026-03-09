@@ -1,6 +1,6 @@
 use zerocopy::IntoBytes as _;
 
-use crate::datalink::DataLink;
+use crate::datalink::{DataLinkReader, DataLinkWriter};
 use crate::application::colonies::client::{ClientError, ColoniesClient};
 use crate::application::colonies::messages::*;
 use core::future::Future;
@@ -27,7 +27,7 @@ pub struct ColoniesExecutor<L2, H> {
 
 impl<L2, H> ColoniesExecutor<L2, H>
 where
-    L2: DataLink,
+    L2: DataLinkWriter + DataLinkReader<Error = <L2 as DataLinkWriter>::Error>,
     H: ColoniesHandler,
 {
     /// Creates a new executor with the given transport, handler, APID, and private key.
@@ -41,7 +41,7 @@ where
     }
 
     /// Sends a single assign request to the ColonyOS server.
-    pub async fn assign(&mut self, buffer: &mut [u8]) -> Result<(), ClientError<L2::Error>> {
+    pub async fn assign(&mut self, buffer: &mut [u8]) -> Result<(), ClientError<<L2 as DataLinkWriter>::Error>> {
         self.client
             .assign(buffer, self.msg_id, &self.executor_prv_key)
             .await
@@ -69,7 +69,7 @@ where
         &mut self,
         rx_data: &[u8],
         tx_buffer: &mut [u8],
-    ) -> Result<(), ClientError<L2::Error>> {
+    ) -> Result<(), ClientError<<L2 as DataLinkWriter>::Error>> {
         let packet = ColoniesPacket::parse(rx_data).map_err(ClientError::Packet)?;
 
         // Correlation Check
