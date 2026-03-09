@@ -5,7 +5,7 @@
 //! prioritised messaging between subsystems such as IMUs.
 //! The device is closed on drop.
 
-use super::{check_can, CanError};
+use super::super::{check_can, CanError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 

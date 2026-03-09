@@ -1,18 +1,15 @@
 //! NOS3 (NASA Operational Simulator for Small Sats) interfaces.
 //!
-//! Bus drivers (UART, I2C, SPI, CAN, GPIO, socket, torquer,
-//! memory-mapped I/O) and simulated spacecraft component
-//! drivers (sensors, actuators, radio, GPS, camera).
+//! [`buses`] — hardware bus drivers (UART, I2C, SPI, CAN, GPIO,
+//! socket, torquer, memory-mapped I/O).
+//!
+//! [`drivers`] — simulated spacecraft component drivers (sensors,
+//! actuators, radio, GPS, camera).
 
-pub mod uart;
-pub mod i2c;
-pub mod spi;
-pub mod gpio;
-pub mod can;
-pub mod socket;
-pub mod trq;
-pub mod mem;
-pub mod components;
+/// Hardware bus drivers.
+pub mod buses;
+/// Simulated spacecraft component drivers.
+pub mod drivers;
 
 use crate::ffi;
 

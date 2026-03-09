@@ -6,7 +6,7 @@
 
 use crate::ffi;
 use crate::nos3::{check_spi, SpiError};
-use crate::nos3::spi::Spi;
+use crate::nos3::buses::spi::Spi;
 
 /// FSS measurement data.
 #[derive(Debug, Clone, Default)]

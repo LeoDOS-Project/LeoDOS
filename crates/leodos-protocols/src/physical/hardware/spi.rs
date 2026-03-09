@@ -1,5 +1,5 @@
 use leodos_libcfs::nos3::SpiError;
-use leodos_libcfs::nos3::spi::Spi;
+use leodos_libcfs::nos3::buses::spi::Spi;
 
 use crate::physical::{PhysicalReader, PhysicalWriter};
 

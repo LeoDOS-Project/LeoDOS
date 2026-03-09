@@ -6,7 +6,7 @@
 
 use crate::ffi;
 use crate::nos3::{check_can, CanError};
-use crate::nos3::can::Can;
+use crate::nos3::buses::can::Can;
 
 /// IMU housekeeping telemetry.
 #[derive(Debug, Clone, Default)]

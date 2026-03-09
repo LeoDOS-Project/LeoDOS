@@ -4,7 +4,7 @@
 //! Earth's magnetic field, providing low-power attitude control
 //! and reaction wheel desaturation. Closed on drop.
 
-use super::{check_trq, TrqError};
+use super::super::{check_trq, TrqError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 

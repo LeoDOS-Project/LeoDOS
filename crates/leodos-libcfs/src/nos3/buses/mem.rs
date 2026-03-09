@@ -3,7 +3,7 @@
 //! Reads and writes physical memory addresses for direct
 //! register access on FPGA or SoC peripherals.
 
-use super::{check_mem, MemError};
+use super::super::{check_mem, MemError};
 use crate::ffi;
 
 /// Writes `data` to the physical address `addr`.

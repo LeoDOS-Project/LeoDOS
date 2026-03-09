@@ -6,7 +6,7 @@
 
 use crate::ffi;
 use crate::nos3::{check_socket, SocketError};
-use crate::nos3::socket::Socket;
+use crate::nos3::buses::socket::Socket;
 
 /// Radio housekeeping telemetry.
 #[derive(Debug, Clone, Default)]

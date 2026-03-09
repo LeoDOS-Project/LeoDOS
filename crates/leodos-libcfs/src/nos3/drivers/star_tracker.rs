@@ -6,7 +6,7 @@
 
 use crate::ffi;
 use crate::nos3::{check_uart, UartError};
-use crate::nos3::uart::Uart;
+use crate::nos3::buses::uart::Uart;
 
 /// Star tracker housekeeping telemetry.
 #[derive(Debug, Clone, Default)]

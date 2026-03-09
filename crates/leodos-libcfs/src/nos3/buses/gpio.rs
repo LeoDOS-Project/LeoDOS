@@ -5,7 +5,7 @@
 //! deployment indicators, and status lines. The pin is
 //! closed on drop.
 
-use super::{check_gpio, GpioError};
+use super::super::{check_gpio, GpioError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 

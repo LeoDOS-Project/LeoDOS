@@ -1,5 +1,5 @@
 use leodos_libcfs::nos3::SocketError;
-use leodos_libcfs::nos3::socket::Socket;
+use leodos_libcfs::nos3::buses::socket::Socket;
 
 use crate::physical::{PhysicalReader, PhysicalWriter};
 

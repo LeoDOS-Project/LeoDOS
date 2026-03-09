@@ -6,7 +6,7 @@
 
 use crate::ffi;
 use crate::nos3::{check_trq, TrqError};
-use crate::nos3::trq::Torquer;
+use crate::nos3::buses::trq::Torquer;
 
 /// Torquer component telemetry.
 #[derive(Debug, Clone, Default)]

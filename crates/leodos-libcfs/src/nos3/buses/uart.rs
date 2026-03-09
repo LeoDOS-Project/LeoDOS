@@ -4,7 +4,7 @@
 //! subsystems such as star trackers, reaction wheels, GPS
 //! receivers, and thrusters. The port is closed on drop.
 
-use super::{check_uart, check_uart_count, UartError};
+use super::super::{check_uart, check_uart_count, UartError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 

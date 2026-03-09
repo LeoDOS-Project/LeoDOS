@@ -4,7 +4,7 @@
 //! simulate RF links (ground station, inter-satellite) and
 //! other network-attached subsystems. Closed on drop.
 
-use super::{check_socket, SocketError};
+use super::super::{check_socket, SocketError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 

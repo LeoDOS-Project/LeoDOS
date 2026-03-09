@@ -6,7 +6,7 @@
 
 use crate::ffi;
 use crate::nos3::{check_i2c, I2cError};
-use crate::nos3::i2c::I2cBus;
+use crate::nos3::buses::i2c::I2cBus;
 
 /// Per-switch telemetry.
 #[derive(Debug, Clone, Default)]

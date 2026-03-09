@@ -1,5 +1,5 @@
 use leodos_libcfs::nos3::I2cError;
-use leodos_libcfs::nos3::i2c::I2cBus;
+use leodos_libcfs::nos3::buses::i2c::I2cBus;
 
 use crate::physical::{PhysicalReader, PhysicalWriter};
 

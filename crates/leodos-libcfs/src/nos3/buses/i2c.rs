@@ -4,7 +4,7 @@
 //! such as power systems (EPS), sun sensors (CSS), and cameras.
 //! The bus is closed on drop.
 
-use super::{check_i2c, I2cError};
+use super::super::{check_i2c, I2cError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 

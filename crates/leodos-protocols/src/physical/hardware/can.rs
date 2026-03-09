@@ -1,5 +1,5 @@
 use leodos_libcfs::nos3::CanError;
-use leodos_libcfs::nos3::can::Can;
+use leodos_libcfs::nos3::buses::can::Can;
 
 use crate::physical::{PhysicalReader, PhysicalWriter};
 

@@ -4,7 +4,7 @@
 //! spacecraft subsystems such as fine sun sensors (FSS),
 //! magnetometers, and cameras. The device is closed on drop.
 
-use super::{check_spi, SpiError};
+use super::super::{check_spi, SpiError};
 use crate::ffi;
 use core::mem::MaybeUninit;
 

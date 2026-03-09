@@ -1,5 +1,5 @@
 use leodos_libcfs::nos3::UartError;
-use leodos_libcfs::nos3::uart::Uart;
+use leodos_libcfs::nos3::buses::uart::Uart;
 
 use crate::physical::{PhysicalReader, PhysicalWriter};
 
