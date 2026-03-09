@@ -6,10 +6,10 @@
 
 use core::future::Future;
 
-/// Modulation and demodulation schemes (BPSK, QPSK, OQPSK, 8PSK, GMSK).
-pub mod modulator;
 /// Hardware-backed physical channel implementations.
 pub mod hardware;
+/// Modulation and demodulation schemes (BPSK, QPSK, OQPSK, 8PSK, GMSK).
+pub mod modulator;
 
 /// Async trait for writing raw bytes to a physical channel.
 pub trait PhysicalWriter {
