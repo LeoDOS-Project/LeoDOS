@@ -1319,7 +1319,7 @@ pub fn llr_to_bytes(llr: &[i16], bytes: &mut [u8], n_bits: usize) {
     }
 }
 
-/// LDPC encoder implementing [`FecEncoder`](super::FecEncoder).
+/// LDPC encoder implementing [`FecEncoder`](crate::coding::FecEncoder).
 pub struct LdpcFecEncoder {
     code: &'static LdpcCode,
 }
@@ -1331,7 +1331,7 @@ impl LdpcFecEncoder {
     }
 }
 
-impl super::FecEncoder for LdpcFecEncoder {
+impl crate::coding::FecEncoder for LdpcFecEncoder {
     type Error = LdpcError;
 
     fn encode(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
@@ -1340,7 +1340,7 @@ impl super::FecEncoder for LdpcFecEncoder {
     }
 }
 
-/// LDPC hard-decision decoder implementing [`FecDecoder`](super::FecDecoder).
+/// LDPC hard-decision decoder implementing [`FecDecoder`](crate::coding::FecDecoder).
 pub struct LdpcFecDecoder {
     code: &'static LdpcCode,
     max_iters: usize,
@@ -1353,7 +1353,7 @@ impl LdpcFecDecoder {
     }
 }
 
-impl super::FecDecoder for LdpcFecDecoder {
+impl crate::coding::FecDecoder for LdpcFecDecoder {
     type Error = LdpcError;
 
     fn decode(&self, data: &mut [u8]) -> Result<usize, Self::Error> {

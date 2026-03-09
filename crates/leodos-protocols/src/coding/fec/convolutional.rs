@@ -301,10 +301,10 @@ pub fn decode(llrs: &[i16], output: &mut [u8]) -> Result<usize, ConvError> {
     Ok(out_bytes)
 }
 
-/// Convolutional encoder implementing [`FecEncoder`](super::FecEncoder).
+/// Convolutional encoder implementing [`FecEncoder`](crate::coding::FecEncoder).
 pub struct ConvolutionalEncoder;
 
-impl super::FecEncoder for ConvolutionalEncoder {
+impl crate::coding::FecEncoder for ConvolutionalEncoder {
     type Error = ConvError;
 
     fn encode(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
@@ -312,7 +312,7 @@ impl super::FecEncoder for ConvolutionalEncoder {
     }
 }
 
-/// Hard-decision Viterbi decoder implementing [`FecDecoder`](super::FecDecoder).
+/// Hard-decision Viterbi decoder implementing [`FecDecoder`](crate::coding::FecDecoder).
 pub struct ViterbiDecoder {
     llr_magnitude: i16,
 }
@@ -324,7 +324,7 @@ impl ViterbiDecoder {
     }
 }
 
-impl super::FecDecoder for ViterbiDecoder {
+impl crate::coding::FecDecoder for ViterbiDecoder {
     type Error = ConvError;
 
     fn decode(&self, data: &mut [u8]) -> Result<usize, Self::Error> {

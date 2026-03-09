@@ -20,7 +20,7 @@
 //!     100 · 101
 //! ```
 
-use super::modulation::clamp_i16;
+use super::clamp_i16;
 
 /// Gray code: `GRAY[n]` = Gray-coded value for constellation
 /// point `n` (angle = n·π/4).

@@ -6,18 +6,10 @@
 
 use core::future::Future;
 
-/// BPSK and QPSK modulation/demodulation.
-pub mod modulation;
-/// Offset QPSK modulation/demodulation (Proximity-1).
-pub mod oqpsk;
-/// Gray-coded 8PSK modulation/demodulation.
-pub mod eight_psk;
-/// Gaussian Minimum Shift Keying (GMSK) modulation.
-pub mod gmsk;
-
-/// CFS/hwlib-backed physical channel (UART → NOS Engine).
-#[cfg(feature = "cfs")]
-pub mod cfs;
+/// Modulation and demodulation schemes (BPSK, QPSK, OQPSK, 8PSK, GMSK).
+pub mod modulator;
+/// Hardware-backed physical channel implementations.
+pub mod hardware;
 
 /// Async trait for writing raw bytes to a physical channel.
 pub trait PhysicalWriter {

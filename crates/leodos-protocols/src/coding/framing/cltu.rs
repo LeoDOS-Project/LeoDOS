@@ -111,10 +111,10 @@ mod bch {
     }
 }
 
-/// CLTU framer implementing [`Framer`](super::Framer).
+/// CLTU framer implementing [`Framer`](crate::coding::Framer).
 pub struct CltuFramer;
 
-impl super::Framer for CltuFramer {
+impl crate::coding::Framer for CltuFramer {
     type Error = CltuError;
 
     fn frame(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {

@@ -10,7 +10,7 @@
 //! represent the I/Q offset. The demodulator re-aligns the
 //! channels before computing LLRs.
 
-use super::modulation::clamp_i16;
+use super::clamp_i16;
 
 /// Modulates packed bits to OQPSK at 2× the symbol rate.
 ///

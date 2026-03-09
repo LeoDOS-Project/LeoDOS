@@ -20,7 +20,7 @@
 //! of consecutive symbol-spaced samples to approximate the phase
 //! difference, then scales by 1/σ² for LLR output.
 
-use super::modulation::clamp_i16;
+use super::clamp_i16;
 
 /// Maximum supported samples-per-symbol.
 const MAX_SPS: usize = 32;

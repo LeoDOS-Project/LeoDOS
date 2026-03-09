@@ -1,7 +1,7 @@
 use leodos_libcfs::nos3::uart::Uart;
 use leodos_libcfs::nos3::UartError;
 
-use super::{PhysicalReader, PhysicalWriter};
+use crate::physical::{PhysicalReader, PhysicalWriter};
 
 /// Physical channel backed by a hwlib UART port.
 ///

@@ -181,7 +181,7 @@ impl<'a> Iterator for FrameIter<'a> {
     }
 }
 
-/// ASM framer implementing [`Framer`](super::Framer).
+/// ASM framer implementing [`Framer`](crate::coding::Framer).
 pub struct AsmFramer {
     asm: &'static [u8],
 }
@@ -198,7 +198,7 @@ impl AsmFramer {
     }
 }
 
-impl super::Framer for AsmFramer {
+impl crate::coding::Framer for AsmFramer {
     type Error = CaduError;
 
     fn frame(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
@@ -206,7 +206,7 @@ impl super::Framer for AsmFramer {
     }
 }
 
-/// ASM deframer implementing [`Deframer`](super::Deframer).
+/// ASM deframer implementing [`Deframer`](crate::coding::Deframer).
 pub struct AsmDeframer {
     asm: &'static [u8],
     frame_len: usize,
@@ -224,7 +224,7 @@ impl AsmDeframer {
     }
 }
 
-impl super::Deframer for AsmDeframer {
+impl crate::coding::Deframer for AsmDeframer {
     type Error = CaduError;
 
     fn deframe<'a>(&self, data: &'a [u8], output: &mut [u8]) -> Result<usize, Self::Error> {

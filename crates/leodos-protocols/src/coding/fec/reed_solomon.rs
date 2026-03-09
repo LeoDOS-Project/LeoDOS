@@ -494,7 +494,7 @@ pub fn decode_interleaved(
     Ok(total_corrected)
 }
 
-/// RS(255,223) encoder implementing [`FecEncoder`](super::FecEncoder).
+/// RS(255,223) encoder implementing [`FecEncoder`](crate::coding::FecEncoder).
 pub struct ReedSolomonEncoder {
     interleave_depth: u8,
 }
@@ -506,7 +506,7 @@ impl ReedSolomonEncoder {
     }
 }
 
-impl super::FecEncoder for ReedSolomonEncoder {
+impl crate::coding::FecEncoder for ReedSolomonEncoder {
     type Error = RsError;
 
     fn encode(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
@@ -518,7 +518,7 @@ impl super::FecEncoder for ReedSolomonEncoder {
     }
 }
 
-/// RS(255,223) decoder implementing [`FecDecoder`](super::FecDecoder).
+/// RS(255,223) decoder implementing [`FecDecoder`](crate::coding::FecDecoder).
 pub struct ReedSolomonDecoder {
     interleave_depth: u8,
 }
@@ -530,7 +530,7 @@ impl ReedSolomonDecoder {
     }
 }
 
-impl super::FecDecoder for ReedSolomonDecoder {
+impl crate::coding::FecDecoder for ReedSolomonDecoder {
     type Error = RsError;
 
     fn decode(&self, data: &mut [u8]) -> Result<usize, Self::Error> {
