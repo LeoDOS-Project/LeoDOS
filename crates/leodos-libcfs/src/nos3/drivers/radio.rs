@@ -5,7 +5,7 @@
 //! Communicates over a socket bus.
 
 use crate::ffi;
-use crate::nos3::{check_socket, SocketError};
+use crate::nos3::buses::socket::{check, SocketError};
 use crate::nos3::buses::socket::Socket;
 
 /// Radio housekeeping telemetry.
@@ -24,7 +24,7 @@ pub fn set_configuration(
     device: &mut Socket,
     config: u32,
 ) -> Result<(), SocketError> {
-    check_socket(unsafe {
+    check(unsafe {
         ffi::GENERIC_RADIO_SetConfiguration(
             &mut device.inner,
             config,
@@ -38,7 +38,7 @@ pub fn proximity_forward(
     scid: u16,
     data: &[u8],
 ) -> Result<(), SocketError> {
-    check_socket(unsafe {
+    check(unsafe {
         ffi::GENERIC_RADIO_ProximityForward(
             &mut device.inner,
             scid,
@@ -53,7 +53,7 @@ pub fn request_hk(
     device: &mut Socket,
 ) -> Result<RadioHk, SocketError> {
     let mut raw = ffi::GENERIC_RADIO_Device_HK_tlm_t::default();
-    check_socket(unsafe {
+    check(unsafe {
         ffi::GENERIC_RADIO_RequestHK(&mut device.inner, &mut raw)
     })?;
     Ok(RadioHk {

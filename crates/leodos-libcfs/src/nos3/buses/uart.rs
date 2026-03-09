@@ -4,9 +4,44 @@
 //! subsystems such as star trackers, reaction wheels, GPS
 //! receivers, and thrusters. The port is closed on drop.
 
-use super::super::{check_uart, check_uart_count, UartError};
 use crate::ffi;
 use core::mem::MaybeUninit;
+
+/// Errors from UART operations.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum UartError {
+    /// Generic OS/driver error (`UART_ERROR`).
+    #[error("UART: OS error")]
+    OsError,
+    /// File descriptor open error (`UART_FD_OPEN`).
+    #[error("UART: file descriptor open error")]
+    FdOpen,
+    /// Unhandled error code.
+    #[error("UART: unhandled error ({0})")]
+    Unhandled(i32),
+}
+
+pub(crate) fn check(rc: i32) -> Result<(), UartError> {
+    match rc {
+        0 => Ok(()),
+        _ if rc == ffi::UART_ERROR => Err(UartError::OsError),
+        _ if rc == ffi::UART_FD_OPEN => Err(UartError::FdOpen),
+        other => Err(UartError::Unhandled(other)),
+    }
+}
+
+fn check_count(rc: i32) -> Result<usize, UartError> {
+    if rc >= 0 {
+        Ok(rc as usize)
+    } else {
+        Err(match rc {
+            _ if rc == ffi::UART_ERROR => UartError::OsError,
+            _ if rc == ffi::UART_FD_OPEN => UartError::FdOpen,
+            other => UartError::Unhandled(other),
+        })
+    }
+}
 
 /// UART access mode.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -45,7 +80,7 @@ impl Uart {
             Access::WriteOnly => ffi::uart_access_flag_uart_access_flag_WRONLY,
             Access::ReadWrite => ffi::uart_access_flag_uart_access_flag_RDWR,
         };
-        check_uart(unsafe { ffi::uart_init_port(&mut info) })?;
+        check(unsafe { ffi::uart_init_port(&mut info) })?;
         Ok(Self { inner: info })
     }
 
@@ -60,7 +95,7 @@ impl Uart {
                 buf.len() as u32,
             )
         };
-        check_uart_count(rc)
+        check_count(rc)
     }
 
     /// Writes bytes to the port.
@@ -74,7 +109,7 @@ impl Uart {
                 data.len() as u32,
             )
         };
-        check_uart_count(rc)
+        check_count(rc)
     }
 
     /// Returns the number of bytes waiting to be read.
@@ -82,12 +117,12 @@ impl Uart {
         let rc = unsafe {
             ffi::uart_bytes_available(&mut self.inner)
         };
-        check_uart_count(rc)
+        check_count(rc)
     }
 
     /// Flushes the receive buffer.
     pub fn flush(&mut self) -> Result<(), UartError> {
-        check_uart(unsafe { ffi::uart_flush(&mut self.inner) })
+        check(unsafe { ffi::uart_flush(&mut self.inner) })
     }
 }
 

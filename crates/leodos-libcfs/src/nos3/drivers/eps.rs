@@ -5,7 +5,7 @@
 //! bus voltages, temperatures, and per-switch status over I2C.
 
 use crate::ffi;
-use crate::nos3::{check_i2c, I2cError};
+use crate::nos3::buses::i2c::{check, I2cError};
 use crate::nos3::buses::i2c::I2cBus;
 
 /// Per-switch telemetry.
@@ -58,7 +58,7 @@ pub fn command(
     reg: u8,
     value: u8,
 ) -> Result<(), I2cError> {
-    check_i2c(unsafe {
+    check(unsafe {
         ffi::GENERIC_EPS_CommandDevice(
             &mut device.inner,
             reg,
@@ -72,7 +72,7 @@ pub fn request_hk(
     device: &mut I2cBus,
 ) -> Result<EpsHk, I2cError> {
     let mut raw = ffi::GENERIC_EPS_Device_HK_tlm_t::default();
-    check_i2c(unsafe {
+    check(unsafe {
         ffi::GENERIC_EPS_RequestHK(&mut device.inner, &mut raw)
     })?;
     let mut hk = EpsHk {
@@ -103,7 +103,7 @@ pub fn command_switch(
     value: u8,
 ) -> Result<EpsHk, I2cError> {
     let mut raw = ffi::GENERIC_EPS_Device_HK_tlm_t::default();
-    check_i2c(unsafe {
+    check(unsafe {
         ffi::GENERIC_EPS_CommandSwitch(
             &mut device.inner,
             switch_num,

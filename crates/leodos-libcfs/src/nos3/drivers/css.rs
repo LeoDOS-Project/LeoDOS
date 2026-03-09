@@ -5,7 +5,7 @@
 //! sun vector for safe-mode attitude determination. Uses I2C.
 
 use crate::ffi;
-use crate::nos3::{check_i2c, I2cError};
+use crate::nos3::buses::i2c::{check, I2cError};
 use crate::nos3::buses::i2c::I2cBus;
 
 /// CSS channel data (6 photodiode voltages).
@@ -20,7 +20,7 @@ pub fn request_data(
     device: &mut I2cBus,
 ) -> Result<CssData, I2cError> {
     let mut raw = ffi::GENERIC_CSS_Device_Data_tlm_t::default();
-    check_i2c(unsafe {
+    check(unsafe {
         ffi::GENERIC_CSS_RequestData(&mut device.inner, &mut raw)
     })?;
     Ok(CssData {

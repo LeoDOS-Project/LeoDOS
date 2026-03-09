@@ -5,7 +5,7 @@
 //! manoeuvres. Communicates over UART.
 
 use crate::ffi;
-use crate::nos3::{check_uart, UartError};
+use crate::nos3::buses::uart::{check, UartError};
 use crate::nos3::buses::uart::Uart;
 
 /// Commands a thruster to a given duty percentage.
@@ -15,7 +15,7 @@ pub fn set_percentage(
     percentage: u8,
     data_length: u8,
 ) -> Result<(), UartError> {
-    check_uart(unsafe {
+    check(unsafe {
         ffi::GENERIC_THRUSTER_SetPercentage(
             &mut device.inner,
             thruster_number,

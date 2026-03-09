@@ -5,7 +5,7 @@
 //! The primary attitude sensor for fine pointing. Uses UART.
 
 use crate::ffi;
-use crate::nos3::{check_uart, UartError};
+use crate::nos3::buses::uart::{check, UartError};
 use crate::nos3::buses::uart::Uart;
 
 /// Star tracker housekeeping telemetry.
@@ -36,7 +36,7 @@ pub fn command(
     cmd: u8,
     payload: u32,
 ) -> Result<(), UartError> {
-    check_uart(unsafe {
+    check(unsafe {
         ffi::GENERIC_STAR_TRACKER_CommandDevice(
             &mut device.inner,
             cmd,
@@ -51,7 +51,7 @@ pub fn request_hk(
 ) -> Result<StarTrackerHk, UartError> {
     let mut raw =
         ffi::GENERIC_STAR_TRACKER_Device_HK_tlm_t::default();
-    check_uart(unsafe {
+    check(unsafe {
         ffi::GENERIC_STAR_TRACKER_RequestHK(
             &mut device.inner,
             &mut raw,
@@ -68,7 +68,7 @@ pub fn request_data(
 ) -> Result<StarTrackerData, UartError> {
     let mut raw =
         ffi::GENERIC_STAR_TRACKER_Device_Data_tlm_t::default();
-    check_uart(unsafe {
+    check(unsafe {
         ffi::GENERIC_STAR_TRACKER_RequestData(
             &mut device.inner,
             &mut raw,

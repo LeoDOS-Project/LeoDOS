@@ -5,9 +5,40 @@
 //! deployment indicators, and status lines. The pin is
 //! closed on drop.
 
-use super::super::{check_gpio, GpioError};
 use crate::ffi;
 use core::mem::MaybeUninit;
+
+/// Errors from GPIO operations.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum GpioError {
+    /// Generic OS/driver error (`GPIO_ERROR`).
+    #[error("GPIO: OS error")]
+    OsError,
+    /// File descriptor open error (`GPIO_FD_OPEN_ERR`).
+    #[error("GPIO: file descriptor open error")]
+    FdOpen,
+    /// Write error (`GPIO_WRITE_ERR`).
+    #[error("GPIO: write error")]
+    Write,
+    /// Read error (`GPIO_READ_ERR`).
+    #[error("GPIO: read error")]
+    Read,
+    /// Unhandled error code.
+    #[error("GPIO: unhandled error ({0})")]
+    Unhandled(i32),
+}
+
+fn check(rc: i32) -> Result<(), GpioError> {
+    match rc {
+        0 => Ok(()),
+        _ if rc == ffi::GPIO_ERROR => Err(GpioError::OsError),
+        _ if rc == ffi::GPIO_FD_OPEN_ERR => Err(GpioError::FdOpen),
+        _ if rc == ffi::GPIO_WRITE_ERR => Err(GpioError::Write),
+        _ if rc == ffi::GPIO_READ_ERR => Err(GpioError::Read),
+        other => Err(GpioError::Unhandled(other)),
+    }
+}
 
 /// GPIO pin direction.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -36,20 +67,20 @@ impl Gpio {
             Direction::Output => 1,
         };
         info.isOpen = 0;
-        check_gpio(unsafe { ffi::gpio_init(&mut info) })?;
+        check(unsafe { ffi::gpio_init(&mut info) })?;
         Ok(Self { inner: info })
     }
 
     /// Reads the current value of the pin.
     pub fn read(&mut self) -> Result<u8, GpioError> {
         let mut value: u8 = 0;
-        check_gpio(unsafe { ffi::gpio_read(&mut self.inner, &mut value) })?;
+        check(unsafe { ffi::gpio_read(&mut self.inner, &mut value) })?;
         Ok(value)
     }
 
     /// Writes a value (0 or 1) to the pin.
     pub fn write(&mut self, value: u8) -> Result<(), GpioError> {
-        check_gpio(unsafe { ffi::gpio_write(&mut self.inner, value) })
+        check(unsafe { ffi::gpio_write(&mut self.inner, value) })
     }
 }
 

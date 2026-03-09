@@ -5,7 +5,7 @@
 //! orbit determination and time synchronisation. Uses UART.
 
 use crate::ffi;
-use crate::nos3::{check_uart, UartError};
+use crate::nos3::buses::uart::{check, UartError};
 use crate::nos3::buses::uart::Uart;
 
 /// GPS position and velocity data.
@@ -44,7 +44,7 @@ pub fn command(
     log_type: i8,
     period_option: i8,
 ) -> Result<(), UartError> {
-    check_uart(unsafe {
+    check(unsafe {
         ffi::NOVATEL_OEM615_CommandDevice(
             &mut device.inner,
             cmd_code,
@@ -60,7 +60,7 @@ pub fn request_data(
 ) -> Result<GpsData, UartError> {
     let mut raw =
         ffi::NOVATEL_OEM615_Device_Data_tlm_t::default();
-    check_uart(unsafe {
+    check(unsafe {
         ffi::NOVATEL_OEM615_RequestData(
             &mut device.inner,
             &mut raw,
@@ -75,7 +75,7 @@ pub fn child_read_data(
 ) -> Result<GpsData, UartError> {
     let mut raw =
         ffi::NOVATEL_OEM615_Device_Data_tlm_t::default();
-    check_uart(unsafe {
+    check(unsafe {
         ffi::NOVATEL_OEM615_ChildProcessReadData(
             &mut device.inner,
             &mut raw,

@@ -5,7 +5,7 @@
 //! propagation and manoeuvre detection. Uses a CAN bus.
 
 use crate::ffi;
-use crate::nos3::{check_can, CanError};
+use crate::nos3::buses::can::{check, CanError};
 use crate::nos3::buses::can::Can;
 
 /// IMU housekeeping telemetry.
@@ -42,7 +42,7 @@ pub fn command(
     device: &mut Can,
     cmd_code: u8,
 ) -> Result<(), CanError> {
-    check_can(unsafe {
+    check(unsafe {
         ffi::GENERIC_IMU_CommandDevice(
             &mut device.inner,
             cmd_code,
@@ -55,7 +55,7 @@ pub fn request_hk(
     device: &mut Can,
 ) -> Result<ImuHk, CanError> {
     let mut raw = ffi::GENERIC_IMU_Device_HK_tlm_t::default();
-    check_can(unsafe {
+    check(unsafe {
         ffi::GENERIC_IMU_RequestHK(&mut device.inner, &mut raw)
     })?;
     Ok(ImuHk {
@@ -70,7 +70,7 @@ pub fn request_axis(
     cmd_code: u8,
 ) -> Result<AxisData, CanError> {
     let mut raw = ffi::GENERIC_IMU_Device_Axis_Data_t::default();
-    check_can(unsafe {
+    check(unsafe {
         ffi::GENERIC_IMU_RequestAxis(
             &mut device.inner,
             &mut raw,
@@ -88,7 +88,7 @@ pub fn request_data(
     device: &mut Can,
 ) -> Result<ImuData, CanError> {
     let mut raw = ffi::GENERIC_IMU_Device_Data_tlm_t::default();
-    check_can(unsafe {
+    check(unsafe {
         ffi::GENERIC_IMU_RequestData(
             &mut device.inner,
             &mut raw,

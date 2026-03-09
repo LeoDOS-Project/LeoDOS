@@ -5,7 +5,7 @@
 //! law computation. Communicates via SPI.
 
 use crate::ffi;
-use crate::nos3::{check_spi, SpiError};
+use crate::nos3::buses::spi::{check, SpiError};
 use crate::nos3::buses::spi::Spi;
 
 /// Magnetometer measurement data.
@@ -24,7 +24,7 @@ pub fn request_data(
     device: &mut Spi,
 ) -> Result<MagData, SpiError> {
     let mut raw = ffi::GENERIC_MAG_Device_Data_tlm_t::default();
-    check_spi(unsafe {
+    check(unsafe {
         ffi::GENERIC_MAG_RequestData(&mut device.inner, &mut raw)
     })?;
     Ok(MagData {

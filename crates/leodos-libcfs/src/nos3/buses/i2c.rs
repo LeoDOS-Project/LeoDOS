@@ -4,9 +4,32 @@
 //! such as power systems (EPS), sun sensors (CSS), and cameras.
 //! The bus is closed on drop.
 
-use super::super::{check_i2c, I2cError};
 use crate::ffi;
 use core::mem::MaybeUninit;
+
+/// Errors from I2C operations.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum I2cError {
+    /// Generic OS/driver error (`I2C_ERROR`).
+    #[error("I2C: OS error")]
+    OsError,
+    /// File descriptor open error (`I2C_FD_OPEN_ERR`).
+    #[error("I2C: file descriptor open error")]
+    FdOpen,
+    /// Unhandled error code.
+    #[error("I2C: unhandled error ({0})")]
+    Unhandled(i32),
+}
+
+pub(crate) fn check(rc: i32) -> Result<(), I2cError> {
+    match rc {
+        0 => Ok(()),
+        _ if rc == ffi::I2C_ERROR => Err(I2cError::OsError),
+        _ if rc == ffi::I2C_FD_OPEN_ERR => Err(I2cError::FdOpen),
+        other => Err(I2cError::Unhandled(other)),
+    }
+}
 
 /// An open I2C master bus.
 pub struct I2cBus {
@@ -25,7 +48,7 @@ impl I2cBus {
         info.addr = addr;
         info.speed = speed;
         info.isOpen = 0;
-        check_i2c(unsafe { ffi::i2c_master_init(&mut info) })?;
+        check(unsafe { ffi::i2c_master_init(&mut info) })?;
         Ok(Self { inner: info })
     }
 
@@ -40,7 +63,7 @@ impl I2cBus {
         rx: &mut [u8],
         timeout: u16,
     ) -> Result<(), I2cError> {
-        check_i2c(unsafe {
+        check(unsafe {
             ffi::i2c_master_transaction(
                 &mut self.inner,
                 addr,
@@ -60,7 +83,7 @@ impl I2cBus {
         rx: &mut [u8],
         timeout: u8,
     ) -> Result<(), I2cError> {
-        check_i2c(unsafe {
+        check(unsafe {
             ffi::i2c_read_transaction(
                 &mut self.inner,
                 addr,
@@ -78,7 +101,7 @@ impl I2cBus {
         tx: &[u8],
         timeout: u8,
     ) -> Result<(), I2cError> {
-        check_i2c(unsafe {
+        check(unsafe {
             ffi::i2c_write_transaction(
                 &mut self.inner,
                 addr,

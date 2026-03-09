@@ -5,7 +5,7 @@
 //! command and returning telemetry.
 
 use crate::ffi;
-use crate::nos3::{check_trq, TrqError};
+use crate::nos3::buses::trq::{check, TrqError};
 use crate::nos3::buses::trq::Torquer;
 
 /// Torquer component telemetry.
@@ -24,7 +24,7 @@ pub fn config(
     direction: u8,
 ) -> Result<TorquerTlm, TrqError> {
     let mut raw = ffi::GENERIC_TORQUER_Device_tlm_t::default();
-    check_trq(unsafe {
+    check(unsafe {
         ffi::GENERIC_TORQUER_Config(
             &mut raw,
             &mut torquer.inner,

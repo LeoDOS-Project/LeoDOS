@@ -4,9 +4,64 @@
 //! simulate RF links (ground station, inter-satellite) and
 //! other network-attached subsystems. Closed on drop.
 
-use super::super::{check_socket, SocketError};
 use crate::ffi;
 use core::mem::MaybeUninit;
+
+/// Errors from socket operations.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum SocketError {
+    /// Generic OS/driver error (`SOCKET_ERROR`).
+    #[error("Socket: OS error")]
+    OsError,
+    /// Socket create error (`SOCKET_CREATE_ERR`).
+    #[error("Socket: create error")]
+    Create,
+    /// Socket bind error (`SOCKET_BIND_ERR`).
+    #[error("Socket: bind error")]
+    Bind,
+    /// Socket listen error (`SOCKET_LISTEN_ERR`).
+    #[error("Socket: listen error")]
+    Listen,
+    /// Socket accept error (`SOCKET_ACCEPT_ERR`).
+    #[error("Socket: accept error")]
+    Accept,
+    /// Socket connect error (`SOCKET_CONNECT_ERR`).
+    #[error("Socket: connect error")]
+    Connect,
+    /// Socket receive error (`SOCKET_RECV_ERR`).
+    #[error("Socket: receive error")]
+    Recv,
+    /// Socket send error (`SOCKET_SEND_ERR`).
+    #[error("Socket: send error")]
+    Send,
+    /// Socket close error (`SOCKET_CLOSE_ERR`).
+    #[error("Socket: close error")]
+    Close,
+    /// Non-blocking operation would block (`SOCKET_TRY_AGAIN`).
+    #[error("Socket: try again")]
+    TryAgain,
+    /// Unhandled error code.
+    #[error("Socket: unhandled error ({0})")]
+    Unhandled(i32),
+}
+
+pub(crate) fn check(rc: i32) -> Result<(), SocketError> {
+    match rc {
+        0 => Ok(()),
+        _ if rc == ffi::SOCKET_ERROR => Err(SocketError::OsError),
+        _ if rc == ffi::SOCKET_CREATE_ERR => Err(SocketError::Create),
+        _ if rc == ffi::SOCKET_BIND_ERR => Err(SocketError::Bind),
+        _ if rc == ffi::SOCKET_LISTEN_ERR => Err(SocketError::Listen),
+        _ if rc == ffi::SOCKET_ACCEPT_ERR => Err(SocketError::Accept),
+        _ if rc == ffi::SOCKET_CONNECT_ERR => Err(SocketError::Connect),
+        _ if rc == ffi::SOCKET_RECV_ERR => Err(SocketError::Recv),
+        _ if rc == ffi::SOCKET_SEND_ERR => Err(SocketError::Send),
+        _ if rc == ffi::SOCKET_CLOSE_ERR => Err(SocketError::Close),
+        _ if rc == ffi::SOCKET_TRY_AGAIN => Err(SocketError::TryAgain),
+        other => Err(SocketError::Unhandled(other)),
+    }
+}
 
 /// IP address family.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -76,18 +131,18 @@ impl Socket {
         };
         info.block = blocking;
         info.created = false;
-        check_socket(unsafe { ffi::socket_create(&mut info) })?;
+        check(unsafe { ffi::socket_create(&mut info) })?;
         Ok(Self { inner: info })
     }
 
     /// Starts listening for connections (server, stream only).
     pub fn listen(&mut self) -> Result<(), SocketError> {
-        check_socket(unsafe { ffi::socket_listen(&mut self.inner) })
+        check(unsafe { ffi::socket_listen(&mut self.inner) })
     }
 
     /// Accepts an incoming connection (server, stream only).
     pub fn accept(&mut self) -> Result<(), SocketError> {
-        check_socket(unsafe { ffi::socket_accept(&mut self.inner) })
+        check(unsafe { ffi::socket_accept(&mut self.inner) })
     }
 
     /// Connects to a remote address (client).
@@ -96,7 +151,7 @@ impl Socket {
         remote_ip: &core::ffi::CStr,
         remote_port: i32,
     ) -> Result<(), SocketError> {
-        check_socket(unsafe {
+        check(unsafe {
             ffi::socket_connect(
                 &mut self.inner,
                 remote_ip.as_ptr() as *mut _,
@@ -117,7 +172,7 @@ impl Socket {
         remote_port: i32,
     ) -> Result<usize, SocketError> {
         let mut bytes_sent: usize = 0;
-        check_socket(unsafe {
+        check(unsafe {
             ffi::socket_send(
                 &mut self.inner,
                 data.as_ptr() as *mut _,
@@ -138,7 +193,7 @@ impl Socket {
         buf: &mut [u8],
     ) -> Result<usize, SocketError> {
         let mut bytes_recvd: usize = 0;
-        check_socket(unsafe {
+        check(unsafe {
             ffi::socket_recv(
                 &mut self.inner,
                 buf.as_mut_ptr(),
