@@ -11,7 +11,6 @@ pub mod bitmap;
 /// Gossip packet structure and builder.
 pub mod packet;
 
-use core::cell::RefCell;
 use core::future::poll_fn;
 use core::task::Poll;
 
@@ -28,6 +27,7 @@ use crate::network::isl::torus::Direction;
 use crate::network::isl::torus::Point;
 use crate::network::isl::torus::Torus;
 use crate::network::spp::Apid;
+use crate::utils::cell::SyncRefCell;
 
 /// Error from a gossip channel operation.
 #[derive(Debug, Clone)]
@@ -102,7 +102,7 @@ struct GossipState<const QUEUE: usize, const MTU: usize> {
 /// Shared gossip state that is split into sender, receiver, and
 /// driver handles.
 pub struct GossipChannel<const QUEUE: usize = 8, const MTU: usize = 256> {
-    state: RefCell<GossipState<QUEUE, MTU>>,
+    state: SyncRefCell<GossipState<QUEUE, MTU>>,
     config: GossipConfig,
 }
 
@@ -110,7 +110,7 @@ impl<const QUEUE: usize, const MTU: usize> GossipChannel<QUEUE, MTU> {
     /// Creates a new gossip channel.
     pub fn new(config: GossipConfig) -> Self {
         Self {
-            state: RefCell::new(GossipState {
+            state: SyncRefCell::new(GossipState {
                 outbox: Deque::new(),
                 inbox: Deque::new(),
                 dedup: DuplicateFilter::new(),
@@ -138,7 +138,7 @@ impl<const QUEUE: usize, const MTU: usize> GossipChannel<QUEUE, MTU> {
 
     /// Closes the channel.
     pub fn close(&self) {
-        self.state.borrow_mut().closed = true;
+        self.state.with_mut(|s| s.closed = true);
     }
 }
 
@@ -160,27 +160,27 @@ impl<'a, const QUEUE: usize, const MTU: usize> GossipSender<'a, QUEUE, MTU> {
         data: &[u8],
     ) -> Result<(), GossipError> {
         poll_fn(|_cx| {
-            let mut state = self.channel.state.borrow_mut();
+            self.channel.state.with_mut(|state| {
+                if state.closed {
+                    return Poll::Ready(Err(GossipError::Closed));
+                }
 
-            if state.closed {
-                return Poll::Ready(Err(GossipError::Closed));
-            }
+                if state.outbox.is_full() {
+                    return Poll::Pending;
+                }
 
-            if state.outbox.is_full() {
-                return Poll::Pending;
-            }
+                let len = data.len().min(MTU);
+                let mut buf = OutgoingGossip {
+                    service_area_min,
+                    service_area_max,
+                    data: [0u8; MTU],
+                    len,
+                };
+                buf.data[..len].copy_from_slice(&data[..len]);
+                state.outbox.push_back(buf).ok();
 
-            let len = data.len().min(MTU);
-            let mut buf = OutgoingGossip {
-                service_area_min,
-                service_area_max,
-                data: [0u8; MTU],
-                len,
-            };
-            buf.data[..len].copy_from_slice(&data[..len]);
-            state.outbox.push_back(buf).ok();
-
-            Poll::Ready(Ok(()))
+                Poll::Ready(Ok(()))
+            })
         })
         .await
     }
@@ -200,35 +200,36 @@ impl<'a, const QUEUE: usize, const MTU: usize> GossipReceiver<'a, QUEUE, MTU> {
     /// into `buf` and metadata is returned in [`GossipMessage`].
     pub async fn recv(&mut self, buf: &mut [u8]) -> Result<GossipMessage, GossipError> {
         poll_fn(|_cx| {
-            let mut state = self.channel.state.borrow_mut();
+            self.channel.state.with_mut(|state| {
+                if let Some(pkt) = state.inbox.pop_front() {
+                    let len = pkt.len.min(buf.len());
+                    buf[..len].copy_from_slice(&pkt.data[..len]);
+                    return Poll::Ready(Ok(GossipMessage {
+                        origin: pkt.origin,
+                        len,
+                    }));
+                }
 
-            if let Some(pkt) = state.inbox.pop_front() {
-                let len = pkt.len.min(buf.len());
-                buf[..len].copy_from_slice(&pkt.data[..len]);
-                return Poll::Ready(Ok(GossipMessage {
-                    origin: pkt.origin,
-                    len,
-                }));
-            }
+                if state.closed {
+                    return Poll::Ready(Err(GossipError::Closed));
+                }
 
-            if state.closed {
-                return Poll::Ready(Err(GossipError::Closed));
-            }
-
-            Poll::Pending
+                Poll::Pending
+            })
         })
         .await
     }
 
     /// Try to receive without blocking.
     pub fn try_recv(&mut self, buf: &mut [u8]) -> Option<GossipMessage> {
-        let mut state = self.channel.state.borrow_mut();
-        let pkt = state.inbox.pop_front()?;
-        let len = pkt.len.min(buf.len());
-        buf[..len].copy_from_slice(&pkt.data[..len]);
-        Some(GossipMessage {
-            origin: pkt.origin,
-            len,
+        self.channel.state.with_mut(|state| {
+            let pkt = state.inbox.pop_front()?;
+            let len = pkt.len.min(buf.len());
+            buf[..len].copy_from_slice(&pkt.data[..len]);
+            Some(GossipMessage {
+                origin: pkt.origin,
+                len,
+            })
         })
     }
 }
@@ -253,11 +254,9 @@ impl<'a, const QUEUE: usize, const MTU: usize> GossipDriver<'a, QUEUE, MTU> {
         let header = &packet.gossip_header;
         let epoch = header.epoch();
 
-        {
-            let mut state = self.channel.state.borrow_mut();
-
+        let is_new = self.channel.state.with_mut(|state| {
             if state.dedup.is_duplicate(epoch.0.get()) {
-                return Vec::new();
+                return false;
             }
 
             if !state.inbox.is_full() {
@@ -271,9 +270,15 @@ impl<'a, const QUEUE: usize, const MTU: usize> GossipDriver<'a, QUEUE, MTU> {
                 entry.data[..len].copy_from_slice(&payload[..len]);
                 state.inbox.push_back(entry).ok();
             }
-        }
 
-        self.forward_gossip(packet)
+            true
+        });
+
+        if is_new {
+            self.forward_gossip(packet)
+        } else {
+            Vec::new()
+        }
     }
 
     /// Take the next locally-originated gossip packet for flooding.
@@ -282,16 +287,14 @@ impl<'a, const QUEUE: usize, const MTU: usize> GossipDriver<'a, QUEUE, MTU> {
     /// length and the directions to send it, or `None` if the
     /// outbox is empty.
     pub fn poll_outgoing(&self, buf: &mut [u8]) -> Option<(usize, Vec<Direction, 4>)> {
-        let outgoing = self.channel.state.borrow_mut().outbox.pop_front()?;
-
-        let epoch = {
-            let mut state = self.channel.state.borrow_mut();
+        let (outgoing, epoch) = self.channel.state.with_mut(|state| {
+            let outgoing = state.outbox.pop_front()?;
             let e = state.next_epoch;
             state.next_epoch = state.next_epoch.wrapping_add(1);
             let epoch = Epoch(U16::new(e));
             state.dedup.is_duplicate(epoch.0.get());
-            epoch
-        };
+            Some((outgoing, epoch))
+        })?;
 
         let config = &self.channel.config;
         let pkt = IslGossipTelecommand::builder()

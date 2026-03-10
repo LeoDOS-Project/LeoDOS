@@ -1,4 +1,3 @@
-use core::cell::RefCell;
 use core::future::poll_fn;
 use core::task::Poll;
 
@@ -6,6 +5,7 @@ use heapless::Deque;
 
 use crate::datalink::{DatalinkReader, DatalinkWriter};
 use crate::network::{NetworkReader, NetworkWriter};
+use crate::utils::cell::SyncRefCell;
 
 /// Error from a local in-process channel.
 #[derive(Debug, Clone)]
@@ -40,14 +40,14 @@ struct LocalChannelState<const QUEUE: usize, const MTU: usize> {
 
 /// A single-threaded bidirectional channel between an app and a router.
 pub struct LocalChannel<const QUEUE: usize, const MTU: usize> {
-    state: RefCell<LocalChannelState<QUEUE, MTU>>,
+    state: SyncRefCell<LocalChannelState<QUEUE, MTU>>,
 }
 
 impl<const QUEUE: usize, const MTU: usize> LocalChannel<QUEUE, MTU> {
     /// Creates a new local channel with empty queues.
     pub fn new() -> Self {
         Self {
-            state: RefCell::new(LocalChannelState {
+            state: SyncRefCell::new(LocalChannelState {
                 to_router: Deque::new(),
                 from_router: Deque::new(),
                 closed: false,
@@ -65,7 +65,7 @@ impl<const QUEUE: usize, const MTU: usize> LocalChannel<QUEUE, MTU> {
 
     /// Closes the channel, causing future operations to return `Closed`.
     pub fn close(&self) {
-        self.state.borrow_mut().closed = true;
+        self.state.with_mut(|s| s.closed = true);
     }
 }
 
@@ -85,24 +85,24 @@ impl<'a, const QUEUE: usize, const MTU: usize> NetworkWriter for LocalAppHandle<
 
     async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         poll_fn(|_cx| {
-            let mut state = self.channel.state.borrow_mut();
+            self.channel.state.with_mut(|state| {
+                if state.closed {
+                    return Poll::Ready(Err(LocalLinkError::Closed));
+                }
 
-            if state.closed {
-                return Poll::Ready(Err(LocalLinkError::Closed));
-            }
+                if state.to_router.is_full() {
+                    return Poll::Pending;
+                }
 
-            if state.to_router.is_full() {
-                return Poll::Pending;
-            }
+                let mut packet = Packet {
+                    data: [0u8; MTU],
+                    len: data.len().min(MTU),
+                };
+                packet.data[..packet.len].copy_from_slice(&data[..packet.len]);
+                state.to_router.push_back(packet).ok();
 
-            let mut packet = Packet {
-                data: [0u8; MTU],
-                len: data.len().min(MTU),
-            };
-            packet.data[..packet.len].copy_from_slice(&data[..packet.len]);
-            state.to_router.push_back(packet).ok();
-
-            Poll::Ready(Ok(()))
+                Poll::Ready(Ok(()))
+            })
         })
         .await
     }
@@ -113,19 +113,19 @@ impl<'a, const QUEUE: usize, const MTU: usize> NetworkReader for LocalAppHandle<
 
     async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         poll_fn(|_cx| {
-            let mut state = self.channel.state.borrow_mut();
+            self.channel.state.with_mut(|state| {
+                if let Some(packet) = state.from_router.pop_front() {
+                    let len = packet.len.min(buffer.len());
+                    buffer[..len].copy_from_slice(&packet.data[..len]);
+                    return Poll::Ready(Ok(len));
+                }
 
-            if let Some(packet) = state.from_router.pop_front() {
-                let len = packet.len.min(buffer.len());
-                buffer[..len].copy_from_slice(&packet.data[..len]);
-                return Poll::Ready(Ok(len));
-            }
+                if state.closed {
+                    return Poll::Ready(Err(LocalLinkError::Closed));
+                }
 
-            if state.closed {
-                return Poll::Ready(Err(LocalLinkError::Closed));
-            }
-
-            Poll::Pending
+                Poll::Pending
+            })
         })
         .await
     }
@@ -141,24 +141,24 @@ impl<'a, const QUEUE: usize, const MTU: usize> DatalinkWriter for LocalRouterHan
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         poll_fn(|_cx| {
-            let mut state = self.channel.state.borrow_mut();
+            self.channel.state.with_mut(|state| {
+                if state.closed {
+                    return Poll::Ready(Err(LocalLinkError::Closed));
+                }
 
-            if state.closed {
-                return Poll::Ready(Err(LocalLinkError::Closed));
-            }
+                if state.from_router.is_full() {
+                    return Poll::Pending;
+                }
 
-            if state.from_router.is_full() {
-                return Poll::Pending;
-            }
+                let mut packet = Packet {
+                    data: [0u8; MTU],
+                    len: data.len().min(MTU),
+                };
+                packet.data[..packet.len].copy_from_slice(&data[..packet.len]);
+                state.from_router.push_back(packet).ok();
 
-            let mut packet = Packet {
-                data: [0u8; MTU],
-                len: data.len().min(MTU),
-            };
-            packet.data[..packet.len].copy_from_slice(&data[..packet.len]);
-            state.from_router.push_back(packet).ok();
-
-            Poll::Ready(Ok(()))
+                Poll::Ready(Ok(()))
+            })
         })
         .await
     }
@@ -169,19 +169,19 @@ impl<'a, const QUEUE: usize, const MTU: usize> DatalinkReader for LocalRouterHan
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         poll_fn(|_cx| {
-            let mut state = self.channel.state.borrow_mut();
+            self.channel.state.with_mut(|state| {
+                if let Some(packet) = state.to_router.pop_front() {
+                    let len = packet.len.min(buffer.len());
+                    buffer[..len].copy_from_slice(&packet.data[..len]);
+                    return Poll::Ready(Ok(len));
+                }
 
-            if let Some(packet) = state.to_router.pop_front() {
-                let len = packet.len.min(buffer.len());
-                buffer[..len].copy_from_slice(&packet.data[..len]);
-                return Poll::Ready(Ok(len));
-            }
+                if state.closed {
+                    return Poll::Ready(Err(LocalLinkError::Closed));
+                }
 
-            if state.closed {
-                return Poll::Ready(Err(LocalLinkError::Closed));
-            }
-
-            Poll::Pending
+                Poll::Pending
+            })
         })
         .await
     }
