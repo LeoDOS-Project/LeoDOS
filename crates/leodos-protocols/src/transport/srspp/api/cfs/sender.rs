@@ -19,9 +19,9 @@ use crate::transport::srspp::machine::sender::SenderConfig;
 use crate::transport::srspp::machine::sender::SenderEvent;
 use crate::transport::srspp::machine::sender::SenderMachine;
 use crate::transport::srspp::packet::SrsppDataPacket;
+use crate::transport::srspp::packet::SrsppAckPacket;
+use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
-use crate::transport::srspp::packet::parse_ack_packet;
-use crate::transport::srspp::packet::parse_srspp_type;
 use crate::transport::srspp::rto::RtoPolicy;
 
 use super::Error;
@@ -82,8 +82,6 @@ pub(super) async fn drive_transmits<
                     .target(info.target)
                     .apid(cfg_clone.apid)
                     .function_code(cfg_clone.function_code)
-                    .message_id(cfg_clone.message_id)
-                    .action_code(cfg_clone.action_code)
                     .sequence_count(seq)
                     .sequence_flag(info.flags)
                     .payload_len(info.payload.len())
@@ -133,8 +131,8 @@ pub(super) fn drive_ack<
     state: &SharedCell<SenderState<E, WIN, BUF, MTU>>,
     packet: &[u8],
 ) -> Result<(), Error<E>> {
-    if let Ok(SrsppType::Ack) = parse_srspp_type(packet) {
-        if let Ok(ack) = parse_ack_packet(packet) {
+    if let Ok(SrsppType::Ack) = SrsppPacket::parse(packet).and_then(|p| p.srspp_type()) {
+        if let Ok(ack) = SrsppAckPacket::parse(packet) {
             state.with_mut(|s| {
                 let SenderState {
                     machine,

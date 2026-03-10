@@ -2,9 +2,9 @@ use crate::network::isl::address::Address;
 use crate::network::spp::{SequenceCount, SequenceFlag};
 use heapless::Vec;
 
-use super::utils::GapTracker;
-use super::shell::ReceiverShell;
-use super::{
+use super::super::utils::GapTracker;
+use super::super::base::ReceiverBase;
+use super::super::{
     ReceiverAction, ReceiverActions, ReceiverConfig, ReceiverError,
     ReceiverEvent,
 };
@@ -25,7 +25,7 @@ use super::{
 /// * `MTU` — maximum segment payload size
 pub struct LiteReceiver<const REASM: usize, const WIN: usize, const MTU: usize> {
     /// Shared receiver state (sequence tracking, timers, ACK logic).
-    shell: ReceiverShell,
+    base: ReceiverBase,
     /// Contiguous buffer where segments are placed at computed offsets.
     message_buf: [u8; REASM],
     /// Tracks unfilled byte ranges in the reassembly buffer.
@@ -53,7 +53,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
     /// Create a new receiver for a specific remote sender.
     pub fn new(config: ReceiverConfig, remote_address: Address) -> Self {
         Self {
-            shell: ReceiverShell::new(config, remote_address),
+            base: ReceiverBase::new(config, remote_address),
             message_buf: [0u8; REASM],
             gaps: GapTracker::new(),
             message_ends: Vec::new(),
@@ -67,7 +67,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
 
     /// Get the remote address.
     pub fn remote_address(&self) -> Address {
-        self.shell.remote_address()
+        self.base.remote_address()
     }
 
     /// Process an event and produce actions.
@@ -93,7 +93,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
                 payload,
             } => self.handle_data(seq, flags, payload, actions),
             ReceiverEvent::AckTimeout => {
-                self.shell.handle_ack_timeout(actions);
+                self.base.handle_ack_timeout(actions);
                 Ok(())
             }
             ReceiverEvent::ProgressTimeout => {
@@ -161,7 +161,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
 
     /// Get the current expected sequence number.
     pub fn expected_seq(&self) -> SequenceCount {
-        self.shell.expected_seq()
+        self.base.expected_seq()
     }
 
     /// Compute the segment distance from `base_seq` to `seq` with wrapping.
@@ -177,16 +177,16 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
         payload: &[u8],
         actions: &mut ReceiverActions,
     ) -> Result<(), ReceiverError> {
-        let distance = self.shell.distance(seq);
-        let seq_before = self.shell.expected_seq_raw();
+        let distance = self.base.distance(seq);
+        let seq_before = self.base.expected_seq_raw();
         let max_dist = Self::MAX_SEGS as u16;
 
         if distance < max_dist {
-            if distance > 0 && self.shell.is_ooo_duplicate(distance)
+            if distance > 0 && self.base.is_ooo_duplicate(distance)
             {
             } else {
                 if distance > 0 {
-                    self.shell.record_ooo(distance);
+                    self.base.record_ooo(distance);
                 }
                 self.place_segment(seq, flags, payload)?;
                 self.try_deliver(actions)?;
@@ -194,10 +194,10 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
         }
 
         let progressed =
-            self.shell.expected_seq_raw() != seq_before;
+            self.base.expected_seq_raw() != seq_before;
         let has_gap =
             self.gaps.has_gaps() || !self.message_ends.is_empty();
-        self.shell
+        self.base
             .apply_post_data_logic(actions, progressed, has_gap);
         Ok(())
     }
@@ -223,7 +223,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
             *e -= shift;
         }
 
-        self.shell.advance();
+        self.base.advance();
         self.base_seq =
             self.base_seq.wrapping_add(1) & SequenceCount::MAX as u16;
 
@@ -231,7 +231,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
 
         let has_gap =
             self.gaps.has_gaps() || !self.message_ends.is_empty();
-        self.shell
+        self.base
             .apply_post_progress_logic(actions, has_gap);
         Ok(())
     }
@@ -309,7 +309,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
 
             let segs = (msg_end + MTU - 1) / MTU;
             for _ in 0..segs {
-                self.shell.advance();
+                self.base.advance();
             }
             self.pending_shift = segs * MTU;
             self.pending_segs = segs as u16;
@@ -320,7 +320,6 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
 
 #[cfg(test)]
 mod tests {
-    use super::super::*;
     use super::*;
 
     fn test_remote() -> Address {
@@ -332,8 +331,6 @@ mod tests {
             local_address: Address::satellite(1, 1),
             apid: crate::network::spp::Apid::new(0x42).unwrap(),
             function_code: 0,
-            message_id: 0,
-            action_code: 0,
             immediate_ack: true,
             ack_delay_ticks: 20,
             progress_timeout_ticks: None,

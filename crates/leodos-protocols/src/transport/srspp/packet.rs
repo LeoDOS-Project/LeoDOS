@@ -30,13 +30,14 @@ pub enum SrsppType {
     Ack = 0x01,
 }
 
-impl SrsppType {
-    /// Parse an SRSPP type from a raw byte value.
-    pub fn from_u8(value: u8) -> Option<Self> {
+impl TryFrom<u8> for SrsppType {
+    type Error = SrsppPacketError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0x00 => Some(Self::Data),
-            0x01 => Some(Self::Ack),
-            _ => None,
+            0x00 => Ok(Self::Data),
+            0x01 => Ok(Self::Ack),
+            _ => Err(SrsppPacketError::InvalidPacketType { value }),
         }
     }
 }
@@ -53,8 +54,8 @@ pub(crate) struct SrsppHeader {
 
 impl SrsppHeader {
     /// Parse the packet type field into an `SrsppType`.
-    pub(crate) fn srspp_type(&self) -> Option<SrsppType> {
-        SrsppType::from_u8(self.packet_type)
+    pub(crate) fn srspp_type(&self) -> Result<SrsppType, SrsppPacketError> {
+        SrsppType::try_from(self.packet_type)
     }
 
     /// Returns the parsed source address.
@@ -93,13 +94,59 @@ impl AckPayload {
     }
 
     /// Returns the cumulative acknowledgment sequence number.
+    ///
+    /// Note: Used by CFS and Tokio
+    #[allow(dead_code)]
     pub(crate) fn cumulative_ack(&self) -> SequenceCount {
         SequenceCount::from(self.cumulative_ack.get())
     }
 
     /// Returns the selective acknowledgment bitmap.
+    ///
+    /// Note: Used by CFS and Tokio
+    #[allow(dead_code)]
     pub(crate) fn selective_ack_bitmap(&self) -> u16 {
         self.selective_ack_bitmap.get()
+    }
+}
+
+/// An SRSPP packet of unknown type (data or ack).
+///
+/// Parse with [`SrsppPacket::parse`] to inspect the type via
+/// [`srspp_type`](SrsppPacket::srspp_type), then downcast to
+/// [`SrsppDataPacket`] or [`SrsppAckPacket`].
+#[repr(C, packed)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable)]
+pub struct SrsppPacket {
+    /// Space Packet primary header.
+    pub primary: PrimaryHeader,
+    /// cFE telecommand secondary header.
+    pub secondary: TelecommandSecondaryHeader,
+    /// ISL routing header for inter-satellite addressing.
+    pub(crate) isl_header: IslRoutingTelecommandHeader,
+    /// SRSPP protocol header.
+    pub(crate) srspp_header: SrsppHeader,
+    /// Remaining bytes (payload for data, ack fields for ack).
+    pub rest: [u8],
+}
+
+impl SrsppPacket {
+    /// Parse an SRSPP packet from a raw byte buffer.
+    pub fn parse(bytes: &[u8]) -> Result<&Self, SrsppPacketError> {
+        Self::ref_from_bytes(bytes).map_err(|_| SrsppPacketError::BufferTooSmall {
+            required: SrsppDataPacket::HEADER_SIZE,
+            provided: bytes.len(),
+        })
+    }
+
+    /// Returns the SRSPP packet type.
+    pub fn srspp_type(&self) -> Result<SrsppType, SrsppPacketError> {
+        self.srspp_header.srspp_type()
+    }
+
+    /// Returns the source address from the SRSPP header.
+    pub fn source_address(&self) -> Address {
+        self.srspp_header.source_address()
     }
 }
 
@@ -107,7 +154,7 @@ impl AckPayload {
 /// +------------------------------------+---------+
 /// | Space Packet Primary Header        | 6 bytes |
 /// | cFE Telecommand Secondary Header   | 2 bytes |
-/// | ISL Routing Header                 | 4 bytes |
+/// | ISL Routing Header                 | 2 bytes |
 /// | SRSPP Header                       | 3 bytes |
 /// | Payload                            | N bytes |
 /// +------------------------------------+---------+
@@ -134,6 +181,14 @@ impl SrsppDataPacket {
         + size_of::<IslRoutingTelecommandHeader>()
         + size_of::<SrsppHeader>();
 
+    /// Parse a data packet reference from a raw byte buffer.
+    pub fn parse(bytes: &[u8]) -> Result<&Self, SrsppPacketError> {
+        Self::ref_from_bytes(bytes).map_err(|_| SrsppPacketError::BufferTooSmall {
+            required: Self::HEADER_SIZE,
+            provided: bytes.len(),
+        })
+    }
+
     /// Maximum payload bytes that fit within the given MTU.
     pub const fn max_payload_size(mtu: usize) -> usize {
         mtu.saturating_sub(Self::HEADER_SIZE)
@@ -155,7 +210,7 @@ impl SrsppDataPacket {
 /// +------------------------------------+---------+
 /// | Space Packet Primary Header        | 6 bytes |
 /// | cFE Telecommand Secondary Header   | 2 bytes |
-/// | ISL Routing Header                 | 4 bytes |
+/// | ISL Routing Header                 | 2 bytes |
 /// | SRSPP Header                       | 3 bytes |
 /// | ACK Payload                        | 4 bytes |
 /// +------------------------------------+---------+
@@ -176,6 +231,22 @@ pub struct SrsppAckPacket {
 }
 
 impl SrsppAckPacket {
+    /// Parse an ACK packet reference from a raw byte buffer.
+    pub fn parse(bytes: &[u8]) -> Result<&Self, SrsppPacketError> {
+        if bytes.len() < size_of::<Self>() {
+            return Err(SrsppPacketError::BufferTooSmall {
+                required: size_of::<Self>(),
+                provided: bytes.len(),
+            });
+        }
+        Self::ref_from_bytes(&bytes[..size_of::<Self>()]).map_err(|_| {
+            SrsppPacketError::BufferTooSmall {
+                required: size_of::<Self>(),
+                provided: bytes.len(),
+            }
+        })
+    }
+
     /// Compute and set the cFE checksum over the entire packet.
     pub fn set_cfe_checksum(&mut self) {
         self.secondary.set_checksum(0);
@@ -200,8 +271,11 @@ pub enum SrsppPacketError {
         provided: usize,
     },
     /// Packet type byte is not a valid SRSPP type.
-    #[error("invalid SRSP packet type")]
-    InvalidPacketType,
+    #[error("invalid SRSPP packet type: {value:#04x}")]
+    InvalidPacketType {
+        /// The unrecognised packet-type byte.
+        value: u8,
+    },
     /// Payload exceeds the maximum allowed size.
     #[error("payload too large: maximum {max} bytes, provided {provided} bytes")]
     PayloadTooLarge {
@@ -222,8 +296,6 @@ impl SrsppDataPacket {
         target: Address,
         apid: Apid,
         function_code: u8,
-        message_id: u8,
-        action_code: u8,
         sequence_count: SequenceCount,
         sequence_flag: SequenceFlag,
         payload_len: usize,
@@ -231,12 +303,10 @@ impl SrsppDataPacket {
         let required_len = Self::HEADER_SIZE + payload_len;
         let provided_len = buffer.len();
 
-        let (packet, _) =
-            SrsppDataPacket::mut_from_prefix_with_elems(buffer, payload_len).map_err(|_| {
-                SrsppPacketError::BufferTooSmall {
-                    required: required_len,
-                    provided: provided_len,
-                }
+        let (packet, _) = SrsppDataPacket::mut_from_prefix_with_elems(buffer, payload_len)
+            .map_err(|_| SrsppPacketError::BufferTooSmall {
+                required: required_len,
+                provided: provided_len,
             })?;
 
         packet.primary.set_version(PacketVersion::VERSION_1);
@@ -258,8 +328,6 @@ impl SrsppDataPacket {
         packet.secondary.set_checksum(0);
 
         packet.isl_header.set_target(target);
-        packet.isl_header.set_message_id(message_id);
-        packet.isl_header.set_action_code(action_code);
 
         packet.srspp_header.set_source_address(source_address);
         packet.srspp_header.set_srspp_type(SrsppType::Data);
@@ -280,8 +348,6 @@ impl SrsppAckPacket {
         target: Address,
         apid: Apid,
         function_code: u8,
-        message_id: u8,
-        action_code: u8,
         sequence_count: SequenceCount,
         cumulative_ack: SequenceCount,
         selective_bitmap: u16,
@@ -313,8 +379,6 @@ impl SrsppAckPacket {
         packet.secondary.set_checksum(0);
 
         packet.isl_header.set_target(target);
-        packet.isl_header.set_message_id(message_id);
-        packet.isl_header.set_action_code(action_code);
 
         packet.srspp_header.set_source_address(source_address);
         packet.srspp_header.set_srspp_type(SrsppType::Ack);
@@ -325,44 +389,6 @@ impl SrsppAckPacket {
 
         Ok(packet)
     }
-}
-
-/// Parse the SRSPP packet type from a raw byte buffer.
-pub fn parse_srspp_type(bytes: &[u8]) -> Result<SrsppType, SrsppPacketError> {
-    let min_size = SrsppDataPacket::HEADER_SIZE;
-    if bytes.len() < min_size {
-        return Err(SrsppPacketError::BufferTooSmall {
-            required: min_size,
-            provided: bytes.len(),
-        });
-    }
-
-    let type_offset = size_of::<PrimaryHeader>()
-        + size_of::<TelecommandSecondaryHeader>()
-        + size_of::<IslRoutingTelecommandHeader>()
-        + size_of::<RawAddress>();
-    SrsppType::from_u8(bytes[type_offset]).ok_or(SrsppPacketError::InvalidPacketType)
-}
-
-/// Parse a data packet reference from a raw byte buffer.
-pub fn parse_data_packet(bytes: &[u8]) -> Result<&SrsppDataPacket, SrsppPacketError> {
-    SrsppDataPacket::ref_from_bytes(bytes).map_err(|_| SrsppPacketError::BufferTooSmall {
-        required: SrsppDataPacket::HEADER_SIZE,
-        provided: bytes.len(),
-    })
-}
-
-/// Parse an ACK packet reference from a raw byte buffer.
-pub fn parse_ack_packet(bytes: &[u8]) -> Result<&SrsppAckPacket, SrsppPacketError> {
-    if bytes.len() < size_of::<SrsppAckPacket>() {
-        return Err(SrsppPacketError::BufferTooSmall {
-            required: size_of::<SrsppAckPacket>(),
-            provided: bytes.len(),
-        });
-    }
-
-    SrsppAckPacket::ref_from_bytes(&bytes[..size_of::<SrsppAckPacket>()])
-        .map_err(|_| SrsppPacketError::InvalidPacketType)
 }
 
 #[cfg(test)]
@@ -389,8 +415,6 @@ mod tests {
             .target(target_address())
             .apid(apid)
             .function_code(0x10)
-            .message_id(0x01)
-            .action_code(0x20)
             .sequence_count(SequenceCount::from(7))
             .sequence_flag(SequenceFlag::Unsegmented)
             .payload_len(payload_data.len())
@@ -402,9 +426,10 @@ mod tests {
 
         let bytes = packet.as_bytes();
 
-        assert_eq!(parse_srspp_type(bytes).unwrap(), SrsppType::Data);
+        let header = SrsppPacket::parse(bytes).unwrap();
+        assert_eq!(header.srspp_type().unwrap(), SrsppType::Data);
 
-        let parsed = parse_data_packet(bytes).unwrap();
+        let parsed = SrsppDataPacket::parse(bytes).unwrap();
         assert_eq!(parsed.primary.apid(), apid);
         assert_eq!(parsed.primary.sequence_count().value(), 7);
         assert_eq!(parsed.primary.packet_type(), PacketType::Telecommand);
@@ -413,8 +438,6 @@ mod tests {
             SecondaryHeaderFlag::Present
         );
         assert_eq!(parsed.isl_header.target(), target_address());
-        assert_eq!(parsed.isl_header.message_id(), 0x01);
-        assert_eq!(parsed.isl_header.action_code(), 0x20);
         assert_eq!(parsed.secondary.function_code(), 0x10);
         assert_eq!(parsed.srspp_header.source_address(), source_address());
         assert_eq!(&parsed.payload, payload_data);
@@ -432,8 +455,6 @@ mod tests {
             .target(target_address())
             .apid(apid)
             .function_code(0x10)
-            .message_id(0x02)
-            .action_code(0x21)
             .sequence_count(SequenceCount::from(3))
             .cumulative_ack(SequenceCount::from(15))
             .selective_bitmap(0b1100)
@@ -442,13 +463,12 @@ mod tests {
 
         let bytes = packet.as_bytes();
 
-        assert_eq!(parse_srspp_type(bytes).unwrap(), SrsppType::Ack);
+        let header = SrsppPacket::parse(bytes).unwrap();
+        assert_eq!(header.srspp_type().unwrap(), SrsppType::Ack);
 
-        let parsed = parse_ack_packet(bytes).unwrap();
+        let parsed = SrsppAckPacket::parse(bytes).unwrap();
         assert_eq!(parsed.primary.apid(), apid);
         assert_eq!(parsed.isl_header.target(), target_address());
-        assert_eq!(parsed.isl_header.message_id(), 0x02);
-        assert_eq!(parsed.isl_header.action_code(), 0x21);
         assert_eq!(parsed.srspp_header.source_address(), source_address());
         assert_eq!(parsed.ack_payload.cumulative_ack().value(), 15);
         assert_eq!(parsed.ack_payload.selective_ack_bitmap(), 0b1100);
@@ -466,15 +486,16 @@ mod tests {
             .target(target_address())
             .apid(apid)
             .function_code(0)
-            .message_id(0)
-            .action_code(0)
             .sequence_count(SequenceCount::from(0))
             .sequence_flag(SequenceFlag::Unsegmented)
             .payload_len(10)
             .build()
             .unwrap();
 
-        assert_eq!(parse_srspp_type(&buffer).unwrap(), SrsppType::Data);
+        assert_eq!(
+            SrsppPacket::parse(&buffer).unwrap().srspp_type().unwrap(),
+            SrsppType::Data,
+        );
 
         SrsppAckPacket::builder()
             .buffer(&mut buffer)
@@ -482,14 +503,15 @@ mod tests {
             .target(target_address())
             .apid(apid)
             .function_code(0)
-            .message_id(0)
-            .action_code(0)
             .sequence_count(SequenceCount::from(0))
             .cumulative_ack(SequenceCount::from(0))
             .selective_bitmap(0)
             .build()
             .unwrap();
 
-        assert_eq!(parse_srspp_type(&buffer).unwrap(), SrsppType::Ack);
+        assert_eq!(
+            SrsppPacket::parse(&buffer).unwrap().srspp_type().unwrap(),
+            SrsppType::Ack,
+        );
     }
 }

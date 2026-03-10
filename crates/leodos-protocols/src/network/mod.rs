@@ -4,8 +4,8 @@ use core::future::Future;
 pub mod cfe;
 /// Inter-Satellite Link (ISL) addressing, routing, and gossip protocols.
 pub mod isl;
-/// A trivial network layer that passes data directly to the datalink.
-pub mod passthrough;
+/// A point-to-point network layer that forwards directly to the datalink.
+pub mod ptp;
 /// CCSDS Space Packet Protocol (SPP) definitions and utilities.
 pub mod spp;
 

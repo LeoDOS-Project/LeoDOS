@@ -7,7 +7,7 @@ use std::task::Poll;
 use leodos_protocols::datalink::link::asymmetric::AsymmetricLink;
 use leodos_protocols::datalink::link::{FrameReceiver, FrameSender};
 use leodos_protocols::datalink::{DataLinkReader, DataLinkWriter};
-use leodos_protocols::network::passthrough::PassThrough;
+use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::{NetworkReader, NetworkWriter};
 
 #[derive(Debug, Clone)]
@@ -129,7 +129,7 @@ fn asymmetric_link_recv() {
 }
 
 #[test]
-fn passthrough_send() {
+fn ptp_send() {
     futures::executor::block_on(async {
         let send_channel = MockChannel::new();
         let recv_channel = MockChannel::new();
@@ -138,10 +138,10 @@ fn passthrough_send() {
         let (_, receiver) = recv_channel.split();
 
         let link = AsymmetricLink::new(sender, receiver);
-        let mut passthrough = PassThrough::new(link);
+        let mut ptp = PointToPoint::new(link);
 
-        let test_data = b"PassThrough test";
-        passthrough.send(test_data).await.unwrap();
+        let test_data = b"PointToPoint test";
+        ptp.send(test_data).await.unwrap();
 
         let sent = send_channel.state.borrow_mut().queue.pop_front().unwrap();
         assert_eq!(&sent[..], test_data);
@@ -149,7 +149,7 @@ fn passthrough_send() {
 }
 
 #[test]
-fn passthrough_recv() {
+fn ptp_recv() {
     futures::executor::block_on(async {
         let send_channel = MockChannel::new();
         let recv_channel = MockChannel::new();
@@ -158,9 +158,9 @@ fn passthrough_recv() {
         let (_, receiver) = recv_channel.split();
 
         let link = AsymmetricLink::new(sender, receiver);
-        let mut passthrough = PassThrough::new(link);
+        let mut ptp = PointToPoint::new(link);
 
-        let test_data = b"PassThrough recv test";
+        let test_data = b"PointToPoint recv test";
         recv_channel
             .state
             .borrow_mut()
@@ -168,14 +168,14 @@ fn passthrough_recv() {
             .push_back(test_data.to_vec());
 
         let mut buffer = [0u8; 256];
-        let len = passthrough.recv(&mut buffer).await.unwrap();
+        let len = ptp.recv(&mut buffer).await.unwrap();
 
         assert_eq!(&buffer[..len], test_data);
     });
 }
 
 #[test]
-fn passthrough_into_inner() {
+fn ptp_into_inner() {
     let send_channel = MockChannel::new();
     let recv_channel = MockChannel::new();
 
@@ -183,7 +183,7 @@ fn passthrough_into_inner() {
     let (_, receiver) = recv_channel.split();
 
     let link = AsymmetricLink::new(sender, receiver);
-    let passthrough = PassThrough::new(link);
+    let ptp = PointToPoint::new(link);
 
-    let _recovered_link = passthrough.into_inner();
+    let _recovered_link = ptp.into_inner();
 }

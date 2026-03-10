@@ -11,8 +11,8 @@ use crate::transport::srspp::machine::receiver::ReceiverMachine;
 use crate::transport::srspp::machine::sender::SenderActions;
 use crate::transport::srspp::machine::sender::SenderConfig;
 use crate::transport::srspp::machine::sender::SenderMachine;
+use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
-use crate::transport::srspp::packet::parse_srspp_type;
 use crate::transport::srspp::rto::RtoPolicy;
 use heapless::index_map::FnvIndexMap;
 
@@ -208,7 +208,10 @@ where
             ..
         } = self;
         let packet = &recv_buffer[..len];
-        match parse_srspp_type(packet) {
+        let Ok(parsed) = SrsppPacket::parse(packet) else {
+            return Ok(());
+        };
+        match parsed.srspp_type() {
             Ok(SrsppType::Data) => {
                 drive_data(&node.receiver, packet, ack_buffer, link).await
             }

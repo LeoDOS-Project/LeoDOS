@@ -83,7 +83,7 @@ mod gf {
         if a == 0 || b == 0 {
             return 0;
         }
-        EXP[(LOG[a as usize] as usize) + (LOG[b as usize] as usize)]
+        exp(log(a) as usize + log(b) as usize)
     }
 
     /// a + b in GF(2^8) (XOR).

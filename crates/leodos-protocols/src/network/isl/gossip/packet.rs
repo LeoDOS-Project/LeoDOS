@@ -1,3 +1,4 @@
+use bon::bon;
 use zerocopy::FromBytes;
 use zerocopy::Immutable;
 use zerocopy::IntoBytes;
@@ -33,7 +34,7 @@ use crate::utils::validate_checksum_u8;
 /// |                                 |           |
 /// + -- Gossip Header -------------- | --------- |
 /// |                                 |           |
-/// | Originator Address              | 2 bytes   |
+/// | Origin Address                  | 2 bytes   |
 /// | From Address                    | 2 bytes   |
 /// | Service Area Min                | 1 byte    |
 /// | Service Area Max                | 1 byte    |
@@ -52,7 +53,8 @@ pub struct IslGossipTelecommand {
     pub primary: PrimaryHeader,
     /// CFE command secondary header.
     pub secondary: TelecommandSecondaryHeader,
-    pub(crate) gossip_header: IslGossipHeader,
+    /// ISL-specific gossip header.
+    pub gossip_header: IslGossipHeader,
     /// Variable-length gossip data payload.
     pub payload: [u8],
 }
@@ -69,30 +71,36 @@ impl core::fmt::Debug for IslGossipTelecommand {
 }
 
 /// A gossip epoch number used for duplicate detection.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout, Unaligned,
+)]
 #[repr(transparent)]
 pub struct Epoch(pub U16);
 
 /// The ISL-specific header for a gossip message.
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
-pub(crate) struct IslGossipHeader {
-    originator: RawAddress,
-    from_address: RawAddress,
+pub struct IslGossipHeader {
+    origin: RawAddress,
+    predecessor: RawAddress,
     pub(crate) service_area_min: u8,
     pub(crate) service_area_max: u8,
     epoch: Epoch,
-    action_code: u8,
 }
 
 /// An error that can occur when building or parsing a Gossip message.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum GossipMessageError {
     /// An error from the underlying CFE telecommand layer.
-    Cfe(TelecommandError),
+    #[error("CFE Telecommand error: {0}")]
+    Cfe(#[from] TelecommandError),
     /// The payload is too small to contain a gossip header.
+    #[error("Payload too small to contain a valid gossip header")]
     PayloadTooSmall,
     /// The payload exceeds the maximum allowed size.
+    #[error(
+        "Payload too large: maximum allowed is {max} bytes, but {provided} bytes were provided"
+    )]
     PayloadTooLarge {
         /// Maximum allowed payload size.
         max: usize,
@@ -101,62 +109,73 @@ pub enum GossipMessageError {
     },
 }
 
-impl From<TelecommandError> for GossipMessageError {
-    fn from(e: TelecommandError) -> Self {
-        GossipMessageError::Cfe(e)
-    }
-}
-
 impl IslGossipHeader {
     /// Address of the node that originated this gossip.
-    pub(crate) fn originator(&self) -> Address {
-        self.originator.parse()
+    pub fn origin(&self) -> Address {
+        self.origin.parse()
     }
 
-    pub(crate) fn set_originator(&mut self, addr: Address) {
-        self.originator = RawAddress::from(addr);
+    /// Sets the origin address in the gossip header.
+    pub fn set_origin(&mut self, addr: Address) {
+        self.origin = RawAddress::from(addr);
     }
 
     /// Address of the immediate sender (for routing — don't echo back).
-    pub(crate) fn from_address(&self) -> Address {
-        self.from_address.parse()
+    pub fn predecessor(&self) -> Address {
+        self.predecessor.parse()
     }
 
-    pub(crate) fn set_from_address(&mut self, addr: Address) {
-        self.from_address = RawAddress::from(addr);
+    /// Sets the from address in the gossip header.
+    pub fn set_predecessor(&mut self, addr: Address) {
+        self.predecessor = RawAddress::from(addr);
     }
 
     /// The unique sequence number for this piece of gossip, used for duplicate detection.
-    pub(crate) fn epoch(&self) -> Epoch {
+    pub fn epoch(&self) -> Epoch {
         self.epoch
     }
 
-    pub(crate) fn set_epoch(&mut self, epoch: Epoch) {
+    /// Sets the epoch number in the gossip header.
+    pub fn set_epoch(&mut self, epoch: Epoch) {
         self.epoch = epoch;
     }
 
-    /// The application-specific action code for the gossip message.
-    pub(crate) fn action_code(&self) -> u8 {
-        self.action_code
+    /// The maximum service area (in hops) for this gossip. Nodes with a service area
+    /// greater than this value should not forward the gossip further.
+    pub fn service_area_min(&self) -> u8 {
+        self.service_area_min
     }
 
-    pub(crate) fn set_action_code(&mut self, action_code: u8) {
-        self.action_code = action_code;
+    /// Sets the minimum service area in the gossip header.
+    pub fn set_service_area_min(&mut self, area: u8) {
+        self.service_area_min = area;
+    }
+
+    /// The maximum service area (in hops) for this gossip. Nodes with a service area
+    /// greater than this value should not forward the gossip further.
+    pub fn service_area_max(&self) -> u8 {
+        self.service_area_max
+    }
+
+    /// Sets the maximum service area in the gossip header.
+    pub fn set_service_area_max(&mut self, area: u8) {
+        self.service_area_max = area;
     }
 }
 
+#[bon]
 impl IslGossipTelecommand {
     /// Builder for creating a complete ISL Gossip message.
+    #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],
         apid: Apid,
         function_code: u8,
-        originator: Address,
-        from_address: Address,
+        origin: Address,
+        predecessor: Address,
         service_area_min: u8,
         service_area_max: u8,
         epoch: Epoch,
-        action_code: u8,
         payload_len: usize,
     ) -> Result<&'a mut Self, GossipMessageError> {
         if payload_len > u16::MAX as usize {
@@ -187,12 +206,11 @@ impl IslGossipTelecommand {
             })
         })?;
 
-        gossip_tc.gossip_header.set_originator(originator);
-        gossip_tc.gossip_header.set_from_address(from_address);
+        gossip_tc.gossip_header.set_origin(origin);
+        gossip_tc.gossip_header.set_predecessor(predecessor);
         gossip_tc.gossip_header.service_area_min = service_area_min;
         gossip_tc.gossip_header.service_area_max = service_area_max;
         gossip_tc.gossip_header.set_epoch(epoch);
-        gossip_tc.gossip_header.set_action_code(action_code);
 
         gossip_tc.set_cfe_checksum();
 

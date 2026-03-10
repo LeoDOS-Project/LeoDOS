@@ -39,10 +39,8 @@ use zerocopy::Unaligned;
 /// |                            |           |
 /// | -- ISL Header ------------ | --------- |
 /// |                            |           |
-/// | Message ID                 | 1 byte    |
 /// | Target Orbit               | 1 byte    |
 /// | Target Satellite           | 1 byte    |
-/// | Action Code                | 1 byte    |
 /// |                            |           |
 /// | -- Payload (Variable) ---- | --------- |
 /// |                            |           |
@@ -67,19 +65,20 @@ pub struct IslRoutingTelecommand {
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
 pub(crate) struct IslRoutingTelecommandHeader {
     target: RawAddress,
-    message_id: u8,
-    action_code: u8,
 }
 
 /// An error that can occur when building or parsing an ISL message.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum IslMessageError {
     /// An error occurred during the underlying CFE Telecommand construction.
-    Cfe(TelecommandError),
+    #[error("CFE Telecommand error: {0}")]
+    Cfe(#[from] TelecommandError),
     /// A received packet was expected to be an ISL message but its payload was
     /// too small to contain a valid `IslHeader`.
+    #[error("ISL message payload is too small to contain a valid ISL header")]
     PayloadTooSmall,
     /// The payload exceeds the maximum allowed size.
+    #[error("ISL message payload size {provided} exceeds maximum allowed {max}")]
     PayloadTooLarge {
         /// Maximum allowed payload size.
         max: usize,
@@ -88,45 +87,13 @@ pub enum IslMessageError {
     },
 }
 
-impl From<TelecommandError> for IslMessageError {
-    fn from(e: TelecommandError) -> Self {
-        IslMessageError::Cfe(e)
-    }
-}
-
-#[bon]
 impl IslRoutingTelecommandHeader {
-    #[builder]
-    pub(crate) fn new(message_id: u8, target: Address, action_code: u8) -> Self {
-        Self {
-            message_id,
-            target: RawAddress::from(target),
-            action_code,
-        }
-    }
-
-    pub(crate) fn target(&self) -> Address {
+    pub fn target(&self) -> Address {
         self.target.parse()
     }
 
-    pub(crate) fn set_target(&mut self, target: Address) {
+    pub fn set_target(&mut self, target: Address) {
         self.target = RawAddress::from(target);
-    }
-
-    pub(crate) fn message_id(&self) -> u8 {
-        self.message_id
-    }
-
-    pub(crate) fn set_message_id(&mut self, message_id: u8) {
-        self.message_id = message_id;
-    }
-
-    pub(crate) fn action_code(&self) -> u8 {
-        self.action_code
-    }
-
-    pub(crate) fn set_action_code(&mut self, action_code: u8) {
-        self.action_code = action_code;
     }
 }
 
@@ -138,9 +105,7 @@ impl IslRoutingTelecommand {
         buffer: &'a mut [u8],
         apid: Apid,
         function_code: u8,
-        message_id: u8,
         target: Address,
-        action_code: u8,
         payload_len: usize,
     ) -> Result<&'a mut Self, IslMessageError> {
         let tc = Telecommand::builder()
@@ -164,9 +129,7 @@ impl IslRoutingTelecommand {
             }
         })?;
 
-        isl_tc.isl_header.set_message_id(message_id);
         isl_tc.isl_header.set_target(target);
-        isl_tc.isl_header.set_action_code(action_code);
 
         isl_tc.set_cfe_checksum();
 

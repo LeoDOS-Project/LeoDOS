@@ -9,12 +9,11 @@ use crate::transport::srspp::machine::sender::SenderConfig;
 use crate::transport::srspp::machine::sender::SenderEvent;
 use crate::transport::srspp::machine::sender::SenderMachine;
 use crate::transport::srspp::packet::SrsppDataPacket;
+use crate::transport::srspp::packet::SrsppAckPacket;
+use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
-use crate::transport::srspp::packet::parse_ack_packet;
-use crate::transport::srspp::packet::parse_srspp_type;
 use crate::transport::srspp::rto::RtoPolicy;
 use std::collections::HashMap;
-use tokio::time::Duration;
 use tokio::time::Instant;
 
 use super::SrsppError;
@@ -131,8 +130,6 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, P: R
                     let source_address = cfg.source_address;
                     let apid = cfg.apid;
                     let function_code = cfg.function_code;
-                    let message_id = cfg.message_id;
-                    let action_code = cfg.action_code;
 
                     let packet_len =
                         if let Some(info) = self.machine.get_payload(*seq) {
@@ -142,8 +139,6 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, P: R
                                 .target(info.target)
                                 .apid(apid)
                                 .function_code(function_code)
-                                .message_id(message_id)
-                                .action_code(action_code)
                                 .sequence_count(*seq)
                                 .sequence_flag(info.flags)
                                 .payload_len(info.payload.len())
@@ -202,12 +197,14 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, P: R
 
     /// Parses an incoming packet and processes it if it is an ACK.
     async fn handle_incoming(&mut self, packet: &[u8]) -> Result<(), SrsppError> {
-        let srspp_type =
-            parse_srspp_type(packet).map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
+        let parsed = SrsppPacket::parse(packet)
+            .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
+        let srspp_type = parsed.srspp_type()
+            .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
         if srspp_type == SrsppType::Ack {
-            let ack =
-                parse_ack_packet(packet).map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
+            let ack = SrsppAckPacket::parse(packet)
+                .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
             self.machine.handle(
                 SenderEvent::AckReceived {

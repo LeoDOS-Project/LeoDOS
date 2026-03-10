@@ -8,9 +8,9 @@ use crate::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
 use crate::transport::srspp::machine::receiver::ReceiverEvent;
 use crate::transport::srspp::packet::SrsppAckPacket;
+use crate::transport::srspp::packet::SrsppDataPacket;
+use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
-use crate::transport::srspp::packet::parse_data_packet;
-use crate::transport::srspp::packet::parse_srspp_type;
 use tokio::time::Instant;
 
 use super::SrsppError;
@@ -30,10 +30,6 @@ pub struct SrsppReceiver<L: NetworkWriter + NetworkReader<Error = <L as NetworkW
     apid: Apid,
     /// Function code used in outgoing ACK packets.
     function_code: u8,
-    /// Message ID used in outgoing ACK packets.
-    message_id: u8,
-    /// Action code used in outgoing ACK packets.
-    action_code: u8,
     /// Receiver state machine handling reordering and reassembly.
     machine: R,
     /// Pending actions from the state machine.
@@ -61,15 +57,11 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: R
         let local_address = config.local_address;
         let apid = config.apid;
         let function_code = config.function_code;
-        let message_id = config.message_id;
-        let action_code = config.action_code;
         Self {
             link,
             local_address,
             apid,
             function_code,
-            message_id,
-            action_code,
             machine: R::new(config, remote_address),
             actions: ReceiverActions::new(),
             ack_timer: None,
@@ -163,11 +155,13 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: R
 
     /// Parses an incoming packet and processes it if it is a data packet.
     async fn handle_incoming(&mut self, packet: &[u8]) -> Result<(), SrsppError> {
-        let srspp_type =
-            parse_srspp_type(packet).map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
+        let parsed = SrsppPacket::parse(packet)
+            .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
+        let srspp_type = parsed.srspp_type()
+            .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
         if srspp_type == SrsppType::Data {
-            let data = parse_data_packet(packet)
+            let data = SrsppDataPacket::parse(packet)
                 .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
             self.machine.handle(
@@ -218,8 +212,6 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: R
                         .target(*destination)
                         .apid(self.apid)
                         .function_code(self.function_code)
-                        .message_id(self.message_id)
-                        .action_code(self.action_code)
                         .cumulative_ack(*cumulative_ack)
                         .sequence_count(SequenceCount::new())
                         .selective_bitmap(*selective_bitmap)

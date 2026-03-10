@@ -277,7 +277,6 @@ mod tests {
         let bits = [0b10110100u8];
         let n_bits = 8;
         let sps = 8;
-        let n_out = output_len(n_bits, sps);
         let mut oi = [0f32; 256];
         let mut oq = [0f32; 256];
         modulate_gmsk(&bits, n_bits, 0.5, sps, &mut oi, &mut oq);
@@ -299,7 +298,6 @@ mod tests {
         let bits = [0xDE, 0xAD, 0xBE, 0xEF];
         let n_bits = 32;
         let sps = 8;
-        let n_out = output_len(n_bits, sps);
         let mut oi = [0f32; 512];
         let mut oq = [0f32; 512];
         modulate_gmsk(&bits, n_bits, 0.3, sps, &mut oi, &mut oq);
@@ -321,7 +319,6 @@ mod tests {
         let bits = [0x00u8];
         let n_bits = 8;
         let sps = 8;
-        let n_out = output_len(n_bits, sps);
         let mut oi = [0f32; 256];
         let mut oq = [0f32; 256];
         modulate_gmsk(&bits, n_bits, 0.5, sps, &mut oi, &mut oq);
@@ -348,7 +345,6 @@ mod tests {
             let bits = [0xC3u8];
             let n_bits = 8;
             let sps = 8;
-            let n_out = output_len(n_bits, sps);
             let mut oi = [0f32; 256];
             let mut oq = [0f32; 256];
             modulate_gmsk(&bits, n_bits, bt, sps, &mut oi, &mut oq);

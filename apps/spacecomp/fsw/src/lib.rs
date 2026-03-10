@@ -188,8 +188,6 @@ pub extern "C" fn SPACECOMP_AppMain() {
             .source_address(address)
             .apid(apid)
             .function_code(0)
-            .message_id(0)
-            .action_code(0)
             .rto_ticks(RTO_MS)
             .max_retransmits(3)
             .header_overhead(SrsppDataPacket::HEADER_SIZE)
@@ -199,8 +197,6 @@ pub extern "C" fn SPACECOMP_AppMain() {
             .local_address(address)
             .apid(apid)
             .function_code(0)
-            .message_id(0)
-            .action_code(0)
             .immediate_ack(true)
             .ack_delay_ticks(100)
             .build();

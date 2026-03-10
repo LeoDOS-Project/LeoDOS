@@ -18,9 +18,9 @@ use crate::transport::srspp::machine::receiver::ReceiverConfig;
 use crate::transport::srspp::machine::receiver::ReceiverEvent;
 use crate::transport::srspp::machine::receiver::ReceiverMachine;
 use crate::transport::srspp::packet::SrsppAckPacket;
+use crate::transport::srspp::packet::SrsppDataPacket;
+use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
-use crate::transport::srspp::packet::parse_data_packet;
-use crate::transport::srspp::packet::parse_srspp_type;
 use heapless::index_map::FnvIndexMap;
 
 use super::Error;
@@ -67,8 +67,8 @@ pub(super) async fn drive_data<
     ack_buf: &mut [u8],
     link: &mut L,
 ) -> Result<(), Error<E>> {
-    if let Ok(SrsppType::Data) = parse_srspp_type(packet) {
-        if let Ok(data) = parse_data_packet(packet) {
+    if let Ok(SrsppType::Data) = SrsppPacket::parse(packet).and_then(|p| p.srspp_type()) {
+        if let Ok(data) = SrsppDataPacket::parse(packet) {
             let source_address = data.srspp_header.source_address();
             let seq = data.primary.sequence_count();
             let flags = data.primary.sequence_flag();
@@ -221,8 +221,6 @@ async fn drive_actions<
                 s.config.local_address,
                 s.config.apid,
                 s.config.function_code,
-                s.config.message_id,
-                s.config.action_code,
                 *destination,
                 *cumulative_ack,
                 *selective_bitmap,
@@ -252,8 +250,6 @@ async fn drive_actions<
         local_address,
         apid,
         function_code,
-        message_id,
-        action_code,
         destination,
         cumulative_ack,
         selective_bitmap,
@@ -265,8 +261,6 @@ async fn drive_actions<
             .target(destination)
             .apid(apid)
             .function_code(function_code)
-            .message_id(message_id)
-            .action_code(action_code)
             .cumulative_ack(cumulative_ack)
             .selective_bitmap(selective_bitmap)
             .sequence_count(SequenceCount::from(0))

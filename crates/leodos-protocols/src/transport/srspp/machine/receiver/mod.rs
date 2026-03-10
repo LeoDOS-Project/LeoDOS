@@ -1,30 +1,15 @@
 //! Receiver state machine for SRSPP.
-//!
-//! Three backends behind the same [`ReceiverBackend`] trait:
-//!
-//! | | Fast | Lite | Packed |
-//! |---|---|---|---|
-//! | OOO insert | O(1) | O(WIN) | O(1) |
-//! | Delivery | O(1) advance | O(REASM) shift | O(MSG) copy |
-//! | Per-segment use | MTU (fixed) | MTU (fixed) | payload len |
-//! | Static memory | WIN×MTU + REASM | REASM | BUF + REASM |
-//!
-//! [`ReceiverMachine`] is a type alias for [`PackedReceiver`].
 
+mod base;
 /// Shared data structures used by receiver backends.
 pub mod utils;
-mod shell;
 
-/// Fastest backend — O(1) insert and delivery.
-pub mod fast_receiver;
-/// Half-memory backend — single shared buffer.
-pub mod lite_receiver;
-/// Packed backend — efficient for small payloads.
-pub mod packed_receiver;
+/// Receiver backends with different performance and memory tradeoffs.
+pub mod backends;
 
-pub use fast_receiver::FastReceiver;
-pub use lite_receiver::LiteReceiver;
-pub use packed_receiver::PackedReceiver;
+pub use backends::fast::FastReceiver;
+pub use backends::lite::LiteReceiver;
+pub use backends::packed::PackedReceiver;
 
 use crate::network::isl::address::Address;
 use crate::network::spp::{Apid, SequenceCount, SequenceFlag};
@@ -149,8 +134,7 @@ pub enum ReceiverError {
 }
 
 /// Configuration for the receiver.
-#[derive(Debug, Clone)]
-#[derive(bon::Builder)]
+#[derive(Debug, Clone, bon::Builder)]
 pub struct ReceiverConfig {
     /// Local address of this receiver.
     pub local_address: Address,
@@ -158,10 +142,6 @@ pub struct ReceiverConfig {
     pub apid: Apid,
     /// cFE function code for outgoing ACK packets.
     pub function_code: u8,
-    /// ISL routing message ID for outgoing ACK packets.
-    pub message_id: u8,
-    /// ISL routing action code for outgoing ACK packets.
-    pub action_code: u8,
     /// If true, send ACKs immediately; otherwise use delayed ACKs.
     pub immediate_ack: bool,
     /// Delayed ACK timer duration in ticks.
@@ -175,19 +155,13 @@ pub struct ReceiverConfig {
 /// * `WIN` — maximum number of out-of-order packets to buffer
 /// * `BUF` — reorder slab capacity in bytes
 /// * `REASM` — maximum reassembled message size
-pub type ReceiverMachine<
-    const WIN: usize,
-    const BUF: usize,
-    const REASM: usize,
-> = PackedReceiver<WIN, BUF, REASM>;
+pub type ReceiverMachine<const WIN: usize, const BUF: usize, const REASM: usize> =
+    PackedReceiver<WIN, BUF, REASM>;
 
 /// Trait abstracting over receiver backends.
 pub trait ReceiverBackend: Sized {
     /// Create a new receiver for a specific remote sender.
-    fn new(
-        config: ReceiverConfig,
-        remote_address: Address,
-    ) -> Self;
+    fn new(config: ReceiverConfig, remote_address: Address) -> Self;
     /// Get the remote address.
     fn remote_address(&self) -> Address;
     /// Process an event and produce actions.
@@ -206,17 +180,14 @@ pub trait ReceiverBackend: Sized {
     fn message_len(&self) -> Option<usize>;
     /// Pass the pending message to `f` and mark it consumed.
     fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
-        where F: FnOnce(&[u8]) -> Ret;
+    where
+        F: FnOnce(&[u8]) -> Ret;
     /// Get the current expected sequence number.
     fn expected_seq(&self) -> SequenceCount;
 }
 
-impl<
-    const WIN: usize,
-    const MTU: usize,
-    const REASM: usize,
-    const TOTAL: usize,
-> ReceiverBackend for FastReceiver<WIN, MTU, REASM, TOTAL>
+impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize> ReceiverBackend
+    for FastReceiver<WIN, MTU, REASM, TOTAL>
 {
     fn new(config: ReceiverConfig, remote_address: Address) -> Self {
         Self::new(config, remote_address)
@@ -254,8 +225,8 @@ impl<
     }
 }
 
-impl<const REASM: usize, const WIN: usize, const MTU: usize>
-    ReceiverBackend for LiteReceiver<REASM, WIN, MTU>
+impl<const REASM: usize, const WIN: usize, const MTU: usize> ReceiverBackend
+    for LiteReceiver<REASM, WIN, MTU>
 {
     fn new(config: ReceiverConfig, remote_address: Address) -> Self {
         Self::new(config, remote_address)
@@ -293,8 +264,8 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize>
     }
 }
 
-impl<const WIN: usize, const BUF: usize, const REASM: usize>
-    ReceiverBackend for PackedReceiver<WIN, BUF, REASM>
+impl<const WIN: usize, const BUF: usize, const REASM: usize> ReceiverBackend
+    for PackedReceiver<WIN, BUF, REASM>
 {
     fn new(config: ReceiverConfig, remote_address: Address) -> Self {
         Self::new(config, remote_address)
@@ -349,8 +320,6 @@ mod tests {
             local_address: test_local_address(),
             apid: Apid::new(0x42).unwrap(),
             function_code: 0,
-            message_id: 0,
-            action_code: 0,
             immediate_ack: true,
             ack_delay_ticks: 20,
             progress_timeout_ticks: None,
@@ -362,8 +331,6 @@ mod tests {
             local_address: test_local_address(),
             apid: Apid::new(0x42).unwrap(),
             function_code: 0,
-            message_id: 0,
-            action_code: 0,
             immediate_ack: false,
             ack_delay_ticks: 20,
             progress_timeout_ticks: None,
@@ -375,8 +342,6 @@ mod tests {
             local_address: test_local_address(),
             apid: Apid::new(0x42).unwrap(),
             function_code: 0,
-            message_id: 0,
-            action_code: 0,
             immediate_ack: true,
             ack_delay_ticks: 20,
             progress_timeout_ticks: Some(ticks),
@@ -405,9 +370,10 @@ mod tests {
                         &mut a,
                     )
                     .unwrap();
-                    assert!(a.iter().any(
-                        |a| matches!(a, ReceiverAction::SendAck { .. })
-                    ));
+                    assert!(
+                        a.iter()
+                            .any(|a| matches!(a, ReceiverAction::SendAck { .. }))
+                    );
                 }
 
                 #[test]
@@ -423,16 +389,14 @@ mod tests {
                         &mut a,
                     )
                     .unwrap();
-                    assert!(a.iter().any(|a| matches!(
-                        a,
-                        ReceiverAction::StartAckTimer { ticks: 20 }
-                    )));
-                    assert!(!a
-                        .iter()
-                        .any(|a| matches!(
-                            a,
-                            ReceiverAction::SendAck { .. }
-                        )));
+                    assert!(
+                        a.iter()
+                            .any(|a| matches!(a, ReceiverAction::StartAckTimer { ticks: 20 }))
+                    );
+                    assert!(
+                        !a.iter()
+                            .any(|a| matches!(a, ReceiverAction::SendAck { .. }))
+                    );
                 }
 
                 #[test]
@@ -448,11 +412,11 @@ mod tests {
                         &mut a,
                     )
                     .unwrap();
-                    rx.handle(ReceiverEvent::AckTimeout, &mut a)
-                        .unwrap();
-                    assert!(a.iter().any(
-                        |a| matches!(a, ReceiverAction::SendAck { .. })
-                    ));
+                    rx.handle(ReceiverEvent::AckTimeout, &mut a).unwrap();
+                    assert!(
+                        a.iter()
+                            .any(|a| matches!(a, ReceiverAction::SendAck { .. }))
+                    );
                 }
 
                 #[test]
@@ -468,13 +432,8 @@ mod tests {
                         &mut a,
                     )
                     .unwrap();
-                    assert!(a
-                        .iter()
-                        .any(|a| matches!(a, ReceiverAction::MessageReady)));
-                    assert_eq!(
-                        rx.take_message().unwrap(),
-                        &[1, 2, 3, 4, 5]
-                    );
+                    assert!(a.iter().any(|a| matches!(a, ReceiverAction::MessageReady)));
+                    assert_eq!(rx.take_message().unwrap(), &[1, 2, 3, 4, 5]);
                 }
 
                 #[test]
@@ -495,8 +454,7 @@ mod tests {
 
                     let bmp = a.iter().find_map(|a| {
                         if let ReceiverAction::SendAck {
-                            selective_bitmap,
-                            ..
+                            selective_bitmap, ..
                         } = a
                         {
                             Some(*selective_bitmap)
@@ -518,9 +476,7 @@ mod tests {
 
                     let cnt = a
                         .iter()
-                        .filter(|a| {
-                            matches!(a, ReceiverAction::MessageReady)
-                        })
+                        .filter(|a| matches!(a, ReceiverAction::MessageReady))
                         .count();
                     assert_eq!(cnt, 2);
                     assert!(rx.has_message());
@@ -560,10 +516,7 @@ mod tests {
                     )
                     .unwrap();
                     assert!(rx.has_message());
-                    assert_eq!(
-                        rx.take_message().unwrap(),
-                        &[1, 2, 3, 4, 5, 6, 7, 8]
-                    );
+                    assert_eq!(rx.take_message().unwrap(), &[1, 2, 3, 4, 5, 6, 7, 8]);
                 }
 
                 #[test]
@@ -616,11 +569,7 @@ mod tests {
                     )
                     .unwrap();
                     assert!(!rx.has_message());
-                    rx.handle(
-                        ReceiverEvent::ProgressTimeout,
-                        &mut a,
-                    )
-                    .unwrap();
+                    rx.handle(ReceiverEvent::ProgressTimeout, &mut a).unwrap();
                     assert_eq!(rx.expected_seq().value(), 3);
                     assert!(rx.has_message());
                     assert_eq!(rx.take_message().unwrap(), &[3]);
@@ -649,22 +598,11 @@ mod tests {
                     )
                     .unwrap();
                     assert!(!rx.has_message());
-                    rx.handle(
-                        ReceiverEvent::ProgressTimeout,
-                        &mut a,
-                    )
-                    .unwrap();
+                    rx.handle(ReceiverEvent::ProgressTimeout, &mut a).unwrap();
                     assert!(!rx.has_message());
-                    rx.handle(
-                        ReceiverEvent::ProgressTimeout,
-                        &mut a,
-                    )
-                    .unwrap();
+                    rx.handle(ReceiverEvent::ProgressTimeout, &mut a).unwrap();
                     assert!(rx.has_message());
-                    assert_eq!(
-                        rx.take_message().unwrap(),
-                        &[10, 11]
-                    );
+                    assert_eq!(rx.take_message().unwrap(), &[10, 11]);
                     rx.handle(
                         ReceiverEvent::DataReceived {
                             seq: SequenceCount::from(4),
@@ -675,10 +613,7 @@ mod tests {
                     )
                     .unwrap();
                     assert!(rx.has_message());
-                    assert_eq!(
-                        rx.take_message().unwrap(),
-                        &[20, 21]
-                    );
+                    assert_eq!(rx.take_message().unwrap(), &[20, 21]);
                 }
 
                 #[test]
@@ -704,10 +639,10 @@ mod tests {
                         &mut a,
                     )
                     .unwrap();
-                    assert!(!a.iter().any(|a| matches!(
-                        a,
-                        ReceiverAction::StartProgressTimer { .. }
-                    )));
+                    assert!(
+                        !a.iter()
+                            .any(|a| matches!(a, ReceiverAction::StartProgressTimer { .. }))
+                    );
                 }
 
                 #[test]
@@ -723,12 +658,10 @@ mod tests {
                         &mut a,
                     )
                     .unwrap();
-                    assert!(a.iter().any(|a| matches!(
-                        a,
-                        ReceiverAction::StartProgressTimer {
-                            ticks: 50
-                        }
-                    )));
+                    assert!(
+                        a.iter()
+                            .any(|a| matches!(a, ReceiverAction::StartProgressTimer { ticks: 50 }))
+                    );
                     rx.handle(
                         ReceiverEvent::DataReceived {
                             seq: SequenceCount::from(0),
@@ -738,10 +671,10 @@ mod tests {
                         &mut a,
                     )
                     .unwrap();
-                    assert!(a.iter().any(|a| matches!(
-                        a,
-                        ReceiverAction::StopProgressTimer
-                    )));
+                    assert!(
+                        a.iter()
+                            .any(|a| matches!(a, ReceiverAction::StopProgressTimer))
+                    );
                 }
             }
         };

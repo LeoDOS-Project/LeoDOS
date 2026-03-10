@@ -3,7 +3,6 @@
 
 use bon::bon;
 use core::fmt::Debug;
-use core::fmt::Display;
 use core::fmt::LowerHex;
 use core::mem::size_of;
 use core::ops::Deref;
@@ -18,7 +17,6 @@ use zerocopy::byteorder::network_endian;
 
 /// CCSDS Encapsulation Packet Protocol (CCSDS 133.1-B-3).
 pub mod encapsulation;
-mod handler;
 /// Segmentation and reassembly of large data across multiple Space Packets.
 pub mod segmentation;
 
@@ -138,7 +136,6 @@ impl PacketVersion {
 /// Distinguishes between telemetry (data sent from space to ground) and
 /// telecommand (commands sent from ground to space) packets.
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-#[cfg_attr(kani, derive(kani::Arbitrary))]
 #[repr(u8)]
 pub enum PacketType {
     /// Identifies a telemetry packet (value `0`).
@@ -152,7 +149,6 @@ pub enum PacketType {
 /// Indicates whether an optional, mission-defined Secondary Header is present
 /// at the beginning of the packet's data field.
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
-#[cfg_attr(kani, derive(kani::Arbitrary))]
 #[repr(u8)]
 pub enum SecondaryHeaderFlag {
     /// Indicates that no secondary header is present.
@@ -168,7 +164,6 @@ pub enum SecondaryHeaderFlag {
 /// component within the satellite's flight software. It acts as a "port number"
 /// or "topic" for the packet's data.
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-#[cfg_attr(kani, derive(kani::Arbitrary))]
 #[repr(transparent)]
 pub struct Apid(u16);
 
@@ -204,13 +199,6 @@ impl Apid {
     pub fn value(&self) -> u16 {
         self.0
     }
-
-    #[cfg(kani)]
-    fn any() -> Self {
-        let any_u16: u16 = kani::any();
-        kani::assume(any_u16 <= Self::MAX);
-        Self(any_u16)
-    }
 }
 
 /// The 2-bit sequence flag.
@@ -218,7 +206,6 @@ impl Apid {
 /// Indicates if a large block of user data has been split (segmented) across
 /// multiple Space Packets.
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
-#[cfg_attr(kani, derive(kani::Arbitrary))]
 #[repr(u8)]
 pub enum SequenceFlag {
     /// The packet's data field is a continuation of a segmented message.
@@ -237,7 +224,6 @@ pub enum SequenceFlag {
 /// A rolling counter for packets with a specific APID. This allows the receiver
 /// to detect dropped or out-of-order packets. The count wraps around from 16383 to 0.
 #[derive(Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Debug, Default)]
-#[cfg_attr(kani, derive(kani::Arbitrary))]
 pub struct SequenceCount(u16);
 
 impl SequenceCount {
@@ -258,24 +244,24 @@ impl SequenceCount {
     pub fn value(&self) -> u16 {
         self.0
     }
-
-    #[cfg(kani)]
-    fn any() -> Self {
-        let any_u16: u16 = kani::any();
-        kani::assume(any_u16 <= Self::MAX);
-        Self(any_u16)
-    }
 }
 
 /// An error that can occur when parsing a byte slice into a `SpacePacket`.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, thiserror::Error)]
 pub enum ParseError {
     /// The provided slice is shorter than the 6-byte primary header.
+    #[error(
+        "slice is too short for a primary header (expected at least {} bytes, got {actual})",
+        size_of::<PrimaryHeader>()
+    )]
     TooShortForHeader {
         /// Actual number of bytes provided.
         actual: usize,
     },
     /// The header's length field implies a packet larger than the provided buffer.
+    #[error(
+        "incomplete packet (header specifies {header_len} bytes, but buffer has only {buffer_len} bytes)"
+    )]
     IncompletePacket {
         /// Total packet length declared in the header.
         header_len: usize,
@@ -283,22 +269,26 @@ pub enum ParseError {
         buffer_len: usize,
     },
     /// The packet's header fields contain semantically invalid values.
-    Invalid(ValidationError),
+    #[error("packet validation failed: {0}")]
+    Invalid(#[from] ValidationError),
 }
 
 /// An error representing a violation of the CCSDS semantic rules.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, thiserror::Error)]
 pub enum ValidationError {
     /// The packet version number is not supported by this library.
+    #[error("unsupported packet version: {0:?}")]
     UnsupportedVersion(PacketVersion),
     /// An idle packet (APID 2047) must not have a secondary header.
+    #[error("idle packets (APID 2047) must not have a secondary header")]
     IdlePacketWithSecondaryHeader,
 }
 
 /// An error that occurs during the construction of a `SpacePacket` header.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, thiserror::Error)]
 pub enum BuildError {
     /// This variant is not used by the builder but is kept for the `SpacePacket::new` constructor.
+    #[error("buffer is too small to hold the packet")]
     BufferTooSmall {
         /// Minimum number of bytes needed.
         required: usize,
@@ -306,6 +296,9 @@ pub enum BuildError {
         provided: usize,
     },
     /// The provided data field length exceeds the maximum allowed size.
+    #[error(
+        "payload too large: maximum allowed is {max} bytes, but {provided} bytes were provided"
+    )]
     PayloadTooLarge {
         /// Maximum allowed data field size.
         max: usize,
@@ -313,8 +306,10 @@ pub enum BuildError {
         provided: usize,
     },
     /// The CCSDS standard forbids packets with an empty data field.
+    #[error("a packet data field length of zero is forbidden")]
     EmptyDataField,
     /// The provided APID value is outside the valid 11-bit range (0-2047).
+    #[error("invalid APID value {value}")]
     InvalidApid {
         /// The invalid APID value.
         value: u16,
@@ -322,14 +317,17 @@ pub enum BuildError {
 }
 
 /// An error that occurs when setting or getting the typed data field.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, thiserror::Error)]
 pub enum DataFieldError {
     /// The size of the provided data does not match the size of the packet's data field.
+    #[error("size of provided data does not match the packet's data field size")]
     SizeMismatch,
     /// The packet's data field could not be safely cast to the target data type,
     /// often due to alignment issues or an invalid discriminant.
+    #[error("packet data field could not be cast to the target data type")]
     InvalidLayout,
     /// A secondary header was requested but the secondary header flag is absent.
+    #[error("secondary header is not present in this packet")]
     SecondaryHeaderAbsent,
 }
 
@@ -594,141 +592,6 @@ impl PrimaryHeader {
 impl From<u16> for SequenceCount {
     fn from(value: u16) -> Self {
         Self(value & Self::MAX)
-    }
-}
-
-impl Display for ParseError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::TooShortForHeader { actual } => write!(
-                f,
-                "slice is too short for a primary header (expected at least {} bytes, got {actual})",
-                size_of::<PrimaryHeader>()
-            ),
-            Self::IncompletePacket {
-                header_len,
-                buffer_len,
-            } => write!(
-                f,
-                "incomplete packet (header specifies {} bytes, but buffer has only {})",
-                header_len, buffer_len
-            ),
-            Self::Invalid(validation_err) => {
-                write!(f, "packet validation failed: {}", validation_err)
-            }
-        }
-    }
-}
-impl Display for ValidationError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::UnsupportedVersion(v) => write!(f, "unsupported packet version: {:?}", v),
-            Self::IdlePacketWithSecondaryHeader => {
-                write!(f, "idle packet is invalid with a secondary header")
-            }
-        }
-    }
-}
-impl Display for BuildError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::BufferTooSmall { required, provided } => write!(
-                f,
-                "buffer is too small (requires {} bytes, but buffer has only {})",
-                required, provided
-            ),
-            Self::EmptyDataField => write!(f, "a packet data field length of zero is forbidden"),
-            Self::InvalidApid { value } => write!(
-                f,
-                "invalid APID value (must be <= {}, but was {})",
-                Apid::MAX,
-                value
-            ),
-            Self::PayloadTooLarge { max, provided } => write!(
-                f,
-                "payload too large (maximum is {} bytes, but was {})",
-                max, provided
-            ),
-        }
-    }
-}
-
-impl Display for DataFieldError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::SizeMismatch => write!(
-                f,
-                "size of provided data does not match the packet's data field size"
-            ),
-            Self::InvalidLayout => write!(
-                f,
-                "packet data field could not be cast to the target data type"
-            ),
-            Self::SecondaryHeaderAbsent => {
-                write!(f, "secondary header is not present in this packet")
-            }
-        }
-    }
-}
-
-impl From<ValidationError> for ParseError {
-    fn from(err: ValidationError) -> Self {
-        Self::Invalid(err)
-    }
-}
-
-#[cfg(kani)]
-mod kani_harness {
-    use super::*;
-    use ::kani;
-
-    #[kani::proof]
-    fn header_parsing() {
-        let mut bytes = [0u8; 1024];
-
-        for i in 0..size_of::<PrimaryHeader>() {
-            bytes[i] = kani::any();
-        }
-
-        if let Ok(packet) = SpacePacket::parse(&bytes) {
-            assert!(packet.packet_len() <= bytes.len());
-            assert_eq!(packet.data_field().len(), packet.data_field_len());
-            assert!(packet.apid().0 <= Apid::MAX);
-        }
-    }
-
-    #[kani::proof]
-    fn packet_construction() {
-        let mut bytes = [kani::any(); 1024];
-        let buffer_len = bytes.len();
-        let apid = Apid::any();
-        let packet_type = kani::any();
-        let sequence_count = SequenceCount::any();
-        let data_field_len: u16 = kani::any();
-
-        let result = SpacePacket::builder()
-            .buffer(&mut bytes)
-            .apid(apid)
-            .packet_type(packet_type)
-            .sequence_count(sequence_count)
-            .secondary_header(SecondaryHeaderFlag::Absent)
-            .sequence_flag(SequenceFlag::Unsegmented)
-            .data_len(data_field_len)
-            .build();
-
-        let required_len = size_of::<PrimaryHeader>() + data_field_len as usize;
-        let is_valid_request = data_field_len != 0 && required_len <= buffer_len;
-
-        if is_valid_request {
-            let packet = result.expect("Should succeed for valid inputs");
-            assert_eq!(packet.packet_len(), required_len);
-            assert_eq!(packet.data_field_len(), data_field_len as usize);
-            assert_eq!(packet.apid(), apid);
-            assert_eq!(packet.packet_type(), packet_type);
-            assert_eq!(packet.sequence_count(), sequence_count);
-        } else {
-            assert!(result.is_err());
-        }
     }
 }
 

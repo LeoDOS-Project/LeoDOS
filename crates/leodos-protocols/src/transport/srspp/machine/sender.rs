@@ -155,10 +155,6 @@ pub struct SenderConfig {
     pub apid: Apid,
     /// cFE function code for outgoing packets.
     pub function_code: u8,
-    /// ISL routing message ID.
-    pub message_id: u8,
-    /// ISL routing action code.
-    pub action_code: u8,
     /// Retransmission timeout in ticks.
     pub rto_ticks: u32,
     /// Maximum number of retransmission attempts per packet.
@@ -584,8 +580,6 @@ mod tests {
             source_address: Address::satellite(1, 5),
             apid: Apid::new(0x42).unwrap(),
             function_code: 0,
-            message_id: 0,
-            action_code: 0,
             rto_ticks: 100,
             max_retransmits: 3,
             header_overhead: SrsppDataPacket::HEADER_SIZE,

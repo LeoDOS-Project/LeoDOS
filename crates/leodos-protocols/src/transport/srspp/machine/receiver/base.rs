@@ -4,7 +4,7 @@ use crate::network::spp::SequenceCount;
 use super::{ReceiverAction, ReceiverActions, ReceiverConfig};
 
 /// Shared receiver logic for ACK generation, sequencing, and timers.
-pub struct ReceiverShell {
+pub struct ReceiverBase {
     /// Receiver configuration parameters.
     config: ReceiverConfig,
     /// Address of the remote sender.
@@ -19,8 +19,8 @@ pub struct ReceiverShell {
     ack_timer_running: bool,
 }
 
-impl ReceiverShell {
-    /// Create a new receiver shell for the given remote sender.
+impl ReceiverBase {
+    /// Create a new receiver core for the given remote sender.
     pub fn new(config: ReceiverConfig, remote_address: Address) -> Self {
         Self {
             config,
@@ -48,6 +48,7 @@ impl ReceiverShell {
     }
 
     /// Returns a reference to the receiver configuration.
+    #[allow(dead_code)]
     pub fn config(&self) -> &ReceiverConfig {
         &self.config
     }
