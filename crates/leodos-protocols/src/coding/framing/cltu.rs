@@ -107,7 +107,7 @@ mod bch {
         table
     }
 
-    const LOOKUP_TABLE: [u8; 256] = generate_lookup_table();
+    static LOOKUP_TABLE: [u8; 256] = generate_lookup_table();
 
     /// Computes the (63, 56) BCH parity byte as defined in
     /// CCSDS 231.0-B-4.
