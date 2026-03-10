@@ -10,7 +10,11 @@ pub mod randomizer;
 pub mod crc;
 mod checksum;
 
+use core::convert::Infallible;
 use core::future::Future;
+
+/// Coding pipeline that composes randomizer, FEC, and framer.
+pub mod pipeline;
 
 // ── Layer boundary traits ──────────────────────────────────────
 
@@ -18,7 +22,7 @@ use core::future::Future;
 /// to the physical layer.
 pub trait CodingWriter {
     /// Error type for write operations.
-    type Error;
+    type Error: core::error::Error;
     /// Encodes and writes a transfer frame.
     fn write(&mut self, frame: &[u8]) -> impl Future<Output = Result<(), Self::Error>>;
 }
@@ -27,7 +31,7 @@ pub trait CodingWriter {
 /// returns the transfer frame.
 pub trait CodingReader {
     /// Error type for read operations.
-    type Error;
+    type Error: core::error::Error;
     /// Reads and decodes a transfer frame into `buffer`.
     fn read(&mut self, buffer: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>>;
 }
@@ -80,4 +84,56 @@ pub trait Decompressor {
     type Error;
     /// Decompresses `input` into `output`.
     fn decompress(&self, input: &[u8], output: &mut [u8]) -> Result<usize, Self::Error>;
+}
+
+// ── No-op types ──────────────────────────────────────────────
+
+/// No-op randomizer that passes data through unchanged.
+pub struct NoRandomizer;
+
+impl randomizer::Randomizer for NoRandomizer {
+    fn apply(&self, _buffer: &mut [u8]) {}
+    fn table(&self) -> &[u8] {
+        &[]
+    }
+}
+
+/// No-op FEC that passes data through unchanged.
+pub struct NoFec;
+
+impl FecEncoder for NoFec {
+    type Error = Infallible;
+    fn encode(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
+        let len = data.len();
+        output[..len].copy_from_slice(data);
+        Ok(len)
+    }
+}
+
+impl FecDecoder for NoFec {
+    type Error = Infallible;
+    fn decode(&self, data: &mut [u8]) -> Result<usize, Self::Error> {
+        Ok(data.len())
+    }
+}
+
+/// No-op framer that passes data through unchanged.
+pub struct NoFramer;
+
+impl Framer for NoFramer {
+    type Error = Infallible;
+    fn frame(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
+        let len = data.len();
+        output[..len].copy_from_slice(data);
+        Ok(len)
+    }
+}
+
+impl Deframer for NoFramer {
+    type Error = Infallible;
+    fn deframe(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error> {
+        let len = data.len();
+        output[..len].copy_from_slice(data);
+        Ok(len)
+    }
 }

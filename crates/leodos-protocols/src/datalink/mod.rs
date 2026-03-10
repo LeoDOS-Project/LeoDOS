@@ -17,20 +17,20 @@ pub mod uslp;
 
 /// Send direction of the data link layer.
 pub trait DataLinkWriter {
-    /// Error type for send operations.
+    /// Error type for write operations.
     type Error: core::error::Error;
 
-    /// Send data over the link.
-    fn send(&mut self, data: &[u8]) -> impl Future<Output = Result<(), Self::Error>>;
+    /// Write data over the link.
+    fn write(&mut self, data: &[u8]) -> impl Future<Output = Result<(), Self::Error>>;
 }
 
 /// Receive direction of the data link layer.
 pub trait DataLinkReader {
-    /// Error type for receive operations.
+    /// Error type for read operations.
     type Error: core::error::Error;
 
-    /// Receive data from the link into `buffer`.
-    fn recv(&mut self, buffer: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>>;
+    /// Read data from the link into `buffer`.
+    fn read(&mut self, buffer: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>>;
 }
 
 // ── Group traits ───────────────────────────────────────────────
@@ -62,17 +62,17 @@ pub trait SecurityProcessor {
 }
 
 /// COP-1 sender (FOP-1) state machine interface.
-pub trait ReliabilitySender {
+pub trait ReliabilityWriter {
     /// Action to take after processing a frame.
     type Action;
     /// Processes an outgoing frame through the reliability layer.
-    fn send(&mut self, frame: &[u8]) -> Self::Action;
+    fn write(&mut self, frame: &[u8]) -> Self::Action;
 }
 
 /// COP-1 receiver (FARM-1) state machine interface.
-pub trait ReliabilityReceiver {
+pub trait ReliabilityReader {
     /// Action to take after processing a frame.
     type Action;
     /// Processes an incoming frame through the reliability layer.
-    fn receive(&mut self, frame: &[u8]) -> Self::Action;
+    fn read(&mut self, frame: &[u8]) -> Self::Action;
 }

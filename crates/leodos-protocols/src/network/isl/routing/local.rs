@@ -139,7 +139,7 @@ pub struct LocalRouterHandle<'a, const QUEUE: usize, const MTU: usize> {
 impl<'a, const QUEUE: usize, const MTU: usize> DataLinkWriter for LocalRouterHandle<'a, QUEUE, MTU> {
     type Error = LocalLinkError;
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         poll_fn(|_cx| {
             let mut state = self.channel.state.borrow_mut();
 
@@ -167,7 +167,7 @@ impl<'a, const QUEUE: usize, const MTU: usize> DataLinkWriter for LocalRouterHan
 impl<'a, const QUEUE: usize, const MTU: usize> DataLinkReader for LocalRouterHandle<'a, QUEUE, MTU> {
     type Error = LocalLinkError;
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         poll_fn(|_cx| {
             let mut state = self.channel.state.borrow_mut();
 

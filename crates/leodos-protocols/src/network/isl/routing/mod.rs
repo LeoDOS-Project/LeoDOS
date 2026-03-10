@@ -139,12 +139,12 @@ where
         >,
         Direction,
     ) {
-        let n = self.north.recv(north_buffer).fuse();
-        let s = self.south.recv(south_buffer).fuse();
-        let e = self.east.recv(east_buffer).fuse();
-        let w = self.west.recv(west_buffer).fuse();
-        let g = self.ground.recv(ground_buffer).fuse();
-        let l = self.local.recv(local_buffer).fuse();
+        let n = self.north.read(north_buffer).fuse();
+        let s = self.south.read(south_buffer).fuse();
+        let e = self.east.read(east_buffer).fuse();
+        let w = self.west.read(west_buffer).fuse();
+        let g = self.ground.read(ground_buffer).fuse();
+        let l = self.local.read(local_buffer).fuse();
         pin_utils::pin_mut!(n, s, e, w, g, l);
         futures::select_biased! {
             len = n => (len.map_err(Error::North), Direction::North),
@@ -213,12 +213,12 @@ where
         let target = packet.isl_header.target();
         let packet = packet.as_bytes();
         match self.next_hop(target) {
-            Direction::North => self.north.send(&packet).await.map_err(Error::North)?,
-            Direction::South => self.south.send(&packet).await.map_err(Error::South)?,
-            Direction::East => self.east.send(&packet).await.map_err(Error::East)?,
-            Direction::West => self.west.send(&packet).await.map_err(Error::West)?,
-            Direction::Ground => self.ground.send(&packet).await.map_err(Error::Ground)?,
-            Direction::Local => self.local.send(&packet).await.map_err(Error::Local)?,
+            Direction::North => self.north.write(&packet).await.map_err(Error::North)?,
+            Direction::South => self.south.write(&packet).await.map_err(Error::South)?,
+            Direction::East => self.east.write(&packet).await.map_err(Error::East)?,
+            Direction::West => self.west.write(&packet).await.map_err(Error::West)?,
+            Direction::Ground => self.ground.write(&packet).await.map_err(Error::Ground)?,
+            Direction::Local => self.local.write(&packet).await.map_err(Error::Local)?,
         }
         Ok(())
     }

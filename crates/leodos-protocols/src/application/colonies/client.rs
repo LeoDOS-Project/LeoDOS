@@ -102,7 +102,7 @@ where
         self.seq_count.increment();
 
         self.transport
-            .send(packet.as_bytes())
+            .write(packet.as_bytes())
             .await
             .map_err(ClientError::Transport)
     }
@@ -111,7 +111,7 @@ where
     pub async fn receive(&mut self, buffer: &mut [u8]) -> Result<usize, ClientError<<T as DataLinkWriter>::Error>> {
         let len = self
             .transport
-            .recv(buffer)
+            .read(buffer)
             .await
             .map_err(ClientError::Transport)?;
 

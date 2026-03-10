@@ -134,7 +134,7 @@ where
 
         self.client
             .transport
-            .send(packet.as_bytes())
+            .write(packet.as_bytes())
             .await
             .map_err(ClientError::Transport)
     }

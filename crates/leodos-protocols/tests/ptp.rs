@@ -6,6 +6,7 @@ use std::task::Poll;
 
 use leodos_protocols::datalink::link::asymmetric::AsymmetricLink;
 use leodos_protocols::datalink::link::{FrameReceiver, FrameSender};
+#[allow(unused_imports)]
 use leodos_protocols::datalink::{DataLinkReader, DataLinkWriter};
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::{NetworkReader, NetworkWriter};
@@ -96,7 +97,7 @@ fn asymmetric_link_send() {
         let mut link = AsymmetricLink::new(sender, receiver);
 
         let test_data = b"Test message";
-        link.send(test_data).await.unwrap();
+        link.write(test_data).await.unwrap();
 
         let sent = send_channel.state.borrow_mut().queue.pop_front().unwrap();
         assert_eq!(&sent[..], test_data);
@@ -122,7 +123,7 @@ fn asymmetric_link_recv() {
             .push_back(test_data.to_vec());
 
         let mut buffer = [0u8; 256];
-        let len = link.recv(&mut buffer).await.unwrap();
+        let len = link.read(&mut buffer).await.unwrap();
 
         assert_eq!(&buffer[..len], test_data);
     });

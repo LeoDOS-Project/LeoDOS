@@ -12,7 +12,7 @@ fn local_channel_app_to_router() {
         app.send(test_data).await.unwrap();
 
         let mut buffer = [0u8; 256];
-        let len = router.recv(&mut buffer).await.unwrap();
+        let len = router.read(&mut buffer).await.unwrap();
 
         assert_eq!(&buffer[..len], test_data);
     });
@@ -25,7 +25,7 @@ fn local_channel_router_to_app() {
         let (mut app, mut router) = channel.split();
 
         let test_data = b"Hello from router to app!";
-        router.send(test_data).await.unwrap();
+        router.write(test_data).await.unwrap();
 
         let mut buffer = [0u8; 256];
         let len = app.recv(&mut buffer).await.unwrap();
@@ -44,11 +44,11 @@ fn local_channel_bidirectional() {
         let router_msg = b"Message from router";
 
         app.send(app_msg).await.unwrap();
-        router.send(router_msg).await.unwrap();
+        router.write(router_msg).await.unwrap();
 
         let mut buffer = [0u8; 256];
 
-        let len = router.recv(&mut buffer).await.unwrap();
+        let len = router.read(&mut buffer).await.unwrap();
         assert_eq!(&buffer[..len], app_msg);
 
         let len = app.recv(&mut buffer).await.unwrap();
@@ -69,7 +69,7 @@ fn local_channel_multiple_messages() {
 
         let mut buffer = [0u8; 256];
         for i in 0..5 {
-            let len = router.recv(&mut buffer).await.unwrap();
+            let len = router.read(&mut buffer).await.unwrap();
             let expected = format!("Message {}", i);
             assert_eq!(&buffer[..len], expected.as_bytes());
         }

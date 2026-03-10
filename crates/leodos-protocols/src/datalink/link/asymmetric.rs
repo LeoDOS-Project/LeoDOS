@@ -46,7 +46,7 @@ where
 {
     type Error = AsymmetricLinkError<S::Error, R::Error>;
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         self.sender.send(data).await.map_err(AsymmetricLinkError::Send)
     }
 }
@@ -58,7 +58,7 @@ where
 {
     type Error = AsymmetricLinkError<S::Error, R::Error>;
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         self.receiver
             .recv(buffer)
             .await

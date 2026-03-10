@@ -55,3 +55,6 @@
 [submodule "libs/nos3"]
 	path = libs/nos3
 	url = https://github.com/nasa/nos3.git
+[submodule "libs/42"]
+	path = libs/42
+	url = https://github.com/ericstoneking/42.git
