@@ -2,9 +2,9 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use leodos_protocols::datalink::link::tc::{TcConfig, TcSenderChannel};
-use leodos_protocols::datalink::link::tm::{TmConfig, TmSenderChannel};
-use leodos_protocols::datalink::link::FrameSender;
+use leodos_protocols::coding::CodingWriter;
+use leodos_protocols::datalink::link::tc::{TcConfig, TcWriteChannel};
+use leodos_protocols::datalink::link::tm::{TmConfig, TmWriteChannel};
 use leodos_protocols::datalink::sdlp::tc::{BypassFlag, ControlFlag};
 
 #[derive(Debug, Clone)]
@@ -35,8 +35,8 @@ impl MockChannel {
         }
     }
 
-    fn sender(&self) -> MockSender {
-        MockSender {
+    fn writer(&self) -> MockWriter {
+        MockWriter {
             state: self.state.clone(),
         }
     }
@@ -46,14 +46,14 @@ impl MockChannel {
     }
 }
 
-struct MockSender {
+struct MockWriter {
     state: Rc<RefCell<MockChannelState>>,
 }
 
-impl FrameSender for MockSender {
+impl CodingWriter for MockWriter {
     type Error = MockError;
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         self.state.borrow_mut().queue.push_back(data.to_vec());
         Ok(())
     }
@@ -71,10 +71,11 @@ fn tc_sender_builds_valid_frame() {
         };
 
         let mock = MockChannel::new();
-        let sender = mock.sender();
+        let writer = mock.writer();
 
-        let channel: TcSenderChannel<MockError, 8, 512> = TcSenderChannel::new(config);
-        let (mut handle, mut driver) = channel.split(sender);
+        let channel: TcWriteChannel<MockError, 8, 512> =
+            TcWriteChannel::new(config);
+        let (mut handle, mut driver) = channel.split(writer);
 
         let test_data = b"Hello, TC!";
         handle.send(test_data).await.unwrap();
@@ -103,9 +104,10 @@ fn tc_round_trip() {
 
         let wire = MockChannel::new();
 
-        let send_channel: TcSenderChannel<MockError, 8, 512> =
-            TcSenderChannel::new(config.clone());
-        let (mut send_handle, mut send_driver) = send_channel.split(wire.sender());
+        let send_channel: TcWriteChannel<MockError, 8, 512> =
+            TcWriteChannel::new(config.clone());
+        let (mut send_handle, mut send_driver) =
+            send_channel.split(wire.writer());
 
         let test_data = b"Hello, TC round trip!";
         send_handle.send(test_data).await.unwrap();
@@ -130,14 +132,14 @@ fn tm_sender_builds_valid_frame() {
             scid: 42,
             vcid: 1,
             max_frame_data_len: 256,
-            randomize: false,
         };
 
         let mock = MockChannel::new();
-        let sender = mock.sender();
+        let writer = mock.writer();
 
-        let channel: TmSenderChannel<MockError, 8, 512> = TmSenderChannel::new(config);
-        let (mut handle, mut driver) = channel.split(sender);
+        let channel: TmWriteChannel<MockError, 8, 512> =
+            TmWriteChannel::new(config);
+        let (mut handle, mut driver) = channel.split(writer);
 
         let test_data = b"Hello, TM!";
         handle.send(test_data).await.unwrap();
@@ -151,81 +153,34 @@ fn tm_sender_builds_valid_frame() {
 }
 
 #[test]
-fn tm_round_trip_without_randomization() {
+fn tm_round_trip() {
     futures::executor::block_on(async {
         let config = TmConfig {
             scid: 42,
             vcid: 1,
             max_frame_data_len: 256,
-            randomize: false,
         };
 
         let wire = MockChannel::new();
 
-        let send_channel: TmSenderChannel<MockError, 8, 512> =
-            TmSenderChannel::new(config.clone());
-        let (mut send_handle, mut send_driver) = send_channel.split(wire.sender());
+        let send_channel: TmWriteChannel<MockError, 8, 512> =
+            TmWriteChannel::new(config.clone());
+        let (mut send_handle, mut send_driver) =
+            send_channel.split(wire.writer());
 
-        let test_data = b"Hello, TM without randomization!";
+        let test_data = b"Hello, TM round trip!";
         send_handle.send(test_data).await.unwrap();
         send_handle.close();
         send_driver.run().await.unwrap();
 
         let sent_frame = wire.pop_front().unwrap();
 
-        let mut output_buffer = [0u8; 512];
-        let frame = leodos_protocols::datalink::sdlp::tm::TelemetryTransferFrame::parse(
-            &sent_frame,
-            &mut output_buffer,
-            &NoOpRandomizer,
-        )
-        .unwrap();
+        // Since no coding pipeline was used (MockWriter passes
+        // through), the frame is not randomized.
+        let frame =
+            leodos_protocols::datalink::sdlp::tm::TelemetryTransferFrame::parse_raw(&sent_frame)
+                .unwrap();
 
         assert_eq!(frame.data_field(), test_data);
     });
-}
-
-#[test]
-fn tm_round_trip_with_randomization() {
-    futures::executor::block_on(async {
-        let config = TmConfig {
-            scid: 42,
-            vcid: 1,
-            max_frame_data_len: 256,
-            randomize: true,
-        };
-
-        let wire = MockChannel::new();
-
-        let send_channel: TmSenderChannel<MockError, 8, 512> =
-            TmSenderChannel::new(config.clone());
-        let (mut send_handle, mut send_driver) = send_channel.split(wire.sender());
-
-        let test_data = b"Hello, TM with randomization!";
-        send_handle.send(test_data).await.unwrap();
-        send_handle.close();
-        send_driver.run().await.unwrap();
-
-        let sent_frame = wire.pop_front().unwrap();
-
-        let mut output_buffer = [0u8; 512];
-        let randomizer = leodos_protocols::coding::randomizer::Tm255Randomizer::new();
-        let frame = leodos_protocols::datalink::sdlp::tm::TelemetryTransferFrame::parse(
-            &sent_frame,
-            &mut output_buffer,
-            &randomizer,
-        )
-        .unwrap();
-
-        assert_eq!(frame.data_field(), test_data);
-    });
-}
-
-struct NoOpRandomizer;
-
-impl leodos_protocols::coding::randomizer::Randomizer for NoOpRandomizer {
-    fn apply(&self, _data: &mut [u8]) {}
-    fn table(&self) -> &[u8] {
-        &[]
-    }
 }

@@ -4,8 +4,7 @@ use core::task::Poll;
 
 use heapless::Deque;
 
-use super::{FrameReceiver, FrameSender};
-use crate::coding::randomizer::{Randomizer, Tm255Randomizer};
+use crate::coding::{CodingReader, CodingWriter};
 use crate::datalink::sdlp::tm::TelemetryTransferFrame;
 
 /// Configuration for a Telemetry link channel.
@@ -17,8 +16,6 @@ pub struct TmConfig {
     pub vcid: u8,
     /// Maximum data field length in bytes.
     pub max_frame_data_len: usize,
-    /// Whether to apply CCSDS pseudo-randomization.
-    pub randomize: bool,
 }
 
 /// Errors that can occur during TM link operations.
@@ -55,7 +52,7 @@ struct PendingPacket<const MTU: usize> {
     len: usize,
 }
 
-struct TmSenderState<E, const QUEUE: usize, const MTU: usize> {
+struct TmWriteState<E, const QUEUE: usize, const MTU: usize> {
     config: TmConfig,
     mc_frame_count: u8,
     vc_frame_count: u8,
@@ -64,16 +61,17 @@ struct TmSenderState<E, const QUEUE: usize, const MTU: usize> {
     closed: bool,
 }
 
-/// Shared state channel for the TM sender, split into handle and driver.
-pub struct TmSenderChannel<E, const QUEUE: usize, const MTU: usize> {
-    state: RefCell<TmSenderState<E, QUEUE, MTU>>,
+/// Shared state channel for the TM writer, split into handle
+/// and driver.
+pub struct TmWriteChannel<E, const QUEUE: usize, const MTU: usize> {
+    state: RefCell<TmWriteState<E, QUEUE, MTU>>,
 }
 
-impl<E: Clone, const QUEUE: usize, const MTU: usize> TmSenderChannel<E, QUEUE, MTU> {
-    /// Creates a new TM sender channel with the given configuration.
+impl<E: Clone, const QUEUE: usize, const MTU: usize> TmWriteChannel<E, QUEUE, MTU> {
+    /// Creates a new TM write channel with the given configuration.
     pub fn new(config: TmConfig) -> Self {
         Self {
-            state: RefCell::new(TmSenderState {
+            state: RefCell::new(TmWriteState {
                 config,
                 mc_frame_count: 0,
                 vc_frame_count: 0,
@@ -84,32 +82,32 @@ impl<E: Clone, const QUEUE: usize, const MTU: usize> TmSenderChannel<E, QUEUE, M
         }
     }
 
-    /// Splits the channel into a handle for sending and a driver for processing.
-    pub fn split<W: FrameSender<Error = E>>(
+    /// Splits the channel into a handle for enqueuing and a driver
+    /// for processing.
+    pub fn split<W: CodingWriter<Error = E>>(
         &self,
         writer: W,
     ) -> (
-        TmSenderHandle<'_, E, QUEUE, MTU>,
-        TmSenderDriver<'_, W, E, QUEUE, MTU>,
+        TmWriteHandle<'_, E, QUEUE, MTU>,
+        TmWriteDriver<'_, W, E, QUEUE, MTU>,
     ) {
         (
-            TmSenderHandle { channel: self },
-            TmSenderDriver {
+            TmWriteHandle { channel: self },
+            TmWriteDriver {
                 writer,
                 channel: self,
                 frame_buffer: [0u8; MTU],
-                randomizer: Tm255Randomizer::new(),
             },
         )
     }
 }
 
 /// User-facing handle for enqueuing TM frames to send.
-pub struct TmSenderHandle<'a, E, const QUEUE: usize, const MTU: usize> {
-    channel: &'a TmSenderChannel<E, QUEUE, MTU>,
+pub struct TmWriteHandle<'a, E, const QUEUE: usize, const MTU: usize> {
+    channel: &'a TmWriteChannel<E, QUEUE, MTU>,
 }
 
-impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TmSenderHandle<'a, E, QUEUE, MTU> {
+impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TmWriteHandle<'a, E, QUEUE, MTU> {
     /// Signals that no more data will be sent on this channel.
     pub fn close(&mut self) {
         self.channel.state.borrow_mut().closed = true;
@@ -119,14 +117,10 @@ impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TmSenderHandle<'a, E, Q
     pub fn is_empty(&self) -> bool {
         self.channel.state.borrow().pending.is_empty()
     }
-}
 
-impl<'a, E: Clone + core::error::Error, const QUEUE: usize, const MTU: usize> FrameSender
-    for TmSenderHandle<'a, E, QUEUE, MTU>
-{
-    type Error = TmError<E>;
-
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    /// Enqueues data to be sent as a TM frame, waiting if
+    /// the queue is full.
+    pub async fn send(&mut self, data: &[u8]) -> Result<(), TmError<E>> {
         poll_fn(|_cx| {
             let mut state = self.channel.state.borrow_mut();
 
@@ -159,20 +153,21 @@ impl<'a, E: Clone + core::error::Error, const QUEUE: usize, const MTU: usize> Fr
     }
 }
 
-/// Background driver that dequeues pending packets and writes TM frames.
-pub struct TmSenderDriver<'a, W, E, const QUEUE: usize, const MTU: usize> {
+/// Background driver that dequeues pending packets and writes TM
+/// frames through the coding pipeline.
+pub struct TmWriteDriver<'a, W, E, const QUEUE: usize, const MTU: usize> {
     writer: W,
-    channel: &'a TmSenderChannel<E, QUEUE, MTU>,
+    channel: &'a TmWriteChannel<E, QUEUE, MTU>,
     frame_buffer: [u8; MTU],
-    randomizer: Tm255Randomizer,
 }
 
-impl<'a, W: FrameSender, E: Clone, const QUEUE: usize, const MTU: usize>
-    TmSenderDriver<'a, W, E, QUEUE, MTU>
+impl<'a, W: CodingWriter, E: Clone, const QUEUE: usize, const MTU: usize>
+    TmWriteDriver<'a, W, E, QUEUE, MTU>
 where
     W::Error: Into<E>,
 {
-    /// Runs the send loop, processing queued packets until the channel is closed.
+    /// Runs the send loop, processing queued packets until the
+    /// channel is closed.
     pub async fn run(&mut self) -> Result<(), TmError<E>> {
         loop {
             let packet = {
@@ -226,12 +221,8 @@ where
 
         frame.data_field_mut().copy_from_slice(data);
 
-        if config.randomize {
-            self.randomizer.apply(&mut self.frame_buffer[..total_len]);
-        }
-
         self.writer
-            .send(&self.frame_buffer[..total_len])
+            .write(&self.frame_buffer[..total_len])
             .await
             .map_err(|e| TmError::Link(e.into()))?;
 
@@ -239,24 +230,23 @@ where
     }
 }
 
-struct TmReceiverState<E, const QUEUE: usize, const MTU: usize> {
-    config: TmConfig,
+struct TmReadState<E, const QUEUE: usize, const MTU: usize> {
     received: Deque<PendingPacket<MTU>, QUEUE>,
     error: Option<TmError<E>>,
     closed: bool,
 }
 
-/// Shared state channel for the TM receiver, split into handle and driver.
-pub struct TmReceiverChannel<E, const QUEUE: usize, const MTU: usize> {
-    state: RefCell<TmReceiverState<E, QUEUE, MTU>>,
+/// Shared state channel for the TM reader, split into handle
+/// and driver.
+pub struct TmReadChannel<E, const QUEUE: usize, const MTU: usize> {
+    state: RefCell<TmReadState<E, QUEUE, MTU>>,
 }
 
-impl<E: Clone, const QUEUE: usize, const MTU: usize> TmReceiverChannel<E, QUEUE, MTU> {
-    /// Creates a new TM receiver channel with the given configuration.
-    pub fn new(config: TmConfig) -> Self {
+impl<E: Clone, const QUEUE: usize, const MTU: usize> TmReadChannel<E, QUEUE, MTU> {
+    /// Creates a new TM read channel.
+    pub fn new() -> Self {
         Self {
-            state: RefCell::new(TmReceiverState {
-                config,
+            state: RefCell::new(TmReadState {
                 received: Deque::new(),
                 error: None,
                 closed: false,
@@ -264,34 +254,34 @@ impl<E: Clone, const QUEUE: usize, const MTU: usize> TmReceiverChannel<E, QUEUE,
         }
     }
 
-    /// Splits the channel into a handle for receiving and a driver for processing.
-    pub fn split<R: FrameReceiver<Error = E>>(
+    /// Splits the channel into a handle for reading and a driver
+    /// for processing.
+    pub fn split<R: CodingReader<Error = E>>(
         &self,
         reader: R,
     ) -> (
-        TmReceiverHandle<'_, E, QUEUE, MTU>,
-        TmReceiverDriver<'_, R, E, QUEUE, MTU>,
+        TmReadHandle<'_, E, QUEUE, MTU>,
+        TmReadDriver<'_, R, E, QUEUE, MTU>,
     ) {
         (
-            TmReceiverHandle { channel: self },
-            TmReceiverDriver {
+            TmReadHandle { channel: self },
+            TmReadDriver {
                 reader,
                 channel: self,
                 frame_buffer: [0u8; MTU],
-                derandomize_buffer: [0u8; MTU],
-                randomizer: Tm255Randomizer::new(),
             },
         )
     }
 }
 
 /// User-facing handle for receiving TM frame data.
-pub struct TmReceiverHandle<'a, E, const QUEUE: usize, const MTU: usize> {
-    channel: &'a TmReceiverChannel<E, QUEUE, MTU>,
+pub struct TmReadHandle<'a, E, const QUEUE: usize, const MTU: usize> {
+    channel: &'a TmReadChannel<E, QUEUE, MTU>,
 }
 
-impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TmReceiverHandle<'a, E, QUEUE, MTU> {
-    /// Signals that no more data should be received on this channel.
+impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TmReadHandle<'a, E, QUEUE, MTU> {
+    /// Signals that no more data should be received on this
+    /// channel.
     pub fn close(&mut self) {
         self.channel.state.borrow_mut().closed = true;
     }
@@ -300,14 +290,10 @@ impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TmReceiverHandle<'a, E,
     pub fn has_data(&self) -> bool {
         !self.channel.state.borrow().received.is_empty()
     }
-}
 
-impl<'a, E: Clone + core::error::Error, const QUEUE: usize, const MTU: usize> FrameReceiver
-    for TmReceiverHandle<'a, E, QUEUE, MTU>
-{
-    type Error = TmError<E>;
-
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    /// Receives TM data into the buffer, waiting if no data is
+    /// available.
+    pub async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, TmError<E>> {
         poll_fn(|_cx| {
             let mut state = self.channel.state.borrow_mut();
 
@@ -331,21 +317,21 @@ impl<'a, E: Clone + core::error::Error, const QUEUE: usize, const MTU: usize> Fr
     }
 }
 
-/// Background driver that reads TM frames and enqueues parsed data.
-pub struct TmReceiverDriver<'a, R, E, const QUEUE: usize, const MTU: usize> {
+/// Background driver that reads TM frames from the coding
+/// pipeline and enqueues parsed data.
+pub struct TmReadDriver<'a, R, E, const QUEUE: usize, const MTU: usize> {
     reader: R,
-    channel: &'a TmReceiverChannel<E, QUEUE, MTU>,
+    channel: &'a TmReadChannel<E, QUEUE, MTU>,
     frame_buffer: [u8; MTU],
-    derandomize_buffer: [u8; MTU],
-    randomizer: Tm255Randomizer,
 }
 
-impl<'a, R: FrameReceiver, E: Clone, const QUEUE: usize, const MTU: usize>
-    TmReceiverDriver<'a, R, E, QUEUE, MTU>
+impl<'a, R: CodingReader, E: Clone, const QUEUE: usize, const MTU: usize>
+    TmReadDriver<'a, R, E, QUEUE, MTU>
 where
     R::Error: Into<E>,
 {
-    /// Runs the receive loop, reading frames until the channel is closed.
+    /// Runs the receive loop, reading frames until the channel is
+    /// closed.
     pub async fn run(&mut self) -> Result<(), TmError<E>> {
         loop {
             if self.channel.state.borrow().closed {
@@ -354,7 +340,7 @@ where
 
             let len = self
                 .reader
-                .recv(&mut self.frame_buffer)
+                .read(&mut self.frame_buffer)
                 .await
                 .map_err(|e| TmError::Link(e.into()))?;
 
@@ -362,17 +348,10 @@ where
                 continue;
             }
 
-            let should_derandomize = self.channel.state.borrow().config.randomize;
-
-            let frame = TelemetryTransferFrame::parse(
-                &self.frame_buffer[..len],
-                &mut self.derandomize_buffer,
-                &OptionalRandomizer {
-                    inner: &self.randomizer,
-                    enabled: should_derandomize,
-                },
-            )
-            .map_err(|_| TmError::InvalidFrame)?;
+            // Parse the raw frame (no derandomization here — the
+            // CodingReader pipeline already handled it).
+            let frame = TelemetryTransferFrame::parse_raw(&self.frame_buffer[..len])
+                .map_err(|_| TmError::InvalidFrame)?;
 
             let data_field = frame.data_field();
 
@@ -389,22 +368,5 @@ where
             packet.data[..data_field.len()].copy_from_slice(data_field);
             state.received.push_back(packet).ok();
         }
-    }
-}
-
-struct OptionalRandomizer<'a> {
-    inner: &'a Tm255Randomizer,
-    enabled: bool,
-}
-
-impl Randomizer for OptionalRandomizer<'_> {
-    fn apply(&self, data: &mut [u8]) {
-        if self.enabled {
-            self.inner.apply(data);
-        }
-    }
-
-    fn table(&self) -> &[u8] {
-        self.inner.table()
     }
 }

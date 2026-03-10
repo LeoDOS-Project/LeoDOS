@@ -4,7 +4,7 @@ use core::task::Poll;
 
 use heapless::Deque;
 
-use super::{FrameReceiver, FrameSender};
+use crate::coding::{CodingReader, CodingWriter};
 use crate::datalink::sdlp::tc::{BypassFlag, ControlFlag, TelecommandTransferFrame};
 
 /// Configuration for a Telecommand link channel.
@@ -56,7 +56,7 @@ struct PendingPacket<const MTU: usize> {
     len: usize,
 }
 
-struct TcSenderState<E, const QUEUE: usize, const MTU: usize> {
+struct TcWriteState<E, const QUEUE: usize, const MTU: usize> {
     config: TcConfig,
     sequence: u8,
     pending: Deque<PendingPacket<MTU>, QUEUE>,
@@ -64,16 +64,17 @@ struct TcSenderState<E, const QUEUE: usize, const MTU: usize> {
     closed: bool,
 }
 
-/// Shared state channel for the TC sender, split into handle and driver.
-pub struct TcSenderChannel<E, const QUEUE: usize, const MTU: usize> {
-    state: RefCell<TcSenderState<E, QUEUE, MTU>>,
+/// Shared state channel for the TC writer, split into handle
+/// and driver.
+pub struct TcWriteChannel<E, const QUEUE: usize, const MTU: usize> {
+    state: RefCell<TcWriteState<E, QUEUE, MTU>>,
 }
 
-impl<E: Clone, const QUEUE: usize, const MTU: usize> TcSenderChannel<E, QUEUE, MTU> {
-    /// Creates a new TC sender channel with the given configuration.
+impl<E: Clone, const QUEUE: usize, const MTU: usize> TcWriteChannel<E, QUEUE, MTU> {
+    /// Creates a new TC write channel with the given configuration.
     pub fn new(config: TcConfig) -> Self {
         Self {
-            state: RefCell::new(TcSenderState {
+            state: RefCell::new(TcWriteState {
                 config,
                 sequence: 0,
                 pending: Deque::new(),
@@ -83,17 +84,18 @@ impl<E: Clone, const QUEUE: usize, const MTU: usize> TcSenderChannel<E, QUEUE, M
         }
     }
 
-    /// Splits the channel into a handle for sending and a driver for processing.
-    pub fn split<W: FrameSender<Error = E>>(
+    /// Splits the channel into a handle for enqueuing and a driver
+    /// for processing.
+    pub fn split<W: CodingWriter<Error = E>>(
         &self,
         writer: W,
     ) -> (
-        TcSenderHandle<'_, E, QUEUE, MTU>,
-        TcSenderDriver<'_, W, E, QUEUE, MTU>,
+        TcWriteHandle<'_, E, QUEUE, MTU>,
+        TcWriteDriver<'_, W, E, QUEUE, MTU>,
     ) {
         (
-            TcSenderHandle { channel: self },
-            TcSenderDriver {
+            TcWriteHandle { channel: self },
+            TcWriteDriver {
                 writer,
                 channel: self,
                 frame_buffer: [0u8; MTU],
@@ -103,12 +105,13 @@ impl<E: Clone, const QUEUE: usize, const MTU: usize> TcSenderChannel<E, QUEUE, M
 }
 
 /// User-facing handle for enqueuing TC frames to send.
-pub struct TcSenderHandle<'a, E, const QUEUE: usize, const MTU: usize> {
-    channel: &'a TcSenderChannel<E, QUEUE, MTU>,
+pub struct TcWriteHandle<'a, E, const QUEUE: usize, const MTU: usize> {
+    channel: &'a TcWriteChannel<E, QUEUE, MTU>,
 }
 
-impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TcSenderHandle<'a, E, QUEUE, MTU> {
-    /// Enqueues data to be sent as a TC frame, waiting if the queue is full.
+impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TcWriteHandle<'a, E, QUEUE, MTU> {
+    /// Enqueues data to be sent as a TC frame, waiting if the
+    /// queue is full.
     pub async fn send(&mut self, data: &[u8]) -> Result<(), TcError<E>> {
         poll_fn(|_cx| {
             let mut state = self.channel.state.borrow_mut();
@@ -152,29 +155,21 @@ impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TcSenderHandle<'a, E, Q
     }
 }
 
-impl<'a, E: Clone + core::error::Error, const QUEUE: usize, const MTU: usize> FrameSender
-    for TcSenderHandle<'a, E, QUEUE, MTU>
-{
-    type Error = TcError<E>;
-
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        TcSenderHandle::send(self, data).await
-    }
-}
-
-/// Background driver that dequeues pending packets and writes TC frames.
-pub struct TcSenderDriver<'a, W, E, const QUEUE: usize, const MTU: usize> {
+/// Background driver that dequeues pending packets and writes TC
+/// frames through the coding pipeline.
+pub struct TcWriteDriver<'a, W, E, const QUEUE: usize, const MTU: usize> {
     writer: W,
-    channel: &'a TcSenderChannel<E, QUEUE, MTU>,
+    channel: &'a TcWriteChannel<E, QUEUE, MTU>,
     frame_buffer: [u8; MTU],
 }
 
-impl<'a, W: FrameSender, E: Clone, const QUEUE: usize, const MTU: usize>
-    TcSenderDriver<'a, W, E, QUEUE, MTU>
+impl<'a, W: CodingWriter, E: Clone, const QUEUE: usize, const MTU: usize>
+    TcWriteDriver<'a, W, E, QUEUE, MTU>
 where
     W::Error: Into<E>,
 {
-    /// Runs the send loop, processing queued packets until the channel is closed.
+    /// Runs the send loop, processing queued packets until the
+    /// channel is closed.
     pub async fn run(&mut self) -> Result<(), TcError<E>> {
         loop {
             let packet = {
@@ -226,7 +221,7 @@ where
 
         let frame_len = frame.frame_len();
         self.writer
-            .send(&self.frame_buffer[..frame_len])
+            .write(&self.frame_buffer[..frame_len])
             .await
             .map_err(|e| TcError::Link(e.into()))?;
 
@@ -234,22 +229,23 @@ where
     }
 }
 
-struct TcReceiverState<E, const QUEUE: usize, const MTU: usize> {
+struct TcReadState<E, const QUEUE: usize, const MTU: usize> {
     received: Deque<PendingPacket<MTU>, QUEUE>,
     error: Option<TcError<E>>,
     closed: bool,
 }
 
-/// Shared state channel for the TC receiver, split into handle and driver.
-pub struct TcReceiverChannel<E, const QUEUE: usize, const MTU: usize> {
-    state: RefCell<TcReceiverState<E, QUEUE, MTU>>,
+/// Shared state channel for the TC reader, split into handle
+/// and driver.
+pub struct TcReadChannel<E, const QUEUE: usize, const MTU: usize> {
+    state: RefCell<TcReadState<E, QUEUE, MTU>>,
 }
 
-impl<E: Clone, const QUEUE: usize, const MTU: usize> TcReceiverChannel<E, QUEUE, MTU> {
-    /// Creates a new TC receiver channel.
+impl<E: Clone, const QUEUE: usize, const MTU: usize> TcReadChannel<E, QUEUE, MTU> {
+    /// Creates a new TC read channel.
     pub fn new() -> Self {
         Self {
-            state: RefCell::new(TcReceiverState {
+            state: RefCell::new(TcReadState {
                 received: Deque::new(),
                 error: None,
                 closed: false,
@@ -257,17 +253,18 @@ impl<E: Clone, const QUEUE: usize, const MTU: usize> TcReceiverChannel<E, QUEUE,
         }
     }
 
-    /// Splits the channel into a handle for receiving and a driver for processing.
-    pub fn split<R: FrameReceiver<Error = E>>(
+    /// Splits the channel into a handle for reading and a driver
+    /// for processing.
+    pub fn split<R: CodingReader<Error = E>>(
         &self,
         reader: R,
     ) -> (
-        TcReceiverHandle<'_, E, QUEUE, MTU>,
-        TcReceiverDriver<'_, R, E, QUEUE, MTU>,
+        TcReadHandle<'_, E, QUEUE, MTU>,
+        TcReadDriver<'_, R, E, QUEUE, MTU>,
     ) {
         (
-            TcReceiverHandle { channel: self },
-            TcReceiverDriver {
+            TcReadHandle { channel: self },
+            TcReadDriver {
                 reader,
                 channel: self,
                 frame_buffer: [0u8; MTU],
@@ -277,12 +274,13 @@ impl<E: Clone, const QUEUE: usize, const MTU: usize> TcReceiverChannel<E, QUEUE,
 }
 
 /// User-facing handle for receiving TC frame data.
-pub struct TcReceiverHandle<'a, E, const QUEUE: usize, const MTU: usize> {
-    channel: &'a TcReceiverChannel<E, QUEUE, MTU>,
+pub struct TcReadHandle<'a, E, const QUEUE: usize, const MTU: usize> {
+    channel: &'a TcReadChannel<E, QUEUE, MTU>,
 }
 
-impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TcReceiverHandle<'a, E, QUEUE, MTU> {
-    /// Signals that no more data should be received on this channel.
+impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TcReadHandle<'a, E, QUEUE, MTU> {
+    /// Signals that no more data should be received on this
+    /// channel.
     pub fn close(&mut self) {
         self.channel.state.borrow_mut().closed = true;
     }
@@ -291,14 +289,10 @@ impl<'a, E: Clone, const QUEUE: usize, const MTU: usize> TcReceiverHandle<'a, E,
     pub fn has_data(&self) -> bool {
         !self.channel.state.borrow().received.is_empty()
     }
-}
 
-impl<'a, E: Clone + core::error::Error, const QUEUE: usize, const MTU: usize> FrameReceiver
-    for TcReceiverHandle<'a, E, QUEUE, MTU>
-{
-    type Error = TcError<E>;
-
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    /// Receives TC data into the buffer, waiting if no data is
+    /// available.
+    pub async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, TcError<E>> {
         poll_fn(|_cx| {
             let mut state = self.channel.state.borrow_mut();
 
@@ -322,19 +316,21 @@ impl<'a, E: Clone + core::error::Error, const QUEUE: usize, const MTU: usize> Fr
     }
 }
 
-/// Background driver that reads TC frames and enqueues parsed data.
-pub struct TcReceiverDriver<'a, R, E, const QUEUE: usize, const MTU: usize> {
+/// Background driver that reads TC frames from the coding
+/// pipeline and enqueues parsed data.
+pub struct TcReadDriver<'a, R, E, const QUEUE: usize, const MTU: usize> {
     reader: R,
-    channel: &'a TcReceiverChannel<E, QUEUE, MTU>,
+    channel: &'a TcReadChannel<E, QUEUE, MTU>,
     frame_buffer: [u8; MTU],
 }
 
-impl<'a, R: FrameReceiver, E: Clone, const QUEUE: usize, const MTU: usize>
-    TcReceiverDriver<'a, R, E, QUEUE, MTU>
+impl<'a, R: CodingReader, E: Clone, const QUEUE: usize, const MTU: usize>
+    TcReadDriver<'a, R, E, QUEUE, MTU>
 where
     R::Error: Into<E>,
 {
-    /// Runs the receive loop, reading frames until the channel is closed.
+    /// Runs the receive loop, reading frames until the channel is
+    /// closed.
     pub async fn run(&mut self) -> Result<(), TcError<E>> {
         loop {
             if self.channel.state.borrow().closed {
@@ -343,7 +339,7 @@ where
 
             let len = self
                 .reader
-                .recv(&mut self.frame_buffer)
+                .read(&mut self.frame_buffer)
                 .await
                 .map_err(|e| TcError::Link(e.into()))?;
 

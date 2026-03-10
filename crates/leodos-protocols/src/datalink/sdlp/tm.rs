@@ -150,6 +150,18 @@ impl TelemetryTransferFrame {
             .map_err(|_| ParseError::InvalidBufferLength)
     }
 
+    /// Parses a transfer frame without applying derandomization.
+    ///
+    /// Use this when the coding pipeline has already handled
+    /// derandomization.
+    pub fn parse_raw(bytes: &[u8]) -> Result<&TelemetryTransferFrame, ParseError> {
+        if bytes.len() < Self::HEADER_SIZE {
+            return Err(ParseError::TooShortForHeader);
+        }
+        TelemetryTransferFrame::ref_from_bytes(bytes)
+            .map_err(|_| ParseError::InvalidBufferLength)
+    }
+
     /// Returns a reference to the frame's header.
     pub fn header(&self) -> &TelemetryTransferFrameHeader {
         &self.header
