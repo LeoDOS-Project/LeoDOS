@@ -13,6 +13,8 @@ use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
 use zerocopy::byteorder::network_endian::U16;
 
+use super::super::{FrameReader, FrameWriter};
+use crate::network::spp::SpacePacket;
 use crate::utils::get_bits_u16;
 use crate::utils::set_bits_u16;
 
@@ -160,7 +162,6 @@ impl TelecommandTransferFrame {
                 actual: bytes.len(),
             });
         }
-        // Tentatively parse the header to read the length field
         let (header, _) = TelecommandTransferFrameHeader::ref_from_prefix(bytes).unwrap();
         let specified_len = header.frame_len();
 
@@ -180,8 +181,6 @@ impl TelecommandTransferFrame {
     }
 
     /// Returns a mutable reference to the frame's data field.
-    ///
-    /// This is typically used to copy a serialized `SpacePacket` into the frame.
     pub fn data_field_mut(&mut self) -> &mut [u8] {
         &mut self.data_field
     }
@@ -301,5 +300,140 @@ impl TelecommandTransferFrameHeader {
     /// Sets the Control Command Flag.
     pub fn set_control_flag(&mut self, flag: ControlFlag) {
         set_bits_u16(&mut self.id_and_scid, CONTROL_FLAG_MASK, flag as u16);
+    }
+}
+
+// ── FrameWriter / FrameReader implementations ──
+
+/// Configuration for building TC transfer frames.
+#[derive(Debug, Clone)]
+pub struct TcFrameWriterConfig {
+    /// Spacecraft ID.
+    pub scid: u16,
+    /// Virtual Channel ID.
+    pub vcid: u8,
+    /// Bypass flag (Type-A or Type-B).
+    pub bypass: BypassFlag,
+    /// Control flag (data or control command).
+    pub control: ControlFlag,
+    /// Maximum data field length in bytes.
+    pub max_data_field_len: usize,
+}
+
+/// Accumulates packets into TC transfer frames.
+///
+/// Owns its frame buffer internally (sized by `BUF`). Packets
+/// are pushed directly into the buffer at the correct offset.
+/// [`finish()`](FrameWriter::finish) stamps the header and
+/// returns a borrow of the completed frame.
+pub struct TcFrameWriter<const BUF: usize> {
+    config: TcFrameWriterConfig,
+    sequence: u8,
+    data_len: usize,
+    buf: [u8; BUF],
+}
+
+impl<const BUF: usize> TcFrameWriter<BUF> {
+    /// Creates a new TC frame writer.
+    pub fn new(config: TcFrameWriterConfig) -> Self {
+        Self {
+            config,
+            sequence: 0,
+            data_len: 0,
+            buf: [0u8; BUF],
+        }
+    }
+}
+
+impl<const BUF: usize> FrameWriter for TcFrameWriter<BUF> {
+    type Error = BuildError;
+
+    fn remaining(&self) -> usize {
+        self.config.max_data_field_len.saturating_sub(self.data_len)
+    }
+
+    fn push(&mut self, data: &[u8]) -> bool {
+        if data.len() > self.remaining() {
+            return false;
+        }
+        let off = TelecommandTransferFrame::HEADER_SIZE + self.data_len;
+        self.buf[off..off + data.len()].copy_from_slice(data);
+        self.data_len += data.len();
+        true
+    }
+
+    fn finish(&mut self) -> Result<&[u8], BuildError> {
+        let total = TelecommandTransferFrame::HEADER_SIZE + self.data_len;
+        let seq = self.sequence;
+        self.sequence = self.sequence.wrapping_add(1);
+
+        TelecommandTransferFrame::builder()
+            .buffer(&mut self.buf[..total])
+            .scid(self.config.scid)
+            .vcid(self.config.vcid)
+            .bypass_flag(self.config.bypass)
+            .control_flag(self.config.control)
+            .seq(seq)
+            .data_field_len(self.data_len)
+            .build()?;
+
+        self.data_len = 0;
+        Ok(&self.buf[..total])
+    }
+}
+
+/// Extracts packets from a received TC transfer frame.
+///
+/// Owns its frame buffer internally (sized by `BUF`). The
+/// coding layer writes into
+/// [`buffer_mut()`](FrameReader::buffer_mut),
+/// [`feed()`](FrameReader::feed) validates the header, and
+/// [`next()`](FrameReader::next) returns zero-copy sub-slices.
+pub struct TcFrameReader<const BUF: usize> {
+    buf: [u8; BUF],
+    data_start: usize,
+    data_end: usize,
+    pos: usize,
+}
+
+impl<const BUF: usize> TcFrameReader<BUF> {
+    /// Creates a new TC frame reader.
+    pub fn new() -> Self {
+        Self {
+            buf: [0u8; BUF],
+            data_start: 0,
+            data_end: 0,
+            pos: 0,
+        }
+    }
+}
+
+impl<const BUF: usize> FrameReader for TcFrameReader<BUF> {
+    type Error = ParseError;
+
+    fn buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.buf
+    }
+
+    fn feed(&mut self, len: usize) -> Result<(), ParseError> {
+        let parsed =
+            TelecommandTransferFrame::parse(&self.buf[..len])?;
+        let data = parsed.data_field();
+        self.data_start = TelecommandTransferFrame::HEADER_SIZE;
+        self.data_end = self.data_start + data.len();
+        self.pos = self.data_start;
+        Ok(())
+    }
+
+    fn next(&mut self) -> Option<&[u8]> {
+        if self.pos >= self.data_end {
+            return None;
+        }
+        let remaining = &self.buf[self.pos..self.data_end];
+        let pkt = SpacePacket::parse(remaining).ok()?;
+        let len = pkt.primary_header.packet_len();
+        let start = self.pos;
+        self.pos += len;
+        Some(&self.buf[start..start + len])
     }
 }

@@ -288,3 +288,148 @@ impl TelemetryTransferFrameHeader {
         set_bits_u16(&mut self.data_field_status, FIRST_HEADER_POINTER_MASK, fhp);
     }
 }
+
+// ── FrameWriter / FrameReader implementations ──
+
+use super::super::{FrameReader, FrameWriter};
+use crate::network::spp::SpacePacket;
+
+/// Configuration for building TM transfer frames.
+#[derive(Debug, Clone)]
+pub struct TmFrameWriterConfig {
+    /// Spacecraft ID.
+    pub scid: u16,
+    /// Virtual Channel ID.
+    pub vcid: u8,
+    /// Maximum data field length in bytes.
+    pub max_data_field_len: usize,
+}
+
+/// Accumulates packets into TM transfer frames.
+///
+/// Owns its frame buffer internally (sized by `BUF`). Packets
+/// are pushed directly into the buffer at the correct offset.
+/// [`finish()`](FrameWriter::finish) stamps the header and
+/// returns a borrow of the completed frame.
+pub struct TmFrameWriter<const BUF: usize> {
+    config: TmFrameWriterConfig,
+    mc_frame_count: u8,
+    vc_frame_count: u8,
+    data_len: usize,
+    buf: [u8; BUF],
+}
+
+impl<const BUF: usize> TmFrameWriter<BUF> {
+    /// Creates a new TM frame writer.
+    pub fn new(config: TmFrameWriterConfig) -> Self {
+        Self {
+            config,
+            mc_frame_count: 0,
+            vc_frame_count: 0,
+            data_len: 0,
+            buf: [0u8; BUF],
+        }
+    }
+}
+
+impl<const BUF: usize> FrameWriter for TmFrameWriter<BUF> {
+    type Error = BuildError;
+
+    fn remaining(&self) -> usize {
+        self.config
+            .max_data_field_len
+            .saturating_sub(self.data_len)
+    }
+
+    fn push(&mut self, data: &[u8]) -> bool {
+        if data.len() > self.remaining() {
+            return false;
+        }
+        let off =
+            TelemetryTransferFrame::HEADER_SIZE + self.data_len;
+        self.buf[off..off + data.len()].copy_from_slice(data);
+        self.data_len += data.len();
+        true
+    }
+
+    fn finish(&mut self) -> Result<&[u8], BuildError> {
+        let total =
+            TelemetryTransferFrame::HEADER_SIZE + self.data_len;
+        let mc = self.mc_frame_count;
+        let vc = self.vc_frame_count;
+        self.mc_frame_count =
+            self.mc_frame_count.wrapping_add(1);
+        self.vc_frame_count =
+            self.vc_frame_count.wrapping_add(1);
+
+        TelemetryTransferFrame::builder()
+            .buffer(&mut self.buf[..total])
+            .version(0)
+            .scid(self.config.scid)
+            .vcid(self.config.vcid)
+            .mc_frame_count(mc)
+            .vc_frame_count(vc)
+            .first_header_pointer(0)
+            .build()?;
+
+        self.data_len = 0;
+        Ok(&self.buf[..total])
+    }
+}
+
+/// Extracts packets from a received TM transfer frame.
+///
+/// Owns its frame buffer internally (sized by `BUF`). The
+/// coding layer writes into
+/// [`buffer_mut()`](FrameReader::buffer_mut),
+/// [`feed()`](FrameReader::feed) validates the header, and
+/// [`next()`](FrameReader::next) returns zero-copy sub-slices.
+pub struct TmFrameReader<const BUF: usize> {
+    buf: [u8; BUF],
+    data_start: usize,
+    data_end: usize,
+    pos: usize,
+}
+
+impl<const BUF: usize> TmFrameReader<BUF> {
+    /// Creates a new TM frame reader.
+    pub fn new() -> Self {
+        Self {
+            buf: [0u8; BUF],
+            data_start: 0,
+            data_end: 0,
+            pos: 0,
+        }
+    }
+}
+
+impl<const BUF: usize> FrameReader for TmFrameReader<BUF> {
+    type Error = ParseError;
+
+    fn buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.buf
+    }
+
+    fn feed(&mut self, len: usize) -> Result<(), ParseError> {
+        let parsed =
+            TelemetryTransferFrame::parse_raw(&self.buf[..len])?;
+        let data = parsed.data_field();
+        self.data_start =
+            TelemetryTransferFrame::HEADER_SIZE;
+        self.data_end = self.data_start + data.len();
+        self.pos = self.data_start;
+        Ok(())
+    }
+
+    fn next(&mut self) -> Option<&[u8]> {
+        if self.pos >= self.data_end {
+            return None;
+        }
+        let remaining = &self.buf[self.pos..self.data_end];
+        let pkt = SpacePacket::parse(remaining).ok()?;
+        let len = pkt.primary_header.packet_len();
+        let start = self.pos;
+        self.pos += len;
+        Some(&self.buf[start..start + len])
+    }
+}
