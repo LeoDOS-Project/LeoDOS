@@ -2,16 +2,49 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use leodos_protocols::coding::CodingWriter;
-use leodos_protocols::datalink::link::tc::{TcConfig, TcWriteChannel};
-use leodos_protocols::datalink::link::tm::{TmConfig, TmWriteChannel};
-use leodos_protocols::datalink::framing::sdlp::tc::{BypassFlag, ControlFlag};
+use leodos_protocols::coding::{CodingReader, CodingWriter};
+use leodos_protocols::datalink::framing::sdlp::tc::{
+    BypassFlag, ControlFlag, TcFrameReader, TcFrameWriter,
+    TcFrameWriterConfig,
+};
+use leodos_protocols::datalink::framing::sdlp::tm::{
+    TmFrameReader, TmFrameWriter, TmFrameWriterConfig,
+};
+use leodos_protocols::datalink::link::channel::{
+    LinkReader, LinkWriter,
+};
+use leodos_protocols::network::spp::{
+    Apid, PacketType, SecondaryHeaderFlag, SequenceCount,
+    SequenceFlag, SpacePacket,
+};
+
+fn build_space_packet(
+    buf: &mut [u8],
+    payload: &[u8],
+) -> usize {
+    let pkt = SpacePacket::builder()
+        .buffer(buf)
+        .apid(Apid::new(1).unwrap())
+        .packet_type(PacketType::Telecommand)
+        .sequence_count(SequenceCount::new())
+        .secondary_header(SecondaryHeaderFlag::Absent)
+        .sequence_flag(SequenceFlag::Unsegmented)
+        .data_len(payload.len())
+        .build()
+        .unwrap();
+    pkt.data_field_mut()[..payload.len()]
+        .copy_from_slice(payload);
+    pkt.primary_header.packet_len()
+}
 
 #[derive(Debug, Clone)]
 struct MockError;
 
 impl std::fmt::Display for MockError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         write!(f, "mock error")
     }
 }
@@ -41,6 +74,12 @@ impl MockChannel {
         }
     }
 
+    fn reader(&self) -> MockCodingReader {
+        MockCodingReader {
+            state: self.state.clone(),
+        }
+    }
+
     fn pop_front(&self) -> Option<Vec<u8>> {
         self.state.borrow_mut().queue.pop_front()
     }
@@ -53,134 +92,177 @@ struct MockWriter {
 impl CodingWriter for MockWriter {
     type Error = MockError;
 
-    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        self.state.borrow_mut().queue.push_back(data.to_vec());
+    async fn write(
+        &mut self,
+        data: &[u8],
+    ) -> Result<(), Self::Error> {
+        self.state
+            .borrow_mut()
+            .queue
+            .push_back(data.to_vec());
         Ok(())
+    }
+}
+
+struct MockCodingReader {
+    state: Rc<RefCell<MockChannelState>>,
+}
+
+impl CodingReader for MockCodingReader {
+    type Error = MockError;
+
+    async fn read(
+        &mut self,
+        buffer: &mut [u8],
+    ) -> Result<usize, Self::Error> {
+        let frame = self.state.borrow_mut().queue.pop_front();
+        match frame {
+            Some(data) => {
+                let len = data.len();
+                buffer[..len].copy_from_slice(&data);
+                Ok(len)
+            }
+            None => Ok(0),
+        }
     }
 }
 
 #[test]
 fn tc_sender_builds_valid_frame() {
     futures::executor::block_on(async {
-        let config = TcConfig {
+        let config = TcFrameWriterConfig {
             scid: 42,
             vcid: 1,
             bypass: BypassFlag::TypeA,
             control: ControlFlag::TypeD,
-            max_frame_data_len: 256,
+            max_data_field_len: 256,
         };
 
         let mock = MockChannel::new();
-        let writer = mock.writer();
+        let frame_writer = TcFrameWriter::<512>::new(config);
+        let mut writer =
+            LinkWriter::new(frame_writer, mock.writer());
 
-        let channel: TcWriteChannel<MockError, 8, 512> =
-            TcWriteChannel::new(config);
-        let (mut handle, mut driver) = channel.split(writer);
-
-        let test_data = b"Hello, TC!";
-        handle.send(test_data).await.unwrap();
-        handle.close();
-
-        driver.run().await.unwrap();
+        let mut pkt_buf = [0u8; 128];
+        let pkt_len =
+            build_space_packet(&mut pkt_buf, b"Hello, TC!");
+        writer.send(&pkt_buf[..pkt_len]).await.unwrap();
+        writer.flush().await.unwrap();
 
         let sent_frame = mock.pop_front().unwrap();
-        assert!(sent_frame.len() > test_data.len());
-        assert!(sent_frame[..]
-            .windows(test_data.len())
-            .any(|w| w == test_data));
+        assert!(sent_frame.len() > pkt_len);
     });
 }
 
 #[test]
 fn tc_round_trip() {
     futures::executor::block_on(async {
-        let config = TcConfig {
+        let config = TcFrameWriterConfig {
             scid: 42,
             vcid: 1,
             bypass: BypassFlag::TypeA,
             control: ControlFlag::TypeD,
-            max_frame_data_len: 256,
+            max_data_field_len: 256,
         };
 
         let wire = MockChannel::new();
+        let frame_writer = TcFrameWriter::<512>::new(config);
+        let mut writer =
+            LinkWriter::new(frame_writer, wire.writer());
 
-        let send_channel: TcWriteChannel<MockError, 8, 512> =
-            TcWriteChannel::new(config.clone());
-        let (mut send_handle, mut send_driver) =
-            send_channel.split(wire.writer());
+        let mut pkt_buf = [0u8; 128];
+        let payload = b"Hello, TC round trip!";
+        let pkt_len =
+            build_space_packet(&mut pkt_buf, payload);
+        writer.send(&pkt_buf[..pkt_len]).await.unwrap();
+        writer.flush().await.unwrap();
 
-        let test_data = b"Hello, TC round trip!";
-        send_handle.send(test_data).await.unwrap();
-        send_handle.close();
-        send_driver.run().await.unwrap();
+        let frame_reader = TcFrameReader::<512>::new();
+        let mut reader =
+            LinkReader::new(frame_reader, wire.reader());
 
-        let sent_frame = wire.pop_front().unwrap();
+        let mut recv_buf = [0u8; 512];
+        let recv_len =
+            reader.recv(&mut recv_buf).await.unwrap();
 
-        let frame =
-            leodos_protocols::datalink::framing::sdlp::tc::TelecommandTransferFrame::parse(&sent_frame)
-                .unwrap();
-        let data_field = frame.data_field();
+        assert_eq!(
+            &recv_buf[..recv_len],
+            &pkt_buf[..pkt_len]
+        );
 
-        assert_eq!(data_field, test_data);
+        let parsed =
+            SpacePacket::parse(&recv_buf[..recv_len]).unwrap();
+        assert_eq!(
+            &parsed.data_field()[..payload.len()],
+            payload
+        );
     });
 }
 
 #[test]
 fn tm_sender_builds_valid_frame() {
     futures::executor::block_on(async {
-        let config = TmConfig {
+        let config = TmFrameWriterConfig {
             scid: 42,
             vcid: 1,
-            max_frame_data_len: 256,
+            max_data_field_len: 256,
         };
 
         let mock = MockChannel::new();
-        let writer = mock.writer();
+        let frame_writer = TmFrameWriter::<512>::new(config);
+        let mut writer =
+            LinkWriter::new(frame_writer, mock.writer());
 
-        let channel: TmWriteChannel<MockError, 8, 512> =
-            TmWriteChannel::new(config);
-        let (mut handle, mut driver) = channel.split(writer);
-
-        let test_data = b"Hello, TM!";
-        handle.send(test_data).await.unwrap();
-        handle.close();
-
-        driver.run().await.unwrap();
+        let mut pkt_buf = [0u8; 128];
+        let pkt_len =
+            build_space_packet(&mut pkt_buf, b"Hello, TM!");
+        writer.send(&pkt_buf[..pkt_len]).await.unwrap();
+        writer.flush().await.unwrap();
 
         let sent_frame = mock.pop_front().unwrap();
-        assert!(sent_frame.len() > test_data.len());
+        assert!(sent_frame.len() > pkt_len);
     });
 }
 
 #[test]
 fn tm_round_trip() {
     futures::executor::block_on(async {
-        let config = TmConfig {
+        let config = TmFrameWriterConfig {
             scid: 42,
             vcid: 1,
-            max_frame_data_len: 256,
+            max_data_field_len: 256,
         };
 
         let wire = MockChannel::new();
+        let frame_writer = TmFrameWriter::<512>::new(config);
+        let mut writer =
+            LinkWriter::new(frame_writer, wire.writer());
 
-        let send_channel: TmWriteChannel<MockError, 8, 512> =
-            TmWriteChannel::new(config.clone());
-        let (mut send_handle, mut send_driver) =
-            send_channel.split(wire.writer());
+        let mut pkt_buf = [0u8; 128];
+        let payload = b"Hello, TM round trip!";
+        let pkt_len =
+            build_space_packet(&mut pkt_buf, payload);
+        writer.send(&pkt_buf[..pkt_len]).await.unwrap();
+        writer.flush().await.unwrap();
 
-        let test_data = b"Hello, TM round trip!";
-        send_handle.send(test_data).await.unwrap();
-        send_handle.close();
-        send_driver.run().await.unwrap();
+        let frame_reader = TmFrameReader::<512>::new();
+        let mut reader =
+            LinkReader::new(frame_reader, wire.reader());
 
-        let sent_frame = wire.pop_front().unwrap();
+        let mut recv_buf = [0u8; 512];
+        let recv_len =
+            reader.recv(&mut recv_buf).await.unwrap();
 
-        // Since no coding pipeline was used (MockWriter passes
-        // through), the frame is not randomized.
-        let frame =
-            leodos_protocols::datalink::framing::sdlp::tm::TelemetryTransferFrame::parse_raw(&sent_frame)
-                .unwrap();
+        assert_eq!(
+            &recv_buf[..recv_len],
+            &pkt_buf[..pkt_len]
+        );
 
-        assert_eq!(frame.data_field(), test_data);
+        let parsed =
+            SpacePacket::parse(&recv_buf[..recv_len]).unwrap();
+        assert_eq!(
+            &parsed.data_field()[..payload.len()],
+            payload
+        );
     });
 }
