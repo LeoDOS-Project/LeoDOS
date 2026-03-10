@@ -52,6 +52,20 @@ pub enum CaduError {
     AsmMismatch,
 }
 
+impl core::fmt::Display for CaduError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::BufferTooSmall { required, provided } => {
+                write!(f, "buffer too small: need {required}, have {provided}")
+            }
+            Self::InputTooShort => write!(f, "input too short"),
+            Self::AsmMismatch => write!(f, "ASM mismatch"),
+        }
+    }
+}
+
+impl core::error::Error for CaduError {}
+
 /// Encodes a transfer frame into a CADU by prepending the ASM.
 ///
 /// Writes `asm | frame` into `output` and returns the total bytes
