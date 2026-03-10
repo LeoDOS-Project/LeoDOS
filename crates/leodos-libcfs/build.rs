@@ -235,6 +235,10 @@ fn main() {
         build_dir.join("native/default_cpu1/osal/inc"),
         build_dir.join("native/default_cpu1/psp/inc"),
         build_dir.join("native/default_cpu1/inc"),
+        // NOS3 build uses amd64-nos3 platform instead of native.
+        build_dir.join("amd64-nos3/default_cpu1/osal/inc"),
+        build_dir.join("amd64-nos3/default_cpu1/psp/inc"),
+        build_dir.join("amd64-nos3/default_cpu1/inc"),
         cfe_dir.join("modules/core_api/fsw/inc"),
         cfe_dir.join("modules/core_api/config"),
         cfe_dir.join("modules/core_private/config"),
@@ -259,6 +263,7 @@ fn main() {
         osal_dir.join("src/bsp/generic-linux/config"),
         psp_dir.join("fsw/inc"),
         psp_dir.join("fsw/pc-linux/inc"),
+        psp_dir.join("fsw/nos-linux/inc"),
     ];
 
     if let Some(ref cf) = cf_dir {
@@ -334,7 +339,21 @@ uint8_t data[8]; };\n\
             .header(header(hw, "fsw/public_inc/hwlib.h"))
             .allowlist_function("uart_.*|i2c_.*|spi_.*|can_.*|gpio_.*|socket_.*|devmem_.*|trq_.*|HostToIp")
             .allowlist_type("uart_.*|i2c_.*|spi_.*|can_.*|gpio_.*|socket_.*|trq_.*|canid_t|addr_fam_e|type_e|category_e")
-            .allowlist_var("UART_.*|I2C_.*|SPI_.*|CAN_.*|GPIO_.*|SOCKET_.*|MEM_.*|TRQ_.*|PORT_.*|NUM_.*|HWLIB_.*");
+            .allowlist_var("UART_.*|I2C_.*|SPI_.*|CAN_.*|GPIO_.*|SOCKET_.*|MEM_.*|TRQ_.*|PORT_.*|NUM_.*|HWLIB_.*")
+            // On Linux, can_frame has an anonymous union around
+            // can_dlc/len. Blocklist the bindgen output and provide
+            // a flat, binary-compatible struct instead.
+            .blocklist_type("can_frame")
+            .raw_line("#[repr(C)]")
+            .raw_line("#[derive(Debug, Default, Copy, Clone)]")
+            .raw_line("pub struct can_frame {")
+            .raw_line("    pub can_id: u32,")
+            .raw_line("    pub can_dlc: u8,")
+            .raw_line("    pub __pad: u8,")
+            .raw_line("    pub __res0: u8,")
+            .raw_line("    pub __res1: u8,")
+            .raw_line("    pub data: [u8; 8usize],")
+            .raw_line("}");
         let _ = hw;
     }
 

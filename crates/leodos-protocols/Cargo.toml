@@ -23,7 +23,8 @@ default = []
 
 std = []
 tokio = ["std", "dep:tokio"]
-cfs = ["dep:leodos-libcfs", "leodos-libcfs/nos3"]
+cfs = ["dep:leodos-libcfs"]
+nos3 = ["cfs", "leodos-libcfs/nos3"]
 
 [dev-dependencies]
 rand = "0.9.2"
