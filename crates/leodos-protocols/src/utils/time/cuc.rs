@@ -66,11 +66,7 @@ impl CucConfig {
     /// Creates a new CUC configuration.
     ///
     /// Panics if `coarse_len` is 0 or > 4, or `fine_len` > 3.
-    pub const fn new(
-        time_code_id: TimeCodeId,
-        coarse_len: u8,
-        fine_len: u8,
-    ) -> Self {
+    pub const fn new(time_code_id: TimeCodeId, coarse_len: u8, fine_len: u8) -> Self {
         assert!(coarse_len >= 1 && coarse_len <= MAX_COARSE_BYTES);
         assert!(fine_len <= MAX_FINE_BYTES);
         Self {
@@ -82,18 +78,10 @@ impl CucConfig {
 
     /// Standard 4+2 configuration: 4 coarse bytes (seconds since
     /// CCSDS epoch) + 2 fine bytes (~15 µs resolution).
-    pub const CCSDS_4_2: Self = Self::new(
-        TimeCodeId::CcsdsEpoch,
-        4,
-        2,
-    );
+    pub const CCSDS_4_2: Self = Self::new(TimeCodeId::CcsdsEpoch, 4, 2);
 
     /// Standard 4+0 configuration: 4 coarse bytes, no fractional.
-    pub const CCSDS_4_0: Self = Self::new(
-        TimeCodeId::CcsdsEpoch,
-        4,
-        0,
-    );
+    pub const CCSDS_4_0: Self = Self::new(TimeCodeId::CcsdsEpoch, 4, 0);
 
     /// Returns the P-field byte for this configuration.
     ///
@@ -150,11 +138,13 @@ pub struct CucTime {
 }
 
 /// Errors for CUC time operations.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum Error {
     /// The P-field contains an unrecognized time code ID.
+    #[error("Invalid time code ID in P-field: {0:#03b}")]
     InvalidTimeCodeId(u8),
     /// The buffer is too short for the expected encoding.
+    #[error("Buffer too short: required {required} bytes, but provided {provided} bytes")]
     BufferTooShort {
         /// Minimum bytes needed.
         required: usize,
@@ -165,11 +155,7 @@ pub enum Error {
 
 impl CucTime {
     /// Creates a new CUC timestamp from coarse and fine values.
-    pub const fn new(
-        config: CucConfig,
-        coarse: u32,
-        fine: u32,
-    ) -> Self {
+    pub const fn new(config: CucConfig, coarse: u32, fine: u32) -> Self {
         Self {
             config,
             coarse,
@@ -237,16 +223,14 @@ impl CucTime {
         let coarse_bytes = self.coarse.to_be_bytes();
         let coarse_len = self.config.coarse_len as usize;
         let coarse_start = 4 - coarse_len;
-        buf[pos..pos + coarse_len]
-            .copy_from_slice(&coarse_bytes[coarse_start..]);
+        buf[pos..pos + coarse_len].copy_from_slice(&coarse_bytes[coarse_start..]);
         pos += coarse_len;
 
         // Write fine bytes (big-endian, only the high N bytes)
         let fine_len = self.config.fine_len as usize;
         if fine_len > 0 {
             let fine_bytes = self.fine.to_be_bytes();
-            buf[pos..pos + fine_len]
-                .copy_from_slice(&fine_bytes[..fine_len]);
+            buf[pos..pos + fine_len].copy_from_slice(&fine_bytes[..fine_len]);
             pos += fine_len;
         }
 
@@ -256,10 +240,7 @@ impl CucTime {
     /// Encodes only the T-field (no P-field) into a buffer.
     ///
     /// Useful when the P-field is implicit.
-    pub fn encode_t_field(
-        &self,
-        buf: &mut [u8],
-    ) -> Result<usize, Error> {
+    pub fn encode_t_field(&self, buf: &mut [u8]) -> Result<usize, Error> {
         let t_len = self.config.t_field_len();
         if buf.len() < t_len {
             return Err(Error::BufferTooShort {
@@ -273,15 +254,13 @@ impl CucTime {
         let coarse_bytes = self.coarse.to_be_bytes();
         let coarse_len = self.config.coarse_len as usize;
         let coarse_start = 4 - coarse_len;
-        buf[pos..pos + coarse_len]
-            .copy_from_slice(&coarse_bytes[coarse_start..]);
+        buf[pos..pos + coarse_len].copy_from_slice(&coarse_bytes[coarse_start..]);
         pos += coarse_len;
 
         let fine_len = self.config.fine_len as usize;
         if fine_len > 0 {
             let fine_bytes = self.fine.to_be_bytes();
-            buf[pos..pos + fine_len]
-                .copy_from_slice(&fine_bytes[..fine_len]);
+            buf[pos..pos + fine_len].copy_from_slice(&fine_bytes[..fine_len]);
             pos += fine_len;
         }
 
@@ -312,10 +291,7 @@ impl CucTime {
     /// Decodes a CUC timestamp from T-field bytes only.
     ///
     /// The caller provides the configuration (implicit P-field).
-    pub fn decode_t_field(
-        config: &CucConfig,
-        buf: &[u8],
-    ) -> Result<Self, Error> {
+    pub fn decode_t_field(config: &CucConfig, buf: &[u8]) -> Result<Self, Error> {
         let t_len = config.t_field_len();
         if buf.len() < t_len {
             return Err(Error::BufferTooShort {
@@ -328,16 +304,14 @@ impl CucTime {
         let coarse_len = config.coarse_len as usize;
         let mut coarse_buf = [0u8; 4];
         let coarse_start = 4 - coarse_len;
-        coarse_buf[coarse_start..]
-            .copy_from_slice(&buf[pos..pos + coarse_len]);
+        coarse_buf[coarse_start..].copy_from_slice(&buf[pos..pos + coarse_len]);
         let coarse = u32::from_be_bytes(coarse_buf);
         pos += coarse_len;
 
         let fine_len = config.fine_len as usize;
         let fine = if fine_len > 0 {
             let mut fine_buf = [0u8; 4];
-            fine_buf[..fine_len]
-                .copy_from_slice(&buf[pos..pos + fine_len]);
+            fine_buf[..fine_len].copy_from_slice(&buf[pos..pos + fine_len]);
             u32::from_be_bytes(fine_buf)
         } else {
             0
@@ -352,10 +326,7 @@ impl CucTime {
 }
 
 impl core::fmt::Display for CucTime {
-    fn fmt(
-        &self,
-        f: &mut core::fmt::Formatter<'_>,
-    ) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "CUC({:.6}s)", self.to_seconds())
     }
 }
@@ -424,8 +395,7 @@ mod tests {
         let len = t.encode_t_field(&mut buf).unwrap();
         assert_eq!(len, 6); // 4 coarse + 2 fine
 
-        let decoded =
-            CucTime::decode_t_field(&config, &buf[..len]).unwrap();
+        let decoded = CucTime::decode_t_field(&config, &buf[..len]).unwrap();
         assert_eq!(decoded.coarse, 12345);
         assert_eq!(decoded.fine, 0xABCD_0000);
     }
@@ -468,8 +438,7 @@ mod tests {
 
     #[test]
     fn agency_epoch() {
-        let config =
-            CucConfig::new(TimeCodeId::AgencyEpoch, 2, 1);
+        let config = CucConfig::new(TimeCodeId::AgencyEpoch, 2, 1);
         let t = CucTime::new(config, 300, 0x8000_0000);
 
         let mut buf = [0u8; 8];
@@ -505,8 +474,7 @@ mod tests {
     #[test]
     fn small_coarse_field() {
         // 1-byte coarse, 0 fine — can represent 0..255 seconds
-        let config =
-            CucConfig::new(TimeCodeId::CcsdsEpoch, 1, 0);
+        let config = CucConfig::new(TimeCodeId::CcsdsEpoch, 1, 0);
         let t = CucTime::new(config, 200, 0);
 
         let mut buf = [0u8; 4];

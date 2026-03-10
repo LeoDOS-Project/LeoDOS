@@ -87,17 +87,22 @@ pub struct Config {
 }
 
 /// Compression/decompression error.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Invalid configuration parameter.
+    #[error("Invalid configuration parameter")]
     InvalidConfig,
     /// Output buffer too small.
+    #[error("Output buffer too small")]
     OutputFull,
     /// Input bitstream truncated or malformed.
+    #[error("Input bitstream truncated or malformed")]
     Truncated,
     /// Image dimensions exceed compile-time limits.
+    #[error("Image dimensions exceed compile-time limits")]
     ImageTooLarge,
     /// Scratch buffer too small.
+    #[error("Scratch buffer too small")]
     ScratchTooSmall,
 }
 

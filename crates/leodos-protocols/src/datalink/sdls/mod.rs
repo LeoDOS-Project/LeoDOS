@@ -72,9 +72,7 @@ pub struct SecurityAssociation {
 impl SecurityAssociation {
     /// Total size of the Security Header for this SA.
     pub fn header_size(&self) -> usize {
-        2 + self.iv_len as usize
-            + self.sn_len as usize
-            + self.pl_len as usize
+        2 + self.iv_len as usize + self.sn_len as usize + self.pl_len as usize
     }
 
     /// Total size of the Security Trailer for this SA.
@@ -89,13 +87,16 @@ impl SecurityAssociation {
 }
 
 /// Errors from SDLS processing.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum Error {
     /// The SPI value is reserved (0 or 65535).
+    #[error("reserved SPI: {0}")]
     ReservedSpi(u16),
     /// No SA found for the given SPI.
+    #[error("unknown SPI: {0}")]
     UnknownSpi(u16),
     /// The buffer is too small for the security fields.
+    #[error("buffer too small: need {required} bytes, have {available} bytes")]
     BufferTooSmall {
         /// Minimum bytes needed.
         required: usize,
@@ -103,10 +104,13 @@ pub enum Error {
         available: usize,
     },
     /// The frame is too short to contain a Security Header.
+    #[error("frame too short to contain Security Header")]
     FrameTooShort,
     /// MAC verification failed.
+    #[error("MAC verification failed")]
     MacVerificationFailed,
     /// Anti-replay sequence number check failed.
+    #[error("sequence number rejected: got {received}, expected {expected}")]
     SequenceNumberRejected {
         /// The received sequence number.
         received: u64,
@@ -114,48 +118,12 @@ pub enum Error {
         expected: u64,
     },
     /// Padding error during decryption.
+    #[error("padding error")]
     PaddingError,
     /// A crypto backend error occurred.
+    #[error("cryptographic operation failed")]
     CryptoError,
 }
-
-impl core::fmt::Display for Error {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::ReservedSpi(spi) => {
-                write!(f, "reserved SPI: {spi}")
-            }
-            Self::UnknownSpi(spi) => {
-                write!(f, "unknown SPI: {spi}")
-            }
-            Self::BufferTooSmall {
-                required,
-                available,
-            } => {
-                write!(
-                    f,
-                    "buffer too small: need {required}, have {available}"
-                )
-            }
-            Self::FrameTooShort => write!(f, "frame too short"),
-            Self::MacVerificationFailed => {
-                write!(f, "MAC verification failed")
-            }
-            Self::SequenceNumberRejected {
-                received,
-                expected,
-            } => write!(
-                f,
-                "sequence number rejected: got {received}, \
-                 expected {expected}"
-            ),
-            Self::PaddingError => write!(f, "padding error"),
-            Self::CryptoError => write!(f, "crypto error"),
-        }
-    }
-}
-
-impl core::error::Error for Error {}
 
 /// Trait for pluggable cryptographic backends.
 ///
@@ -292,8 +260,7 @@ pub fn write_security_header(
     if pl_len > 0 {
         let pl_bytes = pad_len.to_be_bytes();
         let start = 2 - pl_len;
-        out[pos..pos + pl_len]
-            .copy_from_slice(&pl_bytes[start..]);
+        out[pos..pos + pl_len].copy_from_slice(&pl_bytes[start..]);
         pos += pl_len;
     }
 
@@ -362,8 +329,7 @@ pub fn apply_security(
         let start = 8usize.saturating_sub(iv_len);
         let copy_len = iv_len.min(8);
         let iv_start = iv_len.saturating_sub(8);
-        iv_buf[iv_start..iv_start + copy_len]
-            .copy_from_slice(&sn_bytes[start..start + copy_len]);
+        iv_buf[iv_start..iv_start + copy_len].copy_from_slice(&sn_bytes[start..start + copy_len]);
     }
 
     if sn_len > 0 {
@@ -388,8 +354,7 @@ pub fn apply_security(
         ServiceType::Authentication => {
             let auth_end = data_end;
             if sa.auth_mask.len() >= auth_end {
-                let mut masked =
-                    heapless::Vec::<u8, 2048>::new();
+                let mut masked = heapless::Vec::<u8, 2048>::new();
                 masked.resize(auth_end, 0).ok();
                 for i in 0..auth_end {
                     masked[i] = frame[i] & sa.auth_mask[i];
@@ -408,8 +373,7 @@ pub fn apply_security(
                     &mut mac_buf[..mac_len],
                 )?;
             }
-            frame[trailer_start..trailer_start + mac_len]
-                .copy_from_slice(&mac_buf[..mac_len]);
+            frame[trailer_start..trailer_start + mac_len].copy_from_slice(&mac_buf[..mac_len]);
         }
         ServiceType::Encryption => {
             crypto.encrypt(
@@ -422,15 +386,13 @@ pub fn apply_security(
         }
         ServiceType::AuthenticatedEncryption => {
             // AAD = frame header + security header (before data)
-            let (aad_part, rest) =
-                frame.split_at_mut(data_start);
+            let (aad_part, rest) = frame.split_at_mut(data_start);
             let data_len = data_end - data_start;
 
             if sa.auth_mask.len() >= data_start {
                 let mut masked_aad = [0u8; 256];
                 for i in 0..aad_part.len() {
-                    masked_aad[i] =
-                        aad_part[i] & sa.auth_mask[i];
+                    masked_aad[i] = aad_part[i] & sa.auth_mask[i];
                 }
                 crypto.encrypt(
                     sa,
@@ -448,8 +410,7 @@ pub fn apply_security(
                     &mut mac_buf[..mac_len],
                 )?;
             }
-            rest[data_len..data_len + mac_len]
-                .copy_from_slice(&mac_buf[..mac_len]);
+            rest[data_len..data_len + mac_len].copy_from_slice(&mac_buf[..mac_len]);
         }
     }
 
@@ -484,10 +445,7 @@ pub fn process_security(
     }
 
     let (received_sn, iv_copy) = {
-        let sec_hdr = SecurityHeader::parse(
-            sa,
-            &frame[header_end..data_start],
-        )?;
+        let sec_hdr = SecurityHeader::parse(sa, &frame[header_end..data_start])?;
         let sn_val = sec_hdr.sequence_number_value();
         let mut iv_buf = [0u8; MAX_IV_SIZE];
         let iv = sec_hdr.iv();
@@ -504,8 +462,7 @@ pub fn process_security(
             let auth_end = data_end;
 
             if sa.auth_mask.len() >= auth_end {
-                let mut masked =
-                    heapless::Vec::<u8, 2048>::new();
+                let mut masked = heapless::Vec::<u8, 2048>::new();
                 masked.resize(auth_end, 0).ok();
                 for i in 0..auth_end {
                     masked[i] = frame[i] & sa.auth_mask[i];
@@ -525,8 +482,7 @@ pub fn process_security(
                 )?;
             }
 
-            let received_mac =
-                &frame[trailer_start..trailer_start + mac_len];
+            let received_mac = &frame[trailer_start..trailer_start + mac_len];
             if received_mac != &mac_buf[..mac_len] {
                 return Err(Error::MacVerificationFailed);
             }
@@ -547,20 +503,16 @@ pub fn process_security(
         ServiceType::AuthenticatedEncryption => {
             // Copy tag from trailer before splitting
             let mut tag = [0u8; MAX_MAC_SIZE];
-            tag[..mac_len].copy_from_slice(
-                &frame[trailer_start..trailer_start + mac_len],
-            );
+            tag[..mac_len].copy_from_slice(&frame[trailer_start..trailer_start + mac_len]);
 
             // AEAD decrypt + tag verification
-            let (aad_part, rest) =
-                frame.split_at_mut(data_start);
+            let (aad_part, rest) = frame.split_at_mut(data_start);
             let data_len = data_end - data_start;
 
             if sa.auth_mask.len() >= data_start {
                 let mut masked_aad = [0u8; 256];
                 for i in 0..aad_part.len() {
-                    masked_aad[i] =
-                        aad_part[i] & sa.auth_mask[i];
+                    masked_aad[i] = aad_part[i] & sa.auth_mask[i];
                 }
                 crypto.decrypt(
                     sa,
@@ -588,25 +540,14 @@ pub fn process_security(
     Ok(())
 }
 
-fn check_sequence_number(
-    sa: &mut SecurityAssociation,
-    received: u64,
-) -> Result<(), Error> {
+fn check_sequence_number(sa: &mut SecurityAssociation, received: u64) -> Result<(), Error> {
     let expected = sa.sequence_number;
     if received < expected {
-        return Err(Error::SequenceNumberRejected {
-            received,
-            expected,
-        });
+        return Err(Error::SequenceNumberRejected { received, expected });
     }
     let window = sa.sequence_window;
-    if window > 0
-        && received > expected.wrapping_add(window)
-    {
-        return Err(Error::SequenceNumberRejected {
-            received,
-            expected,
-        });
+    if window > 0 && received > expected.wrapping_add(window) {
+        return Err(Error::SequenceNumberRejected { received, expected });
     }
     sa.sequence_number = received.wrapping_add(1);
     Ok(())
@@ -656,25 +597,11 @@ mod tests {
         let mut sa = test_sa();
         sa.spi = 0;
         let mut buf = [0u8; 64];
-        let err = write_security_header(
-            &sa,
-            &[0; 4],
-            &[0; 4],
-            0,
-            &mut buf,
-        )
-        .unwrap_err();
+        let err = write_security_header(&sa, &[0; 4], &[0; 4], 0, &mut buf).unwrap_err();
         assert_eq!(err, Error::ReservedSpi(0));
 
         sa.spi = 0xFFFF;
-        let err = write_security_header(
-            &sa,
-            &[0; 4],
-            &[0; 4],
-            0,
-            &mut buf,
-        )
-        .unwrap_err();
+        let err = write_security_header(&sa, &[0; 4], &[0; 4], 0, &mut buf).unwrap_err();
         assert_eq!(err, Error::ReservedSpi(0xFFFF));
     }
 
@@ -684,9 +611,7 @@ mod tests {
         let mut buf = [0u8; 64];
         let iv = [0x01, 0x02, 0x03, 0x04];
         let sn = [0x00, 0x00, 0x00, 0x05];
-        let written =
-            write_security_header(&sa, &iv, &sn, 0, &mut buf)
-                .unwrap();
+        let written = write_security_header(&sa, &iv, &sn, 0, &mut buf).unwrap();
         assert_eq!(written, 10);
 
         let hdr = SecurityHeader::parse(&sa, &buf[..written]).unwrap();
@@ -711,8 +636,7 @@ mod tests {
         // Write some fake frame header
         frame[0..5].copy_from_slice(&[0xC0, 0x00, 0x2A, 0x00, 0x28]);
         // Write some payload data
-        frame[data_start..data_end]
-            .copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        frame[data_start..data_end].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
         apply_security(
             &mut sa_send,
@@ -807,9 +731,7 @@ mod tests {
             auth_mask: heapless::Vec::new(),
         };
         let mut buf = [0u8; 16];
-        let written =
-            write_security_header(&sa, &[], &[], 42, &mut buf)
-                .unwrap();
+        let written = write_security_header(&sa, &[], &[], 42, &mut buf).unwrap();
         // SPI(2) + PL(2) = 4
         assert_eq!(written, 4);
 
@@ -844,14 +766,10 @@ mod tests {
         let mut data = original;
         let mut tag = [0u8; 16];
 
-        crypto
-            .encrypt(&sa, &iv, &aad, &mut data, &mut tag)
-            .unwrap();
+        crypto.encrypt(&sa, &iv, &aad, &mut data, &mut tag).unwrap();
         assert_ne!(data, original);
 
-        crypto
-            .decrypt(&sa, &iv, &aad, &mut data, &tag)
-            .unwrap();
+        crypto.decrypt(&sa, &iv, &aad, &mut data, &tag).unwrap();
         assert_eq!(data, original);
     }
 
@@ -867,12 +785,8 @@ mod tests {
         let mut data = original;
         let mut tag = [0u8; 16];
 
-        crypto
-            .encrypt(&sa, &iv, aad, &mut data, &mut tag)
-            .unwrap();
-        crypto
-            .decrypt(&sa, &iv, aad, &mut data, &tag)
-            .unwrap();
+        crypto.encrypt(&sa, &iv, aad, &mut data, &mut tag).unwrap();
+        crypto.decrypt(&sa, &iv, aad, &mut data, &tag).unwrap();
         assert_eq!(data, original);
     }
 
@@ -887,14 +801,10 @@ mod tests {
         let mut data = [1u8, 2, 3, 4];
         let mut tag = [0u8; 16];
 
-        crypto
-            .encrypt(&sa, &iv, &aad, &mut data, &mut tag)
-            .unwrap();
+        crypto.encrypt(&sa, &iv, &aad, &mut data, &mut tag).unwrap();
 
         data[0] ^= 0xFF; // tamper
-        let err = crypto
-            .decrypt(&sa, &iv, &aad, &mut data, &tag)
-            .unwrap_err();
+        let err = crypto.decrypt(&sa, &iv, &aad, &mut data, &tag).unwrap_err();
         assert_eq!(err, Error::MacVerificationFailed);
     }
 
@@ -909,9 +819,7 @@ mod tests {
         let mut data = [1u8, 2, 3, 4];
         let mut tag = [0u8; 16];
 
-        crypto
-            .encrypt(&sa, &iv, &aad, &mut data, &mut tag)
-            .unwrap();
+        crypto.encrypt(&sa, &iv, &aad, &mut data, &mut tag).unwrap();
 
         let bad_aad = [0xC1]; // tampered
         let err = crypto
@@ -938,11 +846,9 @@ mod tests {
         let mut frame = [0u8; 64];
 
         // Fake frame header
-        frame[0..5]
-            .copy_from_slice(&[0xC0, 0x00, 0x2A, 0x00, 0x28]);
+        frame[0..5].copy_from_slice(&[0xC0, 0x00, 0x2A, 0x00, 0x28]);
         // Payload
-        frame[data_start..data_end]
-            .copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        frame[data_start..data_end].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
         apply_security(
             &mut sa_send,
@@ -994,10 +900,8 @@ mod tests {
         let data_end = data_start + 10;
         let mut frame = [0u8; 64];
 
-        frame[0..5]
-            .copy_from_slice(&[0xC0, 0x00, 0x2A, 0x00, 0x28]);
-        frame[data_start..data_end]
-            .copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        frame[0..5].copy_from_slice(&[0xC0, 0x00, 0x2A, 0x00, 0x28]);
+        frame[data_start..data_end].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
         apply_security(
             &mut sa_send,

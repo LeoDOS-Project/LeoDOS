@@ -1,25 +1,44 @@
 use crate::ffi;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
+    #[error("not enough memory")]
     NoMemory,
+    #[error("invalid argument")]
     InvalidArgument,
+    #[error("operation timed out")]
     Timeout,
+    #[error("resource already in use")]
     ResourceInUse,
+    #[error("operation not supported")]
     NotSupported,
+    #[error("device or resource busy")]
     Busy,
+    #[error("connection already in progress")]
     AlreadyInProgress,
+    #[error("connection reset")]
     ConnectionReset,
+    #[error("no more buffer space available")]
     NoBuffers,
+    #[error("transmission failed")]
     TransmitFailed,
+    #[error("error in driver layer")]
     DriverError,
+    #[error("resource temporarily unavailable")]
     TryAgain,
+    #[error("function not implemented")]
     NotImplemented,
+    #[error("HMAC verification failed")]
     HmacFailed,
+    #[error("CRC32 verification failed")]
     Crc32Failed,
+    #[error("SFP protocol error")]
     SfpError,
+    #[error("invalid MTU")]
     MtuError,
+    #[error("null pointer returned")]
     NullPointer,
+    #[error("unknown error ({0})")]
     Unknown(i32),
 }
 
@@ -48,32 +67,6 @@ impl Error {
             x if x == ffi::CSP_ERR_MTU => Error::MtuError,
             _ => Error::Unknown(code),
         })
-    }
-}
-
-impl core::fmt::Display for Error {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Error::NoMemory => write!(f, "not enough memory"),
-            Error::InvalidArgument => write!(f, "invalid argument"),
-            Error::Timeout => write!(f, "operation timed out"),
-            Error::ResourceInUse => write!(f, "resource already in use"),
-            Error::NotSupported => write!(f, "operation not supported"),
-            Error::Busy => write!(f, "device or resource busy"),
-            Error::AlreadyInProgress => write!(f, "connection already in progress"),
-            Error::ConnectionReset => write!(f, "connection reset"),
-            Error::NoBuffers => write!(f, "no more buffer space available"),
-            Error::TransmitFailed => write!(f, "transmission failed"),
-            Error::DriverError => write!(f, "error in driver layer"),
-            Error::TryAgain => write!(f, "resource temporarily unavailable"),
-            Error::NotImplemented => write!(f, "function not implemented"),
-            Error::HmacFailed => write!(f, "HMAC verification failed"),
-            Error::Crc32Failed => write!(f, "CRC32 verification failed"),
-            Error::SfpError => write!(f, "SFP protocol error"),
-            Error::MtuError => write!(f, "invalid MTU"),
-            Error::NullPointer => write!(f, "null pointer returned"),
-            Error::Unknown(code) => write!(f, "unknown error ({})", code),
-        }
     }
 }
 

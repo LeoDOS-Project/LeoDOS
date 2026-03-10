@@ -30,13 +30,16 @@ pub struct Config {
 }
 
 /// Compression/decompression error.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Invalid configuration.
+    #[error("Invalid configuration parameters")]
     InvalidConfig,
     /// Output buffer too small.
+    #[error("Output buffer too small")]
     OutputFull,
     /// Input bitstream truncated or malformed.
+    #[error("Input data truncated or malformed")]
     Truncated,
 }
 
@@ -181,13 +184,13 @@ impl<'a> BitReader<'a> {
 
 /// Forward mapper: signed prediction error → unsigned mapped value.
 fn map_error(delta: i64, x_hat: u64, x_max: u64) -> u64 {
-    let theta = (x_hat).min(x_max - x_hat) as i64;
+    let theta = x_hat.min(x_max - x_hat) as i64;
     if delta >= 0 && delta <= theta {
         2 * delta as u64
     } else if delta < 0 && (-delta) <= theta {
         (2 * (-delta)) as u64 - 1
     } else {
-        (theta as u64 + delta.unsigned_abs())
+        theta as u64 + delta.unsigned_abs()
     }
 }
 
@@ -322,10 +325,11 @@ pub fn compress(
         // Update previous sample for next block's predictor
         prev_sample = block[j - 1];
 
-        // Check all-zeros
-        let all_zero = data.iter().all(|&d| d == 0);
+        // Select best option (includes zero-block detection)
+        let max_k = ((1u32 << id_len) - 3).min(n.saturating_sub(2));
+        let option = select_option(data, n, id_len, max_k);
 
-        if all_zero {
+        if let CodingOption::ZeroBlock = option {
             if zero_run == 0 {
                 zero_ref = if is_ref { Some(block[0]) } else { None };
             }
@@ -362,10 +366,6 @@ pub fn compress(
         if seg_remaining == 0 {
             seg_remaining = seg_size(cfg, blk + 1);
         }
-
-        // Select best option
-        let max_k = ((1u32 << id_len) - 3).min(n.saturating_sub(2));
-        let option = select_option(data, n, id_len, max_k);
 
         // Write CDS
         match option {
@@ -434,6 +434,10 @@ fn select_option(
     id_len: u32,
     max_k: u32,
 ) -> CodingOption {
+    if data.iter().all(|&d| d == 0) {
+        return CodingOption::ZeroBlock;
+    }
+
     let mut best_cost = u64::MAX;
     let mut best = CodingOption::NoCompression;
 

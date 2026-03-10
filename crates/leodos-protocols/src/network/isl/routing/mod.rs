@@ -37,21 +37,29 @@ pub struct Router<N, S, E, W, G, L, R> {
 }
 
 /// Error from a specific directional link or from ISL message parsing.
+#[derive(Debug, thiserror::Error)]
 pub enum Error<N, S, E, W, G, L> {
     /// Error on the north link.
+    #[error("North link error: {0}")]
     North(N),
     /// Error on the south link.
+    #[error("South link error: {0}")]
     South(S),
     /// Error on the east link.
+    #[error("East link error: {0}")]
     East(E),
     /// Error on the west link.
+    #[error("West link error: {0}")]
     West(W),
     /// Error on the ground link.
+    #[error("Ground link error: {0}")]
     Ground(G),
     /// Error on the local link.
+    #[error("Local link error: {0}")]
     Local(L),
     /// Error parsing the ISL message.
-    IslMessageError(isl::routing::packet::IslMessageError),
+    #[error("ISL message error: {0}")]
+    IslMessageError(#[from] isl::routing::packet::IslMessageError),
 }
 
 #[bon::bon]
@@ -118,7 +126,17 @@ where
         ground_buffer: &mut [u8],
         local_buffer: &mut [u8],
     ) -> (
-        Result<usize, Error<<N as DataLinkWriter>::Error, <S as DataLinkWriter>::Error, <E as DataLinkWriter>::Error, <W as DataLinkWriter>::Error, <G as DataLinkWriter>::Error, <L as DataLinkWriter>::Error>>,
+        Result<
+            usize,
+            Error<
+                <N as DataLinkWriter>::Error,
+                <S as DataLinkWriter>::Error,
+                <E as DataLinkWriter>::Error,
+                <W as DataLinkWriter>::Error,
+                <G as DataLinkWriter>::Error,
+                <L as DataLinkWriter>::Error,
+            >,
+        >,
         Direction,
     ) {
         let n = self.north.recv(north_buffer).fuse();
@@ -179,7 +197,17 @@ where
         &mut self,
         buffer: &[u8],
         len: usize,
-    ) -> Result<(), Error<<N as DataLinkWriter>::Error, <S as DataLinkWriter>::Error, <E as DataLinkWriter>::Error, <W as DataLinkWriter>::Error, <G as DataLinkWriter>::Error, <L as DataLinkWriter>::Error>> {
+    ) -> Result<
+        (),
+        Error<
+            <N as DataLinkWriter>::Error,
+            <S as DataLinkWriter>::Error,
+            <E as DataLinkWriter>::Error,
+            <W as DataLinkWriter>::Error,
+            <G as DataLinkWriter>::Error,
+            <L as DataLinkWriter>::Error,
+        >,
+    > {
         let packet =
             IslRoutingTelecommand::parse(&buffer[..len]).map_err(Error::IslMessageError)?;
         let target = packet.isl_header.target();

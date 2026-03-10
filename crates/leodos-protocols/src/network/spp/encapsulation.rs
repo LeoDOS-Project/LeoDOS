@@ -34,10 +34,7 @@ use crate::utils::set_bits_u16;
 
 /// The 2-byte mandatory portion of an Encapsulation Packet header.
 #[repr(C)]
-#[derive(
-    FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable,
-    Debug, Copy, Clone,
-)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Debug, Copy, Clone)]
 pub struct EncapsulationHeader {
     /// PVN(3) | Protocol ID(4) | Length of Length(2) |
     /// User Defined(4) | Protocol ID Extension(4) | CCSDS Defined(1).
@@ -82,9 +79,10 @@ pub enum ProtocolId {
 }
 
 /// Errors for Encapsulation Packet operations.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum Error {
     /// Buffer too short for the header.
+    #[error("buffer too short: required {required} bytes, provided {provided} bytes")]
     BufferTooShort {
         /// Minimum bytes needed.
         required: usize,
@@ -92,6 +90,7 @@ pub enum Error {
         provided: usize,
     },
     /// Invalid Packet Version Number (not 0b111).
+    #[error("invalid Packet Version Number: expected 0b111, got {0:#05b}")]
     InvalidPvn(u8),
 }
 
@@ -117,11 +116,7 @@ impl EncapsulationHeader {
     }
     /// Sets the 4-bit Protocol ID.
     pub fn set_protocol_id(&mut self, pid: u8) {
-        set_bits_u16(
-            &mut self.fields,
-            PROTOCOL_ID_MASK,
-            pid as u16,
-        );
+        set_bits_u16(&mut self.fields, PROTOCOL_ID_MASK, pid as u16);
     }
 
     /// Returns the 2-bit Length of Length field.
@@ -136,11 +131,7 @@ impl EncapsulationHeader {
     }
     /// Sets the 2-bit Length of Length field.
     pub fn set_len_of_len(&mut self, lol: u8) {
-        set_bits_u16(
-            &mut self.fields,
-            LEN_OF_LEN_MASK,
-            lol as u16,
-        );
+        set_bits_u16(&mut self.fields, LEN_OF_LEN_MASK, lol as u16);
     }
 
     /// Returns the 4-bit User Defined field.
@@ -167,11 +158,7 @@ impl EncapsulationHeader {
     }
     /// Sets the 1-bit CCSDS Defined field.
     pub fn set_ccsds_defined(&mut self, val: bool) {
-        set_bits_u16(
-            &mut self.fields,
-            CCSDS_DEF_MASK,
-            u16::from(val),
-        );
+        set_bits_u16(&mut self.fields, CCSDS_DEF_MASK, u16::from(val));
     }
 
     /// Returns the number of bytes used for the packet length field.
@@ -210,10 +197,7 @@ impl EncapsulationHeader {
 ///
 /// `len_of_len` is the value from the header's Length of Length field.
 /// `bytes` should start at the first byte after the mandatory header.
-pub fn read_packet_length(
-    len_of_len: u8,
-    bytes: &[u8],
-) -> Result<Option<u32>, Error> {
+pub fn read_packet_length(len_of_len: u8, bytes: &[u8]) -> Result<Option<u32>, Error> {
     match len_of_len {
         0b00 => Ok(None),
         0b01 => {
@@ -232,9 +216,7 @@ pub fn read_packet_length(
                     provided: bytes.len(),
                 });
             }
-            Ok(Some(
-                u16::from_be_bytes([bytes[0], bytes[1]]) as u32,
-            ))
+            Ok(Some(u16::from_be_bytes([bytes[0], bytes[1]]) as u32))
         }
         _ => {
             if bytes.len() < 4 {
@@ -253,11 +235,7 @@ pub fn read_packet_length(
 /// Writes the variable-length packet length after the mandatory header.
 ///
 /// Returns the number of bytes written (0, 1, 2, or 4).
-pub fn write_packet_length(
-    len_of_len: u8,
-    length: u32,
-    bytes: &mut [u8],
-) -> Result<usize, Error> {
+pub fn write_packet_length(len_of_len: u8, length: u32, bytes: &mut [u8]) -> Result<usize, Error> {
     match len_of_len {
         0b00 => Ok(0),
         0b01 => {
@@ -299,13 +277,11 @@ pub fn write_packet_length(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zerocopy::IntoBytes;
 
     #[test]
     fn header_pvn_is_111() {
         let mut buf = [0u8; 2];
-        let hdr =
-            EncapsulationHeader::mut_from_bytes(&mut buf).unwrap();
+        let hdr = EncapsulationHeader::mut_from_bytes(&mut buf).unwrap();
         hdr.set_pvn(ENCAP_PVN);
         assert_eq!(hdr.pvn(), 0b111);
         // Top 3 bits of first byte should be 0b111 = 0xE0
@@ -315,8 +291,7 @@ mod tests {
     #[test]
     fn protocol_id_roundtrip() {
         let mut buf = [0u8; 2];
-        let hdr =
-            EncapsulationHeader::mut_from_bytes(&mut buf).unwrap();
+        let hdr = EncapsulationHeader::mut_from_bytes(&mut buf).unwrap();
         hdr.set_pvn(ENCAP_PVN);
         hdr.set_protocol_id(ProtocolId::Ipv4 as u8);
         assert_eq!(hdr.protocol_id(), ProtocolId::Ipv4 as u8);
@@ -326,8 +301,7 @@ mod tests {
     fn len_of_len_values() {
         for lol in 0..=3u8 {
             let mut buf = [0u8; 2];
-            let hdr = EncapsulationHeader::mut_from_bytes(&mut buf)
-                .unwrap();
+            let hdr = EncapsulationHeader::mut_from_bytes(&mut buf).unwrap();
             hdr.set_pvn(ENCAP_PVN);
             hdr.set_len_of_len(lol);
             assert_eq!(hdr.len_of_len(), lol);
@@ -344,8 +318,7 @@ mod tests {
     #[test]
     fn user_defined_field() {
         let mut buf = [0u8; 2];
-        let hdr =
-            EncapsulationHeader::mut_from_bytes(&mut buf).unwrap();
+        let hdr = EncapsulationHeader::mut_from_bytes(&mut buf).unwrap();
         hdr.set_pvn(ENCAP_PVN);
         hdr.set_user_defined(0x0F);
         assert_eq!(hdr.user_defined(), 0x0F);
@@ -361,8 +334,7 @@ mod tests {
     #[test]
     fn parse_valid() {
         let mut buf = [0u8; 2];
-        let hdr =
-            EncapsulationHeader::mut_from_bytes(&mut buf).unwrap();
+        let hdr = EncapsulationHeader::mut_from_bytes(&mut buf).unwrap();
         hdr.set_pvn(ENCAP_PVN);
         hdr.set_protocol_id(ProtocolId::Ipv6 as u8);
         hdr.set_len_of_len(0b10);
@@ -385,8 +357,7 @@ mod tests {
     #[test]
     fn read_write_packet_length_2byte() {
         let mut buf = [0u8; 4];
-        let n =
-            write_packet_length(0b10, 50000, &mut buf).unwrap();
+        let n = write_packet_length(0b10, 50000, &mut buf).unwrap();
         assert_eq!(n, 2);
         let len = read_packet_length(0b10, &buf).unwrap();
         assert_eq!(len, Some(50000));
@@ -395,8 +366,7 @@ mod tests {
     #[test]
     fn read_write_packet_length_4byte() {
         let mut buf = [0u8; 4];
-        let n = write_packet_length(0b11, 1_000_000, &mut buf)
-            .unwrap();
+        let n = write_packet_length(0b11, 1_000_000, &mut buf).unwrap();
         assert_eq!(n, 4);
         let len = read_packet_length(0b11, &buf).unwrap();
         assert_eq!(len, Some(1_000_000));
@@ -412,8 +382,7 @@ mod tests {
     #[test]
     fn total_header_size() {
         let mut buf = [0u8; 2];
-        let hdr =
-            EncapsulationHeader::mut_from_bytes(&mut buf).unwrap();
+        let hdr = EncapsulationHeader::mut_from_bytes(&mut buf).unwrap();
 
         hdr.set_len_of_len(0b00);
         assert_eq!(hdr.total_header_size(), 2);

@@ -30,15 +30,19 @@ const STRIP_HEIGHT: usize = 8;
 const DWT_LEVELS: usize = 3;
 
 /// Compression/decompression error.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Invalid configuration parameter.
+    #[error("Invalid compressor configuration")]
     InvalidConfig,
     /// Output buffer too small.
+    #[error("Output buffer too small to hold compressed data")]
     OutputFull,
     /// Input bitstream truncated or malformed.
+    #[error("Input data truncated or malformed")]
     Truncated,
     /// Scratch buffer too small.
+    #[error("Provided scratch buffer is too small for required temporary storage")]
     ScratchTooSmall,
 }
 
@@ -59,20 +63,14 @@ pub struct Config {
 
 impl Config {
     fn validate(&self) -> Result<(), Error> {
-        if self.width == 0
-            || self.height == 0
-            || self.width % 8 != 0
-            || self.height % 8 != 0
-        {
+        if self.width == 0 || self.height == 0 || self.width % 8 != 0 || self.height % 8 != 0 {
             return Err(Error::InvalidConfig);
         }
         if self.bps < 2 || self.bps > 16 {
             return Err(Error::InvalidConfig);
         }
         let max_strips = self.height as usize / STRIP_HEIGHT;
-        if self.segment_strips == 0
-            || self.segment_strips as usize > max_strips
-        {
+        if self.segment_strips == 0 || self.segment_strips as usize > max_strips {
             return Err(Error::InvalidConfig);
         }
         Ok(())
@@ -85,7 +83,6 @@ impl Config {
     fn seg_height(&self) -> usize {
         self.segment_strips as usize * STRIP_HEIGHT
     }
-
 }
 
 /// Required scratch space (in i32 elements) for compress/decompress.
@@ -281,19 +278,11 @@ fn interleave(data: &mut [i32], n: usize) {
 ///
 /// `coeffs` is row-major with stride `stride`.
 /// Transforms region `[0..h][0..w]`.
-fn dwt53_forward_2d(
-    coeffs: &mut [i32],
-    stride: usize,
-    w: usize,
-    h: usize,
-) {
+fn dwt53_forward_2d(coeffs: &mut [i32], stride: usize, w: usize, h: usize) {
     // Rows
     for y in 0..h {
         let row_start = y * stride;
-        dwt53_forward_1d(
-            &mut coeffs[row_start..row_start + w],
-            w,
-        );
+        dwt53_forward_1d(&mut coeffs[row_start..row_start + w], w);
     }
 
     // Columns — extract column, transform, put back
@@ -311,12 +300,7 @@ fn dwt53_forward_2d(
 }
 
 /// Inverse 2D DWT on a rectangular region, one level.
-fn dwt53_inverse_2d(
-    coeffs: &mut [i32],
-    stride: usize,
-    w: usize,
-    h: usize,
-) {
+fn dwt53_inverse_2d(coeffs: &mut [i32], stride: usize, w: usize, h: usize) {
     // Columns first (reverse of forward)
     const MAX_COL: usize = 8192;
     let mut col = [0i32; MAX_COL];
@@ -333,20 +317,12 @@ fn dwt53_inverse_2d(
     // Rows
     for y in 0..h {
         let row_start = y * stride;
-        dwt53_inverse_1d(
-            &mut coeffs[row_start..row_start + w],
-            w,
-        );
+        dwt53_inverse_1d(&mut coeffs[row_start..row_start + w], w);
     }
 }
 
 /// 3-level forward DWT on a segment.
-fn dwt_forward_3level(
-    coeffs: &mut [i32],
-    stride: usize,
-    w: usize,
-    h: usize,
-) {
+fn dwt_forward_3level(coeffs: &mut [i32], stride: usize, w: usize, h: usize) {
     let mut cw = w;
     let mut ch = h;
     for _ in 0..DWT_LEVELS {
@@ -357,12 +333,7 @@ fn dwt_forward_3level(
 }
 
 /// 3-level inverse DWT on a segment.
-fn dwt_inverse_3level(
-    coeffs: &mut [i32],
-    stride: usize,
-    w: usize,
-    h: usize,
-) {
+fn dwt_inverse_3level(coeffs: &mut [i32], stride: usize, w: usize, h: usize) {
     let mut sizes = [(0usize, 0usize); DWT_LEVELS];
     let mut cw = w;
     let mut ch = h;
@@ -394,7 +365,6 @@ fn dwt_inverse_3level(
 // implementation uses a simplified but compatible approach
 // for the core structure.
 
-
 struct BitWriter<'a> {
     buf: &'a mut [u8],
     pos: usize,
@@ -403,14 +373,14 @@ struct BitWriter<'a> {
 
 impl<'a> BitWriter<'a> {
     fn new(buf: &'a mut [u8]) -> Self {
-        Self { buf, pos: 0, bit: 0 }
+        Self {
+            buf,
+            pos: 0,
+            bit: 0,
+        }
     }
 
-    fn write_bits(
-        &mut self,
-        value: u64,
-        n: u32,
-    ) -> Result<(), Error> {
+    fn write_bits(&mut self, value: u64, n: u32) -> Result<(), Error> {
         for i in (0..n).rev() {
             let b = ((value >> i) & 1) as u8;
             if self.pos >= self.buf.len() {
@@ -435,11 +405,7 @@ impl<'a> BitWriter<'a> {
     }
 
     fn bytes_written(&self) -> usize {
-        if self.bit > 0 {
-            self.pos + 1
-        } else {
-            self.pos
-        }
+        if self.bit > 0 { self.pos + 1 } else { self.pos }
     }
 }
 
@@ -451,7 +417,11 @@ struct BitReader<'a> {
 
 impl<'a> BitReader<'a> {
     fn new(buf: &'a [u8]) -> Self {
-        Self { buf, pos: 0, bit: 0 }
+        Self {
+            buf,
+            pos: 0,
+            bit: 0,
+        }
     }
 
     fn read_bits(&mut self, n: u32) -> Result<u64, Error> {
@@ -487,9 +457,7 @@ fn write_segment_header(
     // [3 bits] DWT levels (3)
     // [1 bit] signed flag
     // [2 bits] reserved
-    let total_segs = (cfg.strips() + cfg.segment_strips as usize
-        - 1)
-        / cfg.segment_strips as usize;
+    let total_segs = (cfg.strips() + cfg.segment_strips as usize - 1) / cfg.segment_strips as usize;
     let start = if seg_idx == 0 { 1u64 } else { 0 };
     let end = if seg_idx == total_segs - 1 { 1u64 } else { 0 };
 
@@ -504,9 +472,7 @@ fn write_segment_header(
     Ok(())
 }
 
-fn read_segment_header(
-    r: &mut BitReader,
-) -> Result<(bool, bool, u8, u8, u8, bool), Error> {
+fn read_segment_header(r: &mut BitReader) -> Result<(bool, bool, u8, u8, u8, bool), Error> {
     let start = r.read_bits(1)? == 1;
     let end = r.read_bits(1)? == 1;
     let _seg_idx = r.read_bits(8)? as u8;
@@ -546,11 +512,7 @@ fn encode_segment(
 }
 
 /// Decode a segment's DWT coefficients.
-fn decode_segment(
-    r: &mut BitReader,
-    coeffs: &mut [i32],
-    max_bp: u8,
-) -> Result<usize, Error> {
+fn decode_segment(r: &mut BitReader, coeffs: &mut [i32], max_bp: u8) -> Result<usize, Error> {
     let n = r.read_bits(20)? as usize;
 
     for i in 0..n {
@@ -610,8 +572,7 @@ pub fn compress(
 
     let mut strip = 0usize;
     while strip < total_strips {
-        let cur_strips =
-            core::cmp::min(seg_strips, total_strips - strip);
+        let cur_strips = core::cmp::min(seg_strips, total_strips - strip);
         let cur_h = cur_strips * STRIP_HEIGHT;
         let y_start = strip * STRIP_HEIGHT;
 
@@ -619,8 +580,7 @@ pub fn compress(
         let coeffs = &mut scratch[..w * cur_h];
         for y in 0..cur_h {
             for x in 0..w {
-                coeffs[y * w + x] =
-                    image[(y_start + y) * w + x] as i32;
+                coeffs[y * w + x] = image[(y_start + y) * w + x] as i32;
             }
         }
 
@@ -641,9 +601,7 @@ pub fn compress(
             32 - max_abs.leading_zeros()
         } as u8;
 
-        write_segment_header(
-            &mut bw, cfg, seg_idx, max_bp,
-        )?;
+        write_segment_header(&mut bw, cfg, seg_idx, max_bp)?;
         encode_segment(&mut bw, coeffs, w, cur_h, max_bp)?;
 
         strip += cur_strips;
@@ -695,13 +653,11 @@ pub fn decompress(
     let mut strip = 0usize;
 
     while strip < total_strips {
-        let cur_strips =
-            core::cmp::min(seg_strips_n, total_strips - strip);
+        let cur_strips = core::cmp::min(seg_strips_n, total_strips - strip);
         let cur_h = cur_strips * STRIP_HEIGHT;
         let y_start = strip * STRIP_HEIGHT;
 
-        let (_, _, _, max_bp, _, _signed) =
-            read_segment_header(&mut br)?;
+        let (_, _, _, max_bp, _, _signed) = read_segment_header(&mut br)?;
 
         let coeffs = &mut scratch[..wi * cur_h];
         let n = decode_segment(&mut br, coeffs, max_bp)?;
@@ -747,10 +703,7 @@ mod tests {
         let mut scratch = [0i32; 4096];
         let mut compressed = [0u8; 8192];
 
-        let n = compress(
-            cfg, image, &mut compressed, &mut scratch,
-        )
-        .unwrap();
+        let n = compress(cfg, image, &mut compressed, &mut scratch).unwrap();
         assert!(n > 0);
 
         let n_px = image.len();
@@ -758,12 +711,7 @@ mod tests {
         for s in scratch.iter_mut() {
             *s = 0;
         }
-        let (_, count) = decompress(
-            &compressed[..n],
-            &mut decoded[..n_px],
-            &mut scratch,
-        )
-        .unwrap();
+        let (_, count) = decompress(&compressed[..n], &mut decoded[..n_px], &mut scratch).unwrap();
         assert_eq!(count, n_px);
         assert_eq!(&decoded[..n_px], image);
     }

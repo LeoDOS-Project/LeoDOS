@@ -86,9 +86,10 @@ impl TelecommandSecondaryHeader {
 }
 
 /// An error that can occur when building a CFE packet.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum TelecommandError {
     /// The provided buffer is too small to hold the packet.
+    #[error("Buffer too small: required {required_len} bytes, but provided {provided_len} bytes")]
     BufferTooSmall {
         /// Minimum number of bytes needed.
         required_len: usize,
@@ -96,14 +97,19 @@ pub enum TelecommandError {
         provided_len: usize,
     },
     /// The underlying SPP builder returned an error.
-    SpacePacketBuildError(spp::BuildError),
+    #[error("SpacePacket build error: {0}")]
+    SpacePacketBuildError(#[from] spp::BuildError),
     /// The underlying SPP parser returned an error.
-    SpacePacketParseError(spp::ParseError),
+    #[error("SpacePacket parse error: {0}")]
+    SpacePacketParseError(#[from] spp::ParseError),
     /// The secondary header flag is not set to Present.
+    #[error("Secondary header flag is not set to Present")]
     MissingSecondaryHeader,
     /// The packet data field does not match the expected layout.
+    #[error("Packet data field does not match expected layout")]
     PayloadMismatch,
     /// The packet type does not match (e.g. telemetry instead of telecommand).
+    #[error("Packet type is not Telecommand")]
     TypeMismatch,
 }
 
