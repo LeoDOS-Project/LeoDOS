@@ -366,9 +366,9 @@ impl SpacePacket {
         if data_len == 0 {
             return Err(BuildError::EmptyDataField);
         }
-        let required_len = data_len;
+        let required_len = data_len + size_of::<PrimaryHeader>();
         let provided_len = buffer.len();
-        let (packet, _) = Self::mut_from_prefix_with_elems(buffer, required_len).map_err(|_| {
+        let (packet, _) = Self::mut_from_prefix_with_elems(buffer, data_len).map_err(|_| {
             BuildError::BufferTooSmall {
                 required: required_len,
                 provided: provided_len,

@@ -178,6 +178,7 @@ impl AosTransferFrame {
         frame.header.set_vc_frame_count(vc_frame_count);
         frame.header.set_replay(replay_flag);
         frame.header.set_usage_flag(usage_flag);
+        frame.data_field.copy_from_slice(payload);
 
         Ok(frame)
     }

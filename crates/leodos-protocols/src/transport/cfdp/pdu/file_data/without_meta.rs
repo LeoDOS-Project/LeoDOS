@@ -20,7 +20,7 @@ use zerocopy::network_endian::U64;
 /// **does not** have segment metadata.
 ///
 /// It consists of a `rest` slice containing the FSS `Offset` and the `file_data`.
-/// ```
+/// ```text
 /// +------------------------------------+----------------+--------------------------------------+
 /// | Field Name                         | Size           | Notes                                |
 /// +------------------------------------+----------------+--------------------------------------+

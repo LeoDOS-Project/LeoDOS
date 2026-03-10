@@ -23,7 +23,7 @@ use zerocopy::network_endian::U64;
 ///
 /// It consists of the administrative octet and a `rest` slice containing the
 /// `segment_metadata`, the FSS `Offset`, and the `file_data`.
-/// ```
+/// ```text
 /// +------------------------------------+----------------+--------------------------------------+
 /// | Field Name                         | Size           | Notes                                |
 /// +------------------------------------+----------------+--------------------------------------+

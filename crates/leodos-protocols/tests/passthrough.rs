@@ -6,9 +6,9 @@ use std::task::Poll;
 
 use leodos_protocols::datalink::link::asymmetric::AsymmetricLink;
 use leodos_protocols::datalink::link::{FrameReceiver, FrameSender};
-use leodos_protocols::datalink::DataLink;
+use leodos_protocols::datalink::{DataLinkReader, DataLinkWriter};
 use leodos_protocols::network::passthrough::PassThrough;
-use leodos_protocols::network::NetworkLayer;
+use leodos_protocols::network::{NetworkReader, NetworkWriter};
 
 #[derive(Debug, Clone)]
 struct MockError;

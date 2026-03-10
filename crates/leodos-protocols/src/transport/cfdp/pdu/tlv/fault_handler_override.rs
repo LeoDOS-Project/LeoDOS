@@ -88,7 +88,7 @@ impl Default for FaultHandlerSet {
     /// Creates a new `FaultHandlerSet` with the default handler
     /// (`HandlerCode::default()`, which is `Cancel`) for all conditions.
     fn default() -> Self {
-        let default_handler_bits = HandlerCode::default() as u32;
+        let default_handler_bits = handler_to_bits(HandlerCode::default());
         let mut packed_value = 0u32;
         // Pre-fill all 16 slots with the default handler.
         for i in 0..16 {

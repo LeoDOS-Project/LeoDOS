@@ -79,18 +79,25 @@ pub fn encode_cltu(tc_frame_bytes: &[u8], output_buffer: &mut [u8]) -> Result<us
 }
 
 mod bch {
+    /// MSB-first CRC-7 lookup table for the CCSDS BCH(63,56) code.
+    ///
+    /// Generator polynomial: g(x) = x^7 + x^6 + x^2 + 1
+    /// (CCSDS 231.0-B-4 / 131.0-B-5).
+    ///
+    /// The 7-bit CRC is stored left-aligned in each byte (bits [7:1]),
+    /// so the aligned polynomial is 0x45 << 1 = 0x8A.
     const fn generate_lookup_table() -> [u8; 256] {
-        const CCSDS_POLYNOMIAL: u8 = 0b1011_0101; // x^7 + x^6 + x^4 + x^2 + 1 (transposed)
+        const POLY_ALIGNED: u8 = 0x8A; // (x^6 + x^2 + 1) << 1
         let mut table = [0u8; 256];
         let mut i = 0;
         while i < 256 {
             let mut val = i as u8;
             let mut bit = 0;
             while bit < 8 {
-                val = if val & 1 == 1 {
-                    (val >> 1) ^ CCSDS_POLYNOMIAL
+                val = if val & 0x80 != 0 {
+                    (val << 1) ^ POLY_ALIGNED
                 } else {
-                    val >> 1
+                    val << 1
                 };
                 bit += 1;
             }
@@ -102,12 +109,17 @@ mod bch {
 
     const LOOKUP_TABLE: [u8; 256] = generate_lookup_table();
 
-    /// Computes the (63, 56) BCH codeword as defined in CCSDS 231.0-B-4.
+    /// Computes the (63, 56) BCH parity byte as defined in
+    /// CCSDS 231.0-B-4.
+    ///
+    /// Returns an 8-bit parity byte where bits [7:1] hold the
+    /// complemented 7-bit BCH remainder and bit [0] is the
+    /// filler bit (always 0).
     pub fn compute_bch_parity(bytes: &[u8; 7]) -> u8 {
         let remainder = bytes
             .iter()
-            .fold(0, |acc, &val| LOOKUP_TABLE[(acc ^ val) as usize]);
-        !remainder & 0x7F
+            .fold(0u8, |acc, &val| LOOKUP_TABLE[(acc ^ val) as usize]);
+        !remainder & 0xFE
     }
 }
 
@@ -210,11 +222,11 @@ mod tests {
     fn bch_test_vectors() {
         assert_eq!(
             bch::compute_bch_parity(&[0x22, 0xF6, 0x00, 0xFF, 0x00, 0x42, 0x1A]),
-            0x4A
+            0x12
         );
         assert_eq!(
             bch::compute_bch_parity(&[0x8C, 0xC0, 0x0E, 0x01, 0x0D, 0x19, 0x06]),
-            0x16
+            0x5A
         );
     }
 
@@ -229,19 +241,19 @@ mod tests {
         let expected_start = &cltu_buffer[0..2];
         assert_eq!(expected_start, &[0xEB, 0x90]);
 
-        // First block: 01,02,03,04,05,06,07 -> Parity 0x1F
+        // First block: 01,02,03,04,05,06,07 -> Parity 0x70
         assert_eq!(
             cltu_buffer[2..9],
             [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]
         );
-        assert_eq!(cltu_buffer[9], 0x1F);
+        assert_eq!(cltu_buffer[9], 0x70);
 
-        // Second block: 08,55,55,55,55,55,55 -> Parity 0x47
+        // Second block: 08,55,55,55,55,55,55 -> Parity 0x90
         assert_eq!(
             cltu_buffer[10..17],
             [0x08, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55]
         );
-        assert_eq!(cltu_buffer[17], 0x47);
+        assert_eq!(cltu_buffer[17], 0x90);
 
         let expected_tail = &cltu_buffer[18..26];
         assert_eq!(expected_tail, &[0xC5; 8]);
