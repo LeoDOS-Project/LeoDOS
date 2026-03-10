@@ -6,6 +6,8 @@ pub mod bits;
 pub mod fmt;
 /// CCSDS time code formats (CCSDS 301.0-B-4).
 pub mod time;
+/// Interior-mutable cell that only allows access through sync closures.
+pub mod cell;
 
 pub use bits::*;
 pub use fmt::*;

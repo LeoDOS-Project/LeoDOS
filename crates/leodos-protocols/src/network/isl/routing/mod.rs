@@ -8,7 +8,7 @@ pub mod packet;
 use futures::FutureExt as _;
 use zerocopy::IntoBytes as _;
 
-use crate::datalink::{DataLinkReader, DataLinkWriter};
+use crate::datalink::{DatalinkReader, DatalinkWriter};
 use crate::network::isl;
 use crate::network::isl::address::Address;
 use crate::network::isl::routing::algorithm::RoutingAlgorithm;
@@ -65,12 +65,12 @@ pub enum Error<N, S, E, W, G, L> {
 #[bon::bon]
 impl<N, S, E, W, G, L, R> Router<N, S, E, W, G, L, R>
 where
-    N: DataLinkWriter + DataLinkReader<Error = <N as DataLinkWriter>::Error>,
-    S: DataLinkWriter + DataLinkReader<Error = <S as DataLinkWriter>::Error>,
-    E: DataLinkWriter + DataLinkReader<Error = <E as DataLinkWriter>::Error>,
-    W: DataLinkWriter + DataLinkReader<Error = <W as DataLinkWriter>::Error>,
-    G: DataLinkWriter + DataLinkReader<Error = <G as DataLinkWriter>::Error>,
-    L: DataLinkWriter + DataLinkReader<Error = <L as DataLinkWriter>::Error>,
+    N: DatalinkWriter + DatalinkReader<Error = <N as DatalinkWriter>::Error>,
+    S: DatalinkWriter + DatalinkReader<Error = <S as DatalinkWriter>::Error>,
+    E: DatalinkWriter + DatalinkReader<Error = <E as DatalinkWriter>::Error>,
+    W: DatalinkWriter + DatalinkReader<Error = <W as DatalinkWriter>::Error>,
+    G: DatalinkWriter + DatalinkReader<Error = <G as DatalinkWriter>::Error>,
+    L: DatalinkWriter + DatalinkReader<Error = <L as DatalinkWriter>::Error>,
     R: RoutingAlgorithm,
 {
     #[builder]
@@ -129,12 +129,12 @@ where
         Result<
             usize,
             Error<
-                <N as DataLinkWriter>::Error,
-                <S as DataLinkWriter>::Error,
-                <E as DataLinkWriter>::Error,
-                <W as DataLinkWriter>::Error,
-                <G as DataLinkWriter>::Error,
-                <L as DataLinkWriter>::Error,
+                <N as DatalinkWriter>::Error,
+                <S as DatalinkWriter>::Error,
+                <E as DatalinkWriter>::Error,
+                <W as DatalinkWriter>::Error,
+                <G as DatalinkWriter>::Error,
+                <L as DatalinkWriter>::Error,
             >,
         >,
         Direction,
@@ -200,12 +200,12 @@ where
     ) -> Result<
         (),
         Error<
-            <N as DataLinkWriter>::Error,
-            <S as DataLinkWriter>::Error,
-            <E as DataLinkWriter>::Error,
-            <W as DataLinkWriter>::Error,
-            <G as DataLinkWriter>::Error,
-            <L as DataLinkWriter>::Error,
+            <N as DatalinkWriter>::Error,
+            <S as DatalinkWriter>::Error,
+            <E as DatalinkWriter>::Error,
+            <W as DatalinkWriter>::Error,
+            <G as DatalinkWriter>::Error,
+            <L as DatalinkWriter>::Error,
         >,
     > {
         let packet =

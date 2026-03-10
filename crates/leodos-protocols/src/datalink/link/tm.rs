@@ -5,7 +5,7 @@ use core::task::Poll;
 use heapless::Deque;
 
 use crate::coding::{CodingReader, CodingWriter};
-use crate::datalink::sdlp::tm::TelemetryTransferFrame;
+use crate::datalink::framing::sdlp::tm::TelemetryTransferFrame;
 
 /// Configuration for a Telemetry link channel.
 #[derive(Debug, Clone)]
@@ -19,33 +19,24 @@ pub struct TmConfig {
 }
 
 /// Errors that can occur during TM link operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum TmError<E> {
     /// The underlying link returned an error.
+    #[error("link error: {0}")]
     Link(E),
     /// The data exceeds the maximum frame data length.
+    #[error("frame too large")]
     FrameTooLarge,
     /// A received frame failed to parse.
+    #[error("invalid frame")]
     InvalidFrame,
     /// The internal receive queue is full.
+    #[error("send queue full")]
     QueueFull,
     /// Failed to construct a TM Transfer Frame.
+    #[error("frame build error")]
     BuildError,
 }
-
-impl<E: core::fmt::Display> core::fmt::Display for TmError<E> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Link(e) => write!(f, "link error: {e}"),
-            Self::FrameTooLarge => write!(f, "frame too large"),
-            Self::InvalidFrame => write!(f, "invalid frame"),
-            Self::QueueFull => write!(f, "send queue full"),
-            Self::BuildError => write!(f, "frame build error"),
-        }
-    }
-}
-
-impl<E: core::error::Error> core::error::Error for TmError<E> {}
 
 struct PendingPacket<const MTU: usize> {
     data: [u8; MTU],

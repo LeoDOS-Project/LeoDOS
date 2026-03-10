@@ -5,7 +5,7 @@ use std::rc::Rc;
 use leodos_protocols::coding::CodingWriter;
 use leodos_protocols::datalink::link::tc::{TcConfig, TcWriteChannel};
 use leodos_protocols::datalink::link::tm::{TmConfig, TmWriteChannel};
-use leodos_protocols::datalink::sdlp::tc::{BypassFlag, ControlFlag};
+use leodos_protocols::datalink::framing::sdlp::tc::{BypassFlag, ControlFlag};
 
 #[derive(Debug, Clone)]
 struct MockError;
@@ -117,7 +117,7 @@ fn tc_round_trip() {
         let sent_frame = wire.pop_front().unwrap();
 
         let frame =
-            leodos_protocols::datalink::sdlp::tc::TelecommandTransferFrame::parse(&sent_frame)
+            leodos_protocols::datalink::framing::sdlp::tc::TelecommandTransferFrame::parse(&sent_frame)
                 .unwrap();
         let data_field = frame.data_field();
 
@@ -178,7 +178,7 @@ fn tm_round_trip() {
         // Since no coding pipeline was used (MockWriter passes
         // through), the frame is not randomized.
         let frame =
-            leodos_protocols::datalink::sdlp::tm::TelemetryTransferFrame::parse_raw(&sent_frame)
+            leodos_protocols::datalink::framing::sdlp::tm::TelemetryTransferFrame::parse_raw(&sent_frame)
                 .unwrap();
 
         assert_eq!(frame.data_field(), test_data);

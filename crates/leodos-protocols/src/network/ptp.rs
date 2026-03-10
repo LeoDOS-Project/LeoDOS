@@ -1,4 +1,4 @@
-use crate::datalink::{DataLinkReader, DataLinkWriter};
+use crate::datalink::{DatalinkReader, DatalinkWriter};
 use crate::network::{NetworkReader, NetworkWriter};
 
 /// A point-to-point network layer that forwards directly to a datalink.
@@ -18,18 +18,18 @@ impl<L> PointToPoint<L> {
     }
 }
 
-impl<L: DataLinkWriter> NetworkWriter for PointToPoint<L> {
+impl<L: DatalinkWriter> NetworkWriter for PointToPoint<L> {
     type Error = L::Error;
 
     async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        DataLinkWriter::write(&mut self.link, data).await
+        DatalinkWriter::write(&mut self.link, data).await
     }
 }
 
-impl<L: DataLinkReader> NetworkReader for PointToPoint<L> {
+impl<L: DatalinkReader> NetworkReader for PointToPoint<L> {
     type Error = L::Error;
 
     async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
-        DataLinkReader::read(&mut self.link, buffer).await
+        DatalinkReader::read(&mut self.link, buffer).await
     }
 }

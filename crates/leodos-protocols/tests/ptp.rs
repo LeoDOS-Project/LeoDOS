@@ -5,9 +5,7 @@ use std::rc::Rc;
 use std::task::Poll;
 
 use leodos_protocols::datalink::link::asymmetric::AsymmetricLink;
-use leodos_protocols::datalink::link::{FrameReceiver, FrameSender};
-#[allow(unused_imports)]
-use leodos_protocols::datalink::{DataLinkReader, DataLinkWriter};
+use leodos_protocols::datalink::{DatalinkReader, DatalinkWriter};
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::{NetworkReader, NetworkWriter};
 
@@ -59,19 +57,19 @@ struct MockReceiver {
     state: Rc<RefCell<MockChannelState>>,
 }
 
-impl FrameSender for MockSender {
+impl DatalinkWriter for MockSender {
     type Error = MockError;
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         self.state.borrow_mut().queue.push_back(data.to_vec());
         Ok(())
     }
 }
 
-impl FrameReceiver for MockReceiver {
+impl DatalinkReader for MockReceiver {
     type Error = MockError;
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         poll_fn(|_cx| {
             let mut state = self.state.borrow_mut();
             if let Some(data) = state.queue.pop_front() {

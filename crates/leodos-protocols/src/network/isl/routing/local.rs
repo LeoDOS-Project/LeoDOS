@@ -4,7 +4,7 @@ use core::task::Poll;
 
 use heapless::Deque;
 
-use crate::datalink::{DataLinkReader, DataLinkWriter};
+use crate::datalink::{DatalinkReader, DatalinkWriter};
 use crate::network::{NetworkReader, NetworkWriter};
 
 /// Error from a local in-process channel.
@@ -136,7 +136,7 @@ pub struct LocalRouterHandle<'a, const QUEUE: usize, const MTU: usize> {
     channel: &'a LocalChannel<QUEUE, MTU>,
 }
 
-impl<'a, const QUEUE: usize, const MTU: usize> DataLinkWriter for LocalRouterHandle<'a, QUEUE, MTU> {
+impl<'a, const QUEUE: usize, const MTU: usize> DatalinkWriter for LocalRouterHandle<'a, QUEUE, MTU> {
     type Error = LocalLinkError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -164,7 +164,7 @@ impl<'a, const QUEUE: usize, const MTU: usize> DataLinkWriter for LocalRouterHan
     }
 }
 
-impl<'a, const QUEUE: usize, const MTU: usize> DataLinkReader for LocalRouterHandle<'a, QUEUE, MTU> {
+impl<'a, const QUEUE: usize, const MTU: usize> DatalinkReader for LocalRouterHandle<'a, QUEUE, MTU> {
     type Error = LocalLinkError;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {

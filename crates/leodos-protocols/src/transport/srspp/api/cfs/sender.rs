@@ -23,9 +23,9 @@ use crate::transport::srspp::packet::SrsppAckPacket;
 use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::rto::RtoPolicy;
+use crate::utils::cell::SyncRefCell;
 
 use super::Error;
-use super::SharedCell;
 use super::TimerSet;
 
 /// Shared mutable state for the sender channel.
@@ -53,7 +53,7 @@ pub(super) async fn drive_transmits<
     const BUF: usize,
     const MTU: usize,
 >(
-    state: &SharedCell<SenderState<E, WIN, BUF, MTU>>,
+    state: &SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
     tx_buf: &mut [u8],
     link: &mut L,
     rto: &P,
@@ -128,7 +128,7 @@ pub(super) fn drive_ack<
     const BUF: usize,
     const MTU: usize,
 >(
-    state: &SharedCell<SenderState<E, WIN, BUF, MTU>>,
+    state: &SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
     packet: &[u8],
 ) -> Result<(), Error<E>> {
     if let Ok(SrsppType::Ack) = SrsppPacket::parse(packet).and_then(|p| p.srspp_type()) {
@@ -173,7 +173,7 @@ pub(super) async fn drive_sender_timeouts<
     const BUF: usize,
     const MTU: usize,
 >(
-    state: &SharedCell<SenderState<E, WIN, BUF, MTU>>,
+    state: &SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
     tx_buf: &mut [u8],
     link: &mut L,
     rto: &P,
@@ -209,7 +209,7 @@ pub(super) fn sender_next_deadline<
     const BUF: usize,
     const MTU: usize,
 >(
-    state: &SharedCell<SenderState<E, WIN, BUF, MTU>>,
+    state: &SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
 ) -> Option<SysTime> {
     state.with(|s| s.timers.next_deadline())
 }
@@ -219,14 +219,14 @@ pub(super) fn sender_next_deadline<
 /// Channel that owns the sender state. Split into handle + driver.
 pub struct SrsppSender<E, const WIN: usize = 8, const BUF: usize = 4096, const MTU: usize = 512> {
     /// Interior-mutable sender state shared between handle and driver.
-    state: SharedCell<SenderState<E, WIN, BUF, MTU>>,
+    state: SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
 }
 
 impl<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize> SrsppSender<E, WIN, BUF, MTU> {
     /// Creates a new sender with the given configuration.
     pub fn new(config: SenderConfig) -> Self {
         Self {
-            state: SharedCell::new(SenderState {
+            state: SyncRefCell::new(SenderState {
                 machine: SenderMachine::new(config),
                 actions: SenderActions::new(),
                 timers: TimerSet::new(),
@@ -363,7 +363,7 @@ pub(super) fn duration_until(deadline: Option<SysTime>) -> Duration {
 /// Handle for sending data over an SRSPP node.
 pub struct SrsppTxHandle<'a, E, const WIN: usize, const BUF: usize, const MTU: usize> {
     /// Reference to the shared sender state.
-    pub(super) sender: &'a SharedCell<SenderState<E, WIN, BUF, MTU>>,
+    pub(super) sender: &'a SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
 }
 
 impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>

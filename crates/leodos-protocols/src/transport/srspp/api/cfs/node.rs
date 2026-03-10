@@ -14,10 +14,10 @@ use crate::transport::srspp::machine::sender::SenderMachine;
 use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::rto::RtoPolicy;
+use crate::utils::cell::SyncRefCell;
 use heapless::index_map::FnvIndexMap;
 
 use super::Error;
-use super::SharedCell;
 use super::TimerSet;
 use super::receiver::MultiReceiverState;
 use super::receiver::{SrsppRxHandle, drive_data, drive_receiver_timeouts, receiver_next_deadline};
@@ -36,9 +36,9 @@ pub struct SrsppNode<
     const MAX_STREAMS: usize = 4,
 > {
     /// Interior-mutable sender state.
-    pub(super) sender: SharedCell<SenderState<E, WIN, BUF, MTU>>,
+    pub(super) sender: SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
     /// Interior-mutable multi-stream receiver state.
-    pub(super) receiver: SharedCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    pub(super) receiver: SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
 }
 
 impl<
@@ -54,14 +54,14 @@ impl<
     pub fn new(sender_config: SenderConfig, receiver_config: ReceiverConfig) -> Self {
         let ack_delay = Duration::from_millis(receiver_config.ack_delay_ticks);
         Self {
-            sender: SharedCell::new(SenderState {
+            sender: SyncRefCell::new(SenderState {
                 machine: SenderMachine::new(sender_config),
                 actions: SenderActions::new(),
                 timers: TimerSet::new(),
                 closed: false,
                 error: None,
             }),
-            receiver: SharedCell::new(MultiReceiverState {
+            receiver: SyncRefCell::new(MultiReceiverState {
                 config: receiver_config,
                 streams: FnvIndexMap::new(),
                 actions: ReceiverActions::new(),

@@ -21,10 +21,10 @@ use crate::transport::srspp::packet::SrsppAckPacket;
 use crate::transport::srspp::packet::SrsppDataPacket;
 use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
+use crate::utils::cell::SyncRefCell;
 use heapless::index_map::FnvIndexMap;
 
 use super::Error;
-use super::SharedCell;
 use super::sender::duration_until;
 
 /// Per-stream receiver state for a single remote sender.
@@ -62,7 +62,7 @@ pub(super) async fn drive_data<
     L: NetworkWriter<Error = E> + NetworkReader<Error = E>,
     const MAX_STREAMS: usize,
 >(
-    state: &SharedCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
     packet: &[u8],
     ack_buf: &mut [u8],
     link: &mut L,
@@ -117,7 +117,7 @@ pub(super) async fn drive_receiver_timeouts<
     L: NetworkWriter<Error = E> + NetworkReader<Error = E>,
     const MAX_STREAMS: usize,
 >(
-    state: &SharedCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
     ack_buf: &mut [u8],
     link: &mut L,
 ) -> Result<(), Error<E>> {
@@ -188,7 +188,7 @@ pub(super) fn receiver_next_deadline<
     R: ReceiverBackend,
     const MAX_STREAMS: usize,
 >(
-    state: &SharedCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
 ) -> Option<SysTime> {
     state.with(|s| {
         s.streams
@@ -206,7 +206,7 @@ async fn drive_actions<
     L: NetworkWriter<Error = E> + NetworkReader<Error = E>,
     const MAX_STREAMS: usize,
 >(
-    state: &SharedCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
     source: Address,
     ack_buf: &mut [u8],
     link: &mut L,
@@ -314,7 +314,7 @@ pub struct SrsppReceiver<
     const MAX_STREAMS: usize = 4,
 > {
     /// Interior-mutable receiver state shared between handle and driver.
-    state: SharedCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    state: SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
 }
 
 impl<E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
@@ -324,7 +324,7 @@ impl<E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     pub fn new(config: ReceiverConfig) -> Self {
         let ack_delay = Duration::from_millis(config.ack_delay_ticks);
         Self {
-            state: SharedCell::new(MultiReceiverState {
+            state: SyncRefCell::new(MultiReceiverState {
                 config,
                 streams: FnvIndexMap::new(),
                 actions: ReceiverActions::new(),
@@ -431,7 +431,7 @@ where
 /// Handle for receiving data from an SRSPP receiver.
 pub struct SrsppRxHandle<'a, E, R: ReceiverBackend, const MAX_STREAMS: usize> {
     /// Reference to the shared multi-stream receiver state.
-    pub(super) receiver: &'a SharedCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    pub(super) receiver: &'a SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
 }
 
 impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>

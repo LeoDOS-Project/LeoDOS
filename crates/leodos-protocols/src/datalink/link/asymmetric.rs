@@ -1,5 +1,4 @@
-use super::{FrameReceiver, FrameSender};
-use crate::datalink::{DataLinkReader, DataLinkWriter};
+use crate::datalink::{DatalinkReader, DatalinkWriter};
 
 /// A data link composed of separate sender and receiver halves.
 pub struct AsymmetricLink<S, R> {
@@ -15,52 +14,41 @@ impl<S, R> AsymmetricLink<S, R> {
 }
 
 /// Errors from an asymmetric link, wrapping send or receive errors.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum AsymmetricLinkError<SE, RE> {
     /// An error occurred during send.
+    #[error("send error: {0}")]
     Send(SE),
     /// An error occurred during receive.
+    #[error("recv error: {0}")]
     Recv(RE),
 }
 
-impl<SE: core::fmt::Display, RE: core::fmt::Display> core::fmt::Display
-    for AsymmetricLinkError<SE, RE>
-{
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Send(e) => write!(f, "send error: {e}"),
-            Self::Recv(e) => write!(f, "recv error: {e}"),
-        }
-    }
-}
-
-impl<SE: core::error::Error, RE: core::error::Error> core::error::Error
-    for AsymmetricLinkError<SE, RE>
-{
-}
-
-impl<S, R> DataLinkWriter for AsymmetricLink<S, R>
+impl<S, R> DatalinkWriter for AsymmetricLink<S, R>
 where
-    S: FrameSender,
-    R: FrameReceiver,
+    S: DatalinkWriter,
+    R: DatalinkReader,
 {
     type Error = AsymmetricLinkError<S::Error, R::Error>;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        self.sender.send(data).await.map_err(AsymmetricLinkError::Send)
+        self.sender
+            .write(data)
+            .await
+            .map_err(AsymmetricLinkError::Send)
     }
 }
 
-impl<S, R> DataLinkReader for AsymmetricLink<S, R>
+impl<S, R> DatalinkReader for AsymmetricLink<S, R>
 where
-    S: FrameSender,
-    R: FrameReceiver,
+    S: DatalinkWriter,
+    R: DatalinkReader,
 {
     type Error = AsymmetricLinkError<S::Error, R::Error>;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         self.receiver
-            .recv(buffer)
+            .read(buffer)
             .await
             .map_err(AsymmetricLinkError::Recv)
     }

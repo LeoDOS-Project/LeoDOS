@@ -5,40 +5,22 @@ use leodos_libcfs::error::Error as CfsError;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::os::net::UdpSocket;
 
-use super::FrameReceiver;
-use super::FrameSender;
+use crate::datalink::{DatalinkReader, DatalinkWriter};
 
 /// Errors from CFS data link operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum CfsLinkError {
     /// An error from the CFS runtime.
-    Cfs(CfsError),
+    #[error("CFS error: {0}")]
+    Cfs(#[from] CfsError),
     /// The provided buffer is too small.
+    #[error("buffer too small: need {required}, have {available}")]
     BufferTooSmall {
         /// Minimum number of bytes needed.
         required: usize,
         /// Actual buffer size available.
         available: usize,
     },
-}
-
-impl core::fmt::Display for CfsLinkError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Cfs(e) => write!(f, "CFS error: {e}"),
-            Self::BufferTooSmall { required, available } => {
-                write!(f, "buffer too small: need {required}, have {available}")
-            }
-        }
-    }
-}
-
-impl core::error::Error for CfsLinkError {}
-
-impl From<CfsError> for CfsLinkError {
-    fn from(e: CfsError) -> Self {
-        Self::Cfs(e)
-    }
 }
 
 /// Sends frames over UDP.
@@ -54,10 +36,10 @@ impl<'a> UdpFrameSender<'a> {
     }
 }
 
-impl FrameSender for UdpFrameSender<'_> {
+impl DatalinkWriter for UdpFrameSender<'_> {
     type Error = CfsLinkError;
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         self.socket.send(data, &self.target).await?;
         Ok(())
     }
@@ -75,10 +57,10 @@ impl<'a> UdpFrameReceiver<'a> {
     }
 }
 
-impl FrameReceiver for UdpFrameReceiver<'_> {
+impl DatalinkReader for UdpFrameReceiver<'_> {
     type Error = CfsLinkError;
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         let (len, _addr) = self.socket.recv(buffer).await?;
         Ok(len)
     }
@@ -96,10 +78,10 @@ impl PipeFrameSender {
     }
 }
 
-impl FrameSender for PipeFrameSender {
+impl DatalinkWriter for PipeFrameSender {
     type Error = CfsLinkError;
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         let header_size = 8;
         let total_size = header_size + data.len();
 
@@ -139,10 +121,10 @@ impl<'a> PipeFrameReceiver<'a> {
     }
 }
 
-impl FrameReceiver for PipeFrameReceiver<'_> {
+impl DatalinkReader for PipeFrameReceiver<'_> {
     type Error = CfsLinkError;
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         let header_size = self.header_size;
         let total_size = header_size + buffer.len();
 
@@ -157,7 +139,8 @@ impl FrameReceiver for PipeFrameReceiver<'_> {
 
         let payload_len = len - header_size;
         let copy_len = payload_len.min(buffer.len());
-        buffer[..copy_len].copy_from_slice(&recv_buf[header_size..header_size + copy_len]);
+        buffer[..copy_len]
+            .copy_from_slice(&recv_buf[header_size..header_size + copy_len]);
 
         Ok(copy_len)
     }
@@ -176,13 +159,16 @@ impl UdpDataLink {
     }
 
     /// Binds a local socket and creates a data link to the remote address.
-    pub fn bind(local: SocketAddr, remote: SocketAddr) -> Result<Self, CfsError> {
+    pub fn bind(
+        local: SocketAddr,
+        remote: SocketAddr,
+    ) -> Result<Self, CfsError> {
         let socket = UdpSocket::bind(local)?;
         Ok(Self { socket, remote })
     }
 }
 
-impl crate::datalink::DataLinkWriter for UdpDataLink {
+impl DatalinkWriter for UdpDataLink {
     type Error = CfsError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -191,7 +177,7 @@ impl crate::datalink::DataLinkWriter for UdpDataLink {
     }
 }
 
-impl crate::datalink::DataLinkReader for UdpDataLink {
+impl DatalinkReader for UdpDataLink {
     type Error = CfsError;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {

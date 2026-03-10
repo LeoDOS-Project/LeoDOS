@@ -9,40 +9,12 @@ pub use node::{SrsppNode, SrsppNodeDriver};
 pub use receiver::{DeliveryToken, SrsppReceiver, SrsppReceiverDriver, SrsppRxHandle};
 pub use sender::{SrsppSender, SrsppSenderDriver, SrsppTxHandle};
 
-use core::cell::RefCell;
-
 use leodos_libcfs::cfe::time::SysTime;
 
 use crate::network::spp::SequenceCount;
 use crate::transport::srspp::machine::receiver::ReceiverError;
 use crate::transport::srspp::machine::sender::SenderError;
 use crate::transport::srspp::packet;
-
-/// Interior-mutable cell that only allows access through sync closures.
-///
-/// Wraps `RefCell<T>` but restricts borrows to non-`async` closures,
-/// making it a compile error to hold a borrow across an `.await` point.
-pub(super) struct SharedCell<T>(RefCell<T>);
-
-impl<T> SharedCell<T> {
-    pub(super) fn new(val: T) -> Self {
-        Self(RefCell::new(val))
-    }
-
-    pub(super) fn with<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&T) -> R,
-    {
-        f(&self.0.borrow())
-    }
-
-    pub(super) fn with_mut<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut T) -> R,
-    {
-        f(&mut self.0.borrow_mut())
-    }
-}
 
 /// Errors from the SRSPP CFS transport layer.
 #[derive(Debug, Clone, thiserror::Error)]

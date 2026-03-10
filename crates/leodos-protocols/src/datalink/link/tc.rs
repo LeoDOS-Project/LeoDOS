@@ -5,7 +5,7 @@ use core::task::Poll;
 use heapless::Deque;
 
 use crate::coding::{CodingReader, CodingWriter};
-use crate::datalink::sdlp::tc::{BypassFlag, ControlFlag, TelecommandTransferFrame};
+use crate::datalink::framing::sdlp::tc::{BypassFlag, ControlFlag, TelecommandTransferFrame};
 
 /// Configuration for a Telecommand link channel.
 #[derive(Debug, Clone)]
@@ -23,33 +23,24 @@ pub struct TcConfig {
 }
 
 /// Errors that can occur during TC link operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum TcError<E> {
     /// The underlying link returned an error.
+    #[error("link error: {0}")]
     Link(E),
     /// The data exceeds the maximum frame data length.
+    #[error("frame too large")]
     FrameTooLarge,
     /// A received frame failed to parse.
+    #[error("invalid frame")]
     InvalidFrame,
     /// The internal send queue is full.
+    #[error("send queue full")]
     QueueFull,
     /// Failed to construct a TC Transfer Frame.
+    #[error("frame build error")]
     BuildError,
 }
-
-impl<E: core::fmt::Display> core::fmt::Display for TcError<E> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Link(e) => write!(f, "link error: {e}"),
-            Self::FrameTooLarge => write!(f, "frame too large"),
-            Self::InvalidFrame => write!(f, "invalid frame"),
-            Self::QueueFull => write!(f, "send queue full"),
-            Self::BuildError => write!(f, "frame build error"),
-        }
-    }
-}
-
-impl<E: core::error::Error> core::error::Error for TcError<E> {}
 
 struct PendingPacket<const MTU: usize> {
     data: [u8; MTU],
