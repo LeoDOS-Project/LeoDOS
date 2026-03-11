@@ -1,5 +1,35 @@
 - Commit changes incrementally — each commit should be a single logical change
 
+## TODO
+
+### Bugs
+
+- [ ] `Router::next_hop` routes `Address::Ground` immediately
+  to `Direction::Ground`, but the ground station may not be
+  directly reachable — the packet should route to the
+  satellite that is above the ground station first.
+
+- [ ] `Router::poll_links` uses `select_biased!` — all
+  `DatalinkReader::read()` impls must be cancel safe (atomic
+  read or no partial consumption on drop).
+- [ ] RouterService (client/driver) copies data through
+  LocalChannel instead of zero-copy like SRSPP direct use.
+
+### Stack cleanup (in progress)
+
+- [x] Step 1: Simplify FrameReader — replace `next()` with
+  `data_field()`, move SpacePacket extraction to LinkReader
+- [ ] Move SpacePacket from `network::spp` to `datalink` —
+  it's a datalink-level PDU, frames carry it. LinkReader
+  in datalink currently imports from network (inverted dep).
+- [ ] Step 2: Router as NetworkWriter/NetworkReader — commit
+  Router + service.rs changes
+- [ ] Step 3: Consistent trait naming — keep a trait per
+  layer but unify method names (send→write / recv→read)
+  and resolve confusing names (e.g. DatalinkReader vs
+  LinkReader in the same layer). Needs a naming proposal.
+
+
 ## Communication stack composition
 
 Five trait boundaries stitch the stack together:
@@ -37,22 +67,14 @@ wrappers that impl AsyncPhysicalWriter/AsyncPhysicalReader:
 
 ### What does not compose yet
 
-- [ ] FrameSender/FrameReceiver ↔ AsyncPhysicalWriter/Reader:
-  DataLink outputs frames via FrameSender. Coding wrappers
-  accept bytes via AsyncPhysicalWriter. These are different
-  traits. Need an adapter that impl FrameSender by calling
-  AsyncPhysicalWriter::write(), and impl FrameReceiver by
-  calling AsyncPhysicalReader::read().
-- [ ] COP-1 state machines (FARM/FOP) — module stubs exist
-  in datalink/cop1/ but are not implemented.
-- [ ] Coding wrappers (RandomizerWriter, RsWriter, AsmWriter,
-  CltuWriter, FrameSyncReader, RsReader, DerandomizerReader)
-  are defined but not yet added to their coding modules.
-  They need to go in coding/randomizer.rs, coding/reed_solomon.rs,
-  coding/cadu.rs, coding/cltu.rs respectively.
-- [ ] Modulation (physical/modulation.rs etc.) is standalone
-  fn(bits) → symbols. Not in the writer chain. On real HW the
-  radio handles modulation, so only needed for software sim.
+- [x] FrameWriter/FrameReader ↔ CodingWriter/CodingReader:
+  Composed via LinkWriter/LinkReader in datalink/link/channel.rs.
+- [x] COP-1 state machines (FARM/FOP) — fully implemented
+  in datalink/reliability/cop1/.
+- [x] Coding wrappers — AsmWriter, CltuWriter, FrameSyncReader
+  exist; randomizer/RS are inline in CodingWritePipeline.
+- [x] Modulation — standalone for testing only, not part
+  of the composition chain (real HW radio handles it).
 
 ## Coding/FEC primitives (all implemented)
 
