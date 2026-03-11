@@ -12,7 +12,7 @@ use crate::datalink::DatalinkWriter;
 use crate::datalink::framing::FrameReader;
 use crate::datalink::framing::FrameWriter;
 use crate::datalink::framing::PushError;
-use crate::network::spp::SpacePacket;
+use crate::datalink::spp::SpacePacket;
 
 /// Errors that can occur during link channel operations.
 #[derive(Debug, Clone, thiserror::Error)]

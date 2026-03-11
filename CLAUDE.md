@@ -19,11 +19,9 @@
 
 - [x] Step 1: Simplify FrameReader — replace `next()` with
   `data_field()`, move SpacePacket extraction to LinkReader
-- [ ] Move SpacePacket from `network::spp` to `datalink` —
-  it's a datalink-level PDU, frames carry it. LinkReader
-  in datalink currently imports from network (inverted dep).
-- [ ] Step 2: Router as NetworkWriter/NetworkReader — commit
-  Router + service.rs changes
+- [x] Move SpacePacket from `network::spp` to `datalink::spp`
+  — `network::spp` re-exports for backward compat.
+- [x] Step 2: Router as NetworkWriter/NetworkReader
 - [ ] Step 3: Consistent trait naming — keep a trait per
   layer but unify method names (send→write / recv→read)
   and resolve confusing names (e.g. DatalinkReader vs

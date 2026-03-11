@@ -4,6 +4,8 @@ use core::future::Future;
 
 /// Transfer frame definitions (SDLP, USLP).
 pub mod framing;
+/// CCSDS Space Packet Protocol (SPP) definitions.
+pub mod spp;
 /// Async link channels for sending and receiving frames.
 pub mod link;
 /// Hop-by-hop reliable frame delivery (COP-1).

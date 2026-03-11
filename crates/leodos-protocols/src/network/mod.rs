@@ -6,8 +6,9 @@ pub mod cfe;
 pub mod isl;
 /// A point-to-point network layer that forwards directly to the datalink.
 pub mod ptp;
-/// CCSDS Space Packet Protocol (SPP) definitions and utilities.
-pub mod spp;
+/// CCSDS Space Packet Protocol (SPP) — re-exported from
+/// [`datalink::spp`](crate::datalink::spp).
+pub use crate::datalink::spp;
 
 /// Send direction of the network layer.
 pub trait NetworkWriter {
