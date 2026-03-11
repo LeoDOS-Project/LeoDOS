@@ -15,7 +15,7 @@ use leodos_protocols::application::spacecomp::packet::BuildError;
 use leodos_protocols::application::spacecomp::packet::OpCode;
 use leodos_protocols::application::spacecomp::packet::ParseError;
 use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
-use leodos_protocols::datalink::link::cfs::UdpDataLink;
+use leodos_protocols::datalink::link::cfs::udp::UdpDataLink;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::isl::routing::algorithm::distance_minimizing::DistanceMinimizing;

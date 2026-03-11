@@ -199,7 +199,10 @@ where
     }
 
     /// Dispatches an incoming packet to the ACK or data handler.
-    async fn handle_incoming(&mut self, len: usize) -> Result<(), Error<<L as NetworkWriter>::Error>> {
+    async fn handle_incoming(
+        &mut self,
+        len: usize,
+    ) -> Result<(), Error<<L as NetworkWriter>::Error>> {
         let Self {
             recv_buffer,
             ack_buffer,
@@ -212,9 +215,7 @@ where
             return Ok(());
         };
         match parsed.srspp_type() {
-            Ok(SrsppType::Data) => {
-                drive_data(&node.receiver, packet, ack_buffer, link).await
-            }
+            Ok(SrsppType::Data) => drive_data(&node.receiver, packet, ack_buffer, link).await,
             Ok(SrsppType::Ack) => drive_ack(&node.sender, packet),
             Err(_) => Ok(()),
         }
