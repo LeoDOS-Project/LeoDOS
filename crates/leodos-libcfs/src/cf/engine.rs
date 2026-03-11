@@ -1,9 +1,9 @@
 //! CFDP Engine functions for initialization and control.
 
-use crate::ffi;
 use crate::cf::transaction::Transaction;
 use crate::cf::types::{CfdpClass, TxnState};
 use crate::error::Error;
+use crate::ffi;
 use crate::status::{self, Status};
 use core::ffi::CStr;
 
@@ -14,30 +14,28 @@ pub fn engine_seq_num() -> u32 {
 
 /// Finds a transaction by sequence number and source entity ID.
 pub fn find_transaction_by_seq(seq_num: u32, src_eid: u32) -> Option<&'static Transaction> {
-    unsafe {
-        ffi::CF_AppData.engine.transactions.iter().find(|t| {
+    let txns = &raw const ffi::CF_AppData;
+    let txns = unsafe { &(*txns).engine.transactions };
+    txns.iter()
+        .find(|t| unsafe {
             !t.history.is_null()
                 && (*t.history).seq_num == seq_num
                 && (*t.history).src_eid == src_eid
         })
-    }
-    .map(|t| unsafe { &*(t as *const ffi::CF_Transaction as *const Transaction) })
+        .map(|t| unsafe { &*(t as *const ffi::CF_Transaction as *const Transaction) })
 }
 
 /// Finds a transaction mutably by sequence number and source entity ID.
 pub fn find_transaction_by_seq_mut(seq_num: u32, src_eid: u32) -> Option<&'static mut Transaction> {
-    unsafe {
-        ffi::CF_AppData
-            .engine
-            .transactions
-            .iter_mut()
-            .find(|t| {
-                !t.history.is_null()
-                    && (*t.history).seq_num == seq_num
-                    && (*t.history).src_eid == src_eid
-            })
-            .map(|t| &mut *(t as *mut ffi::CF_Transaction as *mut Transaction))
-    }
+    let txns = &raw mut ffi::CF_AppData;
+    let txns = unsafe { &mut (*txns).engine.transactions };
+    txns.iter_mut()
+        .find(|t| unsafe {
+            !t.history.is_null()
+                && (*t.history).seq_num == seq_num
+                && (*t.history).src_eid == src_eid
+        })
+        .map(|t| unsafe { &mut *(t as *mut ffi::CF_Transaction as *mut Transaction) })
 }
 
 /// Returns the raw transaction state for a given sequence/entity.
@@ -185,20 +183,14 @@ pub fn construct_pdu_header(
 }
 
 /// Appends a TLV entry to a TLV list.
-pub fn append_tlv(
-    tlv_list: &mut crate::cf::pdu::LogicalTlvList,
-    tlv_type: crate::cf::TlvType,
-) {
+pub fn append_tlv(tlv_list: &mut crate::cf::pdu::LogicalTlvList, tlv_type: crate::cf::TlvType) {
     unsafe {
         ffi::CF_CFDP_AppendTlv(&mut tlv_list.0, tlv_type as ffi::CF_CFDP_TlvType_t);
     }
 }
 
 /// Receives and processes a PDU header from a channel.
-pub fn recv_ph(
-    chan_num: u8,
-    ph: &mut crate::cf::pdu::LogicalPduBuffer,
-) -> Result<Status, Error> {
+pub fn recv_ph(chan_num: u8, ph: &mut crate::cf::pdu::LogicalPduBuffer) -> Result<Status, Error> {
     status::check(unsafe { ffi::CF_CFDP_RecvPh(chan_num, &mut ph.0) })
 }
 
@@ -206,10 +198,7 @@ pub fn recv_ph(
 ///
 /// # Safety
 /// The destination buffer must be large enough to hold the LV data.
-pub unsafe fn copy_string_from_lv(
-    dst: &mut [u8],
-    src_lv: &crate::cf::pdu::LogicalLv,
-) -> i32 {
+pub unsafe fn copy_string_from_lv(dst: &mut [u8], src_lv: &crate::cf::pdu::LogicalLv) -> i32 {
     ffi::CF_CFDP_CopyStringFromLV(dst.as_mut_ptr() as *mut i8, dst.len(), &src_lv.0)
 }
 
@@ -381,9 +370,7 @@ pub(crate) fn close_files(
     node: *mut crate::cf::CListNode,
     context: *mut core::ffi::c_void,
 ) -> crate::cf::CListTraverseStatus {
-    let result = unsafe {
-        ffi::CF_CFDP_CloseFiles(node as *mut ffi::CF_CListNode_t, context)
-    };
+    let result = unsafe { ffi::CF_CFDP_CloseFiles(node as *mut ffi::CF_CListNode_t, context) };
     if result == ffi::CF_CListTraverse_Status_t_CF_CListTraverse_Status_CONTINUE {
         crate::cf::CListTraverseStatus::Continue
     } else {
@@ -399,9 +386,7 @@ pub(crate) fn do_tick(
     node: *mut crate::cf::CListNode,
     context: *mut core::ffi::c_void,
 ) -> crate::cf::CListTraverseStatus {
-    let result = unsafe {
-        ffi::CF_CFDP_DoTick(node as *mut ffi::CF_CListNode_t, context)
-    };
+    let result = unsafe { ffi::CF_CFDP_DoTick(node as *mut ffi::CF_CListNode_t, context) };
     if result == ffi::CF_CListTraverse_Status_t_CF_CListTraverse_Status_CONTINUE {
         crate::cf::CListTraverseStatus::Continue
     } else {
