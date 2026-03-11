@@ -46,8 +46,8 @@ pub struct Router<N, S, E, W, G, R, const MTU: usize = 1024> {
 }
 
 /// Error from a specific directional link or from ISL parsing.
-#[derive(Debug, thiserror::Error)]
-pub enum Error<N, S, E, W, G> {
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum RouterError<N, S, E, W, G> {
     /// Error on the north link.
     #[error("North link error: {0}")]
     North(N),
@@ -142,7 +142,7 @@ where
     G: DatalinkWriter + DatalinkReader,
     R: RoutingAlgorithm,
 {
-    type Error = Error<
+    type Error = RouterError<
         <N as DatalinkWriter>::Error,
         <S as DatalinkWriter>::Error,
         <E as DatalinkWriter>::Error,
@@ -151,16 +151,16 @@ where
     >;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        let packet = IslRoutingTelecommand::parse(data).map_err(Error::IslMessageError)?;
+        let packet = IslRoutingTelecommand::parse(data).map_err(RouterError::IslMessageError)?;
         let target = packet.isl_header.target();
         let bytes = packet.as_bytes();
         let next = self.next_hop(target);
         match next {
-            Direction::North => self.north.write(bytes).await.map_err(Error::North),
-            Direction::South => self.south.write(bytes).await.map_err(Error::South),
-            Direction::East => self.east.write(bytes).await.map_err(Error::East),
-            Direction::West => self.west.write(bytes).await.map_err(Error::West),
-            Direction::Ground => self.ground.write(bytes).await.map_err(Error::Ground),
+            Direction::North => self.north.write(bytes).await.map_err(RouterError::North),
+            Direction::South => self.south.write(bytes).await.map_err(RouterError::South),
+            Direction::East => self.east.write(bytes).await.map_err(RouterError::East),
+            Direction::West => self.west.write(bytes).await.map_err(RouterError::West),
+            Direction::Ground => self.ground.write(bytes).await.map_err(RouterError::Ground),
             Direction::Local => Ok(()),
         }
     }
@@ -175,7 +175,7 @@ where
     G: DatalinkWriter + DatalinkReader<Error = <G as DatalinkWriter>::Error>,
     R: RoutingAlgorithm,
 {
-    type Error = Error<
+    type Error = RouterError<
         <N as DatalinkWriter>::Error,
         <S as DatalinkWriter>::Error,
         <E as DatalinkWriter>::Error,
@@ -193,11 +193,11 @@ where
                 let g = self.ground.read(&mut self.ground_buf).fuse();
                 pin_utils::pin_mut!(n, s, e, w, g);
                 futures::select_biased! {
-                    r = n => r.map(|l| (l, Direction::North)).map_err(Error::North),
-                    r = s => r.map(|l| (l, Direction::South)).map_err(Error::South),
-                    r = e => r.map(|l| (l, Direction::East)).map_err(Error::East),
-                    r = w => r.map(|l| (l, Direction::West)).map_err(Error::West),
-                    r = g => r.map(|l| (l, Direction::Ground)).map_err(Error::Ground),
+                    r = n => r.map(|l| (l, Direction::North)).map_err(RouterError::North),
+                    r = s => r.map(|l| (l, Direction::South)).map_err(RouterError::South),
+                    r = e => r.map(|l| (l, Direction::East)).map_err(RouterError::East),
+                    r = w => r.map(|l| (l, Direction::West)).map_err(RouterError::West),
+                    r = g => r.map(|l| (l, Direction::Ground)).map_err(RouterError::Ground),
                 }?
             };
             let buf = match dir {
@@ -216,7 +216,7 @@ where
 
             if next == Direction::Local {
                 if buffer.len() < len {
-                    return Err(Error::BufferTooSmall {
+                    return Err(RouterError::BufferTooSmall {
                         needed: len,
                         provided: buffer.len(),
                     });
@@ -226,11 +226,11 @@ where
             }
 
             match next {
-                Direction::North => self.north.write(buf).await.map_err(Error::North),
-                Direction::South => self.south.write(buf).await.map_err(Error::South),
-                Direction::East => self.east.write(buf).await.map_err(Error::East),
-                Direction::West => self.west.write(buf).await.map_err(Error::West),
-                Direction::Ground => self.ground.write(buf).await.map_err(Error::Ground),
+                Direction::North => self.north.write(buf).await.map_err(RouterError::North),
+                Direction::South => self.south.write(buf).await.map_err(RouterError::South),
+                Direction::East => self.east.write(buf).await.map_err(RouterError::East),
+                Direction::West => self.west.write(buf).await.map_err(RouterError::West),
+                Direction::Ground => self.ground.write(buf).await.map_err(RouterError::Ground),
                 Direction::Local => Ok(()),
             }?
         }
