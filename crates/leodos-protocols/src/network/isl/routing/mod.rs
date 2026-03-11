@@ -4,6 +4,8 @@ pub mod algorithm;
 pub mod local;
 /// ISL routable packet definitions and builders.
 pub mod packet;
+/// Router with integrated local channel.
+pub mod routed;
 
 use futures::FutureExt as _;
 use zerocopy::IntoBytes as _;
