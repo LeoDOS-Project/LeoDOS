@@ -13,7 +13,7 @@ use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
 use zerocopy::byteorder::network_endian::U16;
 
-use super::super::{FrameReader, FrameWriter};
+use super::super::{FrameReader, FrameWriter, PushError};
 use crate::network::spp::SpacePacket;
 use crate::utils::get_bits_u16;
 use crate::utils::set_bits_u16;
@@ -345,21 +345,30 @@ impl<const BUF: usize> TcFrameWriter<BUF> {
     }
 }
 
-impl<const BUF: usize> FrameWriter for TcFrameWriter<BUF> {
-    type Error = BuildError;
-
+impl<const BUF: usize> TcFrameWriter<BUF> {
     fn remaining(&self) -> usize {
         self.config.max_data_field_len.saturating_sub(self.data_len)
     }
+}
 
-    fn push(&mut self, data: &[u8]) -> bool {
+impl<const BUF: usize> FrameWriter for TcFrameWriter<BUF> {
+    type Error = BuildError;
+
+    fn is_empty(&self) -> bool {
+        self.data_len == 0
+    }
+
+    fn push(&mut self, data: &[u8]) -> Result<(), PushError> {
+        if data.len() > self.config.max_data_field_len {
+            return Err(PushError::TooLarge);
+        }
         if data.len() > self.remaining() {
-            return false;
+            return Err(PushError::Full);
         }
         let off = TelecommandTransferFrame::HEADER_SIZE + self.data_len;
         self.buf[off..off + data.len()].copy_from_slice(data);
         self.data_len += data.len();
-        true
+        Ok(())
     }
 
     fn finish(&mut self) -> Result<&[u8], BuildError> {

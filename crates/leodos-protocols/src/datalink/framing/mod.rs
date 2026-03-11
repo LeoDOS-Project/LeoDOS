@@ -9,6 +9,17 @@
 //! type (SDLP TC/TM, USLP, Proximity-1). Both own their frame
 //! buffers internally, preventing buffer-mismatch bugs.
 
+/// Push failed: the frame cannot accept this packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PushError {
+    /// The current frame is full but the packet would fit
+    /// after a flush.
+    Full,
+    /// The packet exceeds the maximum data field length and
+    /// can never fit in any frame.
+    TooLarge,
+}
+
 /// Accumulates packets into a transfer frame.
 ///
 /// Owns the frame buffer internally.
@@ -19,12 +30,11 @@ pub trait FrameWriter {
     /// Error type for frame construction.
     type Error;
 
-    /// Space remaining in the current frame for packet data.
-    fn remaining(&self) -> usize;
+    /// Returns `true` if no packets have been pushed yet.
+    fn is_empty(&self) -> bool;
 
     /// Push a packet into the frame at the current offset.
-    /// Returns `true` if it fit, `false` otherwise.
-    fn push(&mut self, data: &[u8]) -> bool;
+    fn push(&mut self, data: &[u8]) -> Result<(), PushError>;
 
     /// Stamp the frame header and return the finished frame.
     /// Resets internal state for the next frame.

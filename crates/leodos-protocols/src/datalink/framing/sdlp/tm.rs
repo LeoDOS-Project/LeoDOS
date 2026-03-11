@@ -291,7 +291,7 @@ impl TelemetryTransferFrameHeader {
 
 // ── FrameWriter / FrameReader implementations ──
 
-use super::super::{FrameReader, FrameWriter};
+use super::super::{FrameReader, FrameWriter, PushError};
 use crate::network::spp::SpacePacket;
 
 /// Configuration for building TM transfer frames.
@@ -332,24 +332,33 @@ impl<const BUF: usize> TmFrameWriter<BUF> {
     }
 }
 
-impl<const BUF: usize> FrameWriter for TmFrameWriter<BUF> {
-    type Error = BuildError;
-
+impl<const BUF: usize> TmFrameWriter<BUF> {
     fn remaining(&self) -> usize {
         self.config
             .max_data_field_len
             .saturating_sub(self.data_len)
     }
+}
 
-    fn push(&mut self, data: &[u8]) -> bool {
+impl<const BUF: usize> FrameWriter for TmFrameWriter<BUF> {
+    type Error = BuildError;
+
+    fn is_empty(&self) -> bool {
+        self.data_len == 0
+    }
+
+    fn push(&mut self, data: &[u8]) -> Result<(), PushError> {
+        if data.len() > self.config.max_data_field_len {
+            return Err(PushError::TooLarge);
+        }
         if data.len() > self.remaining() {
-            return false;
+            return Err(PushError::Full);
         }
         let off =
             TelemetryTransferFrame::HEADER_SIZE + self.data_len;
         self.buf[off..off + data.len()].copy_from_slice(data);
         self.data_len += data.len();
-        true
+        Ok(())
     }
 
     fn finish(&mut self) -> Result<&[u8], BuildError> {

@@ -5,9 +5,13 @@
 //! pipeline ([`CodingWriter`]/[`CodingReader`]) into a single
 //! owned type — no split, no shared state, no extra buffers.
 
-use crate::coding::{CodingReader, CodingWriter};
-use crate::datalink::framing::{FrameReader, FrameWriter};
-use crate::datalink::{DatalinkReader, DatalinkWriter};
+use crate::coding::CodingReader;
+use crate::coding::CodingWriter;
+use crate::datalink::DatalinkReader;
+use crate::datalink::DatalinkWriter;
+use crate::datalink::framing::FrameReader;
+use crate::datalink::framing::FrameWriter;
+use crate::datalink::framing::PushError;
 
 /// Errors that can occur during link channel operations.
 #[derive(Debug, Clone, thiserror::Error)]
@@ -33,7 +37,6 @@ pub enum LinkError<E> {
 pub struct LinkWriter<F, W> {
     frame_writer: F,
     coding_writer: W,
-    has_data: bool,
 }
 
 impl<F: FrameWriter, W: CodingWriter> LinkWriter<F, W> {
@@ -42,47 +45,28 @@ impl<F: FrameWriter, W: CodingWriter> LinkWriter<F, W> {
         Self {
             frame_writer,
             coding_writer,
-            has_data: false,
         }
-    }
-
-    /// Space remaining in the current frame for packet data.
-    pub fn remaining(&self) -> usize {
-        self.frame_writer.remaining()
     }
 
     /// Push a packet into the current frame. If the frame is
     /// full, flushes it first, then retries.
-    pub async fn send(
-        &mut self,
-        data: &[u8],
-    ) -> Result<(), LinkError<W::Error>> {
-        if self.frame_writer.push(data) {
-            self.has_data = true;
-            return Ok(());
-        }
-
-        // Frame is full
-        if !self.has_data {
-            return Err(LinkError::FrameTooLarge);
-        }
-
-        self.flush().await?;
-
-        if self.frame_writer.push(data) {
-            self.has_data = true;
-            Ok(())
-        } else {
-            Err(LinkError::FrameTooLarge)
+    pub async fn send(&mut self, data: &[u8]) -> Result<(), LinkError<W::Error>> {
+        match self.frame_writer.push(data) {
+            Ok(()) => Ok(()),
+            Err(PushError::TooLarge) => Err(LinkError::FrameTooLarge),
+            Err(PushError::Full) => {
+                self.flush().await?;
+                self.frame_writer
+                    .push(data)
+                    .map_err(|_| LinkError::FrameTooLarge)
+            }
         }
     }
 
     /// Finish the current frame and write it to the coding
     /// pipeline.
-    pub async fn flush(
-        &mut self,
-    ) -> Result<(), LinkError<W::Error>> {
-        if !self.has_data {
+    pub async fn flush(&mut self) -> Result<(), LinkError<W::Error>> {
+        if self.frame_writer.is_empty() {
             return Ok(());
         }
 
@@ -94,10 +78,7 @@ impl<F: FrameWriter, W: CodingWriter> LinkWriter<F, W> {
         self.coding_writer
             .write(frame)
             .await
-            .map_err(LinkError::Link)?;
-
-        self.has_data = false;
-        Ok(())
+            .map_err(LinkError::Link)
     }
 }
 
@@ -108,10 +89,7 @@ where
 {
     type Error = LinkError<W::Error>;
 
-    async fn write(
-        &mut self,
-        data: &[u8],
-    ) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         self.send(data).await
     }
 }
@@ -136,10 +114,7 @@ impl<F: FrameReader, R: CodingReader> LinkReader<F, R> {
 
     /// Receive the next packet. Reads a new frame from the
     /// coding pipeline when the current frame is exhausted.
-    pub async fn recv(
-        &mut self,
-        buffer: &mut [u8],
-    ) -> Result<usize, LinkError<R::Error>> {
+    pub async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, LinkError<R::Error>> {
         // Try extracting from current frame first
         if let Some(pkt) = self.frame_reader.next() {
             let len = pkt.len().min(buffer.len());
@@ -180,10 +155,7 @@ where
 {
     type Error = LinkError<R::Error>;
 
-    async fn read(
-        &mut self,
-        buffer: &mut [u8],
-    ) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         self.recv(buffer).await
     }
 }

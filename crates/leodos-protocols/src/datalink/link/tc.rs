@@ -4,13 +4,11 @@
 //! module, pre-configured with TC framing.
 
 pub use crate::datalink::framing::sdlp::tc::{
-    BypassFlag, ControlFlag, TcFrameReader, TcFrameWriter,
-    TcFrameWriterConfig,
+    BypassFlag, ControlFlag, TcFrameReader, TcFrameWriter, TcFrameWriterConfig,
 };
 
 pub use super::channel::{
-    LinkError as TcError, LinkReader as TcLinkReader,
-    LinkWriter as TcLinkWriter,
+    LinkError as TcError, LinkReader as TcLinkReader, LinkWriter as TcLinkWriter,
 };
 
 /// Configuration for a Telecommand link channel.
