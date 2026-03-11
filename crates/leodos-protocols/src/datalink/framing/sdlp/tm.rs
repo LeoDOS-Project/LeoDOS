@@ -198,10 +198,10 @@ impl TelemetryTransferFrame {
                 provided_len: buffer.len(),
             });
         }
-        if scid.get() > 0x3FF {
+        if scid.num_bits() > 10 {
             return Err(BuildError::InvalidScid(scid));
         }
-        if vcid.get() > 0x07 {
+        if vcid.num_bits() > 3 {
             return Err(BuildError::InvalidVcid(vcid));
         }
 

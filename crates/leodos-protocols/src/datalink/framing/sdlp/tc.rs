@@ -206,10 +206,10 @@ impl TelecommandTransferFrame {
         seq: u8,
         data_field_len: usize,
     ) -> Result<&mut Self, BuildError> {
-        if scid.get() > 0x3FF {
+        if scid.num_bits() > 10 {
             return Err(BuildError::InvalidScid(scid));
         }
-        if vcid.get() > 0x3F {
+        if vcid.num_bits() > 6 {
             return Err(BuildError::InvalidVcid(vcid));
         }
         if data_field_len > Self::MAX_DATA_FIELD_LEN {

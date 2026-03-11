@@ -18,6 +18,11 @@ impl Scid {
     pub const fn get(self) -> u32 {
         self.0
     }
+
+    /// Minimum number of bits needed to represent this value.
+    pub const fn num_bits(self) -> u32 {
+        u32::BITS - self.0.leading_zeros()
+    }
 }
 
 impl core::fmt::Display for Scid {
@@ -43,6 +48,11 @@ impl Vcid {
     /// Returns the raw value.
     pub const fn get(self) -> u32 {
         self.0
+    }
+
+    /// Minimum number of bits needed to represent this value.
+    pub const fn num_bits(self) -> u32 {
+        u32::BITS - self.0.leading_zeros()
     }
 }
 

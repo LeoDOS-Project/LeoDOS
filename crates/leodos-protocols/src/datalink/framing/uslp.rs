@@ -506,7 +506,7 @@ impl UslpTransferFrame {
         #[builder(default)] vcf_count_length: u8,
         #[builder(default)] vcf_count: u64,
     ) -> Result<&mut Self, BuildError> {
-        if vcid.get() > 63 {
+        if vcid.num_bits() > 6 {
             return Err(BuildError::InvalidVcid(vcid));
         }
         if map_id > 15 {

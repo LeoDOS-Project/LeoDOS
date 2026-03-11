@@ -276,7 +276,7 @@ impl Proximity1TransferFrame {
         fsn: u8,
         data_field_len: usize,
     ) -> Result<&mut Self, BuildError> {
-        if scid.get() > 0x3FF {
+        if scid.num_bits() > 10 {
             return Err(BuildError::InvalidScid(scid));
         }
         if port_id > 0x07 {

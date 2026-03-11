@@ -167,7 +167,7 @@ impl AosTransferFrame {
                 provided: buffer.len(),
             });
         }
-        if vcid.get() > 0x3F {
+        if vcid.num_bits() > 6 {
             return Err(BuildError::InvalidVcid(vcid));
         }
 
