@@ -18,16 +18,16 @@ use crate::transport::srspp::packet;
 
 /// Errors from the SRSPP CFS transport layer.
 #[derive(Debug, Clone, thiserror::Error)]
-pub enum Error<E> {
+pub enum TransportError<E> {
     /// The sender state machine reported an error.
     #[error(transparent)]
     Sender(#[from] SenderError),
     /// The receiver state machine reported an error.
     #[error(transparent)]
     Receiver(#[from] ReceiverError),
-    /// The underlying network link failed.
-    #[error("link error: {0}")]
-    Link(E),
+    /// The underlying network failed.
+    #[error("network error: {0}")]
+    Network(E),
     /// A packet could not be built or parsed.
     #[error(transparent)]
     Packet(#[from] packet::SrsppPacketError),

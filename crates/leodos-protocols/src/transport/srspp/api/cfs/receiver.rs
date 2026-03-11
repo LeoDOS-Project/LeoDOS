@@ -7,9 +7,9 @@ use leodos_libcfs::runtime::select_either::Either;
 use leodos_libcfs::runtime::select_either::select_either;
 use leodos_libcfs::runtime::time::sleep;
 
-use crate::network::{NetworkReader, NetworkWriter};
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
+use crate::network::{NetworkReader, NetworkWriter};
 use crate::transport::TransportReader;
 use crate::transport::srspp::machine::receiver::ReceiverAction;
 use crate::transport::srspp::machine::receiver::ReceiverActions;
@@ -24,7 +24,7 @@ use crate::transport::srspp::packet::SrsppType;
 use crate::utils::cell::SyncRefCell;
 use heapless::index_map::FnvIndexMap;
 
-use super::Error;
+use super::TransportError;
 use super::sender::duration_until;
 
 /// Per-stream receiver state for a single remote sender.
@@ -50,7 +50,7 @@ pub(super) struct MultiReceiverState<E, R: ReceiverBackend, const MAX_STREAMS: u
     /// Whether the handle has signaled no more receives.
     pub(super) closed: bool,
     /// First error encountered, propagated to the handle.
-    pub(super) error: Option<Error<E>>,
+    pub(super) error: Option<TransportError<E>>,
 }
 
 // ── Shared free functions used by both SrsppReceiverDriver and SrsppNodeDriver ──
@@ -66,7 +66,7 @@ pub(super) async fn drive_data<
     packet: &[u8],
     ack_buf: &mut [u8],
     link: &mut L,
-) -> Result<(), Error<E>> {
+) -> Result<(), TransportError<E>> {
     if let Ok(SrsppType::Data) = SrsppPacket::parse(packet).and_then(|p| p.srspp_type()) {
         if let Ok(data) = SrsppDataPacket::parse(packet) {
             let source_address = data.srspp_header.source_address();
@@ -100,7 +100,7 @@ pub(super) async fn drive_data<
                         actions,
                     )?;
                 }
-                Ok::<(), Error<E>>(())
+                Ok::<(), TransportError<E>>(())
             })?;
 
             drive_actions(state, source_address, ack_buf, link).await?;
@@ -120,21 +120,17 @@ pub(super) async fn drive_receiver_timeouts<
     state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
     ack_buf: &mut [u8],
     link: &mut L,
-) -> Result<(), Error<E>> {
+) -> Result<(), TransportError<E>> {
     let now = SysTime::now();
 
-    let ack_expired: heapless::Vec<Address, MAX_STREAMS> =
-        state.with(|s| {
-            s.streams
-                .iter()
-                .filter_map(|(source, stream)| {
-                    stream
-                        .ack_deadline
-                        .filter(|&d| now >= d)
-                        .map(|_| *source)
-                })
-                .collect()
-        });
+    let ack_expired: heapless::Vec<Address, MAX_STREAMS> = state.with(|s| {
+        s.streams
+            .iter()
+            .filter_map(|(source, stream)| {
+                stream.ack_deadline.filter(|&d| now >= d).map(|_| *source)
+            })
+            .collect()
+    });
 
     for source in ack_expired {
         state.with_mut(|s| {
@@ -145,23 +141,22 @@ pub(super) async fn drive_receiver_timeouts<
                 stream.ack_deadline = None;
                 stream.machine.handle(ReceiverEvent::AckTimeout, actions)?;
             }
-            Ok::<(), Error<E>>(())
+            Ok::<(), TransportError<E>>(())
         })?;
         drive_actions(state, source, ack_buf, link).await?;
     }
 
-    let progress_expired: heapless::Vec<Address, MAX_STREAMS> =
-        state.with(|s| {
-            s.streams
-                .iter()
-                .filter_map(|(source, stream)| {
-                    stream
-                        .progress_deadline
-                        .filter(|&d| now >= d)
-                        .map(|_| *source)
-                })
-                .collect()
-        });
+    let progress_expired: heapless::Vec<Address, MAX_STREAMS> = state.with(|s| {
+        s.streams
+            .iter()
+            .filter_map(|(source, stream)| {
+                stream
+                    .progress_deadline
+                    .filter(|&d| now >= d)
+                    .map(|_| *source)
+            })
+            .collect()
+    });
 
     for source in progress_expired {
         state.with_mut(|s| {
@@ -174,7 +169,7 @@ pub(super) async fn drive_receiver_timeouts<
                     .machine
                     .handle(ReceiverEvent::ProgressTimeout, actions)?;
             }
-            Ok::<(), Error<E>>(())
+            Ok::<(), TransportError<E>>(())
         })?;
         drive_actions(state, source, ack_buf, link).await?;
     }
@@ -183,11 +178,7 @@ pub(super) async fn drive_receiver_timeouts<
 }
 
 /// Returns the earliest receiver deadline (ACK or progress).
-pub(super) fn receiver_next_deadline<
-    E,
-    R: ReceiverBackend,
-    const MAX_STREAMS: usize,
->(
+pub(super) fn receiver_next_deadline<E, R: ReceiverBackend, const MAX_STREAMS: usize>(
     state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
 ) -> Option<SysTime> {
     state.with(|s| {
@@ -210,7 +201,7 @@ async fn drive_actions<
     source: Address,
     ack_buf: &mut [u8],
     link: &mut L,
-) -> Result<(), Error<E>> {
+) -> Result<(), TransportError<E>> {
     let (ack_to_send, timer_actions, ack_delay) = state.with(|s| {
         let ack = s.actions.iter().find_map(|a| match a {
             ReceiverAction::SendAck {
@@ -268,7 +259,7 @@ async fn drive_actions<
 
         link.write(zerocopy::IntoBytes::as_bytes(ack))
             .await
-            .map_err(Error::Link)?;
+            .map_err(TransportError::Network)?;
     }
 
     state.with_mut(|s| {
@@ -276,8 +267,7 @@ async fn drive_actions<
             match action {
                 ReceiverAction::StartAckTimer { .. } => {
                     if let Some(entry) = s.streams.get_mut(&source) {
-                        entry.ack_deadline =
-                            Some(SysTime::now() + SysTime::from(ack_delay));
+                        entry.ack_deadline = Some(SysTime::now() + SysTime::from(ack_delay));
                     }
                 }
                 ReceiverAction::StopAckTimer => {
@@ -288,8 +278,7 @@ async fn drive_actions<
                 ReceiverAction::StartProgressTimer { ticks } => {
                     if let Some(entry) = s.streams.get_mut(&source) {
                         let delay = Duration::from_millis(ticks);
-                        entry.progress_deadline =
-                            Some(SysTime::now() + SysTime::from(delay));
+                        entry.progress_deadline = Some(SysTime::now() + SysTime::from(delay));
                     }
                 }
                 ReceiverAction::StopProgressTimer => {
@@ -317,9 +306,7 @@ pub struct SrsppReceiver<
     state: SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
 }
 
-impl<E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
-    SrsppReceiver<E, R, MAX_STREAMS>
-{
+impl<E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize> SrsppReceiver<E, R, MAX_STREAMS> {
     /// Creates a new multi-stream receiver.
     pub fn new(config: ReceiverConfig) -> Self {
         let ack_delay = Duration::from_millis(config.ack_delay_ticks);
@@ -344,7 +331,9 @@ impl<E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
         SrsppReceiverDriver<'_, L, R, MTU, MAX_STREAMS>,
     ) {
         (
-            SrsppRxHandle { receiver: &self.state },
+            SrsppRxHandle {
+                receiver: &self.state,
+            },
             SrsppReceiverDriver {
                 link,
                 channel: self,
@@ -384,7 +373,7 @@ where
     <L as NetworkWriter>::Error: Clone,
 {
     /// Run the driver loop.
-    pub async fn run(&mut self) -> Result<(), Error<<L as NetworkWriter>::Error>> {
+    pub async fn run(&mut self) -> Result<(), TransportError<<L as NetworkWriter>::Error>> {
         let state = &self.channel.state;
         loop {
             if state.with(|s| s.closed) {
@@ -393,12 +382,7 @@ where
 
             let timeout = duration_until(receiver_next_deadline(state));
 
-            match select_either(
-                self.link.read(&mut self.recv_buffer),
-                sleep(timeout),
-            )
-            .await
-            {
+            match select_either(self.link.read(&mut self.recv_buffer), sleep(timeout)).await {
                 Either::Left(result) => match result {
                     Ok(len) => {
                         let packet = &self.recv_buffer[..len];
@@ -410,7 +394,7 @@ where
                         }
                     }
                     Err(e) => {
-                        let err = Error::Link(e);
+                        let err = TransportError::Network(e);
                         state.with_mut(|s| s.error = Some(err.clone()));
                         return Err(err);
                     }
@@ -438,7 +422,7 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     SrsppRxHandle<'a, E, R, MAX_STREAMS>
 {
     /// Receives the next message, copying it into `buf`.
-    pub async fn recv(&mut self, buf: &mut [u8]) -> Result<(Address, usize), Error<E>> {
+    pub async fn recv(&mut self, buf: &mut [u8]) -> Result<(Address, usize), TransportError<E>> {
         poll_fn(|_cx| {
             self.receiver.with_mut(|s| {
                 if let Some(ref e) = s.error {
@@ -482,7 +466,7 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     /// until [`DeliveryToken::consume`] is called.
     pub async fn wait_for_message(
         &mut self,
-    ) -> Result<DeliveryToken<'_, 'a, E, R, MAX_STREAMS>, Error<E>> {
+    ) -> Result<DeliveryToken<'_, 'a, E, R, MAX_STREAMS>, TransportError<E>> {
         let (source, msg_len) = poll_fn(|_cx| {
             self.receiver.with(|s| {
                 if let Some(ref e) = s.error {
@@ -509,7 +493,7 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     /// Equivalent to `wait_for_message().await?.consume(f)` but
     /// more concise when you don't need the [`DeliveryToken`]
     /// metadata (source address, length).
-    pub async fn recv_with<F, Ret>(&mut self, f: F) -> Result<Ret, Error<E>>
+    pub async fn recv_with<F, Ret>(&mut self, f: F) -> Result<Ret, TransportError<E>>
     where
         F: FnOnce(&[u8]) -> Ret,
     {
@@ -561,10 +545,10 @@ impl<'a, 'rx, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     }
 }
 
-impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
-    TransportReader for SrsppRxHandle<'a, E, R, MAX_STREAMS>
+impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize> TransportReader
+    for SrsppRxHandle<'a, E, R, MAX_STREAMS>
 {
-    type Error = Error<E>;
+    type Error = TransportError<E>;
 
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         let (_, len) = self.recv(buf).await?;

@@ -13,6 +13,7 @@ use crate::application::spacecomp::io::writer::MessageSender;
 use crate::network::{NetworkReader, NetworkWriter};
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
+use crate::transport::srspp::api::cfs::TransportError;
 use crate::transport::srspp::machine::sender::SenderAction;
 use crate::transport::srspp::machine::sender::SenderActions;
 use crate::transport::srspp::machine::sender::SenderConfig;
@@ -25,7 +26,6 @@ use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::rto::RtoPolicy;
 use crate::utils::cell::SyncRefCell;
 
-use super::Error;
 use super::TimerSet;
 
 /// Shared mutable state for the sender channel.
@@ -39,7 +39,7 @@ pub(super) struct SenderState<E, const WIN: usize, const BUF: usize, const MTU: 
     /// Whether the handle has signaled no more data.
     pub(crate) closed: bool,
     /// First error encountered, propagated to the handle.
-    pub(crate) error: Option<Error<E>>,
+    pub(crate) error: Option<TransportError<E>>,
 }
 
 // ── Shared free functions used by both SrsppSenderDriver and SrsppNodeDriver ──
@@ -57,7 +57,7 @@ pub(super) async fn drive_transmits<
     tx_buf: &mut [u8],
     link: &mut L,
     rto: &P,
-) -> Result<(), Error<E>> {
+) -> Result<(), TransportError<E>> {
     let now = SysTime::now();
 
     let (transmits, cfg_clone): (heapless::Vec<SequenceCount, WIN>, SenderConfig) =
@@ -86,18 +86,18 @@ pub(super) async fn drive_transmits<
                     .sequence_flag(info.flags)
                     .payload_len(info.payload.len())
                     .build()
-                    .map_err(Error::Packet)?;
+                    .map_err(TransportError::Packet)?;
                 pkt.payload.copy_from_slice(info.payload);
-                Ok::<_, Error<E>>(Some(SrsppDataPacket::HEADER_SIZE + info.payload.len()))
+                Ok::<_, TransportError<E>>(Some(SrsppDataPacket::HEADER_SIZE + info.payload.len()))
             } else {
-                Ok::<_, Error<E>>(None)
+                Ok::<_, TransportError<E>>(None)
             }
         })?;
 
         if let Some(packet_len) = packet_len {
             link.write(&tx_buf[..packet_len])
                 .await
-                .map_err(Error::Link)?;
+                .map_err(TransportError::Network)?;
 
             let rto_dur =
                 Duration::from_millis(rto.rto_ticks(now.seconds()));
@@ -130,7 +130,7 @@ pub(super) fn drive_ack<
 >(
     state: &SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
     packet: &[u8],
-) -> Result<(), Error<E>> {
+) -> Result<(), TransportError<E>> {
     if let Ok(SrsppType::Ack) = SrsppPacket::parse(packet).and_then(|p| p.srspp_type()) {
         if let Ok(ack) = SrsppAckPacket::parse(packet) {
             state.with_mut(|s| {
@@ -157,7 +157,7 @@ pub(super) fn drive_ack<
                     };
                     timers.stop(seq);
                 }
-                Ok::<(), Error<E>>(())
+                Ok::<(), TransportError<E>>(())
             })?;
         }
     }
@@ -177,7 +177,7 @@ pub(super) async fn drive_sender_timeouts<
     tx_buf: &mut [u8],
     link: &mut L,
     rto: &P,
-) -> Result<(), Error<E>> {
+) -> Result<(), TransportError<E>> {
     let now = SysTime::now();
 
     let expired: heapless::Vec<SequenceCount, WIN> =
@@ -287,7 +287,7 @@ where
     <L as NetworkWriter>::Error: Clone,
 {
     /// Run the driver loop.
-    pub async fn run(&mut self) -> Result<(), Error<<L as NetworkWriter>::Error>> {
+    pub async fn run(&mut self) -> Result<(), TransportError<<L as NetworkWriter>::Error>> {
         let state = &self.channel.state;
         loop {
             if state.with(|s| s.closed && s.machine.is_idle()) {
@@ -323,7 +323,7 @@ where
                         }
                     }
                     Err(e) => {
-                        let err = Error::Link(e);
+                        let err = TransportError::Network(e);
                         state.with_mut(|s| s.error = Some(err.clone()));
                         return Err(err);
                     }
@@ -374,7 +374,7 @@ impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
         &mut self,
         target: impl Into<Address>,
         data: &(impl IntoBytes + Immutable + ?Sized),
-    ) -> Result<(), Error<E>> {
+    ) -> Result<(), TransportError<E>> {
         let data = data.as_bytes();
         poll_fn(|_cx| {
             self.sender.with(|s| {
@@ -432,7 +432,7 @@ impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>
 impl<'a, E: Clone, const WIN: usize, const BUF: usize, const MTU: usize> MessageSender
     for SrsppTxHandle<'a, E, WIN, BUF, MTU>
 {
-    type Error = Error<E>;
+    type Error = TransportError<E>;
 
     async fn send_message(&mut self, target: Address, data: &[u8]) -> Result<(), Self::Error> {
         self.send(target, data).await

@@ -4,6 +4,7 @@ use leodos_libcfs::runtime::select_either::select_either;
 use leodos_libcfs::runtime::time::sleep;
 
 use crate::network::{NetworkReader, NetworkWriter};
+use crate::transport::srspp::api::cfs::TransportError;
 use crate::transport::srspp::machine::receiver::ReceiverActions;
 use crate::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
@@ -17,7 +18,6 @@ use crate::transport::srspp::rto::RtoPolicy;
 use crate::utils::cell::SyncRefCell;
 use heapless::index_map::FnvIndexMap;
 
-use super::Error;
 use super::TimerSet;
 use super::receiver::MultiReceiverState;
 use super::receiver::{SrsppRxHandle, drive_data, drive_receiver_timeouts, receiver_next_deadline};
@@ -141,7 +141,7 @@ where
     <L as NetworkWriter>::Error: Clone,
 {
     /// Runs the combined send/receive I/O loop.
-    pub async fn run(&mut self) -> Result<(), Error<<L as NetworkWriter>::Error>> {
+    pub async fn run(&mut self) -> Result<(), TransportError<<L as NetworkWriter>::Error>> {
         loop {
             if let Err(e) = drive_transmits(
                 &self.node.sender,
@@ -166,7 +166,7 @@ where
                         }
                     }
                     Err(e) => {
-                        let err = Error::Link(e);
+                        let err = TransportError::Network(e);
                         self.set_both_errors(err.clone());
                         return Err(err);
                     }
@@ -202,7 +202,7 @@ where
     async fn handle_incoming(
         &mut self,
         len: usize,
-    ) -> Result<(), Error<<L as NetworkWriter>::Error>> {
+    ) -> Result<(), TransportError<<L as NetworkWriter>::Error>> {
         let Self {
             recv_buffer,
             ack_buffer,
@@ -231,7 +231,7 @@ where
         duration_until(deadline)
     }
 
-    fn set_both_errors(&self, err: Error<<L as NetworkWriter>::Error>) {
+    fn set_both_errors(&self, err: TransportError<<L as NetworkWriter>::Error>) {
         self.node.sender.with_mut(|s| s.error = Some(err.clone()));
         self.node.receiver.with_mut(|s| s.error = Some(err));
     }
