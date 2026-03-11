@@ -8,7 +8,7 @@ pub use crate::datalink::framing::sdlp::tc::{
 };
 
 pub use super::channel::{
-    LinkError as TcError, LinkReader as TcLinkReader, LinkWriter as TcLinkWriter,
+    DatalinkError as TcError, DatalinkReader as TcLinkReader, DatalinkWriter as TcLinkWriter,
 };
 
 /// Configuration for a Telecommand link channel.

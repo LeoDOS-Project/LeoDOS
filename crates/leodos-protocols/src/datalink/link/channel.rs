@@ -1,22 +1,22 @@
 //! Generic frame link channel.
 //!
-//! Provides [`LinkWriter`] and [`LinkReader`] that compose a
-//! frame format ([`FrameWriter`]/[`FrameReader`]) with a coding
-//! pipeline ([`CodingWriter`]/[`CodingReader`]) into a single
+//! Provides [`DatalinkWriter`] and [`DatalinkReader`] that compose a
+//! frame format ([`FrameWrite`]/[`FrameRead`]) with a coding
+//! pipeline ([`CodingWrite`]/[`CodingRead`]) into a single
 //! owned type — no split, no shared state, no extra buffers.
 
-use crate::coding::CodingReader;
-use crate::coding::CodingWriter;
-use crate::datalink::DatalinkReader;
-use crate::datalink::DatalinkWriter;
-use crate::datalink::framing::FrameReader;
-use crate::datalink::framing::FrameWriter;
+use crate::coding::CodingRead;
+use crate::coding::CodingWrite;
+use crate::datalink::DatalinkRead;
+use crate::datalink::DatalinkWrite;
+use crate::datalink::framing::FrameRead;
+use crate::datalink::framing::FrameWrite;
 use crate::datalink::framing::PushError;
 use crate::datalink::spp::SpacePacket;
 
 /// Errors that can occur during link channel operations.
 #[derive(Debug, Clone, thiserror::Error)]
-pub enum LinkError<E> {
+pub enum DatalinkError<E> {
     /// The underlying coding layer returned an error.
     #[error("link error: {0}")]
     Link(E),
@@ -31,16 +31,16 @@ pub enum LinkError<E> {
     BuildError,
 }
 
-// ── LinkWriter ──
+// ── DatalinkWriter ──
 
-/// Owns a [`FrameWriter`] and a [`CodingWriter`], accumulating
+/// Owns a [`FrameWrite`] and a [`CodingWrite`], accumulating
 /// packets into frames and flushing them to the coding pipeline.
-pub struct LinkWriter<F, W> {
+pub struct DatalinkWriter<F, W> {
     frame_writer: F,
     coding_writer: W,
 }
 
-impl<F: FrameWriter, W: CodingWriter> LinkWriter<F, W> {
+impl<F: FrameWrite, W: CodingWrite> DatalinkWriter<F, W> {
     /// Creates a new link writer.
     pub fn new(frame_writer: F, coding_writer: W) -> Self {
         Self {
@@ -51,7 +51,7 @@ impl<F: FrameWriter, W: CodingWriter> LinkWriter<F, W> {
 
     /// Finish the current frame and write it to the coding
     /// pipeline.
-    pub async fn flush(&mut self) -> Result<(), LinkError<W::Error>> {
+    pub async fn flush(&mut self) -> Result<(), DatalinkError<W::Error>> {
         if self.frame_writer.is_empty() {
             return Ok(());
         }
@@ -59,54 +59,54 @@ impl<F: FrameWriter, W: CodingWriter> LinkWriter<F, W> {
         let frame = self
             .frame_writer
             .finish()
-            .map_err(|_| LinkError::BuildError)?;
+            .map_err(|_| DatalinkError::BuildError)?;
 
         self.coding_writer
             .write(frame)
             .await
-            .map_err(LinkError::Link)
+            .map_err(DatalinkError::Link)
     }
 }
 
-impl<F, W> DatalinkWriter for LinkWriter<F, W>
+impl<F, W> DatalinkWrite for DatalinkWriter<F, W>
 where
-    F: FrameWriter,
-    W: CodingWriter,
+    F: FrameWrite,
+    W: CodingWrite,
 {
-    type Error = LinkError<W::Error>;
+    type Error = DatalinkError<W::Error>;
 
     /// Push a packet into the current frame. If the frame is
     /// full, flushes it first, then retries.
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         match self.frame_writer.push(data) {
             Ok(()) => Ok(()),
-            Err(PushError::TooLarge) => Err(LinkError::FrameTooLarge),
+            Err(PushError::TooLarge) => Err(DatalinkError::FrameTooLarge),
             Err(PushError::Full) => {
                 self.flush().await?;
                 self.frame_writer
                     .push(data)
-                    .map_err(|_| LinkError::FrameTooLarge)
+                    .map_err(|_| DatalinkError::FrameTooLarge)
             }
         }
     }
 }
 
-// ── LinkReader ──
+// ── DatalinkReader ──
 
-/// Owns a [`FrameReader`] and a [`CodingReader`], reading
+/// Owns a [`FrameRead`] and a [`CodingRead`], reading
 /// frames from the coding pipeline and extracting packets.
 ///
-/// Packet extraction (previously in each FrameReader impl) is
+/// Packet extraction (previously in each FrameRead impl) is
 /// handled here using [`SpacePacket::parse`] over the raw data
-/// field returned by [`FrameReader::data_field`].
-pub struct LinkReader<F, R> {
+/// field returned by [`FrameRead::data_field`].
+pub struct DatalinkReader<F, R> {
     frame_reader: F,
     coding_reader: R,
     /// Current read position within the data field.
     pos: usize,
 }
 
-impl<F: FrameReader, R: CodingReader> LinkReader<F, R> {
+impl<F: FrameRead, R: CodingRead> DatalinkReader<F, R> {
     /// Creates a new link reader.
     pub fn new(frame_reader: F, coding_reader: R) -> Self {
         Self {
@@ -137,12 +137,12 @@ impl<F: FrameReader, R: CodingReader> LinkReader<F, R> {
 
 }
 
-impl<F, R> DatalinkReader for LinkReader<F, R>
+impl<F, R> DatalinkRead for DatalinkReader<F, R>
 where
-    F: FrameReader,
-    R: CodingReader,
+    F: FrameRead,
+    R: CodingRead,
 {
-    type Error = LinkError<R::Error>;
+    type Error = DatalinkError<R::Error>;
 
     /// Reads the next packet. Fetches a new frame from the
     /// coding pipeline when the current frame is exhausted.
@@ -160,7 +160,7 @@ where
             .coding_reader
             .read(self.frame_reader.buffer_mut())
             .await
-            .map_err(LinkError::Link)?;
+            .map_err(DatalinkError::Link)?;
 
         if len == 0 {
             return Ok(0);
@@ -168,7 +168,7 @@ where
 
         self.frame_reader
             .feed(len)
-            .map_err(|_| LinkError::InvalidFrame)?;
+            .map_err(|_| DatalinkError::InvalidFrame)?;
         self.pos = 0;
 
         match self.extract_packet(buffer) {

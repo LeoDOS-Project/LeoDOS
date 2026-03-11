@@ -8,8 +8,8 @@ pub use crate::datalink::framing::sdlp::tm::{
 };
 
 pub use super::channel::{
-    LinkError as TmError, LinkReader as TmLinkReader,
-    LinkWriter as TmLinkWriter,
+    DatalinkError as TmError, DatalinkReader as TmLinkReader,
+    DatalinkWriter as TmLinkWriter,
 };
 
 /// Configuration for a Telemetry link channel.
