@@ -20,7 +20,10 @@ use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::isl::routing;
 use leodos_protocols::network::isl::routing::algorithm::distance_minimizing::DistanceMinimizing;
+use leodos_protocols::network::isl::geo::LatLon;
+use leodos_protocols::network::isl::routing::algorithm::gateway::GatewayTable;
 use leodos_protocols::network::isl::routing::Router;
+use leodos_protocols::utils::clock::MetClock;
 use leodos_protocols::network::isl::shell::Shell;
 use leodos_protocols::network::isl::torus::Direction;
 use leodos_protocols::network::isl::torus::Point;
@@ -72,8 +75,6 @@ pub enum SpaceCompError {
 
 const NUM_ORBITS: u8 = bindings::SPACECOMP_NUM_ORBITS as u8;
 const NUM_SATS: u8 = bindings::SPACECOMP_NUM_SATS as u8;
-const INCLINATION_RAD: f32 = INCLINATION_DEG * (core::f32::consts::PI / 180.0);
-
 const MAX_SATELLITES: usize = 64;
 const ALTITUDE_M: f32 = 550_000.0;
 const INCLINATION_DEG: f32 = 87.0;
@@ -168,16 +169,20 @@ pub extern "C" fn SPACECOMP_AppMain() {
             recv_port(point, Direction::Ground),
         )?;
 
-        let algorithm = DistanceMinimizing::new(INCLINATION_RAD);
-        let router: Router<_, _, _, _, _, _, 1024> = Router::builder()
+        let mut gateway_table = GatewayTable::<4>::new(5.0);
+        gateway_table.add_station(0, LatLon::new(67.86, 20.22));  // Kiruna
+        gateway_table.add_station(1, LatLon::new(78.23, 15.39));  // Svalbard
+        gateway_table.add_station(2, LatLon::new(64.86, -147.72)); // Fairbanks
+        let algorithm = DistanceMinimizing::new(SHELL, gateway_table);
+        let router: Router<_, _, _, _, _, _, _, 1024> = Router::builder()
             .north(north_link)
             .south(south_link)
             .east(east_link)
             .west(west_link)
             .ground(ground_link)
             .address(address)
-            .torus(TORUS)
             .algorithm(algorithm)
+            .clock(MetClock::new())
             .build();
 
         let apid = Apid::new(APID).unwrap();

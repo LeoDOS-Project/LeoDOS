@@ -87,6 +87,35 @@ impl Ecef {
         let dz = self.z - other.z;
         libm::sqrtf(dx * dx + dy * dy + dz * dz)
     }
+
+    /// Returns the elevation angle (in degrees) from a ground
+    /// station at `station` to this ECEF point (a satellite).
+    ///
+    /// Positive means above the local horizon, negative means
+    /// below. A satellite is visible when elevation exceeds a
+    /// minimum (typically 5-10°).
+    pub fn elevation_from(&self, station: LatLon) -> f32 {
+        let gs = Ecef::from_latlon(station);
+        let dx = self.x - gs.x;
+        let dy = self.y - gs.y;
+        let dz = self.z - gs.z;
+        let dist = libm::sqrtf(dx * dx + dy * dy + dz * dz);
+        if dist < 1.0 {
+            return 90.0;
+        }
+
+        // Local "up" unit vector at the ground station
+        let gs_mag = libm::sqrtf(
+            gs.x * gs.x + gs.y * gs.y + gs.z * gs.z,
+        );
+        let ux = gs.x / gs_mag;
+        let uy = gs.y / gs_mag;
+        let uz = gs.z / gs_mag;
+
+        // sin(elevation) = dot(d_hat, up_hat)
+        let sin_el = (dx * ux + dy * uy + dz * uz) / dist;
+        libm::asinf(sin_el) * 180.0 / PI
+    }
 }
 
 /// A geographic area of interest defined by its bounding box corners.
@@ -189,5 +218,35 @@ mod tests {
 
         assert!(approx_eq(center.lat_deg, 45.0, 0.001));
         assert!(approx_eq(center.lon_deg, 0.0, 0.001));
+    }
+
+    #[test]
+    fn test_elevation_directly_above() {
+        // Satellite directly above (0,0) at 550 km
+        let sat = Ecef {
+            x: EARTH_RADIUS_M + 550_000.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let station = LatLon::new(0.0, 0.0);
+        let elev = sat.elevation_from(station);
+        assert!(
+            approx_eq(elev, 90.0, 0.1),
+            "directly above: elev={}",
+            elev
+        );
+    }
+
+    #[test]
+    fn test_elevation_below_horizon() {
+        // Satellite on the opposite side of the Earth
+        let sat = Ecef {
+            x: -(EARTH_RADIUS_M + 550_000.0),
+            y: 0.0,
+            z: 0.0,
+        };
+        let station = LatLon::new(0.0, 0.0);
+        let elev = sat.elevation_from(station);
+        assert!(elev < 0.0, "opposite side: elev={}", elev);
     }
 }

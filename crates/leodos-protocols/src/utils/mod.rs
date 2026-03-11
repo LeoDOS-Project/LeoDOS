@@ -8,6 +8,8 @@ pub mod fmt;
 pub mod time;
 /// Interior-mutable cell that only allows access through sync closures.
 pub mod cell;
+/// Monotonic clock abstraction.
+pub mod clock;
 
 pub use bits::*;
 pub use fmt::*;

@@ -25,8 +25,8 @@
 - [x] Step 3a: Unified method names — all layer traits now
   use write/read. TransportSender/Receiver renamed to
   TransportWriter/Reader.
-- [ ] Step 3b: Resolve confusing struct names (e.g.
-  DatalinkReader trait vs LinkReader struct in same layer).
+- [x] Step 3b: Traits use *Write/*Read, structs use
+  *Writer/*Reader. LinkWriter→DatalinkWriter, etc.
 - [x] Fix spacecomp app — updated error types for
   Router-as-NetworkWriter pattern.
 - [x] Remove CfsLinkError — use CfsError directly.

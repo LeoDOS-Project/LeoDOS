@@ -17,6 +17,7 @@ use crate::network::isl::routing::Router;
 use crate::network::isl::routing::algorithm::RoutingAlgorithm;
 use crate::network::isl::routing::local::{LocalAppHandle, LocalChannel, LocalRouterHandle};
 use crate::network::{NetworkRead, NetworkWrite};
+use crate::utils::clock::Clock;
 
 /// Builds a client/driver pair from a router and channel.
 pub struct RouterService;
@@ -24,12 +25,12 @@ pub struct RouterService;
 impl RouterService {
     /// Splits a router and channel into a client handle and
     /// an I/O driver.
-    pub fn new<'a, N, S, E, W, G, R, const MTU: usize, const QUEUE: usize>(
-        router: Router<N, S, E, W, G, R, MTU>,
+    pub fn new<'a, N, S, E, W, G, R, C, const MTU: usize, const QUEUE: usize>(
+        router: Router<N, S, E, W, G, R, C, MTU>,
         channel: &'a LocalChannel<QUEUE, MTU>,
     ) -> (
         RouterClient<'a, QUEUE, MTU>,
-        RouterDriver<'a, N, S, E, W, G, R, MTU, QUEUE>,
+        RouterDriver<'a, N, S, E, W, G, R, C, MTU, QUEUE>,
     )
     where
         N: DatalinkWrite + DatalinkRead<Error = <N as DatalinkWrite>::Error>,
@@ -38,6 +39,7 @@ impl RouterService {
         W: DatalinkWrite + DatalinkRead<Error = <W as DatalinkWrite>::Error>,
         G: DatalinkWrite + DatalinkRead<Error = <G as DatalinkWrite>::Error>,
         R: RoutingAlgorithm,
+        C: Clock,
     {
         let (app, router_end) = channel.split();
         (
@@ -76,13 +78,13 @@ impl<'a, const QUEUE: usize, const MTU: usize> NetworkRead for RouterClient<'a, 
 
 /// I/O driver that runs the router and bridges the local
 /// channel.
-pub struct RouterDriver<'a, N, S, E, W, G, R, const MTU: usize, const QUEUE: usize> {
-    router: Router<N, S, E, W, G, R, MTU>,
+pub struct RouterDriver<'a, N, S, E, W, G, R, C, const MTU: usize, const QUEUE: usize> {
+    router: Router<N, S, E, W, G, R, C, MTU>,
     handle: LocalRouterHandle<'a, QUEUE, MTU>,
 }
 
-impl<'a, N, S, E, W, G, R, const MTU: usize, const QUEUE: usize>
-    RouterDriver<'a, N, S, E, W, G, R, MTU, QUEUE>
+impl<'a, N, S, E, W, G, R, C, const MTU: usize, const QUEUE: usize>
+    RouterDriver<'a, N, S, E, W, G, R, C, MTU, QUEUE>
 where
     N: DatalinkWrite + DatalinkRead<Error = <N as DatalinkWrite>::Error>,
     S: DatalinkWrite + DatalinkRead<Error = <S as DatalinkWrite>::Error>,
@@ -90,6 +92,7 @@ where
     W: DatalinkWrite + DatalinkRead<Error = <W as DatalinkWrite>::Error>,
     G: DatalinkWrite + DatalinkRead<Error = <G as DatalinkWrite>::Error>,
     R: RoutingAlgorithm,
+    C: Clock,
 {
     /// Runs the router loop: receives from the router's
     /// network reader, pushes local-destined packets to the

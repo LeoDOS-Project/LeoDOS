@@ -20,10 +20,10 @@ use crate::network::isl::routing::algorithm::RoutingAlgorithm;
 use crate::network::isl::routing::packet::IslRoutingTelecommand;
 use crate::network::isl::torus::Direction;
 use crate::network::isl::torus::Point;
-use crate::network::isl::torus::Torus;
+use crate::utils::clock::Clock;
 
 /// A SpacePacket router.
-pub struct Router<N, S, E, W, G, R, const MTU: usize = 1024> {
+pub struct Router<N, S, E, W, G, R, C, const MTU: usize = 1024> {
     // Physical links (Sat-to-Sat)
     north: N,
     south: S,
@@ -34,8 +34,8 @@ pub struct Router<N, S, E, W, G, R, const MTU: usize = 1024> {
 
     // Routing configuration
     address: Address,
-    torus: Torus,
     algorithm: R,
+    clock: C,
 
     // Link buffers
     north_buf: [u8; MTU],
@@ -77,7 +77,7 @@ pub enum RouterError<N, S, E, W, G> {
 }
 
 #[bon::bon]
-impl<N, S, E, W, G, R, const MTU: usize> Router<N, S, E, W, G, R, MTU>
+impl<N, S, E, W, G, R, C, const MTU: usize> Router<N, S, E, W, G, R, C, MTU>
 where
     N: DatalinkWrite + DatalinkRead,
     S: DatalinkWrite + DatalinkRead,
@@ -85,6 +85,7 @@ where
     W: DatalinkWrite + DatalinkRead,
     G: DatalinkWrite + DatalinkRead,
     R: RoutingAlgorithm,
+    C: Clock,
 {
     #[builder]
     /// Creates a new router with directional links and config.
@@ -95,8 +96,8 @@ where
         west: W,
         ground: G,
         address: Address,
-        torus: Torus,
         algorithm: R,
+        clock: C,
     ) -> Self {
         Self {
             north,
@@ -105,8 +106,8 @@ where
             west,
             ground,
             address,
-            torus,
             algorithm,
+            clock,
             north_buf: [0u8; MTU],
             south_buf: [0u8; MTU],
             east_buf: [0u8; MTU],
@@ -119,21 +120,9 @@ where
     pub fn address(&self) -> Address {
         self.address
     }
-
-    /// Determines the next hop for a given destination.
-    pub fn next_hop(&self, destination: Address) -> Direction {
-        if matches!(destination, Address::Ground { .. }) {
-            return Direction::Ground;
-        }
-        self.algorithm.route(
-            &self.torus,
-            Point::from(self.address),
-            Point::from(destination),
-        )
-    }
 }
 
-impl<N, S, E, W, G, R, const MTU: usize> NetworkWrite for Router<N, S, E, W, G, R, MTU>
+impl<N, S, E, W, G, R, C, const MTU: usize> NetworkWrite for Router<N, S, E, W, G, R, C, MTU>
 where
     N: DatalinkWrite + DatalinkRead,
     S: DatalinkWrite + DatalinkRead,
@@ -141,6 +130,7 @@ where
     W: DatalinkWrite + DatalinkRead,
     G: DatalinkWrite + DatalinkRead,
     R: RoutingAlgorithm,
+    C: Clock,
 {
     type Error = RouterError<
         <N as DatalinkWrite>::Error,
@@ -154,7 +144,9 @@ where
         let packet = IslRoutingTelecommand::parse(data).map_err(RouterError::IslMessageError)?;
         let target = packet.isl_header.target();
         let bytes = packet.as_bytes();
-        let next = self.next_hop(target);
+        let next = self
+            .algorithm
+            .route(Point::from(self.address), target, self.clock.now());
         match next {
             Direction::North => self.north.write(bytes).await.map_err(RouterError::North),
             Direction::South => self.south.write(bytes).await.map_err(RouterError::South),
@@ -166,7 +158,7 @@ where
     }
 }
 
-impl<N, S, E, W, G, R, const MTU: usize> NetworkRead for Router<N, S, E, W, G, R, MTU>
+impl<N, S, E, W, G, R, C, const MTU: usize> NetworkRead for Router<N, S, E, W, G, R, C, MTU>
 where
     N: DatalinkWrite + DatalinkRead<Error = <N as DatalinkWrite>::Error>,
     S: DatalinkWrite + DatalinkRead<Error = <S as DatalinkWrite>::Error>,
@@ -174,6 +166,7 @@ where
     W: DatalinkWrite + DatalinkRead<Error = <W as DatalinkWrite>::Error>,
     G: DatalinkWrite + DatalinkRead<Error = <G as DatalinkWrite>::Error>,
     R: RoutingAlgorithm,
+    C: Clock,
 {
     type Error = RouterError<
         <N as DatalinkWrite>::Error,
@@ -212,7 +205,11 @@ where
             let Ok(packet) = IslRoutingTelecommand::parse(buf) else {
                 continue;
             };
-            let next = self.next_hop(packet.isl_header.target());
+            let next = self.algorithm.route(
+                Point::from(self.address),
+                packet.isl_header.target(),
+                self.clock.now(),
+            );
 
             if next == Direction::Local {
                 if buffer.len() < len {
