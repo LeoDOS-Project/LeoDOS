@@ -14,7 +14,6 @@ use zerocopy::Unaligned;
 use zerocopy::byteorder::network_endian::U16;
 
 use super::super::{FrameReader, FrameWriter, PushError};
-use crate::network::spp::SpacePacket;
 use crate::utils::get_bits_u16;
 use crate::utils::set_bits_u16;
 
@@ -402,7 +401,6 @@ pub struct TcFrameReader<const BUF: usize> {
     buf: [u8; BUF],
     data_start: usize,
     data_end: usize,
-    pos: usize,
 }
 
 impl<const BUF: usize> TcFrameReader<BUF> {
@@ -412,7 +410,6 @@ impl<const BUF: usize> TcFrameReader<BUF> {
             buf: [0u8; BUF],
             data_start: 0,
             data_end: 0,
-            pos: 0,
         }
     }
 }
@@ -430,19 +427,10 @@ impl<const BUF: usize> FrameReader for TcFrameReader<BUF> {
         let data = parsed.data_field();
         self.data_start = TelecommandTransferFrame::HEADER_SIZE;
         self.data_end = self.data_start + data.len();
-        self.pos = self.data_start;
         Ok(())
     }
 
-    fn next(&mut self) -> Option<&[u8]> {
-        if self.pos >= self.data_end {
-            return None;
-        }
-        let remaining = &self.buf[self.pos..self.data_end];
-        let pkt = SpacePacket::parse(remaining).ok()?;
-        let len = pkt.primary_header.packet_len();
-        let start = self.pos;
-        self.pos += len;
-        Some(&self.buf[start..start + len])
+    fn data_field(&self) -> &[u8] {
+        &self.buf[self.data_start..self.data_end]
     }
 }

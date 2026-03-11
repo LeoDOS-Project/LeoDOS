@@ -723,7 +723,6 @@ impl core::fmt::Debug for UslpTransferFrame {
 // ── FrameWriter / FrameReader implementations ──
 
 use super::{FrameReader, FrameWriter, PushError};
-use crate::network::spp::SpacePacket;
 
 /// Configuration for building USLP transfer frames.
 #[derive(Debug, Clone)]
@@ -878,7 +877,6 @@ pub struct UslpFrameReader<const BUF: usize> {
     buf: [u8; BUF],
     data_start: usize,
     data_end: usize,
-    pos: usize,
 }
 
 impl<const BUF: usize> UslpFrameReader<BUF> {
@@ -893,7 +891,6 @@ impl<const BUF: usize> UslpFrameReader<BUF> {
             buf: [0u8; BUF],
             data_start: 0,
             data_end: 0,
-            pos: 0,
         }
     }
 }
@@ -922,20 +919,11 @@ impl<const BUF: usize> FrameReader for UslpFrameReader<BUF> {
             if self.fecf_present { 2 } else { 0 };
         self.data_start = header_overhead;
         self.data_end = len - ocf_len - fecf_len;
-        self.pos = self.data_start;
         Ok(())
     }
 
-    fn next(&mut self) -> Option<&[u8]> {
-        if self.pos >= self.data_end {
-            return None;
-        }
-        let remaining = &self.buf[self.pos..self.data_end];
-        let pkt = SpacePacket::parse(remaining).ok()?;
-        let len = pkt.primary_header.packet_len();
-        let start = self.pos;
-        self.pos += len;
-        Some(&self.buf[start..start + len])
+    fn data_field(&self) -> &[u8] {
+        &self.buf[self.data_start..self.data_end]
     }
 }
 

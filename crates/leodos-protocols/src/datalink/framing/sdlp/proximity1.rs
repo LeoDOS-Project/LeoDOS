@@ -691,7 +691,6 @@ impl core::fmt::Display for Proximity1TransferFrame {
 // ── FrameWriter / FrameReader implementations ──
 
 use super::super::{FrameReader, FrameWriter, PushError};
-use crate::network::spp::SpacePacket;
 
 /// Configuration for building Proximity-1 transfer frames.
 #[derive(Debug, Clone)]
@@ -801,7 +800,6 @@ pub struct Prox1FrameReader<const BUF: usize> {
     buf: [u8; BUF],
     data_start: usize,
     data_end: usize,
-    pos: usize,
 }
 
 impl<const BUF: usize> Prox1FrameReader<BUF> {
@@ -811,7 +809,6 @@ impl<const BUF: usize> Prox1FrameReader<BUF> {
             buf: [0u8; BUF],
             data_start: 0,
             data_end: 0,
-            pos: 0,
         }
     }
 }
@@ -829,20 +826,11 @@ impl<const BUF: usize> FrameReader for Prox1FrameReader<BUF> {
         let data = parsed.data_field();
         self.data_start = Proximity1TransferFrame::HEADER_SIZE;
         self.data_end = self.data_start + data.len();
-        self.pos = self.data_start;
         Ok(())
     }
 
-    fn next(&mut self) -> Option<&[u8]> {
-        if self.pos >= self.data_end {
-            return None;
-        }
-        let remaining = &self.buf[self.pos..self.data_end];
-        let pkt = SpacePacket::parse(remaining).ok()?;
-        let len = pkt.primary_header.packet_len();
-        let start = self.pos;
-        self.pos += len;
-        Some(&self.buf[start..start + len])
+    fn data_field(&self) -> &[u8] {
+        &self.buf[self.data_start..self.data_end]
     }
 }
 

@@ -12,6 +12,7 @@ use crate::datalink::DatalinkWriter;
 use crate::datalink::framing::FrameReader;
 use crate::datalink::framing::FrameWriter;
 use crate::datalink::framing::PushError;
+use crate::network::spp::SpacePacket;
 
 /// Errors that can occur during link channel operations.
 #[derive(Debug, Clone, thiserror::Error)]
@@ -98,9 +99,15 @@ where
 
 /// Owns a [`FrameReader`] and a [`CodingReader`], reading
 /// frames from the coding pipeline and extracting packets.
+///
+/// Packet extraction (previously in each FrameReader impl) is
+/// handled here using [`SpacePacket::parse`] over the raw data
+/// field returned by [`FrameReader::data_field`].
 pub struct LinkReader<F, R> {
     frame_reader: F,
     coding_reader: R,
+    /// Current read position within the data field.
+    pos: usize,
 }
 
 impl<F: FrameReader, R: CodingReader> LinkReader<F, R> {
@@ -109,20 +116,41 @@ impl<F: FrameReader, R: CodingReader> LinkReader<F, R> {
         Self {
             frame_reader,
             coding_reader,
+            pos: 0,
         }
+    }
+
+    /// Try to extract the next packet from the current data
+    /// field, returning its byte length or `None` if exhausted.
+    fn extract_packet(
+        &mut self,
+        buffer: &mut [u8],
+    ) -> Option<usize> {
+        let data = self.frame_reader.data_field();
+        if self.pos >= data.len() {
+            return None;
+        }
+        let remaining = &data[self.pos..];
+        let pkt = SpacePacket::parse(remaining).ok()?;
+        let len = pkt.primary_header.packet_len();
+        let n = len.min(buffer.len());
+        buffer[..n].copy_from_slice(&remaining[..n]);
+        self.pos += len;
+        Some(n)
     }
 
     /// Receive the next packet. Reads a new frame from the
     /// coding pipeline when the current frame is exhausted.
-    pub async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, LinkError<R::Error>> {
-        // Try extracting from current frame first
-        if let Some(pkt) = self.frame_reader.next() {
-            let len = pkt.len().min(buffer.len());
-            buffer[..len].copy_from_slice(&pkt[..len]);
-            return Ok(len);
+    pub async fn recv(
+        &mut self,
+        buffer: &mut [u8],
+    ) -> Result<usize, LinkError<R::Error>> {
+        // Try extracting from current frame first.
+        if let Some(n) = self.extract_packet(buffer) {
+            return Ok(n);
         }
 
-        // Read a new frame directly into frame_reader's buffer
+        // Read a new frame directly into frame_reader's buffer.
         let len = self
             .coding_reader
             .read(self.frame_reader.buffer_mut())
@@ -136,13 +164,10 @@ impl<F: FrameReader, R: CodingReader> LinkReader<F, R> {
         self.frame_reader
             .feed(len)
             .map_err(|_| LinkError::InvalidFrame)?;
+        self.pos = 0;
 
-        match self.frame_reader.next() {
-            Some(pkt) => {
-                let n = pkt.len().min(buffer.len());
-                buffer[..n].copy_from_slice(&pkt[..n]);
-                Ok(n)
-            }
+        match self.extract_packet(buffer) {
+            Some(n) => Ok(n),
             None => Ok(0),
         }
     }
@@ -155,7 +180,10 @@ where
 {
     type Error = LinkError<R::Error>;
 
-    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(
+        &mut self,
+        buffer: &mut [u8],
+    ) -> Result<usize, Self::Error> {
         self.recv(buffer).await
     }
 }

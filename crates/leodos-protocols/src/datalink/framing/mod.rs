@@ -41,14 +41,15 @@ pub trait FrameWriter {
     fn finish(&mut self) -> Result<&[u8], Self::Error>;
 }
 
-/// Extracts packets from a received transfer frame.
+/// Extracts the data field from a received transfer frame.
 ///
 /// Owns the frame buffer internally.
 /// [`buffer_mut()`](FrameReader::buffer_mut) provides write
 /// access for the coding layer to fill.
 /// [`feed()`](FrameReader::feed) validates the header.
-/// [`next()`](FrameReader::next) yields zero-copy packet
-/// sub-slices.
+/// [`data_field()`](FrameReader::data_field) returns the raw
+/// data field — packet extraction is handled by
+/// [`LinkReader`](super::super::link::channel::LinkReader).
 pub trait FrameReader {
     /// Error type for frame parsing.
     type Error;
@@ -58,13 +59,13 @@ pub trait FrameReader {
     fn buffer_mut(&mut self) -> &mut [u8];
 
     /// Validate the frame header for `len` bytes of data
-    /// in the buffer and prepare for packet extraction.
+    /// in the buffer and prepare for data field access.
     fn feed(&mut self, len: usize) -> Result<(), Self::Error>;
 
-    /// Return the next packet as a sub-slice of the buffer.
+    /// Returns the data field of the most recently fed frame.
     ///
-    /// Returns `None` when all packets have been extracted.
-    fn next(&mut self) -> Option<&[u8]>;
+    /// Returns an empty slice before the first `feed()` call.
+    fn data_field(&self) -> &[u8];
 }
 
 /// Space Data Link Protocol frame definitions (TC, TM, AOS).
