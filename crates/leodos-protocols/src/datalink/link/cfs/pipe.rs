@@ -2,7 +2,9 @@ use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::cfe::sb::pipe::Pipe;
 use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
 
-use crate::datalink::{DatalinkReader, DatalinkWriter, link::cfs::CfsLinkError};
+use leodos_libcfs::error::Error as CfsError;
+
+use crate::datalink::{DatalinkReader, DatalinkWriter};
 
 /// Sends frames over a CFS software bus pipe.
 pub struct PipeFrameWriter {
@@ -17,7 +19,7 @@ impl PipeFrameWriter {
 }
 
 impl DatalinkWriter for PipeFrameWriter {
-    type Error = CfsLinkError;
+    type Error = CfsError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         let header_size = 8;
@@ -60,7 +62,7 @@ impl<'a> PipeFrameReader<'a> {
 }
 
 impl DatalinkReader for PipeFrameReader<'_> {
-    type Error = CfsLinkError;
+    type Error = CfsError;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         let header_size = self.header_size;
