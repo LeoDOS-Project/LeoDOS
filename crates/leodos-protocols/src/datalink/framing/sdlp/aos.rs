@@ -264,6 +264,180 @@ impl AosPrimaryHeader {
     }
 }
 
+impl AosTransferFrame {
+    /// The size of the AOS Transfer Frame primary header in bytes.
+    pub const HEADER_SIZE: usize = 6;
+
+    /// Parses a transfer frame without applying derandomization.
+    ///
+    /// Use this when the coding pipeline has already handled
+    /// derandomization.
+    pub fn parse_raw(bytes: &[u8]) -> Result<&AosTransferFrame, ParseError> {
+        if bytes.len() < Self::HEADER_SIZE {
+            return Err(ParseError::TooShortForHeader);
+        }
+        let frame = AosTransferFrame::ref_from_bytes(bytes)
+            .map_err(|_| ParseError::TooShortForHeader)?;
+        if frame.header.version() != Self::AOS_VERSION {
+            return Err(ParseError::InvalidVersion(frame.header.version()));
+        }
+        Ok(frame)
+    }
+}
+
+// ── FrameWriter / FrameReader implementations ──
+
+use super::super::{FrameReader, FrameWriter, PushError};
+use crate::network::spp::SpacePacket;
+
+/// Configuration for building AOS transfer frames.
+#[derive(Debug, Clone)]
+pub struct AosFrameWriterConfig {
+    /// Spacecraft ID (8-bit).
+    pub scid: u8,
+    /// Virtual Channel ID (6-bit).
+    pub vcid: u8,
+    /// Maximum data field length in bytes.
+    pub max_data_field_len: usize,
+}
+
+/// Accumulates packets into AOS transfer frames.
+///
+/// Owns its frame buffer internally (sized by `BUF`). Packets
+/// are pushed directly into the buffer at the correct offset.
+/// [`finish()`](FrameWriter::finish) stamps the header and
+/// returns a borrow of the completed frame.
+pub struct AosFrameWriter<const BUF: usize> {
+    config: AosFrameWriterConfig,
+    vc_frame_count: u32,
+    data_len: usize,
+    buf: [u8; BUF],
+}
+
+impl<const BUF: usize> AosFrameWriter<BUF> {
+    /// Creates a new AOS frame writer.
+    pub fn new(config: AosFrameWriterConfig) -> Self {
+        Self {
+            config,
+            vc_frame_count: 0,
+            data_len: 0,
+            buf: [0u8; BUF],
+        }
+    }
+}
+
+impl<const BUF: usize> AosFrameWriter<BUF> {
+    fn remaining(&self) -> usize {
+        self.config
+            .max_data_field_len
+            .saturating_sub(self.data_len)
+    }
+}
+
+impl<const BUF: usize> FrameWriter for AosFrameWriter<BUF> {
+    type Error = BuildError;
+
+    fn is_empty(&self) -> bool {
+        self.data_len == 0
+    }
+
+    fn push(&mut self, data: &[u8]) -> Result<(), PushError> {
+        if data.len() > self.config.max_data_field_len {
+            return Err(PushError::TooLarge);
+        }
+        if data.len() > self.remaining() {
+            return Err(PushError::Full);
+        }
+        let off =
+            AosTransferFrame::HEADER_SIZE + self.data_len;
+        self.buf[off..off + data.len()].copy_from_slice(data);
+        self.data_len += data.len();
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<&[u8], BuildError> {
+        let total =
+            AosTransferFrame::HEADER_SIZE + self.data_len;
+        let count = self.vc_frame_count;
+        self.vc_frame_count =
+            self.vc_frame_count.wrapping_add(1) & 0xFF_FFFF;
+
+        let buf_len = self.buf.len();
+        let frame =
+            AosTransferFrame::mut_from_bytes(&mut self.buf[..total])
+                .map_err(|_| BuildError::BufferTooSmall {
+                    required: total,
+                    provided: buf_len,
+                })?;
+
+        frame.header.set_version(AosTransferFrame::AOS_VERSION);
+        frame.header.set_scid(self.config.scid);
+        frame.header.set_vcid(self.config.vcid);
+        frame.header.set_vc_frame_count(count);
+        frame.header.set_replay(false);
+        frame.header.set_usage_flag(false);
+
+        self.data_len = 0;
+        Ok(&self.buf[..total])
+    }
+}
+
+/// Extracts packets from a received AOS transfer frame.
+///
+/// Owns its frame buffer internally (sized by `BUF`). The
+/// coding layer writes into
+/// [`buffer_mut()`](FrameReader::buffer_mut),
+/// [`feed()`](FrameReader::feed) validates the header, and
+/// [`next()`](FrameReader::next) returns zero-copy sub-slices.
+pub struct AosFrameReader<const BUF: usize> {
+    buf: [u8; BUF],
+    data_start: usize,
+    data_end: usize,
+    pos: usize,
+}
+
+impl<const BUF: usize> AosFrameReader<BUF> {
+    /// Creates a new AOS frame reader.
+    pub fn new() -> Self {
+        Self {
+            buf: [0u8; BUF],
+            data_start: 0,
+            data_end: 0,
+            pos: 0,
+        }
+    }
+}
+
+impl<const BUF: usize> FrameReader for AosFrameReader<BUF> {
+    type Error = ParseError;
+
+    fn buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.buf
+    }
+
+    fn feed(&mut self, len: usize) -> Result<(), ParseError> {
+        let parsed =
+            AosTransferFrame::parse_raw(&self.buf[..len])?;
+        let data = parsed.data();
+        self.data_start = AosTransferFrame::HEADER_SIZE;
+        self.data_end = self.data_start + data.len();
+        self.pos = self.data_start;
+        Ok(())
+    }
+
+    fn next(&mut self) -> Option<&[u8]> {
+        if self.pos >= self.data_end {
+            return None;
+        }
+        let remaining = &self.buf[self.pos..self.data_end];
+        let pkt = SpacePacket::parse(remaining).ok()?;
+        let len = pkt.primary_header.packet_len();
+        let start = self.pos;
+        self.pos += len;
+        Some(&self.buf[start..start + len])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

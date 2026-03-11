@@ -720,6 +720,225 @@ impl core::fmt::Debug for UslpTransferFrame {
     }
 }
 
+// ── FrameWriter / FrameReader implementations ──
+
+use super::{FrameReader, FrameWriter, PushError};
+use crate::network::spp::SpacePacket;
+
+/// Configuration for building USLP transfer frames.
+#[derive(Debug, Clone)]
+pub struct UslpFrameWriterConfig {
+    /// Spacecraft ID (16-bit).
+    pub scid: u16,
+    /// Virtual Channel ID (6-bit).
+    pub vcid: u8,
+    /// Multiplexer Access Point ID (4-bit).
+    pub map_id: u8,
+    /// Bypass/Sequence Control Flag.
+    pub bypass: bool,
+    /// Protocol Control Command Flag.
+    pub protocol_control_command: bool,
+    /// Operational Control Field Flag.
+    pub ocf_flag: bool,
+    /// VCF Count field length in bytes (0-7).
+    pub vcf_count_length: u8,
+    /// Insert Zone length in bytes.
+    pub insert_zone_len: usize,
+    /// TFDZ Construction Rule.
+    pub tfdz_rule: TfdzRule,
+    /// USLP Protocol Identifier.
+    pub upid: u8,
+    /// Whether a 2-byte FECF is appended.
+    pub fecf_present: bool,
+    /// Maximum data zone length in bytes (payload capacity).
+    pub max_data_zone_len: usize,
+}
+
+/// Accumulates packets into USLP transfer frames.
+///
+/// Owns its frame buffer internally (sized by `BUF`). Packets
+/// are pushed directly into the buffer at the correct offset.
+/// [`finish()`](FrameWriter::finish) stamps the header and
+/// returns a borrow of the completed frame.
+pub struct UslpFrameWriter<const BUF: usize> {
+    config: UslpFrameWriterConfig,
+    vcf_count: u64,
+    data_zone_offset: usize,
+    data_len: usize,
+    buf: [u8; BUF],
+}
+
+impl<const BUF: usize> UslpFrameWriter<BUF> {
+    /// Creates a new USLP frame writer.
+    pub fn new(config: UslpFrameWriterConfig) -> Self {
+        let tfdf_header_len =
+            if config.tfdz_rule.has_pointer() { 3 } else { 1 };
+        let data_zone_offset =
+            UslpTransferFrame::FIXED_HEADER_SIZE
+                + config.vcf_count_length as usize
+                + config.insert_zone_len
+                + tfdf_header_len;
+        Self {
+            config,
+            vcf_count: 0,
+            data_zone_offset,
+            data_len: 0,
+            buf: [0u8; BUF],
+        }
+    }
+
+    fn remaining(&self) -> usize {
+        self.config
+            .max_data_zone_len
+            .saturating_sub(self.data_len)
+    }
+}
+
+impl<const BUF: usize> FrameWriter for UslpFrameWriter<BUF> {
+    type Error = BuildError;
+
+    fn is_empty(&self) -> bool {
+        self.data_len == 0
+    }
+
+    fn push(&mut self, data: &[u8]) -> Result<(), PushError> {
+        if data.len() > self.config.max_data_zone_len {
+            return Err(PushError::TooLarge);
+        }
+        if data.len() > self.remaining() {
+            return Err(PushError::Full);
+        }
+        let off = self.data_zone_offset + self.data_len;
+        self.buf[off..off + data.len()].copy_from_slice(data);
+        self.data_len += data.len();
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<&[u8], BuildError> {
+        let ocf_len =
+            if self.config.ocf_flag { 4 } else { 0 };
+        let fecf_len =
+            if self.config.fecf_present { 2 } else { 0 };
+        let total = self.data_zone_offset
+            + self.data_len
+            + ocf_len
+            + fecf_len;
+
+        let vcf_count = self.vcf_count;
+        self.vcf_count = self.vcf_count.wrapping_add(1);
+
+        // Stamp the primary header and VCF count. The builder
+        // zeroes the header bytes but does not touch data beyond
+        // the VCF count field, so our payload is safe.
+        UslpTransferFrame::builder()
+            .buffer(&mut self.buf[..total])
+            .scid(self.config.scid)
+            .vcid(self.config.vcid)
+            .map_id(self.config.map_id)
+            .bypass(self.config.bypass)
+            .protocol_control_command(
+                self.config.protocol_control_command,
+            )
+            .ocf_flag(self.config.ocf_flag)
+            .vcf_count_length(self.config.vcf_count_length)
+            .vcf_count(vcf_count)
+            .build()?;
+
+        // Stamp the TFDF header (rule + UPID + optional pointer).
+        let frame = UslpTransferFrame::mut_from_bytes(
+            &mut self.buf[..total],
+        )
+        .unwrap();
+        frame.set_tfdf_header(
+            self.config.insert_zone_len,
+            self.config.tfdz_rule,
+            self.config.upid,
+            if self.config.tfdz_rule.has_pointer() {
+                Some(0)
+            } else {
+                None
+            },
+        );
+
+        self.data_len = 0;
+        Ok(&self.buf[..total])
+    }
+}
+
+/// Extracts packets from a received USLP transfer frame.
+///
+/// Owns its frame buffer internally (sized by `BUF`). The
+/// coding layer writes into
+/// [`buffer_mut()`](FrameReader::buffer_mut),
+/// [`feed()`](FrameReader::feed) validates the header, and
+/// [`next()`](FrameReader::next) returns zero-copy sub-slices.
+pub struct UslpFrameReader<const BUF: usize> {
+    insert_zone_len: usize,
+    fecf_present: bool,
+    buf: [u8; BUF],
+    data_start: usize,
+    data_end: usize,
+    pos: usize,
+}
+
+impl<const BUF: usize> UslpFrameReader<BUF> {
+    /// Creates a new USLP frame reader.
+    pub fn new(
+        insert_zone_len: usize,
+        fecf_present: bool,
+    ) -> Self {
+        Self {
+            insert_zone_len,
+            fecf_present,
+            buf: [0u8; BUF],
+            data_start: 0,
+            data_end: 0,
+            pos: 0,
+        }
+    }
+}
+
+impl<const BUF: usize> FrameReader for UslpFrameReader<BUF> {
+    type Error = ParseError;
+
+    fn buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.buf
+    }
+
+    fn feed(&mut self, len: usize) -> Result<(), ParseError> {
+        let frame =
+            UslpTransferFrame::parse(&self.buf[..len])?;
+        let rule = frame.tfdz_rule(self.insert_zone_len);
+        let tfdf_hdr_len =
+            if rule.has_pointer() { 3 } else { 1 };
+        let header_overhead =
+            UslpTransferFrame::FIXED_HEADER_SIZE
+                + frame.header().vcf_count_length() as usize
+                + self.insert_zone_len
+                + tfdf_hdr_len;
+        let ocf_len =
+            if frame.header().ocf_flag() { 4 } else { 0 };
+        let fecf_len =
+            if self.fecf_present { 2 } else { 0 };
+        self.data_start = header_overhead;
+        self.data_end = len - ocf_len - fecf_len;
+        self.pos = self.data_start;
+        Ok(())
+    }
+
+    fn next(&mut self) -> Option<&[u8]> {
+        if self.pos >= self.data_end {
+            return None;
+        }
+        let remaining = &self.buf[self.pos..self.data_end];
+        let pkt = SpacePacket::parse(remaining).ok()?;
+        let len = pkt.primary_header.packet_len();
+        let start = self.pos;
+        self.pos += len;
+        Some(&self.buf[start..start + len])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -688,6 +688,164 @@ impl core::fmt::Display for Proximity1TransferFrame {
     }
 }
 
+// ── FrameWriter / FrameReader implementations ──
+
+use super::super::{FrameReader, FrameWriter, PushError};
+use crate::network::spp::SpacePacket;
+
+/// Configuration for building Proximity-1 transfer frames.
+#[derive(Debug, Clone)]
+pub struct Prox1FrameWriterConfig {
+    /// Spacecraft ID (10-bit).
+    pub scid: u16,
+    /// Quality of Service indicator.
+    pub qos: QoS,
+    /// PDU type (user data or supervisory).
+    pub pdu_type: PduType,
+    /// Data field construction identifier.
+    pub dfc_id: DfcId,
+    /// Physical channel identifier.
+    pub pcid: bool,
+    /// Port identifier (3-bit).
+    pub port_id: u8,
+    /// Source-or-destination identifier.
+    pub src_dest: SrcDest,
+    /// Maximum data field length in bytes.
+    pub max_data_field_len: usize,
+}
+
+/// Accumulates packets into Proximity-1 transfer frames.
+///
+/// Owns its frame buffer internally (sized by `BUF`). Packets
+/// are pushed directly into the buffer at the correct offset.
+/// [`finish()`](FrameWriter::finish) stamps the header and
+/// returns a borrow of the completed frame.
+pub struct Prox1FrameWriter<const BUF: usize> {
+    config: Prox1FrameWriterConfig,
+    fsn: u8,
+    data_len: usize,
+    buf: [u8; BUF],
+}
+
+impl<const BUF: usize> Prox1FrameWriter<BUF> {
+    /// Creates a new Proximity-1 frame writer.
+    pub fn new(config: Prox1FrameWriterConfig) -> Self {
+        Self {
+            config,
+            fsn: 0,
+            data_len: 0,
+            buf: [0u8; BUF],
+        }
+    }
+}
+
+impl<const BUF: usize> Prox1FrameWriter<BUF> {
+    fn remaining(&self) -> usize {
+        self.config.max_data_field_len.saturating_sub(self.data_len)
+    }
+}
+
+impl<const BUF: usize> FrameWriter for Prox1FrameWriter<BUF> {
+    type Error = BuildError;
+
+    fn is_empty(&self) -> bool {
+        self.data_len == 0
+    }
+
+    fn push(&mut self, data: &[u8]) -> Result<(), PushError> {
+        if data.len() > self.config.max_data_field_len {
+            return Err(PushError::TooLarge);
+        }
+        if data.len() > self.remaining() {
+            return Err(PushError::Full);
+        }
+        let off =
+            Proximity1TransferFrame::HEADER_SIZE + self.data_len;
+        self.buf[off..off + data.len()].copy_from_slice(data);
+        self.data_len += data.len();
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<&[u8], BuildError> {
+        let total =
+            Proximity1TransferFrame::HEADER_SIZE + self.data_len;
+        let fsn = self.fsn;
+        self.fsn = self.fsn.wrapping_add(1);
+
+        Proximity1TransferFrame::builder()
+            .buffer(&mut self.buf[..total])
+            .scid(self.config.scid)
+            .qos(self.config.qos)
+            .pdu_type(self.config.pdu_type)
+            .dfc_id(self.config.dfc_id)
+            .pcid(self.config.pcid)
+            .port_id(self.config.port_id)
+            .src_dest(self.config.src_dest)
+            .fsn(fsn)
+            .data_field_len(self.data_len)
+            .build()?;
+
+        self.data_len = 0;
+        Ok(&self.buf[..total])
+    }
+}
+
+/// Extracts packets from a received Proximity-1 transfer frame.
+///
+/// Owns its frame buffer internally (sized by `BUF`). The
+/// coding layer writes into
+/// [`buffer_mut()`](FrameReader::buffer_mut),
+/// [`feed()`](FrameReader::feed) validates the header, and
+/// [`next()`](FrameReader::next) returns zero-copy sub-slices.
+pub struct Prox1FrameReader<const BUF: usize> {
+    buf: [u8; BUF],
+    data_start: usize,
+    data_end: usize,
+    pos: usize,
+}
+
+impl<const BUF: usize> Prox1FrameReader<BUF> {
+    /// Creates a new Proximity-1 frame reader.
+    pub fn new() -> Self {
+        Self {
+            buf: [0u8; BUF],
+            data_start: 0,
+            data_end: 0,
+            pos: 0,
+        }
+    }
+}
+
+impl<const BUF: usize> FrameReader for Prox1FrameReader<BUF> {
+    type Error = ParseError;
+
+    fn buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.buf
+    }
+
+    fn feed(&mut self, len: usize) -> Result<(), ParseError> {
+        let parsed =
+            Proximity1TransferFrame::parse(&self.buf[..len])?;
+        let data = parsed.data_field();
+        self.data_start = Proximity1TransferFrame::HEADER_SIZE;
+        self.data_end = self.data_start + data.len();
+        self.pos = self.data_start;
+        Ok(())
+    }
+
+    fn next(&mut self) -> Option<&[u8]> {
+        if self.pos >= self.data_end {
+            return None;
+        }
+        let remaining = &self.buf[self.pos..self.data_end];
+        let pkt = SpacePacket::parse(remaining).ok()?;
+        let len = pkt.primary_header.packet_len();
+        let start = self.pos;
+        self.pos += len;
+        Some(&self.buf[start..start + len])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
