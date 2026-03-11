@@ -48,7 +48,7 @@ struct MockLinkB {
 impl NetworkWriter for MockLinkA {
     type Error = std::io::Error;
 
-    async fn send(&mut self, packet: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, packet: &[u8]) -> Result<(), Self::Error> {
         self.send_queue.lock().await.push_back(packet.to_vec());
         Ok(())
     }
@@ -57,7 +57,7 @@ impl NetworkWriter for MockLinkA {
 impl NetworkReader for MockLinkA {
     type Error = std::io::Error;
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         loop {
             if let Some(packet) = self.recv_queue.lock().await.pop_front() {
                 let len = packet.len().min(buffer.len());
@@ -72,7 +72,7 @@ impl NetworkReader for MockLinkA {
 impl NetworkWriter for MockLinkB {
     type Error = std::io::Error;
 
-    async fn send(&mut self, packet: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, packet: &[u8]) -> Result<(), Self::Error> {
         self.send_queue.lock().await.push_back(packet.to_vec());
         Ok(())
     }
@@ -81,7 +81,7 @@ impl NetworkWriter for MockLinkB {
 impl NetworkReader for MockLinkB {
     type Error = std::io::Error;
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         loop {
             if let Some(packet) = self.recv_queue.lock().await.pop_front() {
                 let len = packet.len().min(buffer.len());

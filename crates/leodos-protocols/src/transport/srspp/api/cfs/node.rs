@@ -157,7 +157,7 @@ where
 
             let timeout = self.next_timeout();
 
-            match select_either(self.link.recv(&mut self.recv_buffer), sleep(timeout)).await {
+            match select_either(self.link.read(&mut self.recv_buffer), sleep(timeout)).await {
                 Either::Left(result) => match result {
                     Ok(len) => {
                         if let Err(e) = self.handle_incoming(len).await {

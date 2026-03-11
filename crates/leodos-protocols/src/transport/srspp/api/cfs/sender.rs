@@ -95,7 +95,7 @@ pub(super) async fn drive_transmits<
         })?;
 
         if let Some(packet_len) = packet_len {
-            link.send(&tx_buf[..packet_len])
+            link.write(&tx_buf[..packet_len])
                 .await
                 .map_err(Error::Link)?;
 
@@ -309,7 +309,7 @@ where
             let timeout = duration_until(sender_next_deadline(state));
 
             match select_either(
-                self.link.recv(&mut self.recv_buffer),
+                self.link.read(&mut self.recv_buffer),
                 sleep(timeout),
             )
             .await

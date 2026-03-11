@@ -13,6 +13,7 @@ use leodos_protocols::datalink::framing::sdlp::tm::{
 use leodos_protocols::datalink::link::channel::{
     LinkReader, LinkWriter,
 };
+use leodos_protocols::datalink::{DatalinkReader, DatalinkWriter};
 use leodos_protocols::network::spp::{
     Apid, PacketType, SecondaryHeaderFlag, SequenceCount,
     SequenceFlag, SpacePacket,
@@ -146,7 +147,7 @@ fn tc_sender_builds_valid_frame() {
         let mut pkt_buf = [0u8; 128];
         let pkt_len =
             build_space_packet(&mut pkt_buf, b"Hello, TC!");
-        writer.send(&pkt_buf[..pkt_len]).await.unwrap();
+        writer.write(&pkt_buf[..pkt_len]).await.unwrap();
         writer.flush().await.unwrap();
 
         let sent_frame = mock.pop_front().unwrap();
@@ -174,7 +175,7 @@ fn tc_round_trip() {
         let payload = b"Hello, TC round trip!";
         let pkt_len =
             build_space_packet(&mut pkt_buf, payload);
-        writer.send(&pkt_buf[..pkt_len]).await.unwrap();
+        writer.write(&pkt_buf[..pkt_len]).await.unwrap();
         writer.flush().await.unwrap();
 
         let frame_reader = TcFrameReader::<512>::new();
@@ -183,7 +184,7 @@ fn tc_round_trip() {
 
         let mut recv_buf = [0u8; 512];
         let recv_len =
-            reader.recv(&mut recv_buf).await.unwrap();
+            reader.read(&mut recv_buf).await.unwrap();
 
         assert_eq!(
             &recv_buf[..recv_len],
@@ -216,7 +217,7 @@ fn tm_sender_builds_valid_frame() {
         let mut pkt_buf = [0u8; 128];
         let pkt_len =
             build_space_packet(&mut pkt_buf, b"Hello, TM!");
-        writer.send(&pkt_buf[..pkt_len]).await.unwrap();
+        writer.write(&pkt_buf[..pkt_len]).await.unwrap();
         writer.flush().await.unwrap();
 
         let sent_frame = mock.pop_front().unwrap();
@@ -242,7 +243,7 @@ fn tm_round_trip() {
         let payload = b"Hello, TM round trip!";
         let pkt_len =
             build_space_packet(&mut pkt_buf, payload);
-        writer.send(&pkt_buf[..pkt_len]).await.unwrap();
+        writer.write(&pkt_buf[..pkt_len]).await.unwrap();
         writer.flush().await.unwrap();
 
         let frame_reader = TmFrameReader::<512>::new();
@@ -251,7 +252,7 @@ fn tm_round_trip() {
 
         let mut recv_buf = [0u8; 512];
         let recv_len =
-            reader.recv(&mut recv_buf).await.unwrap();
+            reader.read(&mut recv_buf).await.unwrap();
 
         assert_eq!(
             &recv_buf[..recv_len],

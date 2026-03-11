@@ -10,7 +10,7 @@ use leodos_libcfs::runtime::time::sleep;
 use crate::network::{NetworkReader, NetworkWriter};
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
-use crate::transport::TransportReceiver;
+use crate::transport::TransportReader;
 use crate::transport::srspp::machine::receiver::ReceiverAction;
 use crate::transport::srspp::machine::receiver::ReceiverActions;
 use crate::transport::srspp::machine::receiver::ReceiverBackend;
@@ -266,7 +266,7 @@ async fn drive_actions<
             .sequence_count(SequenceCount::from(0))
             .build()?;
 
-        link.send(zerocopy::IntoBytes::as_bytes(ack))
+        link.write(zerocopy::IntoBytes::as_bytes(ack))
             .await
             .map_err(Error::Link)?;
     }
@@ -394,7 +394,7 @@ where
             let timeout = duration_until(receiver_next_deadline(state));
 
             match select_either(
-                self.link.recv(&mut self.recv_buffer),
+                self.link.read(&mut self.recv_buffer),
                 sleep(timeout),
             )
             .await
@@ -562,11 +562,11 @@ impl<'a, 'rx, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
 }
 
 impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
-    TransportReceiver for SrsppRxHandle<'a, E, R, MAX_STREAMS>
+    TransportReader for SrsppRxHandle<'a, E, R, MAX_STREAMS>
 {
     type Error = Error<E>;
 
-    async fn recv(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         let (_, len) = self.recv(buf).await?;
         Ok(len)
     }

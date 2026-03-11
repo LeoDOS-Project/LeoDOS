@@ -15,11 +15,10 @@ use leodos_protocols::application::spacecomp::packet::BuildError;
 use leodos_protocols::application::spacecomp::packet::OpCode;
 use leodos_protocols::application::spacecomp::packet::ParseError;
 use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
-use leodos_protocols::datalink::link::cfs::udp::UdpDataLink;
+use leodos_protocols::datalink::link::cfs::udp::UdpDatalink;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::isl::routing::algorithm::distance_minimizing::DistanceMinimizing;
-use leodos_protocols::network::isl::routing::local::LocalChannel;
 use leodos_protocols::network::isl::routing::local::LocalLinkError;
 use leodos_protocols::network::isl::routing::Router;
 use leodos_protocols::network::isl::shell::Shell;
@@ -111,19 +110,19 @@ fn orbit_ip(orbit: u8, out: &mut [u8; 16]) -> Result<usize, core::fmt::Error> {
     leodos_protocols::fmt!(out, "172.20.{orbit}.10")
 }
 
-fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDataLink, Error> {
+fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, Error> {
     let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
     let remote = SocketAddr::new_ipv4(LOCALHOST, remote_port)?;
-    UdpDataLink::bind(local, remote)
+    UdpDatalink::bind(local, remote)
 }
 
-fn remote_link(local_port: u16, remote_orbit: u8, remote_port: u16) -> Result<UdpDataLink, Error> {
+fn remote_link(local_port: u16, remote_orbit: u8, remote_port: u16) -> Result<UdpDatalink, Error> {
     let mut ip_buf = [0u8; 16];
     let len = orbit_ip(remote_orbit, &mut ip_buf).map_err(|_| Error::CfeStatusValidationFailure)?;
     let ip = core::str::from_utf8(&ip_buf[..len]).map_err(|_| Error::CfeStatusValidationFailure)?;
     let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
     let remote = SocketAddr::new_ipv4(ip, remote_port)?;
-    UdpDataLink::bind(local, remote)
+    UdpDatalink::bind(local, remote)
 }
 
 #[no_mangle]
@@ -167,16 +166,13 @@ pub extern "C" fn SPACECOMP_AppMain() {
             recv_port(point, Direction::Ground),
         )?;
 
-        let local_channel: LocalChannel<8, 1024> = LocalChannel::new();
-        let (app_link, router_link) = local_channel.split();
         let algorithm = DistanceMinimizing::new(INCLINATION_RAD);
-        let mut router = Router::builder()
+        let router = Router::builder()
             .north(north_link)
             .south(south_link)
             .east(east_link)
             .west(west_link)
             .ground(ground_link)
-            .local(router_link)
             .address(address)
             .torus(TORUS)
             .algorithm(algorithm)
@@ -202,7 +198,7 @@ pub extern "C" fn SPACECOMP_AppMain() {
             .build();
 
         let node = SrsppNode::new(sender_config, receiver_config);
-        let (mut rx, mut tx, mut driver) = node.split(app_link, FixedRto::new(RTO_MS));
+        let (mut rx, mut tx, mut driver) = node.split(router, FixedRto::new(RTO_MS));
 
         let mut bufs = Buffers {
             recv: [0u8; 8192],
@@ -220,7 +216,7 @@ pub extern "C" fn SPACECOMP_AppMain() {
             }
         };
 
-        let _ = join(router.run(), join(app_task, driver.run())).await;
+        let _ = join(app_task, driver.run()).await;
 
         Ok(())
     });

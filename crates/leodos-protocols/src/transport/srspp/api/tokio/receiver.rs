@@ -136,7 +136,7 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: R
         tokio::select! {
             biased;
 
-            result = self.link.recv(&mut self.recv_buffer) => {
+            result = self.link.read(&mut self.recv_buffer) => {
                 let len = result.map_err(|e| SrsppError::LinkError(e.to_string()))?;
                 self.handle_incoming(&self.recv_buffer[..len].to_vec()).await?;
             }
@@ -219,7 +219,7 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: R
                         .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
                     self.link
-                        .send(zerocopy::IntoBytes::as_bytes(ack))
+                        .write(zerocopy::IntoBytes::as_bytes(ack))
                         .await
                         .map_err(|e| SrsppError::LinkError(e.to_string()))?;
                 }

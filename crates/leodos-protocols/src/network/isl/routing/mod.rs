@@ -150,7 +150,7 @@ where
         <G as DatalinkWriter>::Error,
     >;
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         let packet = IslRoutingTelecommand::parse(data).map_err(Error::IslMessageError)?;
         let target = packet.isl_header.target();
         let bytes = packet.as_bytes();
@@ -183,7 +183,7 @@ where
         <G as DatalinkWriter>::Error,
     >;
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         loop {
             let (len, dir) = {
                 let n = self.north.read(&mut self.north_buf).fuse();

@@ -22,10 +22,13 @@
 - [x] Move SpacePacket from `network::spp` to `datalink::spp`
   — `network::spp` re-exports for backward compat.
 - [x] Step 2: Router as NetworkWriter/NetworkReader
-- [ ] Step 3: Consistent trait naming — keep a trait per
-  layer but unify method names (send→write / recv→read)
-  and resolve confusing names (e.g. DatalinkReader vs
-  LinkReader in the same layer). Needs a naming proposal.
+- [x] Step 3a: Unified method names — all layer traits now
+  use write/read. TransportSender/Receiver renamed to
+  TransportWriter/Reader.
+- [ ] Step 3b: Resolve confusing struct names (e.g.
+  DatalinkReader trait vs LinkReader struct in same layer).
+- [ ] Fix spacecomp app — Router::Error not Clone, needs
+  app-level fix for new Router-as-NetworkWriter pattern.
 
 
 ## Communication stack composition

@@ -4,7 +4,7 @@ use tokio::time::{Duration, sleep};
 
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::spp::Apid;
-use leodos_protocols::network::NetworkLayer;
+use leodos_protocols::network::{NetworkWriter, NetworkReader};
 use leodos_protocols::transport::srspp::api::tokio::{SrsppReceiver, SrsppSender};
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
@@ -35,15 +35,19 @@ impl SimulatedLink {
     }
 }
 
-impl NetworkLayer for SimulatedLink {
+impl NetworkWriter for SimulatedLink {
     type Error = std::io::Error;
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         self.tx.send(data.to_vec()).await
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "channel closed"))
     }
+}
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+impl NetworkReader for SimulatedLink {
+    type Error = std::io::Error;
+
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         let mut rx = self.rx.lock().await;
         if let Some(data) = rx.recv().await {
             let len = data.len().min(buffer.len());

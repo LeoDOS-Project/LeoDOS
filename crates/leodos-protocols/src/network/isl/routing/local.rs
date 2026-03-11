@@ -83,7 +83,7 @@ pub struct LocalAppHandle<'a, const QUEUE: usize, const MTU: usize> {
 impl<'a, const QUEUE: usize, const MTU: usize> NetworkWriter for LocalAppHandle<'a, QUEUE, MTU> {
     type Error = LocalLinkError;
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         poll_fn(|_cx| {
             self.channel.state.with_mut(|state| {
                 if state.closed {
@@ -111,7 +111,7 @@ impl<'a, const QUEUE: usize, const MTU: usize> NetworkWriter for LocalAppHandle<
 impl<'a, const QUEUE: usize, const MTU: usize> NetworkReader for LocalAppHandle<'a, QUEUE, MTU> {
     type Error = LocalLinkError;
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         poll_fn(|_cx| {
             self.channel.state.with_mut(|state| {
                 if let Some(packet) = state.from_router.pop_front() {

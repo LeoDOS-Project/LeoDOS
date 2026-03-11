@@ -21,7 +21,7 @@ impl<L> PointToPoint<L> {
 impl<L: DatalinkWriter> NetworkWriter for PointToPoint<L> {
     type Error = L::Error;
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         DatalinkWriter::write(&mut self.link, data).await
     }
 }
@@ -29,7 +29,7 @@ impl<L: DatalinkWriter> NetworkWriter for PointToPoint<L> {
 impl<L: DatalinkReader> NetworkReader for PointToPoint<L> {
     type Error = L::Error;
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         DatalinkReader::read(&mut self.link, buffer).await
     }
 }

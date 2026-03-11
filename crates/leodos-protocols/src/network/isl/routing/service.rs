@@ -61,16 +61,16 @@ pub struct RouterClient<'a, const QUEUE: usize, const MTU: usize> {
 impl<'a, const QUEUE: usize, const MTU: usize> NetworkWriter for RouterClient<'a, QUEUE, MTU> {
     type Error = <LocalAppHandle<'a, QUEUE, MTU> as NetworkWriter>::Error;
 
-    async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        self.handle.send(data).await
+    async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+        self.handle.write(data).await
     }
 }
 
 impl<'a, const QUEUE: usize, const MTU: usize> NetworkReader for RouterClient<'a, QUEUE, MTU> {
     type Error = <LocalAppHandle<'a, QUEUE, MTU> as NetworkReader>::Error;
 
-    async fn recv(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
-        self.handle.recv(buffer).await
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+        self.handle.read(buffer).await
     }
 }
 
@@ -101,14 +101,14 @@ where
             // Receive from the network (blocks until a
             // local-destined packet arrives, forwarding
             // non-local packets internally).
-            if let Ok(len) = self.router.recv(&mut buf).await {
+            if let Ok(len) = self.router.read(&mut buf).await {
                 let _ = self.handle.write(&buf[..len]).await;
             }
 
             // Drain any outgoing packets from the app.
             let mut local_buf = [0u8; MTU];
             if let Ok(len) = self.handle.read(&mut local_buf).await {
-                let _ = self.router.send(&local_buf[..len]).await;
+                let _ = self.router.write(&local_buf[..len]).await;
             }
         }
     }

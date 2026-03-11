@@ -140,7 +140,7 @@ fn ptp_send() {
         let mut ptp = PointToPoint::new(link);
 
         let test_data = b"PointToPoint test";
-        ptp.send(test_data).await.unwrap();
+        ptp.write(test_data).await.unwrap();
 
         let sent = send_channel.state.borrow_mut().queue.pop_front().unwrap();
         assert_eq!(&sent[..], test_data);
@@ -167,7 +167,7 @@ fn ptp_recv() {
             .push_back(test_data.to_vec());
 
         let mut buffer = [0u8; 256];
-        let len = ptp.recv(&mut buffer).await.unwrap();
+        let len = ptp.read(&mut buffer).await.unwrap();
 
         assert_eq!(&buffer[..len], test_data);
     });

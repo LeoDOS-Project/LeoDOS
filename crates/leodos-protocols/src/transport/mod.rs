@@ -9,20 +9,20 @@ pub mod packet;
 /// Satellite Reliable SPP Protocol (SRSPP).
 pub mod srspp;
 
-/// Reliable message sender. Implemented by transport protocols (SRSPP, CFDP, etc.).
-pub trait TransportSender {
-    /// Error type returned by send operations.
+/// Reliable message writer. Implemented by transport protocols (SRSPP, CFDP, etc.).
+pub trait TransportWriter {
+    /// Error type for write operations.
     type Error;
 
-    /// Send a message reliably to the remote endpoint.
-    fn send(&mut self, data: &[u8]) -> impl Future<Output = Result<(), Self::Error>>;
+    /// Writes a message reliably to the remote endpoint.
+    fn write(&mut self, data: &[u8]) -> impl Future<Output = Result<(), Self::Error>>;
 }
 
-/// Reliable message receiver. Implemented by transport protocols (SRSPP, CFDP, etc.).
-pub trait TransportReceiver {
-    /// Error type returned by receive operations.
+/// Reliable message reader. Implemented by transport protocols (SRSPP, CFDP, etc.).
+pub trait TransportReader {
+    /// Error type for read operations.
     type Error;
 
-    /// Receive a message into the provided buffer, returning its length.
-    fn recv(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>>;
+    /// Reads a message into the provided buffer, returning its length.
+    fn read(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>>;
 }

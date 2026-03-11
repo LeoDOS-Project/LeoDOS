@@ -49,21 +49,6 @@ impl<F: FrameWriter, W: CodingWriter> LinkWriter<F, W> {
         }
     }
 
-    /// Push a packet into the current frame. If the frame is
-    /// full, flushes it first, then retries.
-    pub async fn send(&mut self, data: &[u8]) -> Result<(), LinkError<W::Error>> {
-        match self.frame_writer.push(data) {
-            Ok(()) => Ok(()),
-            Err(PushError::TooLarge) => Err(LinkError::FrameTooLarge),
-            Err(PushError::Full) => {
-                self.flush().await?;
-                self.frame_writer
-                    .push(data)
-                    .map_err(|_| LinkError::FrameTooLarge)
-            }
-        }
-    }
-
     /// Finish the current frame and write it to the coding
     /// pipeline.
     pub async fn flush(&mut self) -> Result<(), LinkError<W::Error>> {
@@ -90,8 +75,19 @@ where
 {
     type Error = LinkError<W::Error>;
 
+    /// Push a packet into the current frame. If the frame is
+    /// full, flushes it first, then retries.
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        self.send(data).await
+        match self.frame_writer.push(data) {
+            Ok(()) => Ok(()),
+            Err(PushError::TooLarge) => Err(LinkError::FrameTooLarge),
+            Err(PushError::Full) => {
+                self.flush().await?;
+                self.frame_writer
+                    .push(data)
+                    .map_err(|_| LinkError::FrameTooLarge)
+            }
+        }
     }
 }
 
@@ -139,12 +135,21 @@ impl<F: FrameReader, R: CodingReader> LinkReader<F, R> {
         Some(n)
     }
 
-    /// Receive the next packet. Reads a new frame from the
+}
+
+impl<F, R> DatalinkReader for LinkReader<F, R>
+where
+    F: FrameReader,
+    R: CodingReader,
+{
+    type Error = LinkError<R::Error>;
+
+    /// Reads the next packet. Fetches a new frame from the
     /// coding pipeline when the current frame is exhausted.
-    pub async fn recv(
+    async fn read(
         &mut self,
         buffer: &mut [u8],
-    ) -> Result<usize, LinkError<R::Error>> {
+    ) -> Result<usize, Self::Error> {
         // Try extracting from current frame first.
         if let Some(n) = self.extract_packet(buffer) {
             return Ok(n);
@@ -170,20 +175,5 @@ impl<F: FrameReader, R: CodingReader> LinkReader<F, R> {
             Some(n) => Ok(n),
             None => Ok(0),
         }
-    }
-}
-
-impl<F, R> DatalinkReader for LinkReader<F, R>
-where
-    F: FrameReader,
-    R: CodingReader,
-{
-    type Error = LinkError<R::Error>;
-
-    async fn read(
-        &mut self,
-        buffer: &mut [u8],
-    ) -> Result<usize, Self::Error> {
-        self.recv(buffer).await
     }
 }
