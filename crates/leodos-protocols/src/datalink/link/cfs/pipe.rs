@@ -4,7 +4,7 @@ use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
 
 use leodos_libcfs::error::Error as CfsError;
 
-use crate::datalink::{DatalinkReader, DatalinkWriter};
+use crate::datalink::{DatalinkRead, DatalinkWrite};
 
 /// Sends frames over a CFS software bus pipe.
 pub struct PipeFrameWriter {
@@ -18,7 +18,7 @@ impl PipeFrameWriter {
     }
 }
 
-impl DatalinkWriter for PipeFrameWriter {
+impl DatalinkWrite for PipeFrameWriter {
     type Error = CfsError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -61,7 +61,7 @@ impl<'a> PipeFrameReader<'a> {
     }
 }
 
-impl DatalinkReader for PipeFrameReader<'_> {
+impl DatalinkRead for PipeFrameReader<'_> {
     type Error = CfsError;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {

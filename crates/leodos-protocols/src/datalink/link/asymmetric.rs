@@ -1,4 +1,4 @@
-use crate::datalink::{DatalinkReader, DatalinkWriter};
+use crate::datalink::{DatalinkRead, DatalinkWrite};
 
 /// A data link composed of separate sender and receiver halves.
 pub struct AsymmetricLink<S, R> {
@@ -24,10 +24,10 @@ pub enum AsymmetricLinkError<SE, RE> {
     Recv(RE),
 }
 
-impl<S, R> DatalinkWriter for AsymmetricLink<S, R>
+impl<S, R> DatalinkWrite for AsymmetricLink<S, R>
 where
-    S: DatalinkWriter,
-    R: DatalinkReader,
+    S: DatalinkWrite,
+    R: DatalinkRead,
 {
     type Error = AsymmetricLinkError<S::Error, R::Error>;
 
@@ -39,10 +39,10 @@ where
     }
 }
 
-impl<S, R> DatalinkReader for AsymmetricLink<S, R>
+impl<S, R> DatalinkRead for AsymmetricLink<S, R>
 where
-    S: DatalinkWriter,
-    R: DatalinkReader,
+    S: DatalinkWrite,
+    R: DatalinkRead,
 {
     type Error = AsymmetricLinkError<S::Error, R::Error>;
 

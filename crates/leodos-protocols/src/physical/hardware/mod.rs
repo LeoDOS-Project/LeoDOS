@@ -1,13 +1,13 @@
 //! Hardware-backed physical channel implementations.
 //!
-//! Implements [`PhysicalWriter`] and [`PhysicalReader`] directly
+//! Implements [`PhysicalWrite`] and [`PhysicalRead`] directly
 //! on the hwlib bus types from [`leodos_libcfs::nos3`], or via
 //! thin wrappers that bind per-call parameters (address, ID).
 
-/// [`PhysicalWriter`] / [`PhysicalReader`] for UART.
+/// [`PhysicalWrite`] / [`PhysicalRead`] for UART.
 #[cfg(feature = "nos3")]
 pub mod uart;
-/// [`PhysicalWriter`] / [`PhysicalReader`] for SPI.
+/// [`PhysicalWrite`] / [`PhysicalRead`] for SPI.
 #[cfg(feature = "nos3")]
 pub mod spi;
 /// [`BoundSocket`] — socket with fixed remote address.

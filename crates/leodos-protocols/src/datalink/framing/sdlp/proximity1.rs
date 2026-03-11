@@ -688,9 +688,9 @@ impl core::fmt::Display for Proximity1TransferFrame {
     }
 }
 
-// ── FrameWriter / FrameReader implementations ──
+// ── FrameWrite / FrameRead implementations ──
 
-use super::super::{FrameReader, FrameWriter, PushError};
+use super::super::{FrameRead, FrameWrite, PushError};
 
 /// Configuration for building Proximity-1 transfer frames.
 #[derive(Debug, Clone)]
@@ -717,7 +717,7 @@ pub struct Prox1FrameWriterConfig {
 ///
 /// Owns its frame buffer internally (sized by `BUF`). Packets
 /// are pushed directly into the buffer at the correct offset.
-/// [`finish()`](FrameWriter::finish) stamps the header and
+/// [`finish()`](FrameWrite::finish) stamps the header and
 /// returns a borrow of the completed frame.
 pub struct Prox1FrameWriter<const BUF: usize> {
     config: Prox1FrameWriterConfig,
@@ -744,7 +744,7 @@ impl<const BUF: usize> Prox1FrameWriter<BUF> {
     }
 }
 
-impl<const BUF: usize> FrameWriter for Prox1FrameWriter<BUF> {
+impl<const BUF: usize> FrameWrite for Prox1FrameWriter<BUF> {
     type Error = BuildError;
 
     fn is_empty(&self) -> bool {
@@ -793,9 +793,9 @@ impl<const BUF: usize> FrameWriter for Prox1FrameWriter<BUF> {
 ///
 /// Owns its frame buffer internally (sized by `BUF`). The
 /// coding layer writes into
-/// [`buffer_mut()`](FrameReader::buffer_mut),
-/// [`feed()`](FrameReader::feed) validates the header, and
-/// [`next()`](FrameReader::next) returns zero-copy sub-slices.
+/// [`buffer_mut()`](FrameRead::buffer_mut),
+/// [`feed()`](FrameRead::feed) validates the header, and
+/// [`next()`](FrameRead::next) returns zero-copy sub-slices.
 pub struct Prox1FrameReader<const BUF: usize> {
     buf: [u8; BUF],
     data_start: usize,
@@ -813,7 +813,7 @@ impl<const BUF: usize> Prox1FrameReader<BUF> {
     }
 }
 
-impl<const BUF: usize> FrameReader for Prox1FrameReader<BUF> {
+impl<const BUF: usize> FrameRead for Prox1FrameReader<BUF> {
     type Error = ParseError;
 
     fn buffer_mut(&mut self) -> &mut [u8] {

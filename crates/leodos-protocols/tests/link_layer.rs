@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use leodos_protocols::coding::{CodingReader, CodingWriter};
+use leodos_protocols::coding::{CodingRead, CodingWrite};
 use leodos_protocols::datalink::framing::sdlp::tc::{
     BypassFlag, ControlFlag, TcFrameReader, TcFrameWriter,
     TcFrameWriterConfig,
@@ -11,9 +11,9 @@ use leodos_protocols::datalink::framing::sdlp::tm::{
     TmFrameReader, TmFrameWriter, TmFrameWriterConfig,
 };
 use leodos_protocols::datalink::link::channel::{
-    LinkReader, LinkWriter,
+    DatalinkReader, DatalinkWriter,
 };
-use leodos_protocols::datalink::{DatalinkReader, DatalinkWriter};
+use leodos_protocols::datalink::{DatalinkRead, DatalinkWrite};
 use leodos_protocols::network::spp::{
     Apid, PacketType, SecondaryHeaderFlag, SequenceCount,
     SequenceFlag, SpacePacket,
@@ -75,8 +75,8 @@ impl MockChannel {
         }
     }
 
-    fn reader(&self) -> MockCodingReader {
-        MockCodingReader {
+    fn reader(&self) -> MockCodingRead {
+        MockCodingRead {
             state: self.state.clone(),
         }
     }
@@ -90,7 +90,7 @@ struct MockWriter {
     state: Rc<RefCell<MockChannelState>>,
 }
 
-impl CodingWriter for MockWriter {
+impl CodingWrite for MockWriter {
     type Error = MockError;
 
     async fn write(
@@ -105,11 +105,11 @@ impl CodingWriter for MockWriter {
     }
 }
 
-struct MockCodingReader {
+struct MockCodingRead {
     state: Rc<RefCell<MockChannelState>>,
 }
 
-impl CodingReader for MockCodingReader {
+impl CodingRead for MockCodingRead {
     type Error = MockError;
 
     async fn read(
@@ -142,7 +142,7 @@ fn tc_sender_builds_valid_frame() {
         let mock = MockChannel::new();
         let frame_writer = TcFrameWriter::<512>::new(config);
         let mut writer =
-            LinkWriter::new(frame_writer, mock.writer());
+            DatalinkWriter::new(frame_writer, mock.writer());
 
         let mut pkt_buf = [0u8; 128];
         let pkt_len =
@@ -169,7 +169,7 @@ fn tc_round_trip() {
         let wire = MockChannel::new();
         let frame_writer = TcFrameWriter::<512>::new(config);
         let mut writer =
-            LinkWriter::new(frame_writer, wire.writer());
+            DatalinkWriter::new(frame_writer, wire.writer());
 
         let mut pkt_buf = [0u8; 128];
         let payload = b"Hello, TC round trip!";
@@ -180,7 +180,7 @@ fn tc_round_trip() {
 
         let frame_reader = TcFrameReader::<512>::new();
         let mut reader =
-            LinkReader::new(frame_reader, wire.reader());
+            DatalinkReader::new(frame_reader, wire.reader());
 
         let mut recv_buf = [0u8; 512];
         let recv_len =
@@ -212,7 +212,7 @@ fn tm_sender_builds_valid_frame() {
         let mock = MockChannel::new();
         let frame_writer = TmFrameWriter::<512>::new(config);
         let mut writer =
-            LinkWriter::new(frame_writer, mock.writer());
+            DatalinkWriter::new(frame_writer, mock.writer());
 
         let mut pkt_buf = [0u8; 128];
         let pkt_len =
@@ -237,7 +237,7 @@ fn tm_round_trip() {
         let wire = MockChannel::new();
         let frame_writer = TmFrameWriter::<512>::new(config);
         let mut writer =
-            LinkWriter::new(frame_writer, wire.writer());
+            DatalinkWriter::new(frame_writer, wire.writer());
 
         let mut pkt_buf = [0u8; 128];
         let payload = b"Hello, TM round trip!";
@@ -248,7 +248,7 @@ fn tm_round_trip() {
 
         let frame_reader = TmFrameReader::<512>::new();
         let mut reader =
-            LinkReader::new(frame_reader, wire.reader());
+            DatalinkReader::new(frame_reader, wire.reader());
 
         let mut recv_buf = [0u8; 512];
         let recv_len =

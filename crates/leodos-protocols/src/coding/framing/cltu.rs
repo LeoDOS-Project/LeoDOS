@@ -6,7 +6,7 @@
 //! It adds error-correction coding and special sequences to ensure reliable
 //! reception of commands by the spacecraft.
 
-use crate::physical::{PhysicalWriter};
+use crate::physical::{PhysicalWrite};
 
 const START_SEQUENCE: &[u8] = &[0xEB, 0x90];
 const TAIL_SEQUENCE: &[u8] = &[0xC5; 8];
@@ -154,7 +154,7 @@ impl<E: core::fmt::Display> core::fmt::Display for CltuWriterError<E> {
 
 impl<E: core::error::Error> core::error::Error for CltuWriterError<E> {}
 
-/// Wraps an [`PhysicalWriter`] to CLTU-encode TC frames
+/// Wraps an [`PhysicalWrite`] to CLTU-encode TC frames
 /// before writing.
 pub struct CltuWriter<W, const BUF: usize> {
     writer: W,
@@ -176,7 +176,7 @@ impl<W, const BUF: usize> CltuWriter<W, BUF> {
     }
 }
 
-impl<W: PhysicalWriter, const BUF: usize> CltuWriter<W, BUF> {
+impl<W: PhysicalWrite, const BUF: usize> CltuWriter<W, BUF> {
     /// Encodes a TC frame as a CLTU and writes it downstream.
     pub async fn write_frame(
         &mut self,
@@ -201,7 +201,7 @@ impl<W: PhysicalWriter, const BUF: usize> CltuWriter<W, BUF> {
     }
 }
 
-impl<W: PhysicalWriter, const BUF: usize> PhysicalWriter
+impl<W: PhysicalWrite, const BUF: usize> PhysicalWrite
     for CltuWriter<W, BUF>
 {
     type Error = CltuWriterError<W::Error>;

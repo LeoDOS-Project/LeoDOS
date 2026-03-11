@@ -4,7 +4,7 @@
 //! USLP) that carry user data and control information across the
 //! space link.
 //!
-//! The [`FrameWriter`] and [`FrameReader`] traits abstract over
+//! The [`FrameWrite`] and [`FrameRead`] traits abstract over
 //! frame formats, allowing the link layer to work with any frame
 //! type (SDLP TC/TM, USLP, Proximity-1). Both own their frame
 //! buffers internally, preventing buffer-mismatch bugs.
@@ -23,10 +23,10 @@ pub enum PushError {
 /// Accumulates packets into a transfer frame.
 ///
 /// Owns the frame buffer internally.
-/// [`push()`](FrameWriter::push) writes packet data at the
-/// current offset. [`finish()`](FrameWriter::finish) stamps the
+/// [`push()`](FrameWrite::push) writes packet data at the
+/// current offset. [`finish()`](FrameWrite::finish) stamps the
 /// header and returns a borrow of the completed frame.
-pub trait FrameWriter {
+pub trait FrameWrite {
     /// Error type for frame construction.
     type Error;
 
@@ -44,13 +44,13 @@ pub trait FrameWriter {
 /// Extracts the data field from a received transfer frame.
 ///
 /// Owns the frame buffer internally.
-/// [`buffer_mut()`](FrameReader::buffer_mut) provides write
+/// [`buffer_mut()`](FrameRead::buffer_mut) provides write
 /// access for the coding layer to fill.
-/// [`feed()`](FrameReader::feed) validates the header.
-/// [`data_field()`](FrameReader::data_field) returns the raw
+/// [`feed()`](FrameRead::feed) validates the header.
+/// [`data_field()`](FrameRead::data_field) returns the raw
 /// data field — packet extraction is handled by
-/// [`LinkReader`](super::super::link::channel::LinkReader).
-pub trait FrameReader {
+/// [`DatalinkReader`](super::super::link::channel::DatalinkReader).
+pub trait FrameRead {
     /// Error type for frame parsing.
     type Error;
 

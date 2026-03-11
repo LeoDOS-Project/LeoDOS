@@ -1,7 +1,7 @@
 use leodos_libcfs::nos3::I2cError;
 use leodos_libcfs::nos3::buses::i2c::I2cBus;
 
-use crate::physical::{PhysicalReader, PhysicalWriter};
+use crate::physical::{PhysicalRead, PhysicalWrite};
 
 /// An [`I2cBus`] bound to a fixed slave address and timeout.
 ///
@@ -37,7 +37,7 @@ impl I2cChannel {
     }
 }
 
-impl PhysicalWriter for I2cChannel {
+impl PhysicalWrite for I2cChannel {
     type Error = I2cError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -45,7 +45,7 @@ impl PhysicalWriter for I2cChannel {
     }
 }
 
-impl PhysicalReader for I2cChannel {
+impl PhysicalRead for I2cChannel {
     type Error = I2cError;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {

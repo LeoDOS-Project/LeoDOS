@@ -12,11 +12,11 @@
 //! join(app(client), driver.run()).await;
 //! ```
 
-use crate::datalink::{DatalinkReader, DatalinkWriter};
+use crate::datalink::{DatalinkRead, DatalinkWrite};
 use crate::network::isl::routing::Router;
 use crate::network::isl::routing::algorithm::RoutingAlgorithm;
 use crate::network::isl::routing::local::{LocalAppHandle, LocalChannel, LocalRouterHandle};
-use crate::network::{NetworkReader, NetworkWriter};
+use crate::network::{NetworkRead, NetworkWrite};
 
 /// Builds a client/driver pair from a router and channel.
 pub struct RouterService;
@@ -32,11 +32,11 @@ impl RouterService {
         RouterDriver<'a, N, S, E, W, G, R, MTU, QUEUE>,
     )
     where
-        N: DatalinkWriter + DatalinkReader<Error = <N as DatalinkWriter>::Error>,
-        S: DatalinkWriter + DatalinkReader<Error = <S as DatalinkWriter>::Error>,
-        E: DatalinkWriter + DatalinkReader<Error = <E as DatalinkWriter>::Error>,
-        W: DatalinkWriter + DatalinkReader<Error = <W as DatalinkWriter>::Error>,
-        G: DatalinkWriter + DatalinkReader<Error = <G as DatalinkWriter>::Error>,
+        N: DatalinkWrite + DatalinkRead<Error = <N as DatalinkWrite>::Error>,
+        S: DatalinkWrite + DatalinkRead<Error = <S as DatalinkWrite>::Error>,
+        E: DatalinkWrite + DatalinkRead<Error = <E as DatalinkWrite>::Error>,
+        W: DatalinkWrite + DatalinkRead<Error = <W as DatalinkWrite>::Error>,
+        G: DatalinkWrite + DatalinkRead<Error = <G as DatalinkWrite>::Error>,
         R: RoutingAlgorithm,
     {
         let (app, router_end) = channel.split();
@@ -52,22 +52,22 @@ impl RouterService {
 
 /// Application-side handle for communicating with the router.
 ///
-/// Implements [`NetworkWriter`] and [`NetworkReader`] by
+/// Implements [`NetworkWrite`] and [`NetworkRead`] by
 /// forwarding through the [`LocalChannel`].
 pub struct RouterClient<'a, const QUEUE: usize, const MTU: usize> {
     handle: LocalAppHandle<'a, QUEUE, MTU>,
 }
 
-impl<'a, const QUEUE: usize, const MTU: usize> NetworkWriter for RouterClient<'a, QUEUE, MTU> {
-    type Error = <LocalAppHandle<'a, QUEUE, MTU> as NetworkWriter>::Error;
+impl<'a, const QUEUE: usize, const MTU: usize> NetworkWrite for RouterClient<'a, QUEUE, MTU> {
+    type Error = <LocalAppHandle<'a, QUEUE, MTU> as NetworkWrite>::Error;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         self.handle.write(data).await
     }
 }
 
-impl<'a, const QUEUE: usize, const MTU: usize> NetworkReader for RouterClient<'a, QUEUE, MTU> {
-    type Error = <LocalAppHandle<'a, QUEUE, MTU> as NetworkReader>::Error;
+impl<'a, const QUEUE: usize, const MTU: usize> NetworkRead for RouterClient<'a, QUEUE, MTU> {
+    type Error = <LocalAppHandle<'a, QUEUE, MTU> as NetworkRead>::Error;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         self.handle.read(buffer).await
@@ -84,11 +84,11 @@ pub struct RouterDriver<'a, N, S, E, W, G, R, const MTU: usize, const QUEUE: usi
 impl<'a, N, S, E, W, G, R, const MTU: usize, const QUEUE: usize>
     RouterDriver<'a, N, S, E, W, G, R, MTU, QUEUE>
 where
-    N: DatalinkWriter + DatalinkReader<Error = <N as DatalinkWriter>::Error>,
-    S: DatalinkWriter + DatalinkReader<Error = <S as DatalinkWriter>::Error>,
-    E: DatalinkWriter + DatalinkReader<Error = <E as DatalinkWriter>::Error>,
-    W: DatalinkWriter + DatalinkReader<Error = <W as DatalinkWriter>::Error>,
-    G: DatalinkWriter + DatalinkReader<Error = <G as DatalinkWriter>::Error>,
+    N: DatalinkWrite + DatalinkRead<Error = <N as DatalinkWrite>::Error>,
+    S: DatalinkWrite + DatalinkRead<Error = <S as DatalinkWrite>::Error>,
+    E: DatalinkWrite + DatalinkRead<Error = <E as DatalinkWrite>::Error>,
+    W: DatalinkWrite + DatalinkRead<Error = <W as DatalinkWrite>::Error>,
+    G: DatalinkWrite + DatalinkRead<Error = <G as DatalinkWrite>::Error>,
     R: RoutingAlgorithm,
 {
     /// Runs the router loop: receives from the router's

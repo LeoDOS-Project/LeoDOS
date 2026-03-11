@@ -1,6 +1,6 @@
 //! Hop-by-hop reliable frame delivery for the datalink layer.
 //!
-//! Provides the [`ReliabilityWriter`] / [`ReliabilityReader`]
+//! Provides the [`ReliabilityWrite`] / [`ReliabilityRead`]
 //! traits, COP-1 wrappers ([`Cop1Writer`], [`Cop1Reader`]), and
 //! [`NoReliability`] as a passthrough.
 
@@ -13,7 +13,7 @@ use crate::datalink::framing::sdlp::tc::{BypassFlag, ControlFlag};
 pub mod cop1;
 
 /// COP-1 sender (FOP-1) state machine interface.
-pub trait ReliabilityWriter {
+pub trait ReliabilityWrite {
     /// Action to take after processing a frame.
     type Action;
     /// Processes an outgoing frame through the reliability layer.
@@ -21,7 +21,7 @@ pub trait ReliabilityWriter {
 }
 
 /// COP-1 receiver (FARM-1) state machine interface.
-pub trait ReliabilityReader {
+pub trait ReliabilityRead {
     /// Action to take after processing a frame.
     type Action;
     /// Processes an incoming frame through the reliability layer.
@@ -30,8 +30,8 @@ pub trait ReliabilityReader {
 
 /// COP-1 sender-side reliability (FOP-1).
 ///
-/// Wraps a [`FopMachine`] and implements [`ReliabilityWriter`].
-/// Each [`write`](ReliabilityWriter::write) call feeds the data
+/// Wraps a [`FopMachine`] and implements [`ReliabilityWrite`].
+/// Each [`write`](ReliabilityWrite::write) call feeds the data
 /// as a Type-AD (sequence-controlled) FDU. For Type-BD frames or
 /// management directives, use [`fop_mut`](Self::fop_mut).
 pub struct Cop1Writer<const WIN: usize, const BUF: usize> {
@@ -57,7 +57,7 @@ impl<const WIN: usize, const BUF: usize> Cop1Writer<WIN, BUF> {
     }
 }
 
-impl<const WIN: usize, const BUF: usize> ReliabilityWriter
+impl<const WIN: usize, const BUF: usize> ReliabilityWrite
     for Cop1Writer<WIN, BUF>
 {
     type Action = FopActions;
@@ -81,8 +81,8 @@ pub enum Cop1ReadResult {
 
 /// COP-1 receiver-side reliability (FARM-1).
 ///
-/// Wraps a [`FarmMachine`] and implements [`ReliabilityReader`].
-/// Each [`read`](ReliabilityReader::read) call parses the TC
+/// Wraps a [`FarmMachine`] and implements [`ReliabilityRead`].
+/// Each [`read`](ReliabilityRead::read) call parses the TC
 /// frame header to classify it as AD or BD and feeds the FARM-1
 /// state machine. BC (control) frames are treated as invalid in
 /// the trait impl — use [`farm_mut`](Self::farm_mut) for direct
@@ -110,7 +110,7 @@ impl Cop1Reader {
     }
 }
 
-impl ReliabilityReader for Cop1Reader {
+impl ReliabilityRead for Cop1Reader {
     type Action = Cop1ReadResult;
 
     fn read(&mut self, frame: &[u8]) -> Cop1ReadResult {
@@ -174,13 +174,13 @@ impl ReliabilityReader for Cop1Reader {
 /// Accepts all frames without sequencing or retransmission.
 pub struct NoReliability;
 
-impl ReliabilityWriter for NoReliability {
+impl ReliabilityWrite for NoReliability {
     type Action = ();
 
     fn write(&mut self, _frame: &[u8]) {}
 }
 
-impl ReliabilityReader for NoReliability {
+impl ReliabilityRead for NoReliability {
     type Action = ();
 
     fn read(&mut self, _frame: &[u8]) {}

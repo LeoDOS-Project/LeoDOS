@@ -12,7 +12,7 @@ pub mod hardware;
 pub mod modulator;
 
 /// Async trait for writing raw bytes to a physical channel.
-pub trait PhysicalWriter {
+pub trait PhysicalWrite {
     /// Error type for write operations.
     type Error;
 
@@ -21,7 +21,7 @@ pub trait PhysicalWriter {
 }
 
 /// Async trait for reading raw bytes from a physical channel.
-pub trait PhysicalReader {
+pub trait PhysicalRead {
     /// Error type for read operations.
     type Error;
 

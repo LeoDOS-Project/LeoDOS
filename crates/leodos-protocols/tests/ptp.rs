@@ -5,9 +5,9 @@ use std::rc::Rc;
 use std::task::Poll;
 
 use leodos_protocols::datalink::link::asymmetric::AsymmetricLink;
-use leodos_protocols::datalink::{DatalinkReader, DatalinkWriter};
+use leodos_protocols::datalink::{DatalinkRead, DatalinkWrite};
 use leodos_protocols::network::ptp::PointToPoint;
-use leodos_protocols::network::{NetworkReader, NetworkWriter};
+use leodos_protocols::network::{NetworkRead, NetworkWrite};
 
 #[derive(Debug, Clone)]
 struct MockError;
@@ -57,7 +57,7 @@ struct MockReceiver {
     state: Rc<RefCell<MockChannelState>>,
 }
 
-impl DatalinkWriter for MockSender {
+impl DatalinkWrite for MockSender {
     type Error = MockError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -66,7 +66,7 @@ impl DatalinkWriter for MockSender {
     }
 }
 
-impl DatalinkReader for MockReceiver {
+impl DatalinkRead for MockReceiver {
     type Error = MockError;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {

@@ -1,7 +1,7 @@
 use leodos_libcfs::nos3::CanError;
 use leodos_libcfs::nos3::buses::can::Can;
 
-use crate::physical::{PhysicalReader, PhysicalWriter};
+use crate::physical::{PhysicalRead, PhysicalWrite};
 
 /// A [`Can`] bus bound to a fixed CAN ID for writing.
 ///
@@ -36,7 +36,7 @@ impl CanChannel {
     }
 }
 
-impl PhysicalWriter for CanChannel {
+impl PhysicalWrite for CanChannel {
     type Error = CanError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -44,7 +44,7 @@ impl PhysicalWriter for CanChannel {
     }
 }
 
-impl PhysicalReader for CanChannel {
+impl PhysicalRead for CanChannel {
     type Error = CanError;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {

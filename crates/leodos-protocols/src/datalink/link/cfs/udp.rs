@@ -2,7 +2,7 @@ use leodos_libcfs::error::Error as CfsError;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::os::net::UdpSocket;
 
-use crate::datalink::{DatalinkReader, DatalinkWriter};
+use crate::datalink::{DatalinkRead, DatalinkWrite};
 /// Sends frames over UDP.
 pub struct UdpFrameWriter<'a> {
     socket: &'a UdpSocket,
@@ -16,7 +16,7 @@ impl<'a> UdpFrameWriter<'a> {
     }
 }
 
-impl DatalinkWriter for UdpFrameWriter<'_> {
+impl DatalinkWrite for UdpFrameWriter<'_> {
     type Error = CfsError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -37,7 +37,7 @@ impl<'a> UdpFrameReader<'a> {
     }
 }
 
-impl DatalinkReader for UdpFrameReader<'_> {
+impl DatalinkRead for UdpFrameReader<'_> {
     type Error = CfsError;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
@@ -65,7 +65,7 @@ impl UdpDatalink {
     }
 }
 
-impl DatalinkWriter for UdpDatalink {
+impl DatalinkWrite for UdpDatalink {
     type Error = CfsError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -74,7 +74,7 @@ impl DatalinkWriter for UdpDatalink {
     }
 }
 
-impl DatalinkReader for UdpDatalink {
+impl DatalinkRead for UdpDatalink {
     type Error = CfsError;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {

@@ -52,8 +52,8 @@ pub enum SrsppError {
     #[error("window full")]
     WindowFull,
     /// Link error.
-    #[error("link error: {0}")]
-    LinkError(String),
+    #[error("network error: {0}")]
+    Network(String),
     /// Packet error.
     #[error("packet error: {0}")]
     PacketError(String),

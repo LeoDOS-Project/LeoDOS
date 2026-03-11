@@ -1,6 +1,6 @@
 /// Asymmetric link combining separate sender and receiver halves.
 pub mod asymmetric;
-/// Generic frame link channel, generic over FrameWriter/FrameReader.
+/// Generic frame link channel, generic over FrameWrite/FrameRead.
 pub mod channel;
 /// CCSDS File Delivery Service link support.
 #[cfg(feature = "cfs")]

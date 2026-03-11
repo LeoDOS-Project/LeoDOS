@@ -1,15 +1,15 @@
 //! Coding pipeline that composes randomizer, FEC, and framer
-//! into a single `CodingWriter` / `CodingReader`.
+//! into a single `CodingWrite` / `CodingRead`.
 
 use crate::coding::randomizer::Randomizer;
-use crate::coding::{CodingReader, CodingWriter, Deframer, FecDecoder, FecEncoder, Framer};
-use crate::physical::{PhysicalReader, PhysicalWriter};
+use crate::coding::{CodingRead, CodingWrite, Deframer, FecDecoder, FecEncoder, Framer};
+use crate::physical::{PhysicalRead, PhysicalWrite};
 
 // ── Write pipeline ──────────────────────────────────────────
 
 /// Composes randomizer → FEC → framer → physical writer into a
-/// single [`CodingWriter`].
-pub struct CodingWritePipeline<R, F, M, W, const BUF: usize> {
+/// single [`CodingWrite`].
+pub struct CodingWriter<R, F, M, W, const BUF: usize> {
     /// Randomizer applied to the transfer frame.
     pub randomizer: R,
     /// Forward error-correction encoder.
@@ -22,7 +22,7 @@ pub struct CodingWritePipeline<R, F, M, W, const BUF: usize> {
     buf_b: [u8; BUF],
 }
 
-impl<R, F, M, W, const BUF: usize> CodingWritePipeline<R, F, M, W, BUF> {
+impl<R, F, M, W, const BUF: usize> CodingWriter<R, F, M, W, BUF> {
     /// Creates a new write pipeline.
     pub fn new(randomizer: R, fec: F, framer: M, writer: W) -> Self {
         Self {
@@ -67,14 +67,14 @@ impl<F: core::error::Error, M: core::error::Error, W: core::error::Error> core::
 {
 }
 
-impl<R, F, M, W, const BUF: usize> CodingWriter for CodingWritePipeline<R, F, M, W, BUF>
+impl<R, F, M, W, const BUF: usize> CodingWrite for CodingWriter<R, F, M, W, BUF>
 where
     R: Randomizer,
     F: FecEncoder,
     F::Error: core::error::Error,
     M: Framer,
     M::Error: core::error::Error,
-    W: PhysicalWriter,
+    W: PhysicalWrite,
     W::Error: core::error::Error,
 {
     type Error = CodingWriteError<F::Error, M::Error, W::Error>;
@@ -111,8 +111,8 @@ where
 // ── Read pipeline ───────────────────────────────────────────
 
 /// Composes physical reader → deframer → FEC → derandomizer into
-/// a single [`CodingReader`].
-pub struct CodingReadPipeline<R, D, F, P, const BUF: usize> {
+/// a single [`CodingRead`].
+pub struct CodingReader<R, D, F, P, const BUF: usize> {
     /// Derandomizer (same as randomizer — XOR is self-inverse).
     pub randomizer: R,
     /// Deframer (e.g. ASM sync, CLTU decode).
@@ -125,7 +125,7 @@ pub struct CodingReadPipeline<R, D, F, P, const BUF: usize> {
     buf_b: [u8; BUF],
 }
 
-impl<R, D, F, P, const BUF: usize> CodingReadPipeline<R, D, F, P, BUF> {
+impl<R, D, F, P, const BUF: usize> CodingReader<R, D, F, P, BUF> {
     /// Creates a new read pipeline.
     pub fn new(randomizer: R, deframer: D, fec: F, reader: P) -> Self {
         Self {
@@ -170,14 +170,14 @@ impl<D: core::error::Error, F: core::error::Error, P: core::error::Error> core::
 {
 }
 
-impl<R, D, F, P, const BUF: usize> CodingReader for CodingReadPipeline<R, D, F, P, BUF>
+impl<R, D, F, P, const BUF: usize> CodingRead for CodingReader<R, D, F, P, BUF>
 where
     R: Randomizer,
     D: Deframer,
     D::Error: core::error::Error,
     F: FecDecoder,
     F::Error: core::error::Error,
-    P: PhysicalReader,
+    P: PhysicalRead,
     P::Error: core::error::Error,
 {
     type Error = CodingReadError<D::Error, F::Error, P::Error>;
@@ -247,7 +247,7 @@ mod tests {
     }
     impl core::error::Error for MemError {}
 
-    impl PhysicalWriter for MemWriter {
+    impl PhysicalWrite for MemWriter {
         type Error = MemError;
         async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
             self.data[..data.len()].copy_from_slice(data);
@@ -272,7 +272,7 @@ mod tests {
         }
     }
 
-    impl PhysicalReader for MemReader {
+    impl PhysicalRead for MemReader {
         type Error = MemError;
         async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
             let len = self.len.min(buffer.len());
@@ -285,8 +285,8 @@ mod tests {
     fn no_op_pipeline_roundtrip() {
         futures::executor::block_on(async {
             let writer = MemWriter::new();
-            let mut write_pipe: CodingWritePipeline<_, _, _, _, 1024> =
-                CodingWritePipeline::new(NoRandomizer, NoFec, NoFramer, writer);
+            let mut write_pipe: CodingWriter<_, _, _, _, 1024> =
+                CodingWriter::new(NoRandomizer, NoFec, NoFramer, writer);
 
             let original = b"Hello, pipeline!";
             write_pipe.write(original).await.unwrap();
@@ -296,8 +296,8 @@ mod tests {
 
             // Read pipeline: D=NoFramer (deframer), F=NoFec (decoder)
             let reader = MemReader::new(written);
-            let mut read_pipe: CodingReadPipeline<_, _, _, _, 1024> =
-                CodingReadPipeline::new(NoRandomizer, NoFramer, NoFec, reader);
+            let mut read_pipe: CodingReader<_, _, _, _, 1024> =
+                CodingReader::new(NoRandomizer, NoFramer, NoFec, reader);
 
             let mut buf = [0u8; 256];
             let len = read_pipe.read(&mut buf).await.unwrap();
@@ -311,8 +311,8 @@ mod tests {
 
         futures::executor::block_on(async {
             let writer = MemWriter::new();
-            let mut write_pipe: CodingWritePipeline<_, _, _, _, 1024> =
-                CodingWritePipeline::new(Tm255Randomizer::new(), NoFec, NoFramer, writer);
+            let mut write_pipe: CodingWriter<_, _, _, _, 1024> =
+                CodingWriter::new(Tm255Randomizer::new(), NoFec, NoFramer, writer);
 
             let original = b"Randomized data!";
             write_pipe.write(original).await.unwrap();
@@ -321,8 +321,8 @@ mod tests {
             assert_ne!(written, original);
 
             let reader = MemReader::new(written);
-            let mut read_pipe: CodingReadPipeline<_, _, _, _, 1024> =
-                CodingReadPipeline::new(Tm255Randomizer::new(), NoFramer, NoFec, reader);
+            let mut read_pipe: CodingReader<_, _, _, _, 1024> =
+                CodingReader::new(Tm255Randomizer::new(), NoFramer, NoFec, reader);
 
             let mut buf = [0u8; 256];
             let len = read_pipe.read(&mut buf).await.unwrap();
@@ -336,8 +336,8 @@ mod tests {
 
         futures::executor::block_on(async {
             let writer = MemWriter::new();
-            let mut write_pipe: CodingWritePipeline<_, _, _, _, 1024> =
-                CodingWritePipeline::new(NoRandomizer, NoFec, AsmFramer::tm(), writer);
+            let mut write_pipe: CodingWriter<_, _, _, _, 1024> =
+                CodingWriter::new(NoRandomizer, NoFec, AsmFramer::tm(), writer);
 
             let original = [0xAAu8; 32];
             write_pipe.write(&original).await.unwrap();
@@ -346,8 +346,8 @@ mod tests {
             assert_eq!(written_len, 36);
 
             let reader = MemReader::new(&write_pipe.writer.data[..written_len]);
-            let mut read_pipe: CodingReadPipeline<_, _, _, _, 1024> =
-                CodingReadPipeline::new(NoRandomizer, AsmDeframer::tm(32), NoFec, reader);
+            let mut read_pipe: CodingReader<_, _, _, _, 1024> =
+                CodingReader::new(NoRandomizer, AsmDeframer::tm(32), NoFec, reader);
 
             let mut buf = [0u8; 256];
             let len = read_pipe.read(&mut buf).await.unwrap();

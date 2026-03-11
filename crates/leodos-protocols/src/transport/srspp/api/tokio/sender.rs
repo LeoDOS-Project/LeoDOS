@@ -1,6 +1,6 @@
 use zerocopy::{Immutable, IntoBytes};
 
-use crate::network::{NetworkReader, NetworkWriter};
+use crate::network::{NetworkRead, NetworkWrite};
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
 use crate::transport::srspp::machine::sender::SenderAction;
@@ -24,7 +24,7 @@ use super::ticks_to_duration;
 ///
 /// Sends messages reliably over the link, handling segmentation and retransmission.
 /// Receives ACKs from the remote receiver.
-pub struct SrsppSender<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize> {
+pub struct SrsppSender<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize> {
     /// Network link for sending data and receiving ACKs.
     link: L,
     /// Policy for computing retransmission timeouts.
@@ -45,7 +45,7 @@ pub struct SrsppSender<L: NetworkWriter + NetworkReader<Error = <L as NetworkWri
     tx_buffer: [u8; MTU],
 }
 
-impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize>
+impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize>
     SrsppSender<L, P, WIN, BUF, MTU>
 {
     /// Create a new sender.
@@ -96,7 +96,7 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, P: R
             biased;
 
             result = self.link.read(&mut self.recv_buffer) => {
-                let len = result.map_err(|e| SrsppError::LinkError(e.to_string()))?;
+                let len = result.map_err(|e| SrsppError::Network(e.to_string()))?;
                 self.handle_incoming(&self.recv_buffer[..len].to_vec()).await?;
             }
 
@@ -162,7 +162,7 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, P: R
                             .write(&self.tx_buffer[..len])
                             .await
                             .map_err(|e| {
-                                SrsppError::LinkError(e.to_string())
+                                SrsppError::Network(e.to_string())
                             })?;
 
                         self.machine.mark_transmitted(*seq);

@@ -16,7 +16,7 @@ pub mod security;
 // ── Layer boundary traits ──────────────────────────────────────
 
 /// Send direction of the data link layer.
-pub trait DatalinkWriter {
+pub trait DatalinkWrite {
     /// Error type for write operations.
     type Error: core::error::Error;
 
@@ -25,7 +25,7 @@ pub trait DatalinkWriter {
 }
 
 /// Receive direction of the data link layer.
-pub trait DatalinkReader {
+pub trait DatalinkRead {
     /// Error type for read operations.
     type Error: core::error::Error;
 

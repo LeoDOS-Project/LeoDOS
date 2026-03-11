@@ -10,7 +10,7 @@ pub mod packet;
 pub mod srspp;
 
 /// Reliable message writer. Implemented by transport protocols (SRSPP, CFDP, etc.).
-pub trait TransportWriter {
+pub trait TransportWrite {
     /// Error type for write operations.
     type Error;
 
@@ -19,7 +19,7 @@ pub trait TransportWriter {
 }
 
 /// Reliable message reader. Implemented by transport protocols (SRSPP, CFDP, etc.).
-pub trait TransportReader {
+pub trait TransportRead {
     /// Error type for read operations.
     type Error;
 

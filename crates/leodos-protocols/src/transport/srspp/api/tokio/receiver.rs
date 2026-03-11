@@ -1,4 +1,4 @@
-use crate::network::{NetworkReader, NetworkWriter};
+use crate::network::{NetworkRead, NetworkWrite};
 use crate::network::isl::address::Address;
 use crate::network::spp::Apid;
 use crate::network::spp::SequenceCount;
@@ -21,7 +21,7 @@ use super::ticks_to_duration;
 ///
 /// Receives messages reliably over the link, handling reordering and reassembly.
 /// Sends ACKs to the remote sender.
-pub struct SrsppReceiver<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: ReceiverBackend, const MTU: usize> {
+pub struct SrsppReceiver<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: ReceiverBackend, const MTU: usize> {
     /// Network link for receiving data and sending ACKs.
     link: L,
     /// Local address used as the source in outgoing ACKs.
@@ -46,7 +46,7 @@ pub struct SrsppReceiver<L: NetworkWriter + NetworkReader<Error = <L as NetworkW
     ack_buffer: [u8; 32],
 }
 
-impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, MTU> {
+impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, MTU> {
     /// Create a new receiver for a specific remote sender.
     pub fn new(
         config: ReceiverConfig,
@@ -137,7 +137,7 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: R
             biased;
 
             result = self.link.read(&mut self.recv_buffer) => {
-                let len = result.map_err(|e| SrsppError::LinkError(e.to_string()))?;
+                let len = result.map_err(|e| SrsppError::Network(e.to_string()))?;
                 self.handle_incoming(&self.recv_buffer[..len].to_vec()).await?;
             }
 
@@ -221,7 +221,7 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: R
                     self.link
                         .write(zerocopy::IntoBytes::as_bytes(ack))
                         .await
-                        .map_err(|e| SrsppError::LinkError(e.to_string()))?;
+                        .map_err(|e| SrsppError::Network(e.to_string()))?;
                 }
                 ReceiverAction::StartAckTimer { ticks } => {
                     self.ack_timer =
@@ -252,12 +252,12 @@ impl<L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: R
 /// token is alive.  Call [`consume`](Self::consume) with a
 /// synchronous closure to read the message and release the
 /// token in one step.
-pub struct DeliveryToken<'a, L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: ReceiverBackend, const MTU: usize> {
+pub struct DeliveryToken<'a, L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: ReceiverBackend, const MTU: usize> {
     rx: &'a mut SrsppReceiver<L, R, MTU>,
     msg_len: usize,
 }
 
-impl<'a, L: NetworkWriter + NetworkReader<Error = <L as NetworkWriter>::Error>, R: ReceiverBackend, const MTU: usize>
+impl<'a, L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: ReceiverBackend, const MTU: usize>
     DeliveryToken<'a, L, R, MTU>
 {
     /// Byte length of the pending message.

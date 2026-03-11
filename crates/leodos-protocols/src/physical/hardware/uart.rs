@@ -1,9 +1,9 @@
 use leodos_libcfs::nos3::UartError;
 use leodos_libcfs::nos3::buses::uart::Uart;
 
-use crate::physical::{PhysicalReader, PhysicalWriter};
+use crate::physical::{PhysicalRead, PhysicalWrite};
 
-impl PhysicalWriter for Uart {
+impl PhysicalWrite for Uart {
     type Error = UartError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -16,7 +16,7 @@ impl PhysicalWriter for Uart {
     }
 }
 
-impl PhysicalReader for Uart {
+impl PhysicalRead for Uart {
     type Error = UartError;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {

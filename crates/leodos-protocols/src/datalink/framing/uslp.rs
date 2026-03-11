@@ -720,9 +720,9 @@ impl core::fmt::Debug for UslpTransferFrame {
     }
 }
 
-// ── FrameWriter / FrameReader implementations ──
+// ── FrameWrite / FrameRead implementations ──
 
-use super::{FrameReader, FrameWriter, PushError};
+use super::{FrameRead, FrameWrite, PushError};
 
 /// Configuration for building USLP transfer frames.
 #[derive(Debug, Clone)]
@@ -757,7 +757,7 @@ pub struct UslpFrameWriterConfig {
 ///
 /// Owns its frame buffer internally (sized by `BUF`). Packets
 /// are pushed directly into the buffer at the correct offset.
-/// [`finish()`](FrameWriter::finish) stamps the header and
+/// [`finish()`](FrameWrite::finish) stamps the header and
 /// returns a borrow of the completed frame.
 pub struct UslpFrameWriter<const BUF: usize> {
     config: UslpFrameWriterConfig,
@@ -793,7 +793,7 @@ impl<const BUF: usize> UslpFrameWriter<BUF> {
     }
 }
 
-impl<const BUF: usize> FrameWriter for UslpFrameWriter<BUF> {
+impl<const BUF: usize> FrameWrite for UslpFrameWriter<BUF> {
     type Error = BuildError;
 
     fn is_empty(&self) -> bool {
@@ -868,9 +868,9 @@ impl<const BUF: usize> FrameWriter for UslpFrameWriter<BUF> {
 ///
 /// Owns its frame buffer internally (sized by `BUF`). The
 /// coding layer writes into
-/// [`buffer_mut()`](FrameReader::buffer_mut),
-/// [`feed()`](FrameReader::feed) validates the header, and
-/// [`next()`](FrameReader::next) returns zero-copy sub-slices.
+/// [`buffer_mut()`](FrameRead::buffer_mut),
+/// [`feed()`](FrameRead::feed) validates the header, and
+/// [`next()`](FrameRead::next) returns zero-copy sub-slices.
 pub struct UslpFrameReader<const BUF: usize> {
     insert_zone_len: usize,
     fecf_present: bool,
@@ -895,7 +895,7 @@ impl<const BUF: usize> UslpFrameReader<BUF> {
     }
 }
 
-impl<const BUF: usize> FrameReader for UslpFrameReader<BUF> {
+impl<const BUF: usize> FrameRead for UslpFrameReader<BUF> {
     type Error = ParseError;
 
     fn buffer_mut(&mut self) -> &mut [u8] {

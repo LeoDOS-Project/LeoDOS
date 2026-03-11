@@ -11,7 +11,7 @@ pub mod ptp;
 pub use crate::datalink::spp;
 
 /// Send direction of the network layer.
-pub trait NetworkWriter {
+pub trait NetworkWrite {
     /// Error type for write operations.
     type Error: core::error::Error;
 
@@ -20,7 +20,7 @@ pub trait NetworkWriter {
 }
 
 /// Receive direction of the network layer.
-pub trait NetworkReader {
+pub trait NetworkRead {
     /// Error type for read operations.
     type Error: core::error::Error;
 

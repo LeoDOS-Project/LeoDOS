@@ -1,6 +1,6 @@
-use leodos_protocols::datalink::{DatalinkReader, DatalinkWriter};
+use leodos_protocols::datalink::{DatalinkRead, DatalinkWrite};
 use leodos_protocols::network::isl::routing::local::LocalChannel;
-use leodos_protocols::network::{NetworkReader, NetworkWriter};
+use leodos_protocols::network::{NetworkRead, NetworkWrite};
 
 #[test]
 fn local_channel_app_to_router() {

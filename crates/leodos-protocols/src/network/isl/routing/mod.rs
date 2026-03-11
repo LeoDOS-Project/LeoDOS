@@ -10,10 +10,10 @@ pub mod service;
 use futures::FutureExt as _;
 use zerocopy::IntoBytes as _;
 
-use crate::datalink::DatalinkReader;
-use crate::datalink::DatalinkWriter;
-use crate::network::NetworkReader;
-use crate::network::NetworkWriter;
+use crate::datalink::DatalinkRead;
+use crate::datalink::DatalinkWrite;
+use crate::network::NetworkRead;
+use crate::network::NetworkWrite;
 use crate::network::isl;
 use crate::network::isl::address::Address;
 use crate::network::isl::routing::algorithm::RoutingAlgorithm;
@@ -79,11 +79,11 @@ pub enum RouterError<N, S, E, W, G> {
 #[bon::bon]
 impl<N, S, E, W, G, R, const MTU: usize> Router<N, S, E, W, G, R, MTU>
 where
-    N: DatalinkWriter + DatalinkReader,
-    S: DatalinkWriter + DatalinkReader,
-    E: DatalinkWriter + DatalinkReader,
-    W: DatalinkWriter + DatalinkReader,
-    G: DatalinkWriter + DatalinkReader,
+    N: DatalinkWrite + DatalinkRead,
+    S: DatalinkWrite + DatalinkRead,
+    E: DatalinkWrite + DatalinkRead,
+    W: DatalinkWrite + DatalinkRead,
+    G: DatalinkWrite + DatalinkRead,
     R: RoutingAlgorithm,
 {
     #[builder]
@@ -133,21 +133,21 @@ where
     }
 }
 
-impl<N, S, E, W, G, R, const MTU: usize> NetworkWriter for Router<N, S, E, W, G, R, MTU>
+impl<N, S, E, W, G, R, const MTU: usize> NetworkWrite for Router<N, S, E, W, G, R, MTU>
 where
-    N: DatalinkWriter + DatalinkReader,
-    S: DatalinkWriter + DatalinkReader,
-    E: DatalinkWriter + DatalinkReader,
-    W: DatalinkWriter + DatalinkReader,
-    G: DatalinkWriter + DatalinkReader,
+    N: DatalinkWrite + DatalinkRead,
+    S: DatalinkWrite + DatalinkRead,
+    E: DatalinkWrite + DatalinkRead,
+    W: DatalinkWrite + DatalinkRead,
+    G: DatalinkWrite + DatalinkRead,
     R: RoutingAlgorithm,
 {
     type Error = RouterError<
-        <N as DatalinkWriter>::Error,
-        <S as DatalinkWriter>::Error,
-        <E as DatalinkWriter>::Error,
-        <W as DatalinkWriter>::Error,
-        <G as DatalinkWriter>::Error,
+        <N as DatalinkWrite>::Error,
+        <S as DatalinkWrite>::Error,
+        <E as DatalinkWrite>::Error,
+        <W as DatalinkWrite>::Error,
+        <G as DatalinkWrite>::Error,
     >;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -166,21 +166,21 @@ where
     }
 }
 
-impl<N, S, E, W, G, R, const MTU: usize> NetworkReader for Router<N, S, E, W, G, R, MTU>
+impl<N, S, E, W, G, R, const MTU: usize> NetworkRead for Router<N, S, E, W, G, R, MTU>
 where
-    N: DatalinkWriter + DatalinkReader<Error = <N as DatalinkWriter>::Error>,
-    S: DatalinkWriter + DatalinkReader<Error = <S as DatalinkWriter>::Error>,
-    E: DatalinkWriter + DatalinkReader<Error = <E as DatalinkWriter>::Error>,
-    W: DatalinkWriter + DatalinkReader<Error = <W as DatalinkWriter>::Error>,
-    G: DatalinkWriter + DatalinkReader<Error = <G as DatalinkWriter>::Error>,
+    N: DatalinkWrite + DatalinkRead<Error = <N as DatalinkWrite>::Error>,
+    S: DatalinkWrite + DatalinkRead<Error = <S as DatalinkWrite>::Error>,
+    E: DatalinkWrite + DatalinkRead<Error = <E as DatalinkWrite>::Error>,
+    W: DatalinkWrite + DatalinkRead<Error = <W as DatalinkWrite>::Error>,
+    G: DatalinkWrite + DatalinkRead<Error = <G as DatalinkWrite>::Error>,
     R: RoutingAlgorithm,
 {
     type Error = RouterError<
-        <N as DatalinkWriter>::Error,
-        <S as DatalinkWriter>::Error,
-        <E as DatalinkWriter>::Error,
-        <W as DatalinkWriter>::Error,
-        <G as DatalinkWriter>::Error,
+        <N as DatalinkWrite>::Error,
+        <S as DatalinkWrite>::Error,
+        <E as DatalinkWrite>::Error,
+        <W as DatalinkWrite>::Error,
+        <G as DatalinkWrite>::Error,
     >;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {

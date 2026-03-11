@@ -289,9 +289,9 @@ impl TelemetryTransferFrameHeader {
     }
 }
 
-// ── FrameWriter / FrameReader implementations ──
+// ── FrameWrite / FrameRead implementations ──
 
-use super::super::{FrameReader, FrameWriter, PushError};
+use super::super::{FrameRead, FrameWrite, PushError};
 
 /// Configuration for building TM transfer frames.
 #[derive(Debug, Clone)]
@@ -308,7 +308,7 @@ pub struct TmFrameWriterConfig {
 ///
 /// Owns its frame buffer internally (sized by `BUF`). Packets
 /// are pushed directly into the buffer at the correct offset.
-/// [`finish()`](FrameWriter::finish) stamps the header and
+/// [`finish()`](FrameWrite::finish) stamps the header and
 /// returns a borrow of the completed frame.
 pub struct TmFrameWriter<const BUF: usize> {
     config: TmFrameWriterConfig,
@@ -339,7 +339,7 @@ impl<const BUF: usize> TmFrameWriter<BUF> {
     }
 }
 
-impl<const BUF: usize> FrameWriter for TmFrameWriter<BUF> {
+impl<const BUF: usize> FrameWrite for TmFrameWriter<BUF> {
     type Error = BuildError;
 
     fn is_empty(&self) -> bool {
@@ -389,9 +389,9 @@ impl<const BUF: usize> FrameWriter for TmFrameWriter<BUF> {
 ///
 /// Owns its frame buffer internally (sized by `BUF`). The
 /// coding layer writes into
-/// [`buffer_mut()`](FrameReader::buffer_mut),
-/// [`feed()`](FrameReader::feed) validates the header, and
-/// [`next()`](FrameReader::next) returns zero-copy sub-slices.
+/// [`buffer_mut()`](FrameRead::buffer_mut),
+/// [`feed()`](FrameRead::feed) validates the header, and
+/// [`next()`](FrameRead::next) returns zero-copy sub-slices.
 pub struct TmFrameReader<const BUF: usize> {
     buf: [u8; BUF],
     data_start: usize,
@@ -409,7 +409,7 @@ impl<const BUF: usize> TmFrameReader<BUF> {
     }
 }
 
-impl<const BUF: usize> FrameReader for TmFrameReader<BUF> {
+impl<const BUF: usize> FrameRead for TmFrameReader<BUF> {
     type Error = ParseError;
 
     fn buffer_mut(&mut self) -> &mut [u8] {

@@ -20,7 +20,7 @@ pub mod pipeline;
 
 /// Accepts a transfer frame and writes it through the coding chain
 /// to the physical layer.
-pub trait CodingWriter {
+pub trait CodingWrite {
     /// Error type for write operations.
     type Error: core::error::Error;
     /// Encodes and writes a transfer frame.
@@ -29,7 +29,7 @@ pub trait CodingWriter {
 
 /// Reads coded bytes from the physical layer, decodes them, and
 /// returns the transfer frame.
-pub trait CodingReader {
+pub trait CodingRead {
     /// Error type for read operations.
     type Error: core::error::Error;
     /// Reads and decodes a transfer frame into `buffer`.

@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use crate::network::{NetworkReader, NetworkWriter};
+use crate::network::{NetworkRead, NetworkWrite};
 use crate::network::isl::address::Address;
 use crate::network::spp::Apid;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
@@ -45,7 +45,7 @@ struct MockLinkB {
     recv_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
 }
 
-impl NetworkWriter for MockLinkA {
+impl NetworkWrite for MockLinkA {
     type Error = std::io::Error;
 
     async fn write(&mut self, packet: &[u8]) -> Result<(), Self::Error> {
@@ -54,7 +54,7 @@ impl NetworkWriter for MockLinkA {
     }
 }
 
-impl NetworkReader for MockLinkA {
+impl NetworkRead for MockLinkA {
     type Error = std::io::Error;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
@@ -69,7 +69,7 @@ impl NetworkReader for MockLinkA {
     }
 }
 
-impl NetworkWriter for MockLinkB {
+impl NetworkWrite for MockLinkB {
     type Error = std::io::Error;
 
     async fn write(&mut self, packet: &[u8]) -> Result<(), Self::Error> {
@@ -78,7 +78,7 @@ impl NetworkWriter for MockLinkB {
     }
 }
 
-impl NetworkReader for MockLinkB {
+impl NetworkRead for MockLinkB {
     type Error = std::io::Error;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {

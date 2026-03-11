@@ -1,9 +1,9 @@
 use leodos_libcfs::nos3::SpiError;
 use leodos_libcfs::nos3::buses::spi::Spi;
 
-use crate::physical::{PhysicalReader, PhysicalWriter};
+use crate::physical::{PhysicalRead, PhysicalWrite};
 
-impl PhysicalWriter for Spi {
+impl PhysicalWrite for Spi {
     type Error = SpiError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -11,7 +11,7 @@ impl PhysicalWriter for Spi {
     }
 }
 
-impl PhysicalReader for Spi {
+impl PhysicalRead for Spi {
     type Error = SpiError;
 
     /// SPI always transfers the exact number of bytes requested.

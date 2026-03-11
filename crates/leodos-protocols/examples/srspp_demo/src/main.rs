@@ -4,7 +4,7 @@ use tokio::time::{Duration, sleep};
 
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::spp::Apid;
-use leodos_protocols::network::{NetworkWriter, NetworkReader};
+use leodos_protocols::network::{NetworkWrite, NetworkRead};
 use leodos_protocols::transport::srspp::api::tokio::{SrsppReceiver, SrsppSender};
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
@@ -35,7 +35,7 @@ impl SimulatedLink {
     }
 }
 
-impl NetworkWriter for SimulatedLink {
+impl NetworkWrite for SimulatedLink {
     type Error = std::io::Error;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -44,7 +44,7 @@ impl NetworkWriter for SimulatedLink {
     }
 }
 
-impl NetworkReader for SimulatedLink {
+impl NetworkRead for SimulatedLink {
     type Error = std::io::Error;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {

@@ -1,13 +1,13 @@
 use leodos_libcfs::nos3::SocketError;
 use leodos_libcfs::nos3::buses::socket::Socket;
 
-use crate::physical::{PhysicalReader, PhysicalWriter};
+use crate::physical::{PhysicalRead, PhysicalWrite};
 
 /// A [`Socket`] bound to a fixed remote address for writing.
 ///
-/// Stores the remote IP and port so that [`PhysicalWriter::write`]
+/// Stores the remote IP and port so that [`PhysicalWrite::write`]
 /// can call [`Socket::send`] without per-call addressing.
-/// [`PhysicalReader::read`] delegates to [`Socket::recv`] which
+/// [`PhysicalRead::read`] delegates to [`Socket::recv`] which
 /// already needs no address.
 pub struct BoundSocket {
     socket: Socket,
@@ -41,7 +41,7 @@ impl BoundSocket {
     }
 }
 
-impl PhysicalWriter for BoundSocket {
+impl PhysicalWrite for BoundSocket {
     type Error = SocketError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -58,7 +58,7 @@ impl PhysicalWriter for BoundSocket {
     }
 }
 
-impl PhysicalReader for BoundSocket {
+impl PhysicalRead for BoundSocket {
     type Error = SocketError;
 
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
