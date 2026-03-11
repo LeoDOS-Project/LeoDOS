@@ -2,7 +2,7 @@
 
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
-use leodos_libcfs::error::Error;
+use leodos_libcfs::error::Error as CfsError;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::Runtime;
@@ -18,15 +18,15 @@ use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::datalink::link::cfs::udp::UdpDatalink;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
+use leodos_protocols::network::isl::routing;
 use leodos_protocols::network::isl::routing::algorithm::distance_minimizing::DistanceMinimizing;
-use leodos_protocols::network::isl::routing::local::LocalLinkError;
 use leodos_protocols::network::isl::routing::Router;
 use leodos_protocols::network::isl::shell::Shell;
 use leodos_protocols::network::isl::torus::Direction;
 use leodos_protocols::network::isl::torus::Point;
 use leodos_protocols::network::isl::torus::Torus;
 use leodos_protocols::network::spp::Apid;
-use leodos_protocols::transport::srspp::api::cfs::Error as TransportError;
+use leodos_protocols::transport::srspp::api::cfs::TransportError;
 use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
 use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
 use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
@@ -47,8 +47,11 @@ mod bindings {
 pub mod data;
 mod roles;
 
-pub type RxHandle<'a> = SrsppRxHandle<'a, LocalLinkError, ReceiverMachine<8, 4096, 8192>, 4>;
-pub type TxHandle<'a> = SrsppTxHandle<'a, LocalLinkError, 8, 4096, 512>;
+pub type RouterError =
+    routing::RouterError<CfsError, CfsError, CfsError, CfsError, CfsError>;
+
+pub type RxHandle<'a> = SrsppRxHandle<'a, RouterError, ReceiverMachine<8, 4096, 8192>, 4>;
+pub type TxHandle<'a> = SrsppTxHandle<'a, RouterError, 8, 4096, 512>;
 
 pub struct Buffers {
     pub recv: [u8; 8192],
@@ -64,9 +67,8 @@ pub enum SpaceCompError {
     #[error("failed to build message: {0}")]
     Build(#[from] BuildError),
     #[error("transport: {0}")]
-    Transport(#[from] TransportError<LocalLinkError>),
+    Transport(#[from] TransportError<RouterError>),
 }
-
 
 const NUM_ORBITS: u8 = bindings::SPACECOMP_NUM_ORBITS as u8;
 const NUM_SATS: u8 = bindings::SPACECOMP_NUM_SATS as u8;
@@ -110,16 +112,16 @@ fn orbit_ip(orbit: u8, out: &mut [u8; 16]) -> Result<usize, core::fmt::Error> {
     leodos_protocols::fmt!(out, "172.20.{orbit}.10")
 }
 
-fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, Error> {
+fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> {
     let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
     let remote = SocketAddr::new_ipv4(LOCALHOST, remote_port)?;
     UdpDatalink::bind(local, remote)
 }
 
-fn remote_link(local_port: u16, remote_orbit: u8, remote_port: u16) -> Result<UdpDatalink, Error> {
+fn remote_link(local_port: u16, remote_orbit: u8, remote_port: u16) -> Result<UdpDatalink, CfsError> {
     let mut ip_buf = [0u8; 16];
-    let len = orbit_ip(remote_orbit, &mut ip_buf).map_err(|_| Error::CfeStatusValidationFailure)?;
-    let ip = core::str::from_utf8(&ip_buf[..len]).map_err(|_| Error::CfeStatusValidationFailure)?;
+    let len = orbit_ip(remote_orbit, &mut ip_buf).map_err(|_| CfsError::CfeStatusValidationFailure)?;
+    let ip = core::str::from_utf8(&ip_buf[..len]).map_err(|_| CfsError::CfeStatusValidationFailure)?;
     let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
     let remote = SocketAddr::new_ipv4(ip, remote_port)?;
     UdpDatalink::bind(local, remote)
@@ -167,7 +169,7 @@ pub extern "C" fn SPACECOMP_AppMain() {
         )?;
 
         let algorithm = DistanceMinimizing::new(INCLINATION_RAD);
-        let router = Router::builder()
+        let router: Router<_, _, _, _, _, _, 1024> = Router::builder()
             .north(north_link)
             .south(south_link)
             .east(east_link)
