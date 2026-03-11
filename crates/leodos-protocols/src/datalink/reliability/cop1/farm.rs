@@ -11,6 +11,7 @@
 
 use heapless::Vec;
 
+use crate::ids::Vcid;
 use super::clcw::Clcw;
 
 /// Maximum actions per event.
@@ -143,7 +144,7 @@ impl<'b, 'a> IntoIterator for &'b FarmActions<'a> {
 #[derive(bon::Builder)]
 pub struct FarmConfig {
     /// Virtual Channel Identifier for CLCW reports.
-    pub vcid: u8,
+    pub vcid: Vcid,
     /// FARM Sliding Window Width (W). Even, 2..=254.
     pub window_width: u8,
 }
@@ -166,7 +167,7 @@ pub struct FarmMachine {
     /// Negative window half-width: NW = W/2.
     nw: u8,
     /// Virtual Channel ID for CLCW.
-    vcid: u8,
+    vcid: Vcid,
 }
 
 impl FarmMachine {
@@ -428,11 +429,12 @@ enum SeqZone {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ids::Vcid;
 
     fn make_farm() -> FarmMachine {
         FarmMachine::new(
             FarmConfig::builder()
-                .vcid(0)
+                .vcid(Vcid::new(0))
                 .window_width(10)
                 .build(),
         )
@@ -717,7 +719,7 @@ mod tests {
     fn wrapping_sequence_acceptance() {
         let mut farm = FarmMachine::new(
             FarmConfig::builder()
-                .vcid(0)
+                .vcid(Vcid::new(0))
                 .window_width(10)
                 .build(),
         );

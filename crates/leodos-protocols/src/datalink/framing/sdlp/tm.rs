@@ -94,14 +94,15 @@ pub mod bitmask {
 }
 
 use bitmask::*;
+use crate::ids::{Scid, Vcid};
 
 /// An error that can occur during Telemetry frame construction.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum BuildError {
     /// The provided Spacecraft ID is outside the valid 10-bit range (0-1023).
-    InvalidScid(u16),
+    InvalidScid(Scid),
     /// The provided Virtual Channel ID is outside the valid 3-bit range (0-7).
-    InvalidVcid(u8),
+    InvalidVcid(Vcid),
     /// The provided buffer is too small to hold the requested frame.
     BufferTooSmall {
         /// Minimum number of bytes needed.
@@ -185,8 +186,8 @@ impl TelemetryTransferFrame {
     pub fn new(
         buffer: &mut [u8],
         version: u8,
-        scid: u16,
-        vcid: u8,
+        scid: Scid,
+        vcid: Vcid,
         mc_frame_count: u8,
         vc_frame_count: u8,
         first_header_pointer: u16,
@@ -197,10 +198,10 @@ impl TelemetryTransferFrame {
                 provided_len: buffer.len(),
             });
         }
-        if scid > 0x3FF {
+        if scid.get() > 0x3FF {
             return Err(BuildError::InvalidScid(scid));
         }
-        if vcid > 0x07 {
+        if vcid.get() > 0x07 {
             return Err(BuildError::InvalidVcid(vcid));
         }
 
@@ -244,21 +245,21 @@ impl TelemetryTransferFrameHeader {
     }
 
     /// Returns the Spacecraft ID (SCID).
-    pub fn scid(&self) -> u16 {
-        get_bits_u16(self.version_scid_vcid_and_ocf, SCID_MASK)
+    pub fn scid(&self) -> Scid {
+        Scid::new(get_bits_u16(self.version_scid_vcid_and_ocf, SCID_MASK) as u32)
     }
     /// Sets the Spacecraft ID (SCID).
-    pub fn set_scid(&mut self, scid: u16) {
-        set_bits_u16(&mut self.version_scid_vcid_and_ocf, SCID_MASK, scid);
+    pub fn set_scid(&mut self, scid: Scid) {
+        set_bits_u16(&mut self.version_scid_vcid_and_ocf, SCID_MASK, scid.get() as u16);
     }
 
     /// Returns the Virtual Channel ID (VCID).
-    pub fn vcid(&self) -> u8 {
-        get_bits_u16(self.version_scid_vcid_and_ocf, VCID_MASK) as u8
+    pub fn vcid(&self) -> Vcid {
+        Vcid::new(get_bits_u16(self.version_scid_vcid_and_ocf, VCID_MASK) as u32)
     }
     /// Sets the Virtual Channel ID (VCID).
-    pub fn set_vcid(&mut self, vcid: u8) {
-        set_bits_u16(&mut self.version_scid_vcid_and_ocf, VCID_MASK, vcid as u16);
+    pub fn set_vcid(&mut self, vcid: Vcid) {
+        set_bits_u16(&mut self.version_scid_vcid_and_ocf, VCID_MASK, vcid.get() as u16);
     }
 
     /// Returns the Master Channel Frame Count.
@@ -297,9 +298,9 @@ use super::super::{FrameRead, FrameWrite, PushError};
 #[derive(Debug, Clone)]
 pub struct TmFrameWriterConfig {
     /// Spacecraft ID.
-    pub scid: u16,
+    pub scid: Scid,
     /// Virtual Channel ID.
-    pub vcid: u8,
+    pub vcid: Vcid,
     /// Maximum data field length in bytes.
     pub max_data_field_len: usize,
 }

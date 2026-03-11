@@ -65,9 +65,9 @@ pub struct AosPrimaryHeader {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum BuildError {
     /// The provided Spacecraft ID is outside the valid 8-bit range.
-    InvalidScid(u16),
+    InvalidScid(Scid),
     /// The provided Virtual Channel ID is outside the valid 6-bit range.
-    InvalidVcid(u8),
+    InvalidVcid(Vcid),
     /// The provided buffer is too small to hold the requested frame.
     BufferTooSmall {
         /// Minimum number of bytes needed for the frame.
@@ -105,6 +105,7 @@ pub mod bitmasks {
 }
 
 use bitmasks::*;
+use crate::ids::{Scid, Vcid};
 
 #[bon]
 impl AosTransferFrame {
@@ -152,8 +153,8 @@ impl AosTransferFrame {
     #[builder]
     pub fn new<'a>(
         buffer: &'a mut [u8],
-        scid: u8,
-        vcid: u8,
+        scid: Scid,
+        vcid: Vcid,
         vc_frame_count: u32,
         replay_flag: bool,
         usage_flag: bool,
@@ -166,7 +167,7 @@ impl AosTransferFrame {
                 provided: buffer.len(),
             });
         }
-        if vcid > 0x3F {
+        if vcid.get() > 0x3F {
             return Err(BuildError::InvalidVcid(vcid));
         }
 
@@ -209,21 +210,21 @@ impl AosPrimaryHeader {
     }
 
     /// Returns the 8-bit Spacecraft ID.
-    pub fn scid(&self) -> u8 {
-        get_bits_u16(self.version_scid_vcid_field, SCID_MASK) as u8
+    pub fn scid(&self) -> Scid {
+        Scid::new(get_bits_u16(self.version_scid_vcid_field, SCID_MASK) as u32)
     }
     /// Sets the 8-bit Spacecraft ID.
-    pub fn set_scid(&mut self, scid: u8) {
-        set_bits_u16(&mut self.version_scid_vcid_field, SCID_MASK, scid as u16);
+    pub fn set_scid(&mut self, scid: Scid) {
+        set_bits_u16(&mut self.version_scid_vcid_field, SCID_MASK, scid.get() as u16);
     }
 
     /// Returns the 6-bit Virtual Channel ID.
-    pub fn vcid(&self) -> u8 {
-        get_bits_u16(self.version_scid_vcid_field, VCID_MASK) as u8
+    pub fn vcid(&self) -> Vcid {
+        Vcid::new(get_bits_u16(self.version_scid_vcid_field, VCID_MASK) as u32)
     }
     /// Sets the 6-bit Virtual Channel ID.
-    pub fn set_vcid(&mut self, vcid: u8) {
-        set_bits_u16(&mut self.version_scid_vcid_field, VCID_MASK, vcid as u16);
+    pub fn set_vcid(&mut self, vcid: Vcid) {
+        set_bits_u16(&mut self.version_scid_vcid_field, VCID_MASK, vcid.get() as u16);
     }
 
     /// Returns the 24-bit Virtual Channel Frame Count.
@@ -293,9 +294,9 @@ use super::super::{FrameRead, FrameWrite, PushError};
 #[derive(Debug, Clone)]
 pub struct AosFrameWriterConfig {
     /// Spacecraft ID (8-bit).
-    pub scid: u8,
+    pub scid: Scid,
     /// Virtual Channel ID (6-bit).
-    pub vcid: u8,
+    pub vcid: Vcid,
     /// Maximum data field length in bytes.
     pub max_data_field_len: usize,
 }
@@ -429,6 +430,7 @@ impl<const BUF: usize> FrameRead for AosFrameReader<BUF> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ids::{Scid, Vcid};
 
     #[test]
     fn test_aos_builder_and_parser() {
@@ -437,8 +439,8 @@ mod tests {
 
         let frame = AosTransferFrame::builder()
             .buffer(&mut buf)
-            .scid(0x12)
-            .vcid(0x3F) // Max VCID
+            .scid(Scid::new(0x12))
+            .vcid(Vcid::new(0x3F)) // Max VCID
             .vc_frame_count(0x123456)
             .replay_flag(true)
             .usage_flag(false)
@@ -446,8 +448,8 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(frame.header.scid(), 0x12);
-        assert_eq!(frame.header.vcid(), 0x3F);
+        assert_eq!(frame.header.scid(), Scid::new(0x12));
+        assert_eq!(frame.header.vcid(), Vcid::new(0x3F));
         assert_eq!(frame.header.vc_frame_count(), 0x123456);
         assert!(frame.header.is_replay());
         assert_eq!(frame.data(), &payload);

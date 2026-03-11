@@ -11,6 +11,7 @@ use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
 use zerocopy::byteorder::network_endian::U16;
 
+use crate::ids::Scid;
 use crate::utils::get_bits_u16;
 use crate::utils::set_bits_u16;
 
@@ -139,7 +140,7 @@ pub enum SrcDest {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum BuildError {
     /// SCID exceeds the 10-bit range (0–1023).
-    InvalidScid(u16),
+    InvalidScid(Scid),
     /// Port ID exceeds the 3-bit range (0–7).
     InvalidPortId(u8),
     /// Data field exceeds the maximum of 2043 bytes.
@@ -265,7 +266,7 @@ impl Proximity1TransferFrame {
     #[builder]
     pub fn new(
         buffer: &mut [u8],
-        scid: u16,
+        scid: Scid,
         qos: QoS,
         pdu_type: PduType,
         dfc_id: DfcId,
@@ -275,7 +276,7 @@ impl Proximity1TransferFrame {
         fsn: u8,
         data_field_len: usize,
     ) -> Result<&mut Self, BuildError> {
-        if scid > 0x3FF {
+        if scid.get() > 0x3FF {
             return Err(BuildError::InvalidScid(scid));
         }
         if port_id > 0x07 {
@@ -388,15 +389,15 @@ impl Proximity1Header {
     }
 
     /// Returns the 10-bit Spacecraft Identifier.
-    pub fn scid(&self) -> u16 {
-        get_bits_u16(self.version_qos_pdu_dfc_scid, SCID_MASK)
+    pub fn scid(&self) -> Scid {
+        Scid::new(get_bits_u16(self.version_qos_pdu_dfc_scid, SCID_MASK) as u32)
     }
     /// Sets the 10-bit Spacecraft Identifier.
-    pub fn set_scid(&mut self, scid: u16) {
+    pub fn set_scid(&mut self, scid: Scid) {
         set_bits_u16(
             &mut self.version_qos_pdu_dfc_scid,
             SCID_MASK,
-            scid,
+            scid.get() as u16,
         );
     }
 
@@ -696,7 +697,7 @@ use super::super::{FrameRead, FrameWrite, PushError};
 #[derive(Debug, Clone)]
 pub struct Prox1FrameWriterConfig {
     /// Spacecraft ID (10-bit).
-    pub scid: u16,
+    pub scid: Scid,
     /// Quality of Service indicator.
     pub qos: QoS,
     /// PDU type (user data or supervisory).
@@ -837,6 +838,7 @@ impl<const BUF: usize> FrameRead for Prox1FrameReader<BUF> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ids::Scid;
 
     #[test]
     fn build_and_parse_u_frame() {
@@ -845,7 +847,7 @@ mod tests {
 
         let frame = Proximity1TransferFrame::builder()
             .buffer(&mut buf)
-            .scid(42)
+            .scid(Scid::new(42))
             .qos(QoS::SequenceControlled)
             .pdu_type(PduType::UserData)
             .dfc_id(DfcId::Packets)
@@ -863,7 +865,7 @@ mod tests {
         assert_eq!(frame.header().qos(), QoS::SequenceControlled);
         assert_eq!(frame.header().pdu_type(), PduType::UserData);
         assert_eq!(frame.header().dfc_id(), DfcId::Packets);
-        assert_eq!(frame.header().scid(), 42);
+        assert_eq!(frame.header().scid(), Scid::new(42));
         assert!(!frame.header().pcid());
         assert_eq!(frame.header().port_id(), 3);
         assert_eq!(frame.header().src_dest(), SrcDest::Source);
@@ -878,7 +880,7 @@ mod tests {
 
         let frame = Proximity1TransferFrame::builder()
             .buffer(&mut buf)
-            .scid(1023)
+            .scid(Scid::new(1023))
             .qos(QoS::Expedited)
             .pdu_type(PduType::Supervisory)
             .dfc_id(DfcId::Packets) // must be 00 for P-frames
@@ -890,7 +892,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(frame.header().scid(), 1023);
+        assert_eq!(frame.header().scid(), Scid::new(1023));
         assert_eq!(frame.header().qos(), QoS::Expedited);
         assert_eq!(frame.header().pdu_type(), PduType::Supervisory);
         assert!(frame.header().pcid());
@@ -904,7 +906,7 @@ mod tests {
 
         let frame = Proximity1TransferFrame::builder()
             .buffer(&mut buf)
-            .scid(500)
+            .scid(Scid::new(500))
             .qos(QoS::Expedited)
             .pdu_type(PduType::UserData)
             .dfc_id(DfcId::UserDefined)
@@ -920,7 +922,7 @@ mod tests {
 
         let parsed =
             Proximity1TransferFrame::parse(&buf[..total]).unwrap();
-        assert_eq!(parsed.header().scid(), 500);
+        assert_eq!(parsed.header().scid(), Scid::new(500));
         assert_eq!(parsed.header().qos(), QoS::Expedited);
         assert_eq!(parsed.header().dfc_id(), DfcId::UserDefined);
         assert_eq!(parsed.header().port_id(), 7);
@@ -933,7 +935,7 @@ mod tests {
         let mut buf = [0u8; 64];
         let err = Proximity1TransferFrame::builder()
             .buffer(&mut buf)
-            .scid(1024) // exceeds 10-bit max
+            .scid(Scid::new(1024)) // exceeds 10-bit max
             .qos(QoS::SequenceControlled)
             .pdu_type(PduType::UserData)
             .dfc_id(DfcId::Packets)
@@ -943,7 +945,7 @@ mod tests {
             .fsn(0)
             .data_field_len(1)
             .build();
-        assert!(matches!(err, Err(BuildError::InvalidScid(1024))));
+        assert!(matches!(err, Err(BuildError::InvalidScid(s)) if s == Scid::new(1024)));
     }
 
     #[test]
@@ -951,7 +953,7 @@ mod tests {
         let mut buf = [0u8; 64];
         let err = Proximity1TransferFrame::builder()
             .buffer(&mut buf)
-            .scid(0)
+            .scid(Scid::new(0))
             .qos(QoS::SequenceControlled)
             .pdu_type(PduType::UserData)
             .dfc_id(DfcId::Packets)
@@ -969,7 +971,7 @@ mod tests {
         let mut buf = [0u8; 64];
         let err = Proximity1TransferFrame::builder()
             .buffer(&mut buf)
-            .scid(0)
+            .scid(Scid::new(0))
             .qos(QoS::SequenceControlled)
             .pdu_type(PduType::UserData)
             .dfc_id(DfcId::Packets)
@@ -987,7 +989,7 @@ mod tests {
         let mut buf = [0u8; 4]; // less than header
         let err = Proximity1TransferFrame::builder()
             .buffer(&mut buf)
-            .scid(0)
+            .scid(Scid::new(0))
             .qos(QoS::SequenceControlled)
             .pdu_type(PduType::UserData)
             .dfc_id(DfcId::Packets)
@@ -1036,7 +1038,7 @@ mod tests {
         let mut buf = [0u8; MAX_FRAME_LEN];
         let frame = Proximity1TransferFrame::builder()
             .buffer(&mut buf)
-            .scid(0)
+            .scid(Scid::new(0))
             .qos(QoS::Expedited)
             .pdu_type(PduType::UserData)
             .dfc_id(DfcId::UserDefined)
@@ -1063,7 +1065,7 @@ mod tests {
             let mut buf = [0u8; 16];
             let frame = Proximity1TransferFrame::builder()
                 .buffer(&mut buf)
-                .scid(0)
+                .scid(Scid::new(0))
                 .qos(QoS::SequenceControlled)
                 .pdu_type(PduType::UserData)
                 .dfc_id(dfc)
@@ -1089,7 +1091,7 @@ mod tests {
         let mut buf = [0u8; 16];
         let frame = Proximity1TransferFrame::builder()
             .buffer(&mut buf)
-            .scid(100)
+            .scid(Scid::new(100))
             .qos(QoS::Expedited)
             .pdu_type(PduType::Supervisory)
             .dfc_id(DfcId::Packets)

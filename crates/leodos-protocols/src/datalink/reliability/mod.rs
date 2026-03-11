@@ -189,6 +189,7 @@ impl ReliabilityRead for NoReliability {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ids::{Scid, Vcid};
     use cop1::fop::{FopAction, FopState};
 
     fn fop_config() -> FopConfig {
@@ -200,7 +201,7 @@ mod tests {
     }
 
     fn farm_config() -> FarmConfig {
-        FarmConfig::builder().vcid(0).window_width(10).build()
+        FarmConfig::builder().vcid(Vcid::new(0)).window_width(10).build()
     }
 
     #[test]
@@ -237,8 +238,8 @@ mod tests {
         let frame =
             crate::datalink::framing::sdlp::tc::TelecommandTransferFrame::builder()
                 .buffer(&mut buf)
-                .scid(1)
-                .vcid(0)
+                .scid(Scid::new(1))
+                .vcid(Vcid::new(0))
                 .bypass_flag(BypassFlag::TypeA)
                 .control_flag(ControlFlag::TypeD)
                 .seq(0)
@@ -261,8 +262,8 @@ mod tests {
         let frame =
             crate::datalink::framing::sdlp::tc::TelecommandTransferFrame::builder()
                 .buffer(&mut buf)
-                .scid(1)
-                .vcid(0)
+                .scid(Scid::new(1))
+                .vcid(Vcid::new(0))
                 .bypass_flag(BypassFlag::TypeB)
                 .control_flag(ControlFlag::TypeD)
                 .seq(0)

@@ -41,6 +41,7 @@ use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
 use zerocopy::byteorder::network_endian::{U16, U32};
 
+use crate::ids::{Scid, Vcid};
 use crate::utils::{get_bits_u8, get_bits_u32, set_bits_u8, set_bits_u32};
 
 /// USLP Transfer Frame Version Number (`0b1100` = 12).
@@ -162,7 +163,7 @@ pub enum Upid {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum BuildError {
     /// VCID exceeds 6-bit range (0-63).
-    InvalidVcid(u8),
+    InvalidVcid(Vcid),
     /// MAP ID exceeds 4-bit range (0-15).
     InvalidMapId(u8),
     /// VCF Count Length exceeds 3-bit range (0-7).
@@ -495,8 +496,8 @@ impl UslpTransferFrame {
     #[builder]
     pub fn new(
         buffer: &mut [u8],
-        scid: u16,
-        vcid: u8,
+        scid: Scid,
+        vcid: Vcid,
         #[builder(default)] source_or_dest: bool,
         #[builder(default)] map_id: u8,
         #[builder(default)] bypass: bool,
@@ -505,7 +506,7 @@ impl UslpTransferFrame {
         #[builder(default)] vcf_count_length: u8,
         #[builder(default)] vcf_count: u64,
     ) -> Result<&mut Self, BuildError> {
-        if vcid > 63 {
+        if vcid.get() > 63 {
             return Err(BuildError::InvalidVcid(vcid));
         }
         if map_id > 15 {
@@ -590,13 +591,13 @@ impl UslpPrimaryHeaderFixed {
     }
 
     /// Returns the 16-bit Spacecraft Identifier.
-    pub fn scid(&self) -> u16 {
-        get_bits_u32(self.id, SCID_MASK) as u16
+    pub fn scid(&self) -> Scid {
+        Scid::new(get_bits_u32(self.id, SCID_MASK) as u32)
     }
 
     /// Sets the Spacecraft Identifier.
-    pub fn set_scid(&mut self, v: u16) {
-        set_bits_u32(&mut self.id, SCID_MASK, v as u32);
+    pub fn set_scid(&mut self, v: Scid) {
+        set_bits_u32(&mut self.id, SCID_MASK, v.get());
     }
 
     /// Returns the Source-or-Destination Identifier.
@@ -612,13 +613,13 @@ impl UslpPrimaryHeaderFixed {
     }
 
     /// Returns the 6-bit Virtual Channel Identifier.
-    pub fn vcid(&self) -> u8 {
-        get_bits_u32(self.id, VCID_MASK) as u8
+    pub fn vcid(&self) -> Vcid {
+        Vcid::new(get_bits_u32(self.id, VCID_MASK) as u32)
     }
 
     /// Sets the Virtual Channel Identifier.
-    pub fn set_vcid(&mut self, v: u8) {
-        set_bits_u32(&mut self.id, VCID_MASK, v as u32);
+    pub fn set_vcid(&mut self, v: Vcid) {
+        set_bits_u32(&mut self.id, VCID_MASK, v.get());
     }
 
     /// Returns the 4-bit Multiplexer Access Point Identifier.
@@ -728,9 +729,9 @@ use super::{FrameRead, FrameWrite, PushError};
 #[derive(Debug, Clone)]
 pub struct UslpFrameWriterConfig {
     /// Spacecraft ID (16-bit).
-    pub scid: u16,
+    pub scid: Scid,
     /// Virtual Channel ID (6-bit).
-    pub vcid: u8,
+    pub vcid: Vcid,
     /// Multiplexer Access Point ID (4-bit).
     pub map_id: u8,
     /// Bypass/Sequence Control Flag.
@@ -930,20 +931,21 @@ impl<const BUF: usize> FrameRead for UslpFrameReader<BUF> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ids::{Scid, Vcid};
 
     #[test]
     fn build_and_parse_basic_frame() {
         let mut buf = [0u8; 32];
         let frame = UslpTransferFrame::builder()
             .buffer(&mut buf)
-            .scid(42)
-            .vcid(1)
+            .scid(Scid::new(42))
+            .vcid(Vcid::new(1))
             .build()
             .unwrap();
 
         assert_eq!(frame.header().tfvn(), USLP_TFVN);
-        assert_eq!(frame.header().scid(), 42);
-        assert_eq!(frame.header().vcid(), 1);
+        assert_eq!(frame.header().scid(), Scid::new(42));
+        assert_eq!(frame.header().vcid(), Vcid::new(1));
         assert_eq!(frame.header().map_id(), 0);
         assert!(!frame.header().source_or_dest());
         assert!(!frame.header().eofph());
@@ -960,8 +962,8 @@ mod tests {
         // Build a valid frame then corrupt the TFVN.
         UslpTransferFrame::builder()
             .buffer(&mut buf)
-            .scid(0)
-            .vcid(0)
+            .scid(Scid::new(0))
+            .vcid(Vcid::new(0))
             .build()
             .unwrap();
         buf[0] = 0x00; // TFVN = 0 instead of 0xC
@@ -974,8 +976,8 @@ mod tests {
         let mut buf = [0u8; 16];
         UslpTransferFrame::builder()
             .buffer(&mut buf)
-            .scid(0)
-            .vcid(0)
+            .scid(Scid::new(0))
+            .vcid(Vcid::new(0))
             .build()
             .unwrap();
         // Parse with a truncated slice.
@@ -989,8 +991,8 @@ mod tests {
         let mut buf = [0u8; 64];
         let frame = UslpTransferFrame::builder()
             .buffer(&mut buf)
-            .scid(1000)
-            .vcid(5)
+            .scid(Scid::new(1000))
+            .vcid(Vcid::new(5))
             .map_id(3)
             .bypass(true)
             .vcf_count_length(2)
@@ -998,8 +1000,8 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(frame.header().scid(), 1000);
-        assert_eq!(frame.header().vcid(), 5);
+        assert_eq!(frame.header().scid(), Scid::new(1000));
+        assert_eq!(frame.header().vcid(), Vcid::new(5));
         assert_eq!(frame.header().map_id(), 3);
         assert!(frame.header().bypass());
         assert_eq!(frame.header().vcf_count_length(), 2);
@@ -1012,16 +1014,16 @@ mod tests {
         let mut buf = [0u8; 32];
         UslpTransferFrame::builder()
             .buffer(&mut buf)
-            .scid(500)
-            .vcid(7)
+            .scid(Scid::new(500))
+            .vcid(Vcid::new(7))
             .source_or_dest(true)
             .ocf_flag(true)
             .build()
             .unwrap();
 
         let frame = UslpTransferFrame::parse(&buf).unwrap();
-        assert_eq!(frame.header().scid(), 500);
-        assert_eq!(frame.header().vcid(), 7);
+        assert_eq!(frame.header().scid(), Scid::new(500));
+        assert_eq!(frame.header().vcid(), Vcid::new(7));
         assert!(frame.header().source_or_dest());
         assert!(frame.header().ocf_flag());
     }
@@ -1031,8 +1033,8 @@ mod tests {
         let mut buf = [0u8; 32];
         let frame = UslpTransferFrame::builder()
             .buffer(&mut buf)
-            .scid(0)
-            .vcid(0)
+            .scid(Scid::new(0))
+            .vcid(Vcid::new(0))
             .build()
             .unwrap();
 
@@ -1053,8 +1055,8 @@ mod tests {
         let mut buf = [0u8; 32];
         let frame = UslpTransferFrame::builder()
             .buffer(&mut buf)
-            .scid(0)
-            .vcid(0)
+            .scid(Scid::new(0))
+            .vcid(Vcid::new(0))
             .build()
             .unwrap();
 
@@ -1077,11 +1079,11 @@ mod tests {
         let mut buf = [0u8; 32];
         let err = UslpTransferFrame::builder()
             .buffer(&mut buf)
-            .scid(0)
-            .vcid(64)
+            .scid(Scid::new(0))
+            .vcid(Vcid::new(64))
             .build()
             .unwrap_err();
-        assert_eq!(err, BuildError::InvalidVcid(64));
+        assert_eq!(err, BuildError::InvalidVcid(Vcid::new(64)));
     }
 
     #[test]
@@ -1109,10 +1111,10 @@ mod tests {
         let mut buf = [0u8; 16];
         let frame = UslpTransferFrame::builder()
             .buffer(&mut buf)
-            .scid(0xFFFF)
-            .vcid(0)
+            .scid(Scid::new(0xFFFF))
+            .vcid(Vcid::new(0))
             .build()
             .unwrap();
-        assert_eq!(frame.header().scid(), 0xFFFF);
+        assert_eq!(frame.header().scid(), Scid::new(0xFFFF));
     }
 }

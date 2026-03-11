@@ -89,14 +89,15 @@ pub mod bitmask {
 }
 
 use bitmask::*;
+use crate::ids::{Scid, Vcid};
 
 /// An error that can occur during Telecommand Transfer Frame construction.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum BuildError {
     /// The provided Spacecraft ID is outside the valid 10-bit range (0-1023).
-    InvalidScid(u16),
+    InvalidScid(Scid),
     /// The provided Virtual Channel ID is outside the valid 6-bit range (0-63).
-    InvalidVcid(u8),
+    InvalidVcid(Vcid),
     /// The provided data length exceeds the maximum of 1019 bytes.
     DataTooLong(usize),
     /// The provided buffer is too small to hold the requested frame.
@@ -198,17 +199,17 @@ impl TelecommandTransferFrame {
     #[builder]
     pub fn new(
         buffer: &mut [u8],
-        scid: u16,
-        vcid: u8,
+        scid: Scid,
+        vcid: Vcid,
         bypass_flag: BypassFlag,
         control_flag: ControlFlag,
         seq: u8,
         data_field_len: usize,
     ) -> Result<&mut Self, BuildError> {
-        if scid > 0x3FF {
+        if scid.get() > 0x3FF {
             return Err(BuildError::InvalidScid(scid));
         }
-        if vcid > 0x3F {
+        if vcid.get() > 0x3F {
             return Err(BuildError::InvalidVcid(vcid));
         }
         if data_field_len > Self::MAX_DATA_FIELD_LEN {
@@ -239,21 +240,21 @@ impl TelecommandTransferFrame {
 
 impl TelecommandTransferFrameHeader {
     /// Returns the Spacecraft ID (SCID).
-    pub fn scid(&self) -> u16 {
-        get_bits_u16(self.id_and_scid, SCID_MASK)
+    pub fn scid(&self) -> Scid {
+        Scid::new(get_bits_u16(self.id_and_scid, SCID_MASK) as u32)
     }
     /// Sets the Spacecraft ID (SCID).
-    pub fn set_scid(&mut self, scid: u16) {
-        set_bits_u16(&mut self.id_and_scid, SCID_MASK, scid);
+    pub fn set_scid(&mut self, scid: Scid) {
+        set_bits_u16(&mut self.id_and_scid, SCID_MASK, scid.get() as u16);
     }
 
     /// Returns the Virtual Channel ID (VCID).
-    pub fn vcid(&self) -> u8 {
-        get_bits_u16(self.vcid_and_length, VCID_MASK) as u8
+    pub fn vcid(&self) -> Vcid {
+        Vcid::new(get_bits_u16(self.vcid_and_length, VCID_MASK) as u32)
     }
     /// Sets the Virtual Channel ID (VCID).
-    pub fn set_vcid(&mut self, vcid: u8) {
-        set_bits_u16(&mut self.vcid_and_length, VCID_MASK, vcid as u16);
+    pub fn set_vcid(&mut self, vcid: Vcid) {
+        set_bits_u16(&mut self.vcid_and_length, VCID_MASK, vcid.get() as u16);
     }
 
     /// Returns the total frame length in bytes as specified by the header.
@@ -308,9 +309,9 @@ impl TelecommandTransferFrameHeader {
 #[derive(Debug, Clone)]
 pub struct TcFrameWriterConfig {
     /// Spacecraft ID.
-    pub scid: u16,
+    pub scid: Scid,
     /// Virtual Channel ID.
-    pub vcid: u8,
+    pub vcid: Vcid,
     /// Bypass flag (Type-A or Type-B).
     pub bypass: BypassFlag,
     /// Control flag (data or control command).

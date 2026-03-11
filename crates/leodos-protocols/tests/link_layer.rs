@@ -14,6 +14,7 @@ use leodos_protocols::datalink::link::channel::{
     DatalinkReader, DatalinkWriter,
 };
 use leodos_protocols::datalink::{DatalinkRead, DatalinkWrite};
+use leodos_protocols::ids::{Scid, Vcid};
 use leodos_protocols::network::spp::{
     Apid, PacketType, SecondaryHeaderFlag, SequenceCount,
     SequenceFlag, SpacePacket,
@@ -132,8 +133,8 @@ impl CodingRead for MockCodingRead {
 fn tc_sender_builds_valid_frame() {
     futures::executor::block_on(async {
         let config = TcFrameWriterConfig {
-            scid: 42,
-            vcid: 1,
+            scid: Scid::new(42),
+            vcid: Vcid::new(1),
             bypass: BypassFlag::TypeA,
             control: ControlFlag::TypeD,
             max_data_field_len: 256,
@@ -159,8 +160,8 @@ fn tc_sender_builds_valid_frame() {
 fn tc_round_trip() {
     futures::executor::block_on(async {
         let config = TcFrameWriterConfig {
-            scid: 42,
-            vcid: 1,
+            scid: Scid::new(42),
+            vcid: Vcid::new(1),
             bypass: BypassFlag::TypeA,
             control: ControlFlag::TypeD,
             max_data_field_len: 256,
@@ -204,8 +205,8 @@ fn tc_round_trip() {
 fn tm_sender_builds_valid_frame() {
     futures::executor::block_on(async {
         let config = TmFrameWriterConfig {
-            scid: 42,
-            vcid: 1,
+            scid: Scid::new(42),
+            vcid: Vcid::new(1),
             max_data_field_len: 256,
         };
 
@@ -229,8 +230,8 @@ fn tm_sender_builds_valid_frame() {
 fn tm_round_trip() {
     futures::executor::block_on(async {
         let config = TmFrameWriterConfig {
-            scid: 42,
-            vcid: 1,
+            scid: Scid::new(42),
+            vcid: Vcid::new(1),
             max_data_field_len: 256,
         };
 

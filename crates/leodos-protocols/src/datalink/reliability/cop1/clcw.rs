@@ -21,6 +21,7 @@
 //! Bits 24-31 : Report Value (N(R) = V(R))
 //! ```
 
+use crate::ids::Vcid;
 use zerocopy::FromBytes;
 use zerocopy::Immutable;
 use zerocopy::IntoBytes;
@@ -111,12 +112,12 @@ impl Clcw {
     }
 
     /// Virtual Channel Identifier (6 bits).
-    pub fn vcid(&self) -> u8 {
-        get(self.word, VCID_MASK) as u8
+    pub fn vcid(&self) -> Vcid {
+        Vcid::new(get(self.word, VCID_MASK) as u32)
     }
     /// Sets the VCID.
-    pub fn set_vcid(&mut self, v: u8) {
-        set(&mut self.word, VCID_MASK, v as u32);
+    pub fn set_vcid(&mut self, v: Vcid) {
+        set(&mut self.word, VCID_MASK, v.get());
     }
 
     /// No RF Available flag.
@@ -192,13 +193,14 @@ impl Default for Clcw {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ids::Vcid;
 
     #[test]
     fn roundtrip_fields() {
         let mut clcw = Clcw::new();
 
         clcw.set_cop_in_effect(1);
-        clcw.set_vcid(42);
+        clcw.set_vcid(Vcid::new(42));
         clcw.set_lockout(true);
         clcw.set_wait(false);
         clcw.set_retransmit(true);
@@ -207,7 +209,7 @@ mod tests {
 
         assert_eq!(clcw.control_word_type(), 0);
         assert_eq!(clcw.cop_in_effect(), 1);
-        assert_eq!(clcw.vcid(), 42);
+        assert_eq!(clcw.vcid(), Vcid::new(42));
         assert!(clcw.lockout());
         assert!(!clcw.wait());
         assert!(clcw.retransmit());

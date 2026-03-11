@@ -8,6 +8,8 @@
 pub mod application;
 /// Channel coding, CRC, randomization, and physical layer protocols.
 pub mod coding;
+/// Protocol identifier newtypes (SCID, VCID, etc.).
+pub mod ids;
 /// Data link layer framing and transfer frame protocols.
 pub mod datalink;
 /// Network layer protocols including Space Packet and ISL routing.
