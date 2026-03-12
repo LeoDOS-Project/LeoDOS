@@ -1,13 +1,18 @@
 - Commit changes incrementally — each commit should be a single logical change
 
+## Design plans
+
+`.claude/plans/` contains design documents for future work.
+Check there before starting larger changes — a plan may
+already exist.
+
 ## TODO
 
 ### Bugs
 
-- [ ] `Router::next_hop` routes `Address::Ground` immediately
+- [x] `Router::next_hop` routes `Address::Ground` immediately
   to `Direction::Ground`, but the ground station may not be
-  directly reachable — the packet should route to the
-  satellite that is above the ground station first.
+  directly reachable — fixed with LOS-based gateway routing.
 
 - [ ] `Router::poll_links` uses `select_biased!` — all
   `DatalinkReader::read()` impls must be cancel safe (atomic
@@ -32,6 +37,20 @@
 - [x] Remove CfsLinkError — use CfsError directly.
 - [x] Rename routing Error → RouterError, srspp Error →
   TransportError.
+
+### Future improvements
+
+- [ ] RingBuffer front-drop policy — add a `front_drop: bool`
+  field so the router can evict the oldest packet instead
+  of dropping incoming. Useful for telemetry freshness on
+  congested links. SRSPP retransmits either way.
+- [ ] Closure-based write API — `write` traits take `&[u8]`
+  which can't represent RingBuffer wrap-around (two
+  disjoint slices). A closure API like
+  `fn write(&mut self, len, f: impl FnOnce(&mut [u8]))`
+  would let the caller write directly into the target
+  buffer, avoiding the copy. Affects FrameWrite::push,
+  DatalinkWrite::write, NetworkWrite::write.
 
 
 ## Communication stack composition
