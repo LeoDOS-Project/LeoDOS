@@ -118,10 +118,7 @@ impl<F: FrameRead, R: CodingRead> DatalinkReader<F, R> {
 
     /// Try to extract the next packet from the current data
     /// field, returning its byte length or `None` if exhausted.
-    fn extract_packet(
-        &mut self,
-        buffer: &mut [u8],
-    ) -> Option<usize> {
+    fn extract_packet(&mut self, buffer: &mut [u8]) -> Option<usize> {
         let data = self.frame_reader.data_field();
         if self.pos >= data.len() {
             return None;
@@ -134,7 +131,6 @@ impl<F: FrameRead, R: CodingRead> DatalinkReader<F, R> {
         self.pos += len;
         Some(n)
     }
-
 }
 
 impl<F, R> DatalinkRead for DatalinkReader<F, R>
@@ -146,10 +142,7 @@ where
 
     /// Reads the next packet. Fetches a new frame from the
     /// coding pipeline when the current frame is exhausted.
-    async fn read(
-        &mut self,
-        buffer: &mut [u8],
-    ) -> Result<usize, Self::Error> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         // Try extracting from current frame first.
         if let Some(n) = self.extract_packet(buffer) {
             return Ok(n);

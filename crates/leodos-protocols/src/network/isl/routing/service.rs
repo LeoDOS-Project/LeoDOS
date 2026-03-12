@@ -12,7 +12,9 @@
 //! join(app(client), driver.run()).await;
 //! ```
 
-use crate::datalink::{DatalinkRead, DatalinkWrite};
+use futures::FutureExt as _;
+
+use crate::datalink::{Datalink, DatalinkRead, DatalinkWrite};
 use crate::network::isl::routing::Router;
 use crate::network::isl::routing::algorithm::RoutingAlgorithm;
 use crate::network::isl::routing::local::{LocalAppHandle, LocalChannel, LocalRouterHandle};
@@ -25,20 +27,17 @@ pub struct RouterService;
 impl RouterService {
     /// Splits a router and channel into a client handle and
     /// an I/O driver.
-    pub fn new<'a, N, S, E, W, G, R, C, const MTU: usize, const QUEUE: usize>(
-        router: Router<N, S, E, W, G, R, C, MTU>,
+    pub fn new<'a, N, G, A, C, const MTU: usize, const OUT: usize, const QUEUE: usize>(
+        router: Router<N, G, A, C, MTU, OUT>,
         channel: &'a LocalChannel<QUEUE, MTU>,
     ) -> (
         RouterClient<'a, QUEUE, MTU>,
-        RouterDriver<'a, N, S, E, W, G, R, C, MTU, QUEUE>,
+        RouterDriver<'a, N, G, A, C, MTU, OUT, QUEUE>,
     )
     where
-        N: DatalinkWrite + DatalinkRead<Error = <N as DatalinkWrite>::Error>,
-        S: DatalinkWrite + DatalinkRead<Error = <S as DatalinkWrite>::Error>,
-        E: DatalinkWrite + DatalinkRead<Error = <E as DatalinkWrite>::Error>,
-        W: DatalinkWrite + DatalinkRead<Error = <W as DatalinkWrite>::Error>,
-        G: DatalinkWrite + DatalinkRead<Error = <G as DatalinkWrite>::Error>,
-        R: RoutingAlgorithm,
+        N: Datalink,
+        G: Datalink,
+        A: RoutingAlgorithm,
         C: Clock,
     {
         let (app, router_end) = channel.split();
@@ -78,20 +77,17 @@ impl<'a, const QUEUE: usize, const MTU: usize> NetworkRead for RouterClient<'a, 
 
 /// I/O driver that runs the router and bridges the local
 /// channel.
-pub struct RouterDriver<'a, N, S, E, W, G, R, C, const MTU: usize, const QUEUE: usize> {
-    router: Router<N, S, E, W, G, R, C, MTU>,
+pub struct RouterDriver<'a, N, G, A, C, const MTU: usize, const OUT: usize, const QUEUE: usize> {
+    router: Router<N, G, A, C, MTU, OUT>,
     handle: LocalRouterHandle<'a, QUEUE, MTU>,
 }
 
-impl<'a, N, S, E, W, G, R, C, const MTU: usize, const QUEUE: usize>
-    RouterDriver<'a, N, S, E, W, G, R, C, MTU, QUEUE>
+impl<'a, N, G, A, C, const MTU: usize, const OUT: usize, const QUEUE: usize>
+    RouterDriver<'a, N, G, A, C, MTU, OUT, QUEUE>
 where
-    N: DatalinkWrite + DatalinkRead<Error = <N as DatalinkWrite>::Error>,
-    S: DatalinkWrite + DatalinkRead<Error = <S as DatalinkWrite>::Error>,
-    E: DatalinkWrite + DatalinkRead<Error = <E as DatalinkWrite>::Error>,
-    W: DatalinkWrite + DatalinkRead<Error = <W as DatalinkWrite>::Error>,
-    G: DatalinkWrite + DatalinkRead<Error = <G as DatalinkWrite>::Error>,
-    R: RoutingAlgorithm,
+    N: Datalink,
+    G: Datalink,
+    A: RoutingAlgorithm,
     C: Clock,
 {
     /// Runs the router loop: receives from the router's
@@ -99,19 +95,41 @@ where
     /// channel, and forwards outgoing packets from the
     /// channel through the router.
     pub async fn run(&mut self) -> ! {
-        let mut buf = [0u8; MTU];
-        loop {
-            // Receive from the network (blocks until a
-            // local-destined packet arrives, forwarding
-            // non-local packets internally).
-            if let Ok(len) = self.router.read(&mut buf).await {
-                let _ = self.handle.write(&buf[..len]).await;
-            }
+        let mut handle_buf = [0u8; MTU];
+        let mut router_buf = [0u8; MTU];
 
-            // Drain any outgoing packets from the app.
-            let mut local_buf = [0u8; MTU];
-            if let Ok(len) = self.handle.read(&mut local_buf).await {
-                let _ = self.router.write(&local_buf[..len]).await;
+        enum Event {
+            FromNetwork(usize),
+            FromApp(usize),
+            Err,
+        }
+
+        loop {
+            let event = {
+                let handle = self.router.read(&mut handle_buf).fuse();
+                let router = self.handle.read(&mut router_buf).fuse();
+                pin_utils::pin_mut!(handle, router);
+
+                futures::select_biased! {
+                    r = handle => match r {
+                        Ok(len) => Event::FromNetwork(len),
+                        Err(_) => Event::Err,
+                    },
+                    r = router => match r {
+                        Ok(len) => Event::FromApp(len),
+                        Err(_) => Event::Err,
+                    },
+                }
+            };
+
+            match event {
+                Event::FromNetwork(len) => {
+                    let _ = self.handle.write(&handle_buf[..len]).await;
+                }
+                Event::FromApp(len) => {
+                    let _ = self.router.write(&router_buf[..len]).await;
+                }
+                Event::Err => {}
             }
         }
     }

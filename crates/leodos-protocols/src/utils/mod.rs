@@ -10,6 +10,8 @@ pub mod time;
 pub mod cell;
 /// Monotonic clock abstraction.
 pub mod clock;
+/// Fixed-capacity byte ring buffer for variable-length packets.
+pub mod ringbuf;
 
 pub use bits::*;
 pub use fmt::*;

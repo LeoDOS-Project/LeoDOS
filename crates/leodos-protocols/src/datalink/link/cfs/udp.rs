@@ -2,16 +2,16 @@ use leodos_libcfs::error::Error as CfsError;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::os::net::UdpSocket;
 
-use crate::datalink::{DatalinkRead, DatalinkWrite};
+use crate::datalink::{Datalink, DatalinkRead, DatalinkWrite};
 /// Sends frames over UDP.
 pub struct UdpFrameWriter<'a> {
     socket: &'a UdpSocket,
-    target: SocketAddr,
+    target: &'a SocketAddr,
 }
 
 impl<'a> UdpFrameWriter<'a> {
     /// Creates a new sender targeting the given address.
-    pub fn new(socket: &'a UdpSocket, target: SocketAddr) -> Self {
+    pub fn new(socket: &'a UdpSocket, target: &'a SocketAddr) -> Self {
         Self { socket, target }
     }
 }
@@ -20,7 +20,7 @@ impl DatalinkWrite for UdpFrameWriter<'_> {
     type Error = CfsError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        self.socket.send(data, &self.target).await?;
+        self.socket.send(data, self.target).await?;
         Ok(())
     }
 }
@@ -62,6 +62,32 @@ impl UdpDatalink {
     pub fn bind(local: SocketAddr, remote: SocketAddr) -> Result<Self, CfsError> {
         let socket = UdpSocket::bind(local)?;
         Ok(Self { socket, remote })
+    }
+
+    /// Splits into independent read and write halves.
+    ///
+    /// Both halves borrow the underlying socket. `send()` and
+    /// `recv()` on `UdpSocket` take `&self`, so concurrent
+    /// use is safe.
+    pub fn split(&self) -> (UdpFrameReader<'_>, UdpFrameWriter<'_>) {
+        (
+            UdpFrameReader::new(&self.socket),
+            UdpFrameWriter::new(&self.socket, &self.remote),
+        )
+    }
+}
+
+impl Datalink for UdpDatalink {
+    type ReadError = CfsError;
+    type WriteError = CfsError;
+    type Reader<'a> = UdpFrameReader<'a>;
+    type Writer<'a> = UdpFrameWriter<'a>;
+
+    fn split(&self) -> (Self::Reader<'_>, Self::Writer<'_>) {
+        (
+            UdpFrameReader::new(&self.socket),
+            UdpFrameWriter::new(&self.socket, &self.remote),
+        )
     }
 }
 

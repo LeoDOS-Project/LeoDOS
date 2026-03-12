@@ -50,8 +50,7 @@ mod bindings {
 pub mod data;
 mod roles;
 
-pub type RouterError =
-    routing::RouterError<CfsError, CfsError, CfsError, CfsError, CfsError>;
+pub type RouterError = routing::RouterError<CfsError>;
 
 pub type RxHandle<'a> = SrsppRxHandle<'a, RouterError, ReceiverMachine<8, 4096, 8192>, 4>;
 pub type TxHandle<'a> = SrsppTxHandle<'a, RouterError, 8, 4096, 512>;
@@ -174,7 +173,7 @@ pub extern "C" fn SPACECOMP_AppMain() {
         gateway_table.add_station(1, LatLon::new(78.23, 15.39));  // Svalbard
         gateway_table.add_station(2, LatLon::new(64.86, -147.72)); // Fairbanks
         let algorithm = DistanceMinimizing::new(SHELL, gateway_table);
-        let router: Router<_, _, _, _, _, _, _, 1024> = Router::builder()
+        let router = Router::builder()
             .north(north_link)
             .south(south_link)
             .east(east_link)

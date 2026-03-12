@@ -32,3 +32,26 @@ pub trait DatalinkRead {
     /// Read data from the link into `buffer`.
     fn read(&mut self, buffer: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>>;
 }
+
+/// A bidirectional data link that can be split into
+/// independent read and write halves.
+pub trait Datalink {
+    /// Error type for read operations.
+    type ReadError: core::error::Error;
+    /// Error type for write operations.
+    type WriteError: core::error::Error;
+    /// Read half type.
+    type Reader<'a>: DatalinkRead<Error = Self::ReadError>
+    where
+        Self: 'a;
+    /// Write half type.
+    type Writer<'a>: DatalinkWrite<Error = Self::WriteError>
+    where
+        Self: 'a;
+
+    /// Split into independent read and write halves.
+    ///
+    /// Both halves borrow `self`, allowing concurrent use
+    /// without requiring exclusive access to the whole link.
+    fn split(&self) -> (Self::Reader<'_>, Self::Writer<'_>);
+}
