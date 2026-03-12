@@ -8,7 +8,7 @@ use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::time::sleep;
 use leodos_libcfs::runtime::Runtime;
-use leodos_protocols::datalink::link::cfs::UdpDataLink;
+use leodos_protocols::datalink::link::cfs::udp::UdpDatalink;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::spp::Apid;
@@ -51,7 +51,7 @@ pub extern "C" fn SRSPP_SENDER_AppMain() {
 
         let local_addr = SocketAddr::new_ipv4(LOCAL_IP, LOCAL_PORT)?;
         let remote_addr = SocketAddr::new_ipv4(REMOTE_IP, REMOTE_PORT)?;
-        let datalink = UdpDataLink::bind(local_addr, remote_addr)?;
+        let datalink = UdpDatalink::bind(local_addr, remote_addr)?;
         let network = PointToPoint::new(datalink);
 
         let target = Address::satellite(0, 2);
@@ -77,7 +77,7 @@ pub extern "C" fn SRSPP_SENDER_AppMain() {
                 let num_str = format_u32(counter, &mut num_buf);
                 let _ = msg.extend_from_slice(num_str);
 
-                if handle.send(target, &msg).await.is_err() {
+                if handle.send(target, &msg[..]).await.is_err() {
                     break;
                 }
                 event::info(1, "Sent message").ok();
