@@ -218,10 +218,7 @@ pub enum ParseError {
 /// +--------+----------+------+------+------+------+
 /// ```
 #[repr(C, packed)]
-#[derive(
-    FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable,
-    Debug, Copy, Clone,
-)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Debug, Copy, Clone)]
 pub struct UslpPrimaryHeaderFixed {
     /// Bytes 0-3: TFVN(4) + SCID(16) + Src/Dst(1) + VCID(6)
     /// + MAP_ID(4) + EOFPH(1).
@@ -264,8 +261,8 @@ impl UslpTransferFrame {
             return Err(ParseError::TooShortForHeader);
         }
 
-        let frame = UslpTransferFrame::ref_from_bytes(bytes)
-            .map_err(|_| ParseError::TooShortForHeader)?;
+        let frame =
+            UslpTransferFrame::ref_from_bytes(bytes).map_err(|_| ParseError::TooShortForHeader)?;
 
         let tfvn = frame.header().tfvn();
         if tfvn != USLP_TFVN {
@@ -311,8 +308,7 @@ impl UslpTransferFrame {
 
     /// Total size of the primary header including VCF Count.
     pub fn primary_header_size(&self) -> usize {
-        Self::FIXED_HEADER_SIZE
-            + self.header().vcf_count_length() as usize
+        Self::FIXED_HEADER_SIZE + self.header().vcf_count_length() as usize
     }
 
     /// Returns the VCF Count value (big-endian, 0-56 bits).
@@ -344,10 +340,7 @@ impl UslpTransferFrame {
     }
 
     /// Returns a mutable reference to the Insert Zone.
-    pub fn insert_zone_mut(
-        &mut self,
-        insert_zone_len: usize,
-    ) -> &mut [u8] {
+    pub fn insert_zone_mut(&mut self, insert_zone_len: usize) -> &mut [u8] {
         let start = self.header().vcf_count_length() as usize;
         &mut self.body[start..start + insert_zone_len]
     }
@@ -356,13 +349,8 @@ impl UslpTransferFrame {
     ///
     /// `insert_zone_len` is the managed Insert Zone size.
     /// `fecf_present` indicates whether a 2-byte FECF is appended.
-    pub fn data_field(
-        &self,
-        insert_zone_len: usize,
-        fecf_present: bool,
-    ) -> &[u8] {
-        let start = self.header().vcf_count_length() as usize
-            + insert_zone_len;
+    pub fn data_field(&self, insert_zone_len: usize, fecf_present: bool) -> &[u8] {
+        let start = self.header().vcf_count_length() as usize + insert_zone_len;
         let ocf_len = if self.header().ocf_flag() { 4 } else { 0 };
         let fecf_len = if fecf_present { 2 } else { 0 };
         let end = self.body.len() - ocf_len - fecf_len;
@@ -370,13 +358,8 @@ impl UslpTransferFrame {
     }
 
     /// Returns a mutable reference to the data field.
-    pub fn data_field_mut(
-        &mut self,
-        insert_zone_len: usize,
-        fecf_present: bool,
-    ) -> &mut [u8] {
-        let start = self.header().vcf_count_length() as usize
-            + insert_zone_len;
+    pub fn data_field_mut(&mut self, insert_zone_len: usize, fecf_present: bool) -> &mut [u8] {
+        let start = self.header().vcf_count_length() as usize + insert_zone_len;
         let ocf_len = if self.header().ocf_flag() { 4 } else { 0 };
         let fecf_len = if fecf_present { 2 } else { 0 };
         let end = self.body.len() - ocf_len - fecf_len;
@@ -384,22 +367,14 @@ impl UslpTransferFrame {
     }
 
     /// Returns the TFDZ Construction Rule from the TFDF Header.
-    pub fn tfdz_rule(
-        &self,
-        insert_zone_len: usize,
-    ) -> TfdzRule {
-        let off = self.header().vcf_count_length() as usize
-            + insert_zone_len;
-        TfdzRule::from_bits(get_bits_u8(
-            self.body[off],
-            TFDZ_RULES_MASK,
-        ))
+    pub fn tfdz_rule(&self, insert_zone_len: usize) -> TfdzRule {
+        let off = self.header().vcf_count_length() as usize + insert_zone_len;
+        TfdzRule::from_bits(get_bits_u8(self.body[off], TFDZ_RULES_MASK))
     }
 
     /// Returns the UPID from the TFDF Header.
     pub fn upid(&self, insert_zone_len: usize) -> u8 {
-        let off = self.header().vcf_count_length() as usize
-            + insert_zone_len;
+        let off = self.header().vcf_count_length() as usize + insert_zone_len;
         get_bits_u8(self.body[off], UPID_MASK)
     }
 
@@ -407,17 +382,12 @@ impl UslpTransferFrame {
     ///
     /// Only present for TFDZ Construction Rules 000, 001, and 010.
     /// Returns `None` if the current rule does not use a pointer.
-    pub fn pointer(
-        &self,
-        insert_zone_len: usize,
-    ) -> Option<u16> {
+    pub fn pointer(&self, insert_zone_len: usize) -> Option<u16> {
         let rule = self.tfdz_rule(insert_zone_len);
         if !rule.has_pointer() {
             return None;
         }
-        let off = self.header().vcf_count_length() as usize
-            + insert_zone_len
-            + 1;
+        let off = self.header().vcf_count_length() as usize + insert_zone_len + 1;
         let hi = self.body[off] as u16;
         let lo = self.body[off + 1] as u16;
         Some((hi << 8) | lo)
@@ -426,16 +396,10 @@ impl UslpTransferFrame {
     /// Returns the Transfer Frame Data Zone (payload only).
     ///
     /// This is the TFDF minus the TFDF Header bytes.
-    pub fn data_zone(
-        &self,
-        insert_zone_len: usize,
-        fecf_present: bool,
-    ) -> &[u8] {
+    pub fn data_zone(&self, insert_zone_len: usize, fecf_present: bool) -> &[u8] {
         let rule = self.tfdz_rule(insert_zone_len);
         let tfdf_hdr_len = if rule.has_pointer() { 3 } else { 1 };
-        let start = self.header().vcf_count_length() as usize
-            + insert_zone_len
-            + tfdf_hdr_len;
+        let start = self.header().vcf_count_length() as usize + insert_zone_len + tfdf_hdr_len;
         let ocf_len = if self.header().ocf_flag() { 4 } else { 0 };
         let fecf_len = if fecf_present { 2 } else { 0 };
         let end = self.body.len() - ocf_len - fecf_len;
@@ -475,8 +439,7 @@ impl UslpTransferFrame {
         upid: u8,
         pointer: Option<u16>,
     ) {
-        let off = self.header().vcf_count_length() as usize
-            + insert_zone_len;
+        let off = self.header().vcf_count_length() as usize + insert_zone_len;
         let mut byte0 = 0u8;
         set_bits_u8(&mut byte0, TFDZ_RULES_MASK, rule as u8);
         set_bits_u8(&mut byte0, UPID_MASK, upid);
@@ -513,14 +476,11 @@ impl UslpTransferFrame {
             return Err(BuildError::InvalidMapId(map_id));
         }
         if vcf_count_length > 7 {
-            return Err(BuildError::InvalidVcfCountLength(
-                vcf_count_length,
-            ));
+            return Err(BuildError::InvalidVcfCountLength(vcf_count_length));
         }
 
         let provided_len = buffer.len();
-        let min_size =
-            Self::FIXED_HEADER_SIZE + vcf_count_length as usize;
+        let min_size = Self::FIXED_HEADER_SIZE + vcf_count_length as usize;
 
         if provided_len < min_size {
             return Err(BuildError::BufferTooSmall {
@@ -536,12 +496,10 @@ impl UslpTransferFrame {
         }
 
         let frame =
-            UslpTransferFrame::mut_from_bytes(buffer).map_err(
-                |_| BuildError::BufferTooSmall {
-                    required_len: min_size,
-                    provided_len,
-                },
-            )?;
+            UslpTransferFrame::mut_from_bytes(buffer).map_err(|_| BuildError::BufferTooSmall {
+                required_len: min_size,
+                provided_len,
+            })?;
 
         // Zero the header for a clean state.
         frame.header.id = U32::new(0);
@@ -554,9 +512,7 @@ impl UslpTransferFrame {
         frame.header.set_vcid(vcid);
         frame.header.set_map_id(map_id);
         frame.header.set_eofph(false);
-        frame
-            .header
-            .set_frame_length((provided_len - 1) as u16);
+        frame.header.set_frame_length((provided_len - 1) as u16);
         frame.header.set_bypass(bypass);
         frame
             .header
@@ -771,13 +727,11 @@ pub struct UslpFrameWriter<const BUF: usize> {
 impl<const BUF: usize> UslpFrameWriter<BUF> {
     /// Creates a new USLP frame writer.
     pub fn new(config: UslpFrameWriterConfig) -> Self {
-        let tfdf_header_len =
-            if config.tfdz_rule.has_pointer() { 3 } else { 1 };
-        let data_zone_offset =
-            UslpTransferFrame::FIXED_HEADER_SIZE
-                + config.vcf_count_length as usize
-                + config.insert_zone_len
-                + tfdf_header_len;
+        let tfdf_header_len = if config.tfdz_rule.has_pointer() { 3 } else { 1 };
+        let data_zone_offset = UslpTransferFrame::FIXED_HEADER_SIZE
+            + config.vcf_count_length as usize
+            + config.insert_zone_len
+            + tfdf_header_len;
         Self {
             config,
             vcf_count: 0,
@@ -788,9 +742,7 @@ impl<const BUF: usize> UslpFrameWriter<BUF> {
     }
 
     fn remaining(&self) -> usize {
-        self.config
-            .max_data_zone_len
-            .saturating_sub(self.data_len)
+        self.config.max_data_zone_len.saturating_sub(self.data_len)
     }
 }
 
@@ -815,14 +767,9 @@ impl<const BUF: usize> FrameWrite for UslpFrameWriter<BUF> {
     }
 
     fn finish(&mut self) -> Result<&[u8], BuildError> {
-        let ocf_len =
-            if self.config.ocf_flag { 4 } else { 0 };
-        let fecf_len =
-            if self.config.fecf_present { 2 } else { 0 };
-        let total = self.data_zone_offset
-            + self.data_len
-            + ocf_len
-            + fecf_len;
+        let ocf_len = if self.config.ocf_flag { 4 } else { 0 };
+        let fecf_len = if self.config.fecf_present { 2 } else { 0 };
+        let total = self.data_zone_offset + self.data_len + ocf_len + fecf_len;
 
         let vcf_count = self.vcf_count;
         self.vcf_count = self.vcf_count.wrapping_add(1);
@@ -836,19 +783,14 @@ impl<const BUF: usize> FrameWrite for UslpFrameWriter<BUF> {
             .vcid(self.config.vcid)
             .map_id(self.config.map_id)
             .bypass(self.config.bypass)
-            .protocol_control_command(
-                self.config.protocol_control_command,
-            )
+            .protocol_control_command(self.config.protocol_control_command)
             .ocf_flag(self.config.ocf_flag)
             .vcf_count_length(self.config.vcf_count_length)
             .vcf_count(vcf_count)
             .build()?;
 
         // Stamp the TFDF header (rule + UPID + optional pointer).
-        let frame = UslpTransferFrame::mut_from_bytes(
-            &mut self.buf[..total],
-        )
-        .unwrap();
+        let frame = UslpTransferFrame::mut_from_bytes(&mut self.buf[..total]).unwrap();
         frame.set_tfdf_header(
             self.config.insert_zone_len,
             self.config.tfdz_rule,
@@ -882,10 +824,7 @@ pub struct UslpFrameReader<const BUF: usize> {
 
 impl<const BUF: usize> UslpFrameReader<BUF> {
     /// Creates a new USLP frame reader.
-    pub fn new(
-        insert_zone_len: usize,
-        fecf_present: bool,
-    ) -> Self {
+    pub fn new(insert_zone_len: usize, fecf_present: bool) -> Self {
         Self {
             insert_zone_len,
             fecf_present,
@@ -904,20 +843,15 @@ impl<const BUF: usize> FrameRead for UslpFrameReader<BUF> {
     }
 
     fn feed(&mut self, len: usize) -> Result<(), ParseError> {
-        let frame =
-            UslpTransferFrame::parse(&self.buf[..len])?;
+        let frame = UslpTransferFrame::parse(&self.buf[..len])?;
         let rule = frame.tfdz_rule(self.insert_zone_len);
-        let tfdf_hdr_len =
-            if rule.has_pointer() { 3 } else { 1 };
-        let header_overhead =
-            UslpTransferFrame::FIXED_HEADER_SIZE
-                + frame.header().vcf_count_length() as usize
-                + self.insert_zone_len
-                + tfdf_hdr_len;
-        let ocf_len =
-            if frame.header().ocf_flag() { 4 } else { 0 };
-        let fecf_len =
-            if self.fecf_present { 2 } else { 0 };
+        let tfdf_hdr_len = if rule.has_pointer() { 3 } else { 1 };
+        let header_overhead = UslpTransferFrame::FIXED_HEADER_SIZE
+            + frame.header().vcf_count_length() as usize
+            + self.insert_zone_len
+            + tfdf_hdr_len;
+        let ocf_len = if frame.header().ocf_flag() { 4 } else { 0 };
+        let fecf_len = if self.fecf_present { 2 } else { 0 };
         self.data_start = header_overhead;
         self.data_end = len - ocf_len - fecf_len;
         Ok(())
@@ -981,8 +915,7 @@ mod tests {
             .build()
             .unwrap();
         // Parse with a truncated slice.
-        let err =
-            UslpTransferFrame::parse(&buf[..12]).unwrap_err();
+        let err = UslpTransferFrame::parse(&buf[..12]).unwrap_err();
         assert!(matches!(err, ParseError::LengthMismatch { .. }));
     }
 
@@ -1038,12 +971,7 @@ mod tests {
             .build()
             .unwrap();
 
-        frame.set_tfdf_header(
-            0,
-            TfdzRule::NoSegmentation,
-            Upid::SpacePackets as u8,
-            None,
-        );
+        frame.set_tfdf_header(0, TfdzRule::NoSegmentation, Upid::SpacePackets as u8, None);
 
         assert_eq!(frame.tfdz_rule(0), TfdzRule::NoSegmentation);
         assert_eq!(frame.upid(0), 0);
@@ -1067,10 +995,7 @@ mod tests {
             Some(0x0100),
         );
 
-        assert_eq!(
-            frame.tfdz_rule(0),
-            TfdzRule::PacketsSpanning
-        );
+        assert_eq!(frame.tfdz_rule(0), TfdzRule::PacketsSpanning);
         assert_eq!(frame.pointer(0), Some(0x0100));
     }
 
