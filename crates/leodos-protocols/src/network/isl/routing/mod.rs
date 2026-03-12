@@ -70,7 +70,6 @@ pub struct Router<N, G, A, C, const MTU: usize = 1024, const OUT: usize = 2048> 
     east: Port<N, MTU, OUT>,
     west: Port<N, MTU, OUT>,
     ground: Port<G, MTU, OUT>,
-
     address: Address,
     algorithm: A,
     clock: C,
@@ -299,17 +298,21 @@ where
 
                 pin_utils::pin_mut!(nr, sr, er, wr, gr, nw, sw, ew, ww, gw);
 
+                // Writes before reads: drain output queues
+                // before accepting new packets. Reads can
+                // wait in the link's own buffer; this prevents
+                // write starvation under heavy load.
                 futures::select_biased! {
-                    r = nr => Event::Read(r, Direction::North),
-                    r = sr => Event::Read(r, Direction::South),
-                    r = er => Event::Read(r, Direction::East),
-                    r = wr => Event::Read(r, Direction::West),
-                    r = gr => Event::GroundRead(r),
                     _ = nw => Event::WriteComplete(Direction::North),
                     _ = sw => Event::WriteComplete(Direction::South),
                     _ = ew => Event::WriteComplete(Direction::East),
                     _ = ww => Event::WriteComplete(Direction::West),
                     _ = gw => Event::WriteComplete(Direction::Ground),
+                    r = nr => Event::Read(r, Direction::North),
+                    r = sr => Event::Read(r, Direction::South),
+                    r = er => Event::Read(r, Direction::East),
+                    r = wr => Event::Read(r, Direction::West),
+                    r = gr => Event::GroundRead(r),
                 }
             };
 
