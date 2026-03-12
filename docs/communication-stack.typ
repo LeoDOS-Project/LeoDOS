@@ -67,8 +67,7 @@
 ]
 #v(-5pt)
 #layer("Network")[
-  #group("Packet Protocol / cFE Headers")[
-    #seq([SPP])
+  #group("cFE Headers")[
     #alt([TM], [TC])
   ]
   #v(-4pt)
@@ -78,6 +77,10 @@
 ]
 #v(-5pt)
 #layer("Data Link")[
+  #group("Packet Protocol")[
+    #seq([SPP])
+  ]
+  #v(-4pt)
   #group("Transfer Frame Protocols")[
     #alt([TM], [TC], [AOS], [Proximity-1], [USLP])
   ]
@@ -260,33 +263,6 @@ Below this layer, communication is point-to-point between
 neighbours. Above it, any node can send to any other node in the
 constellation.
 
-== Space Packet Protocol --- SPP (133.0-B-2)
-
-CCSDS SPP (133.0-B-2) defines the packet format used by all higher
-layers. Each Space Packet has a 6-byte primary header containing:
-
-- *APID* (Application Process Identifier): an 11-bit value that
-  identifies which application or service the packet belongs to.
-  The receiver uses the APID to dispatch incoming packets to the
-  correct handler.
-- *Sequence Count*: a 14-bit counter that increments per packet
-  per APID. Used by the transport layer to detect gaps and
-  reorder.
-- *Sequence Flags*: indicate whether the packet is unsegmented, or
-  the first/continuation/last segment of a larger payload.
-- *Data Length*: the number of bytes in the data field.
-
-When a payload is too large for a single Space Packet (constrained
-by the maximum frame size), the segmenter splits it into multiple
-packets with appropriate sequence flags. The reassembler on the
-receiving side collects the segments and reconstructs the original
-payload.
-
-The Encapsulation Packet Protocol (CCSDS 133.1-B-3) extends SPP
-with encapsulation packets that can wrap non-CCSDS data or serve
-as idle fill when the link has no data to send but must maintain
-frame synchronization.
-
 == cFE Headers
 
 The core Flight Executive (cFE) defines mission-specific secondary
@@ -318,21 +294,30 @@ has four inter-satellite links (north, south, east, west), one
 ground link, and one local loopback for packets destined for itself.
 
 The Router is the core of the network layer. It receives packets
-from all six interfaces concurrently and forwards each packet
-toward its destination:
+from all five directional links concurrently and either delivers
+them locally or forwards them toward their destination. Routing
+decisions are time-dependent: the Router uses a monotonic clock to
+account for the changing geometry of the constellation.
 
-+ Parse the ISL routing header to extract the destination address.
-+ Call the routing algorithm to determine which of the six
-  directions is the best next hop.
-+ Forward the packet on the selected link by calling the data link
-  layer's send function.
+Destination addresses can be satellite grid positions, ground
+stations, or service areas (multicast to an orbital plane). For
+ground station addresses, the routing algorithm resolves the
+destination to a _gateway satellite_ --- the satellite currently
+overhead with line-of-sight to the station. The gateway is
+determined by computing each satellite's position in Earth-centred
+coordinates (accounting for orbital motion and Earth rotation) and
+selecting the one with the highest elevation angle above the
+station's horizon.
 
 Routing algorithms are pluggable:
 
-- *Distance Minimizing*: Greedy geographic forwarding. At each
-  hop, the packet is forwarded to whichever neighbour is
-  geographically closest to the destination. Simple and efficient
-  for regular topologies.
+- *Distance Minimizing*: Physics-aware routing that considers
+  orbital mechanics. Near the poles, orbital planes converge and
+  cross-plane ISL distances become short, so the algorithm
+  prefers east/west hops there. Near the equator, where planes
+  are far apart, it prefers north/south hops along the orbit.
+  The decision accounts for the satellite's current orbital
+  position and how it changes over time.
 - *Manhattan*: Routes along the torus grid using taxicab distance.
   Minimizes hop count on the grid, which may differ from geographic
   distance when orbits are not uniformly spaced.
@@ -364,6 +349,38 @@ boundaries, addressing, multiplexing, security, and optional
 per-hop reliability. It operates on individual point-to-point
 links --- each ISL and each ground link has its own independent
 data link layer instance.
+
+== Space Packet Protocol --- SPP (133.0-B-2)
+
+CCSDS SPP (133.0-B-2) defines the packet format used by all higher
+layers. Each Space Packet has a 6-byte primary header containing:
+
+- *APID* (Application Process Identifier): an 11-bit value that
+  identifies which application or service the packet belongs to.
+  The receiver uses the APID to dispatch incoming packets to the
+  correct handler.
+- *Sequence Count*: a 14-bit counter that increments per packet
+  per APID. Used by the transport layer to detect gaps and
+  reorder.
+- *Sequence Flags*: indicate whether the packet is unsegmented, or
+  the first/continuation/last segment of a larger payload.
+- *Data Length*: the number of bytes in the data field.
+
+When a payload is too large for a single Space Packet (constrained
+by the maximum frame size), the segmenter splits it into multiple
+packets with appropriate sequence flags. The reassembler on the
+receiving side collects the segments and reconstructs the original
+payload.
+
+The Encapsulation Packet Protocol (CCSDS 133.1-B-3) extends SPP
+with encapsulation packets that can wrap non-CCSDS data or serve
+as idle fill when the link has no data to send but must maintain
+frame synchronization.
+
+Space Packets are extracted from transfer frames by the link
+reader, which parses the data field using the First Header Pointer
+and packet length fields to find packet boundaries even when
+packets span multiple frames.
 
 == Transfer Frame Protocols
 
