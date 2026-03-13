@@ -3,6 +3,8 @@
 //! This module provides utilities for task management, such as delaying the
 //! current task, retrieving task IDs, and managing task priorities.
 
+use bitflags::bitflags;
+
 use crate::error::{Error, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
@@ -11,6 +13,17 @@ use core::ffi::CStr;
 use core::mem::MaybeUninit;
 use core::time::Duration;
 use heapless::CString;
+
+bitflags! {
+    /// Options for task creation.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub struct TaskFlags: u32 {
+        /// Enable floating-point register context switching
+        /// for this task. Without this flag, using FP
+        /// instructions may corrupt other tasks' FP state.
+        const FP_ENABLED = ffi::OS_FP_ENABLED;
+    }
+}
 
 /// A type-safe, zero-cost wrapper for an OSAL Task ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,11 +100,13 @@ impl Task {
     ///   be a free function with `extern "C"` linkage.
     /// * `stack_size`: The size of the stack to allocate for the new task.
     /// * `priority`: The priority of the new task (0=highest, 255=lowest).
+    /// * `flags`: Task creation flags (e.g. `TaskFlags::FP_ENABLED`).
     pub fn new(
         name: &str,
         entry_point: unsafe extern "C" fn(),
         stack_size: usize,
         priority: u8,
+        flags: TaskFlags,
     ) -> Result<Self> {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
@@ -107,7 +122,7 @@ impl Task {
                 core::ptr::null_mut(), // OSAL_TASK_STACK_ALLOCATE
                 stack_size,
                 priority,
-                0, // flags
+                flags.bits(),
             )
         })?;
 

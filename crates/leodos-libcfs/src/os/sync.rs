@@ -105,6 +105,24 @@ impl<'a> Drop for MutexGuard<'a> {
     }
 }
 
+/// Initial state of a binary semaphore.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SemState {
+    /// The semaphore starts empty (taken).
+    Empty,
+    /// The semaphore starts full (available).
+    Full,
+}
+
+impl SemState {
+    fn as_u32(self) -> u32 {
+        match self {
+            SemState::Empty => 0,
+            SemState::Full => 1,
+        }
+    }
+}
+
 /// Properties of a binary semaphore, returned by `BinSem::get_info`.
 #[derive(Debug, Clone)]
 pub struct BinSemProp {
@@ -127,12 +145,13 @@ impl BinSem {
     ///
     /// # Arguments
     /// * `name`: A unique string to identify the semaphore.
-    /// * `initial_value`: The initial state, e.g., `ffi::OS_SEM_EMPTY` or `ffi::OS_SEM_FULL`.
-    pub fn new(name: &str, initial_value: u32) -> Result<Self> {
+    /// * `initial_value`: The initial state of the semaphore.
+    pub fn new(name: &str, initial_value: SemState) -> Result<Self> {
         let c_name = c_name_from_str(name)?;
         let mut sem_id = MaybeUninit::uninit();
-        let status =
-            unsafe { ffi::OS_BinSemCreate(sem_id.as_mut_ptr(), c_name.as_ptr(), initial_value, 0) };
+        let status = unsafe {
+            ffi::OS_BinSemCreate(sem_id.as_mut_ptr(), c_name.as_ptr(), initial_value.as_u32(), 0)
+        };
         check(status)?;
         Ok(Self {
             id: unsafe { sem_id.assume_init() },

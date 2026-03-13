@@ -5,11 +5,42 @@ use crate::ffi;
 use crate::status::check;
 use core::mem::MaybeUninit;
 
+/// Type of memory in the PSP memory table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum MemoryType {
+    /// Volatile random-access memory.
+    Ram = ffi::CFE_PSP_MEM_RAM,
+    /// Non-volatile electrically erasable memory.
+    Eeprom = ffi::CFE_PSP_MEM_EEPROM,
+    /// Matches any memory type during validation.
+    Any = ffi::CFE_PSP_MEM_ANY,
+    /// Invalid / unrecognized memory type.
+    Invalid = ffi::CFE_PSP_MEM_INVALID,
+}
+
+impl From<u32> for MemoryType {
+    fn from(val: u32) -> Self {
+        match val {
+            ffi::CFE_PSP_MEM_RAM => Self::Ram,
+            ffi::CFE_PSP_MEM_EEPROM => Self::Eeprom,
+            ffi::CFE_PSP_MEM_ANY => Self::Any,
+            _ => Self::Invalid,
+        }
+    }
+}
+
+impl From<MemoryType> for u32 {
+    fn from(val: MemoryType) -> u32 {
+        val as u32
+    }
+}
+
 /// Information about a specific memory range defined in the PSP memory table.
 #[derive(Debug, Clone, Copy)]
 pub struct MemRangeInfo {
     /// The type of memory (e.g., RAM, EEPROM).
-    pub memory_type: u32,
+    pub memory_type: MemoryType,
     /// The starting address of the memory range.
     pub start_addr: usize,
     /// The size of the memory range in bytes.
@@ -48,8 +79,8 @@ pub fn get_volatile_disk_mem() -> Result<(usize, usize)> {
 }
 
 /// Validates a memory range against the PSP's memory map.
-pub fn mem_validate_range(address: usize, size: usize, memory_type: u32) -> Result<()> {
-    check(unsafe { ffi::CFE_PSP_MemValidateRange(address, size, memory_type) })?;
+pub fn mem_validate_range(address: usize, size: usize, memory_type: MemoryType) -> Result<()> {
+    check(unsafe { ffi::CFE_PSP_MemValidateRange(address, size, memory_type as u32) })?;
     Ok(())
 }
 
@@ -76,7 +107,7 @@ pub fn get_mem_range(range_num: u32) -> Result<MemRangeInfo> {
         )
     })?;
     Ok(MemRangeInfo {
-        memory_type: unsafe { mem_type.assume_init() },
+        memory_type: MemoryType::from(unsafe { mem_type.assume_init() }),
         start_addr: unsafe { start_addr.assume_init() },
         size: unsafe { size.assume_init() },
         word_size: unsafe { word_size.assume_init() },

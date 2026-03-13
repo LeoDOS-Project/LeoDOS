@@ -1,4 +1,4 @@
-//! Safe wrappers for CFE System-level APIs.
+//! System-level queries, reset control, and startup synchronization.
 
 use crate::error::Result;
 use crate::ffi;
@@ -28,9 +28,9 @@ impl From<u32> for ResetType {
     }
 }
 
-impl Into<u32> for ResetType {
-    fn into(self) -> u32 {
-        match self {
+impl From<ResetType> for u32 {
+    fn from(val: ResetType) -> Self {
+        match val {
             ResetType::Processor => ffi::CFE_PSP_RST_TYPE_PROCESSOR,
             ResetType::PowerOn => ffi::CFE_PSP_RST_TYPE_POWERON,
             ResetType::Unknown(other) => other,

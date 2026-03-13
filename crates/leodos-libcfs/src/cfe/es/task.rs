@@ -3,6 +3,7 @@
 use crate::cfe::es::app::AppId;
 use crate::error::{Error, Result};
 use crate::ffi;
+use crate::os::task::TaskFlags;
 use crate::status::check;
 use core::ffi::CStr;
 use core::mem::MaybeUninit;
@@ -39,14 +40,14 @@ impl ChildTask {
     ///   to have cFE allocate it.
     /// * `stack_size`: The size of the stack to allocate for the new task.
     /// * `priority`: The priority of the new task (0=highest, 255=lowest).
-    /// * `flags`: Reserved for future use.
+    /// * `flags`: Task creation flags (e.g. `TaskFlags::FP_ENABLED`).
     pub fn new(
         name: &str,
         entry_point: TaskEntryPoint,
         stack_ptr: *mut (),
         stack_size: usize,
         priority: u16,
-        flags: u32,
+        flags: TaskFlags,
     ) -> Result<Self> {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
@@ -62,7 +63,7 @@ impl ChildTask {
                 stack_ptr as *mut _,
                 stack_size,
                 priority,
-                flags,
+                flags.bits(),
             )
         })?;
 
