@@ -53,6 +53,10 @@ pub struct Module {
 impl Module {
     /// Loads a shared library object file into the running system.
     ///
+    /// `GLOBAL_SYMBOLS` is the default; use `LOCAL_SYMBOLS` for
+    /// safer unloading, then use [`Module::symbol`] to look up
+    /// local symbols.
+    ///
     /// # Arguments
     /// * `name`: A unique logical name to identify the module.
     /// * `filename`: The path to the object file to load (e.g., "/cf/my_lib.so").
@@ -139,6 +143,9 @@ fn c_string_from_str(name: &str) -> Result<CString<{ ffi::OS_MAX_API_NAME as usi
 }
 
 /// Dumps the system symbol table to the specified file.
+///
+/// Not all RTOS support this. Returns `OS_ERR_NOT_IMPLEMENTED`
+/// if not available.
 ///
 /// # Arguments
 /// * `filename`: The path to the file to write the symbol table to.

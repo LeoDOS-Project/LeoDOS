@@ -27,7 +27,11 @@ pub fn get_count() -> u32 {
     unsafe { ffi::CFE_PSP_Exception_GetCount() }
 }
 
-/// Retrieves a summary of the next available exception log entry.
+/// Retrieves and **pops** the next exception log entry
+/// (destructive read).
+///
+/// Success does not guarantee all output fields contain valid
+/// data — only that they have been initialized.
 pub fn get_summary() -> Result<ExceptionSummary> {
     let mut context_id = MaybeUninit::uninit();
     let mut task_id = MaybeUninit::uninit();
@@ -57,9 +61,12 @@ pub fn get_summary() -> Result<ExceptionSummary> {
     })
 }
 
-/// Copies the processor context of a specific exception log entry into a buffer.
+/// Copies the processor context of a specific exception log entry
+/// into a buffer.
 ///
-/// Returns the number of bytes copied.
+/// Returns the number of bytes copied. May return
+/// `NO_EXCEPTION_DATA` if the context data has expired from
+/// the circular memory log.
 ///
 /// # Safety
 /// The `context_buf` must be a valid, writable buffer of at least `context_buf.len()` bytes.

@@ -2,7 +2,8 @@
 
 use crate::ffi;
 
-/// Initializes the watchdog timer.
+/// Initializes the watchdog timer, configuring resolution and
+/// platform-specific settings.
 pub fn init() {
     unsafe { ffi::CFE_PSP_WatchdogInit() };
 }
@@ -17,7 +18,10 @@ pub fn disable() {
     unsafe { ffi::CFE_PSP_WatchdogDisable() };
 }
 
-/// Services (i.e., "pets") the watchdog timer to prevent it from expiring.
+/// Services (i.e., "pets") the watchdog timer to prevent it from
+/// expiring.
+///
+/// Reloads the timer with the value last set by [`set`].
 pub fn service() {
     unsafe { ffi::CFE_PSP_WatchdogService() };
 }

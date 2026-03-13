@@ -88,11 +88,18 @@ impl SysTime {
     }
 
     /// Returns the current TAI (International Atomic Time).
+    ///
+    /// Not portable to all missions. TAI maintenance in flight is
+    /// not guaranteed — prefer [`now`](Self::now) when possible.
     pub fn now_tai() -> Self {
         Self(unsafe { ffi::CFE_TIME_GetTAI() })
     }
 
     /// Returns the current UTC (Coordinated Universal Time).
+    ///
+    /// Not portable to all missions. UTC can jump backward on
+    /// leap second events — prefer [`now`](Self::now) when
+    /// possible.
     pub fn now_utc() -> Self {
         Self(unsafe { ffi::CFE_TIME_GetUTC() })
     }
@@ -166,6 +173,9 @@ pub fn subseconds_to_microseconds(subseconds: u32) -> u32 {
 }
 
 /// Converts microseconds to a subseconds value.
+///
+/// Returns `0xFFFFFFFF` if `microseconds` exceeds 999,999
+/// (saturation).
 pub fn microseconds_to_subseconds(microseconds: u32) -> u32 {
     unsafe { ffi::CFE_TIME_Micro2SubSecs(microseconds) }
 }
@@ -173,7 +183,12 @@ pub fn microseconds_to_subseconds(microseconds: u32) -> u32 {
 /// A type alias for the callback function used for time synchronization events.
 pub type SynchCallback = unsafe extern "C" fn() -> i32;
 
-/// Registers a synchronization callback to be called on time synchronization events.
+/// Registers a synchronization callback to be called on time
+/// synchronization events.
+///
+/// Only one callback per application. Should only be called from
+/// the app's main thread; distribute timing to child tasks
+/// internally.
 pub fn register_synch_callback(callback: SynchCallback) -> Result<()> {
     check(unsafe { ffi::CFE_TIME_RegisterSynchCallback(Some(callback)) })?;
     Ok(())

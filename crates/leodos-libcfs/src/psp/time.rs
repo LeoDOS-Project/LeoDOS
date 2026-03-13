@@ -42,7 +42,10 @@ pub fn get_time() -> OsTime {
     OsTime(unsafe { time.assume_init() })
 }
 
-/// Returns the resolution of the timebase clock in ticks per second.
+/// Returns the resolution of the timebase clock in ticks per
+/// second.
+///
+/// Guaranteed to be at least 1 MHz (1 µs per tick).
 pub fn get_timer_ticks_per_second() -> u32 {
     unsafe { ffi::CFE_PSP_GetTimerTicksPerSecond() }
 }

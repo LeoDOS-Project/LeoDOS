@@ -34,8 +34,12 @@ impl SendBuffer {
 
     /// Transmits the message in this buffer.
     ///
-    /// This consumes the `SendBuffer`, transferring ownership of the memory to CFE.
-    /// After this call, the buffer is no longer accessible from Rust.
+    /// This consumes the `SendBuffer`, transferring ownership of the
+    /// memory to CFE. After this call, the buffer is no longer
+    /// accessible from Rust.
+    ///
+    /// On failure, the caller still owns the buffer (state is
+    /// unchanged) and the `Drop` impl will release it.
     ///
     /// # Arguments
     /// * `is_origination`: Set to `true` to have CFE automatically fill in fields like

@@ -11,8 +11,8 @@ use heapless::{CString, String};
 
 /// A handle to a cFE generic counter.
 ///
-/// This is a thread-safe counter that can be shared across tasks. The underlying
-/// cFE resource is automatically deleted when the `Counter` is dropped.
+/// The counter can be shared across tasks. The underlying cFE
+/// resource is automatically deleted when the `Counter` is dropped.
 #[derive(Debug)]
 pub struct Counter {
     id: CounterId,
@@ -42,7 +42,10 @@ impl Counter {
         })
     }
 
-    /// Atomically increments the counter's value by one.
+    /// Increments the counter's value by one.
+    ///
+    /// Note: the C header does not guarantee atomicity for this
+    /// operation.
     pub fn inc(&self) -> Result<()> {
         check(unsafe { ffi::CFE_ES_IncrementGenCounter(self.id.0) })?;
         Ok(())

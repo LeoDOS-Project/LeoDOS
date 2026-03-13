@@ -85,13 +85,17 @@ impl MemPool {
     ///
     /// This uses the default cFE block sizes for the pool.
     ///
+    /// The pool size must be an integral number of 32-bit words, the
+    /// start address must be 32-bit aligned, and 168 bytes are
+    /// reserved for internal bookkeeping.
+    ///
     /// # Arguments
     /// * `memory`: A mutable static byte slice to be used as the pool's memory.
     /// * `use_mutex`: If `true`, access to the pool will be protected by a mutex.
     ///
     /// # Errors
     /// Returns an error if the memory pool cannot be created, e.g., due to an
-    //  invalid memory pointer or size.
+    /// invalid memory pointer or size.
     pub fn new(memory: &'static mut [u8], use_mutex: bool) -> Result<Self> {
         let mut handle = ffi::CFE_ES_MEMHANDLE_UNDEFINED;
         let status = if use_mutex {
@@ -143,11 +147,13 @@ impl MemPool {
 
     /// Allocates a buffer of at least `size` bytes from the pool.
     ///
-    /// The actual size of the allocated buffer may be larger than requested,
-    /// as it will be rounded up to the next available block size in the pool.
+    /// The actual allocation is at least 12 bytes larger than
+    /// requested (internal block header overhead). The returned
+    /// buffer size is rounded up to the next available block size
+    /// in the pool.
     ///
-    /// Returns a `PoolBuffer` guard. When this guard is dropped, the memory is
-    /// automatically returned to the pool.
+    /// Returns a `PoolBuffer` guard. When this guard is dropped,
+    /// the memory is automatically returned to the pool.
     ///
     /// # Errors
     /// Returns an error if a buffer cannot be allocated, for example, if the pool

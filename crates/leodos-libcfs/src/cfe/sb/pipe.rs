@@ -126,6 +126,10 @@ impl Pipe {
 
     /// Subscribes this pipe to messages with the specified `MsgId`.
     ///
+    /// Subscriptions are added to the head of an internal linked
+    /// list, so messages are delivered in LIFO order (last
+    /// subscriber receives first).
+    ///
     /// # Arguments
     /// * `msg_id`: The message ID of the message to be subscribed to.
     pub fn subscribe(&self, msg_id: MsgId) -> Result<()> {

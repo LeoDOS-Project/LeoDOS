@@ -135,7 +135,12 @@ pub fn get_spacecraft_id() -> u32 {
     unsafe { ffi::CFE_PSP_GetSpacecraftId() }
 }
 
-/// Reset the cFE Core and all cFE Applications. This function does not return.
+/// Reset the cFE Core and all cFE Applications.
+///
+/// On success this function does not return. On error (e.g. invalid
+/// reset type) it returns `CFE_ES_BAD_ARGUMENT` or
+/// `CFE_ES_NOT_IMPLEMENTED`, but this wrapper loops forever to
+/// satisfy the `!` return type.
 ///
 /// # Arguments
 /// * `reset_type`: The type of reset to perform (`PowerOn` or `Processor`).
@@ -146,11 +151,15 @@ pub fn reset_cfe(reset_type: ResetType) -> ! {
     loop {}
 }
 
-/// Allows an application to wait until all cFE apps have reached the `OPERATIONAL` state.
+/// Allows an application to wait until all cFE apps have reached
+/// the `OPERATIONAL` state.
 ///
-/// This is a convenience wrapper for `wait_for_system_state(SystemState::Operational, ...)`.
-/// It is most useful for applications that need to wait until the entire system is running
-/// before proceeding with their own logic.
+/// This is a convenience wrapper for
+/// `wait_for_system_state(SystemState::Operational, ...)`.
+///
+/// Timeout values below 1000 ms are rounded up to 1000 ms.
+/// Should only be called as the last step of application init,
+/// and only by apps started from the ES startup file.
 ///
 /// # Arguments
 /// * `timeout`: The maximum duration to wait.
@@ -165,16 +174,25 @@ pub fn wait_for_startup_sync(timeout: Duration) {
 /// Wakes up the ES background task to process pending jobs.
 ///
 /// Normally the ES background task wakes up at a periodic interval.
-/// Whenever new background work is added, this can be used to wake the task
-/// early, which may reduce the delay before the job is processed.
+/// Whenever new background work is added, this can be used to wake
+/// the task early, which may reduce the delay before the job is
+/// processed.
+///
+/// Work is pro-rated based on elapsed time since the last wakeup.
+/// Waking the task early does not cause extra work to be done.
 pub fn background_wakeup() {
     unsafe { ffi::CFE_ES_BackgroundWakeup() };
 }
 
-/// Notifies ES that an asynchronous event was detected by the underlying OS/PSP.
+/// Notifies ES that an asynchronous event was detected by the
+/// underlying OS/PSP.
 ///
 /// This hook routine is called from the PSP when an exception or
 /// other asynchronous system event occurs.
+///
+/// Must not be invoked directly from ISR or signal context. The
+/// PSP must guarantee it runs from a context that can use OSAL
+/// primitives.
 pub fn process_async_event() {
     unsafe { ffi::CFE_ES_ProcessAsyncEvent() };
 }

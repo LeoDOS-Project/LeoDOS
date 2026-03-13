@@ -473,6 +473,9 @@ pub fn chmod(path: &str, mode: FileMode) -> Result<()> {
     Ok(())
 }
 /// Removes a file from the file system.
+///
+/// Behavior on an open file is undefined at the OSAL level.
+/// Ensure the file is closed first.
 pub fn remove(path: &str) -> Result<()> {
     let c_path = c_path_from_str(path)?;
     let status = unsafe { ffi::OS_remove(c_path.as_ptr()) };
@@ -481,6 +484,9 @@ pub fn remove(path: &str) -> Result<()> {
 }
 
 /// Renames a file.
+///
+/// Behavior on an open file is undefined at the OSAL level.
+/// Ensure the file is closed first.
 pub fn rename(old: &str, new: &str) -> Result<()> {
     let c_old = c_path_from_str(old)?;
     let c_new = c_path_from_str(new)?;
@@ -507,6 +513,9 @@ pub fn rmdir(path: &str) -> Result<()> {
 }
 
 /// Copies a single file from `src` to `dest`.
+///
+/// Behavior on an open file is undefined at the OSAL level.
+/// Ensure the file is closed first.
 pub fn cp(src: &str, dest: &str) -> Result<()> {
     let c_src = c_path_from_str(src)?;
     let c_dest = c_path_from_str(dest)?;
@@ -516,8 +525,12 @@ pub fn cp(src: &str, dest: &str) -> Result<()> {
 
 /// Moves a single file from `src` to `dest`.
 ///
-/// This will first attempt a rename, and if that fails (e.g., across different
-/// filesystems), it will fall back to a copy-then-delete operation.
+/// This will first attempt a rename, and if that fails (e.g.,
+/// across different filesystems), it will fall back to a
+/// copy-then-delete operation.
+///
+/// Behavior on an open file is undefined at the OSAL level.
+/// Ensure the file is closed first.
 pub fn mv(src: &str, dest: &str) -> Result<()> {
     let c_src = c_path_from_str(src)?;
     let c_dest = c_path_from_str(dest)?;
@@ -609,6 +622,8 @@ pub fn close_all_files() -> Result<()> {
 }
 
 /// Closes a file by its filename.
+///
+/// Only works if the name matches the one used to open the file.
 pub fn close_file_by_name(filename: &str) -> Result<()> {
     let c_path = c_path_from_str(filename)?;
     check(unsafe { ffi::OS_CloseFileByName(c_path.as_ptr()) })?;
@@ -616,6 +631,9 @@ pub fn close_file_by_name(filename: &str) -> Result<()> {
 }
 
 /// Creates a new file system on a block device or in memory.
+///
+/// For RAM disks, `volname` must begin with `"RAM"` (e.g.
+/// `"RAM0"`). If `address` is null, the OS allocates the memory.
 pub fn make_fs(
     address: *mut u8,
     devname: &str,
@@ -646,6 +664,9 @@ pub fn mount(devname: &str, mountpoint: &str) -> Result<()> {
 }
 
 /// Unmounts a file system.
+///
+/// All open file descriptors on this volume become invalid after
+/// unmount. Close them first.
 pub fn unmount(mountpoint: &str) -> Result<()> {
     let c_mount = c_path_from_str(mountpoint)?;
     check(unsafe { ffi::OS_unmount(c_mount.as_ptr()) })?;

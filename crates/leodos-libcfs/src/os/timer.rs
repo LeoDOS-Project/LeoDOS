@@ -49,10 +49,18 @@ pub struct Timer {
 }
 
 impl Timer {
-    /// Creates a new OSAL timer and associates it with a callback function.
+    /// Creates a new OSAL timer and associates it with a callback
+    /// function.
     ///
-    /// On success, returns the `Timer` instance and the clock accuracy in microseconds.
-    /// The timer does not start until `set()` is called.
+    /// This also creates a dedicated hidden time base object
+    /// (consuming a resource slot) that is deleted when the timer
+    /// is dropped.
+    ///
+    /// On success, returns the `Timer` instance and the clock
+    /// accuracy in microseconds. The timer does not start until
+    /// [`set`](Self::set) is called.
+    ///
+    /// Must not be called from the context of a timer callback.
     ///
     /// # Arguments
     /// * `name`: A unique string to identify the timer.
@@ -83,6 +91,12 @@ impl Timer {
 
     /// Programs the timer for a one-shot or periodic execution.
     ///
+    /// Both `start_time_usecs` and `interval_time_usecs` being zero
+    /// is an error. Values below the clock accuracy are rounded up
+    /// to the timer's resolution.
+    ///
+    /// Must not be called from the context of a timer callback.
+    ///
     /// # Arguments
     /// * `start_time_usecs`: Time in microseconds until the first expiration.
     /// * `interval_time_usecs`: Time in microseconds between subsequent expirations.
@@ -94,6 +108,8 @@ impl Timer {
     }
 
     /// Finds an existing timer ID by its name.
+    ///
+    /// Must not be called from the context of a timer callback.
     pub fn get_id_by_name(name: &str) -> Result<ffi::osal_id_t> {
         let c_name = c_name_from_str(name)?;
         let mut timer_id = MaybeUninit::uninit();
@@ -128,6 +144,8 @@ impl Timer {
     }
 
     /// Retrieves information about this timer.
+    ///
+    /// Must not be called from the context of a timer callback.
     pub fn info(&self) -> Result<TimerProp> {
         let mut prop = MaybeUninit::<ffi::OS_timer_prop_t>::uninit();
         check(unsafe { ffi::OS_TimerGetInfo(self.id, prop.as_mut_ptr()) })?;

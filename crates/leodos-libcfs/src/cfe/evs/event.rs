@@ -47,7 +47,11 @@ impl BinFilter {
     }
 }
 
-/// Registers the calling application with the Event Services. Must be called before sending events.
+/// Registers the calling application with the Event Services.
+/// Must be called before sending events.
+///
+/// Calling more than once wipes all previous filter settings.
+/// Filter registration is NOT cumulative.
 ///
 /// # Arguments
 /// * `filters` - A slice of binary filters to register. Can be empty.
@@ -79,6 +83,10 @@ pub fn register(filters: &[BinFilter]) -> Result<()> {
 /// This is a safe wrapper around `CFE_EVS_SendEvent`. It handles creating a
 /// C-style format string and passing the arguments.
 ///
+/// Only works within the context of a registered application (after
+/// calling [`register`]). For messages outside that context (e.g.
+/// early in init), use `CFE_ES_WriteToSysLog` instead.
+///
 /// NOTE: Due to the varargs nature of the underlying C function, this wrapper uses `core::fmt`
 /// and a temporary buffer. Ensure the buffer is large enough for your event messages.
 pub fn send(event_id: u16, event_type: EventType, message: &str) -> Result<()> {
@@ -109,12 +117,12 @@ pub fn debug(event_id: u16, message: &str) -> Result<()> {
     send(event_id, EventType::Debug, message)
 }
 
-/// Sends a debug-level software event.
+/// Sends an info-level software event.
 pub fn info(event_id: u16, message: &str) -> Result<()> {
     send(event_id, EventType::Info, message)
 }
 
-/// Sends an informational software event.
+/// Sends an error-level software event.
 pub fn error(event_id: u16, message: &str) -> Result<()> {
     send(event_id, EventType::Error, message)
 }

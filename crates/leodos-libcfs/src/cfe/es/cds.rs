@@ -64,6 +64,11 @@ impl<T: Copy + Sized> CdsBlock<T> {
     /// Registers a new CDS block with the given name or retrieves an existing one.
     ///
     /// This function will attempt to create a CDS block of `size_of::<T>()`.
+    /// The block contents are NOT cleared or initialized on creation.
+    ///
+    /// If a block with this name already existed but with a different size,
+    /// it is replaced. The new block contains uninitialized data and
+    /// `CdsInfo::Created` is returned (not `Restored`).
     ///
     /// # Return Value
     ///
@@ -125,9 +130,8 @@ impl<T: Copy + Sized> CdsBlock<T> {
     /// This will perform a raw byte copy from the CDS into the returned struct.
     /// It is safe because `T` is constrained to be `Copy`.
     ///
-    /// Returns `Error::EsCdsBlockCrcErr` if the data in the CDS has been corrupted.
-    /// In this case, the (corrupted) data is still copied, and the application
-    /// must decide how to proceed.
+    /// Returns `Err` if the data in the CDS has been corrupted
+    /// (e.g. CRC mismatch). The corrupted data is not returned.
     pub fn restore(&self) -> Result<T> {
         let mut data = MaybeUninit::<T>::uninit();
         let status =

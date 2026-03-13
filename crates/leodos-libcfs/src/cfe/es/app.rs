@@ -120,6 +120,10 @@ impl AppId {
 
     /// Requests cFE to restart this application.
     ///
+    /// If the application file is missing or corrupt at restart time,
+    /// the application may be permanently deleted and unrecoverable
+    /// except via the `ES_STARTAPP` ground command.
+    ///
     /// # Errors
     ///
     /// Returns an error if the `app_id` is invalid or if the restart command fails.
@@ -129,6 +133,10 @@ impl AppId {
     }
 
     /// Requests cFE to reload this application from a new file.
+    ///
+    /// If the file is missing or corrupt, the application may be
+    /// permanently deleted and unrecoverable except via the
+    /// `ES_STARTAPP` ground command.
     ///
     /// # Arguments
     /// * `filename`: The path to the new application binary file.
@@ -177,6 +185,8 @@ impl AppId {
     }
 
     /// Returns the ID of the currently running application.
+    ///
+    /// Child tasks return the same application ID as their parent.
     ///
     /// # Errors
     ///

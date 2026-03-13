@@ -52,6 +52,9 @@ pub struct MemRangeInfo {
 }
 
 /// Returns the location and size of the ES Reset information area.
+///
+/// This area is preserved across processor resets. It stores the
+/// ER Log, System Log, and reset-related variables.
 pub fn get_reset_area() -> Result<(usize, usize)> {
     let mut ptr = MaybeUninit::uninit();
     let mut size = MaybeUninit::uninit();
@@ -79,6 +82,10 @@ pub fn get_volatile_disk_mem() -> Result<(usize, usize)> {
 }
 
 /// Validates a memory range against the PSP's memory map.
+///
+/// May return `INVALID_MEM_ADDR` (bad start address),
+/// `INVALID_MEM_TYPE` (type mismatch), or `INVALID_MEM_RANGE`
+/// (range too small for address + size).
 pub fn mem_validate_range(address: usize, size: usize, memory_type: MemoryType) -> Result<()> {
     check(unsafe { ffi::CFE_PSP_MemValidateRange(address, size, memory_type as u32) })?;
     Ok(())
@@ -127,6 +134,8 @@ pub fn get_kernel_text_segment_info() -> Result<(usize, usize)> {
 }
 
 /// Returns the location and size of the CFE text segment.
+///
+/// This may not be implemented on all platforms.
 pub fn get_cfe_text_segment_info() -> Result<(usize, usize)> {
     let mut ptr = MaybeUninit::uninit();
     let mut size = MaybeUninit::uninit();

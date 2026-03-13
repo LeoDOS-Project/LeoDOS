@@ -99,6 +99,9 @@ impl Task {
     /// * `entry_point`: The function that the new task will execute. This must
     ///   be a free function with `extern "C"` linkage.
     /// * `stack_size`: The size of the stack to allocate for the new task.
+    ///   A value of 0 is non-portable: some RTOS use a default,
+    ///   others create a task with no stack. Always specify an
+    ///   actual size.
     /// * `priority`: The priority of the new task (0=highest, 255=lowest).
     /// * `flags`: Task creation flags (e.g. `TaskFlags::FP_ENABLED`).
     pub fn new(

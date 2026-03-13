@@ -23,7 +23,11 @@ pub fn get_version_code_name() -> &'static str {
 
 /// Retrieves the numeric PSP version identifier.
 ///
-/// The returned array contains `[Major, Minor, Revision, MissionRevision]`.
+/// The returned array contains
+/// `[Major, Minor, Revision, MissionRevision]`.
+///
+/// MissionRevision semantics: 0 = official release,
+/// 1–254 = local patch (mission use), 255 = development build.
 pub fn get_version_number() -> [u8; 4] {
     let mut numbers: [u8; 4] = [0; 4];
     unsafe {
@@ -33,6 +37,9 @@ pub fn get_version_number() -> [u8; 4] {
 }
 
 /// Retrieves the PSP library build number.
+///
+/// Monotonically increasing number reflecting commits since the
+/// epoch release. Fixed at compile time.
 pub fn get_build_number() -> u32 {
     unsafe { ffi::CFE_PSP_GetBuildNumber() }
 }

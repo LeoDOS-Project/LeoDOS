@@ -50,12 +50,11 @@ impl OsalId {
         ObjectType::from(type_val)
     }
 
-    /// Converts this abstract ID into a zero-based integer suitable for use as an array index.
+    /// Converts this abstract ID into a zero-based integer suitable
+    /// for use as an array index.
     ///
-    /// # Errors
-    ///
-    /// Returns `Error::OsErrInvalidId` if this ID does not map to a
-    /// valid index for its type.
+    /// This does NOT verify that the ID refers to a currently valid
+    /// or active resource — it only performs the numeric conversion.
     pub fn to_index(&self) -> Result<u32> {
         let mut index = MaybeUninit::uninit();
         check(unsafe { ffi::OS_ConvertToArrayIndex(self.0, index.as_mut_ptr()) })?;

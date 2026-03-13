@@ -68,8 +68,14 @@ pub struct TimeBase {
 impl TimeBase {
     /// Creates a new software-simulated OSAL time base.
     ///
-    /// This time base will use the underlying OS kernel's timing facilities.
-    /// The timer does not start until `set()` is called.
+    /// This time base will use the underlying OS kernel's timing
+    /// facilities. The timer does not start until `set()` is called.
+    ///
+    /// This creates a servicing task at elevated priority that may
+    /// interrupt user tasks. The kernel must be configured for
+    /// `OS_MAX_TASKS + OS_MAX_TIMEBASES` threads.
+    ///
+    /// Must not be called from the context of a timer callback.
     ///
     /// # Arguments
     /// * `name`: A unique string to identify the time base.
@@ -94,6 +100,8 @@ impl TimeBase {
     }
 
     /// Programs the time base for a one-shot or periodic tick.
+    ///
+    /// Must not be called from the context of a timer callback.
     ///
     /// # Arguments
     /// * `start`: `Duration` until the first tick.

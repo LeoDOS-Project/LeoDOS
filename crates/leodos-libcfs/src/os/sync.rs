@@ -33,7 +33,7 @@ pub struct Mutex {
 }
 
 impl Mutex {
-    /// Creates a new OSAL mutex.
+    /// Creates a new OSAL mutex in the unlocked (available) state.
     ///
     /// # Arguments
     /// * `name`: A unique string to identify the mutex.
@@ -239,6 +239,9 @@ pub struct CountSem {
 impl CountSem {
     /// Creates a new counting semaphore.
     ///
+    /// For portability, keep `initial_value` within `short int`
+    /// range (0–32767). Some RTOS impose upper limits.
+    ///
     /// # Arguments
     /// * `name`: A unique string to identify the semaphore.
     /// * `initial_value`: The initial count of the semaphore.
@@ -345,10 +348,13 @@ impl CondVar {
         Ok(())
     }
 
-    /// Atomically unlocks the mutex and waits for the condition variable to be signaled.
+    /// Waits for the condition variable to be signaled.
     ///
-    /// The mutex must be locked before calling this function. It will be re-locked
-    /// before this function returns.
+    /// Note: OSAL condition variables have their own internal mutex
+    /// (`OS_CondVarLock`/`OS_CondVarUnlock`). The `_guard` param
+    /// here is consumed to enforce discipline, but the underlying
+    /// OSAL wait operates on the condvar's internal mutex, not the
+    /// external one.
     pub fn wait(&self, _guard: MutexGuard) -> Result<()> {
         check(unsafe { ffi::OS_CondVarWait(self.id) })?;
         Ok(())

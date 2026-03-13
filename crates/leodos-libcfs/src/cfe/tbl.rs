@@ -122,6 +122,8 @@ impl TableInfo {
 impl<T: Sized> Table<T> {
     /// Registers a new table with cFE Table Services.
     ///
+    /// This call can block. Must not be called from ISR context.
+    ///
     /// # Arguments
     /// * `name`: The application-local name for the table.
     /// * `options`: Bitwise-ORed flags for table options (e.g., `TableOptions::DEFAULT`).
@@ -176,6 +178,8 @@ impl<T: Sized> Table<T> {
     }
 
     /// Loads data into the table from a file.
+    ///
+    /// This call can block. Must not be called from ISR context.
     pub fn load_from_file(&self, filename: &str) -> Result<()> {
         let mut c_filename = CString::<{ ffi::OS_MAX_PATH_LEN as usize }>::new();
         c_filename
@@ -193,6 +197,8 @@ impl<T: Sized> Table<T> {
     }
 
     /// Loads data into the table from a memory slice.
+    ///
+    /// This call can block. Must not be called from ISR context.
     pub fn load_from_slice(&self, data: &[T]) -> Result<()> {
         let status = unsafe {
             ffi::CFE_TBL_Load(
@@ -347,6 +353,13 @@ pub struct TableAccessor<'a, T: 'a> {
 
 impl<'a, T> TableAccessor<'a, T> {
     /// Acquires a pointer to the table data.
+    ///
+    /// Can block on shared single-buffered tables. The address must
+    /// be released (by dropping the accessor) before calling
+    /// [`Table::update`] or any blocking call (e.g. pending on SB).
+    ///
+    /// Returns a zeroed table pointer if the table has never been
+    /// loaded.
     pub fn new(handle: TableHandle) -> Result<Self> {
         let mut ptr = core::ptr::null_mut();
         let status = unsafe { ffi::CFE_TBL_GetAddress(&mut ptr, handle.0) };
