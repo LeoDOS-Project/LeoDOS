@@ -1,10 +1,9 @@
 //! Application management.
 //!
-//! This module provides the `App` struct as a handle to cFS services and the
-//! `AppMain` trait to define application behavior.
+//! Provides `AppId`, `AppInfo`, `RunStatus`, and
+//! `default_panic_handler`.
 
 use core::ffi::CStr;
-use core::fmt::Write;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::str;
@@ -16,7 +15,6 @@ use crate::error::Error;
 use crate::error::Result;
 use crate::ffi;
 use crate::log;
-use crate::log::syslog;
 use crate::status::check;
 
 /// Represents the possible run statuses returned by `CFE_ES_RunLoop`.
@@ -177,6 +175,18 @@ impl AppId {
         check(unsafe { ffi::CFE_ES_GetAppIDByName(app_id.as_mut_ptr(), c_name.as_ptr()) })?;
         Ok(AppId(unsafe { app_id.assume_init() }))
     }
+
+    /// Returns the ID of the currently running application.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if called from a context that is
+    /// not a registered cFE application task.
+    pub fn this() -> Result<AppId> {
+        let mut app_id = MaybeUninit::uninit();
+        check(unsafe { ffi::CFE_ES_GetAppID(app_id.as_mut_ptr()) })?;
+        Ok(AppId(unsafe { app_id.assume_init() }))
+    }
 }
 
 impl Deref for AppId {
@@ -253,145 +263,6 @@ impl AppInfo {
     }
 }
 
-/// Defines the behavior of a cFS application.
-///
-/// Your application's state struct should implement this trait.
-pub trait AppMain: Sized {
-    /// The initialization routine for the application.
-    ///
-    /// # Errors
-    ///
-    /// This function should return an error if initialization fails. The error will be
-    /// logged to the system log, and the application will exit.
-    /// This function is called once at startup. It should perform all necessary
-    /// cFS resource registration (EVS, SB pipes, tables, etc.).
-    ///
-    /// On success, it returns `Ok(Self)`, creating the initial state of your application.
-    fn init() -> Result<Self>;
-
-    /// The main processing loop for the application.
-    ///
-    /// This function is called once per cFS scheduler cycle.
-    ///
-    /// # Errors
-    ///
-    /// If this function returns an error, the main application loop will terminate,
-    /// and the application will exit.
-    /// primary logic of your application, such as reading from a software bus pipe.
-    fn run_cycle(&mut self) -> Result<()>;
-}
-
-/// A context handle for the *currently running* cFS application.
-///
-/// This struct provides safe access to cFS services that are contextual to the
-/// calling application. An instance is passed to your `AppMain` implementation.
-#[derive(Debug)]
-pub struct App {
-    app_id: AppId,
-}
-
-impl App {
-    /// Retrieves a handle to the context of the currently running application.
-    ///
-    /// This is the primary entry point for acquiring an `App` handle at startup.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if called from a context that is not a registered cFE
-    /// application task.
-    pub fn this() -> Result<Self> {
-        let mut app_id = MaybeUninit::uninit();
-        let status = unsafe { ffi::CFE_ES_GetAppID(app_id.as_mut_ptr()) };
-        check(status)?;
-        Ok(App {
-            app_id: AppId(unsafe { app_id.assume_init() }),
-        })
-    }
-
-    /// Returns the application's unique cFE ID.
-    pub fn id(&self) -> AppId {
-        self.app_id
-    }
-}
-
-/// The main entry point and lifecycle manager for a cFS application.
-///
-/// This function is typically not called directly. Use the `libcfs::main!` macro instead.
-///
-/// It performs the following steps:
-/// 1. Acquires the application context using `App::this()`.
-/// 2. Calls the `AppMain::init` function to initialize the application state.
-/// 3. Enters the main processing loop, repeatedly calling `AppMain::run_cycle`.
-/// 4. Exits gracefully when `run_cycle` returns an error or when cFE commands an exit.
-pub fn start<T: AppMain>() {
-    let Ok(mut state) = T::init() else {
-        syslog("Application initialization failed.").ok();
-        unsafe { ffi::CFE_ES_ExitApp(RunStatus::Error as u32) };
-        return;
-    };
-
-    loop {
-        let mut status = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_RUN;
-        let should_run = unsafe { ffi::CFE_ES_RunLoop(&mut status) };
-        match RunStatus::from(status) {
-            RunStatus::Run if should_run => {
-                if let Err(err) = state.run_cycle() {
-                    log!("Application error: {:?}", err).ok();
-                    break;
-                }
-            }
-            RunStatus::Exit | RunStatus::Delete => {
-                log!("Received exit/delete command, exiting application.").ok();
-                break;
-            }
-            other_status => {
-                log!("Exiting application due to run status: {:?}", other_status).ok();
-                break;
-            }
-        }
-    }
-
-    unsafe { ffi::CFE_ES_ExitApp(RunStatus::Exit as u32) };
-}
-
-/// A macro to define the entry point for a cFS application.
-///
-/// This macro generates the required `CFE_ES_Main` C function, which serves as the
-/// official entry point for a cFE application. It links this entry point to the
-/// safe Rust application lifecycle managed by `leodos-libcfs::cfe::es::app::start`.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use leodos_libcfs::cfe::es::app::{App, AppMain};
-/// use leodos_libcfs::error::Result;
-/// // Define the state for your application.
-/// struct MyAppState { /* ... */ }
-///
-/// impl AppMain for MyAppState {
-///     fn init(app: &mut App) -> Result<Self> {
-///         // ...
-///         Ok(Self { /* ... */ })
-///     }
-///
-///     fn run_cycle(&mut self, app: &App) -> Result<()> {
-///         // ...
-///         Ok(())
-///     }
-/// }
-///
-/// leodos_libcfs::main!(MyAppState);
-/// ```
-#[macro_export]
-macro_rules! main {
-    ($app_main_struct:ty) => {
-        #[no_mangle]
-        pub extern "C" fn CFE_ES_Main() {
-            $crate::cfe::es::app::start::<$app_main_struct>();
-        }
-    };
-}
-
 /// Provides a default panic handler that logs the panic to the cFE System Log
 /// and exits the application. This is highly recommended for all applications.
 ///
@@ -404,14 +275,11 @@ macro_rules! main {
 /// }
 /// ```
 pub fn default_panic_handler(info: &core::panic::PanicInfo) -> ! {
-    let mut message: String<256> = String::new();
-
-    write!(message, "PANIC: ").ok();
     if let Some(location) = info.location() {
-        write!(message, " at {}:{}", location.file(), location.line()).ok();
+        log!("PANIC at {}:{}", location.file(), location.line()).ok();
+    } else {
+        log!("PANIC").ok();
     }
-
-    let _ = syslog(&message);
 
     unsafe { ffi::CFE_ES_ExitApp(RunStatus::Error as u32) };
 

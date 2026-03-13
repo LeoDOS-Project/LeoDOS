@@ -405,6 +405,7 @@ version = "0.1.1"
 dependencies = [
  "bindgen",
  "bitflags",
+ "bon",
  "cc",
  "futures",
  "heapless",

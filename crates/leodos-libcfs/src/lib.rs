@@ -15,7 +15,7 @@
 //!   preventing resource leaks.
 //! - **Type Safety**: Generic wrappers for message passing (`Queue<T>`), tables (`Table<T>`),
 //!   and critical data stores (`CdsBlock<T>`) ensure data integrity at compile time.
-//! - **Ergonomic API**: A high-level application framework (`App`, `AppMain` trait) simplifies
+//! - **Ergonomic API**: A high-level application framework (`app::App` builder) simplifies
 //!   the boilerplate of a cFS application.
 //! - **Comprehensive Coverage**: Wrappers for major cFE services (ES, EVS, SB, TBL, TIME)
 //!   and key OSAL/PSP functionalities.
@@ -30,6 +30,7 @@ pub mod psp;
 pub mod status;
 pub mod runtime;
 pub mod macros;
+pub mod app;
 #[cfg(feature = "cfdp")]
 pub mod cf;
 #[cfg(feature = "nos3")]

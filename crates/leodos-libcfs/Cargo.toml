@@ -17,6 +17,7 @@ pin-utils = "0.1.0"
 pin-project = "1.1.10"
 futures = { version = "0.3.28", features = ["async-await"], default-features = false }
 thiserror = { version = "2.0.17", default-features = false }
+bon = { version = "3.8.1", default-features = false }
 
 [build-dependencies]
 bindgen = "0.72.1"
