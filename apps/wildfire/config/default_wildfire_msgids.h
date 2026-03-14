@@ -1,0 +1,10 @@
+#ifndef WILDFIRE_MSGIDS_H
+#define WILDFIRE_MSGIDS_H
+
+#define WILDFIRE_CMD_TOPICID       0x90
+#define WILDFIRE_SEND_HK_TOPICID   0x91
+#define WILDFIRE_HK_TLM_TOPICID    0x92
+#define WILDFIRE_ALERT_TLM_TOPICID 0x93
+#define WILDFIRE_APID              0x70
+
+#endif
