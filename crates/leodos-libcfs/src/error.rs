@@ -7,688 +7,1064 @@ use heapless::CString;
 /// A specialized `Result` type for CFE operations.
 pub type Result<T> = core::result::Result<T, Error>;
 
-/// Represents all possible errors and status codes from the CFE and OSAL APIs.
+// ── Sub-error enums ─────────────────────────────────────────
+
+/// CFE Event Services errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum EvsError {
+    /// An unknown filter scheme was requested.
+    #[error("CFE-EVS: Unknown Filter scheme")]
+    UnknownFilter,
+    /// The application has not been registered with EVS.
+    #[error("CFE-EVS: Application not registered")]
+    AppNotRegistered,
+    /// An illegal application ID was provided.
+    #[error("CFE-EVS: Illegal Application ID")]
+    AppIllegalAppId,
+    /// The application filter has been overloaded.
+    #[error("CFE-EVS: Application filter overload")]
+    AppFilterOverload,
+    /// Failed to access the reset area pointer.
+    #[error("CFE-EVS: Reset Area Pointer Failure")]
+    ResetAreaPointer,
+    /// The event is not registered for filtering.
+    #[error("CFE-EVS: Event not registered for filtering")]
+    EvtNotRegistered,
+    /// A file write error occurred.
+    #[error("CFE-EVS: File write error")]
+    FileWriteError,
+    /// An invalid parameter was supplied in a command.
+    #[error("CFE-EVS: Invalid parameter in command")]
+    InvalidParameter,
+    /// The event was squelched due to a high event rate.
+    #[error("CFE-EVS: Event squelched due to high rate")]
+    AppSquelched,
+    /// The requested function is not implemented.
+    #[error("CFE-EVS: Not Implemented")]
+    NotImplemented,
+}
+
+/// CFE Executive Services errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum EsError {
+    /// The resource ID is not valid.
+    #[error("CFE-ES: Resource ID is not valid")]
+    ResourceIdNotValid,
+    /// The resource name was not found.
+    #[error("CFE-ES: Resource Name not found")]
+    NameNotFound,
+    /// Failed to create the application.
+    #[error("CFE-ES: Application Create Error")]
+    AppCreate,
+    /// Failed to create a child task.
+    #[error("CFE-ES: Child Task Create Error")]
+    ChildTaskCreate,
+    /// The system log is full.
+    #[error("CFE-ES: System Log Full")]
+    SysLogFull,
+    /// The memory block size is invalid.
+    #[error("CFE-ES: Memory Block Size Error")]
+    MemBlockSize,
+    /// Failed to load the library.
+    #[error("CFE-ES: Load Library Error")]
+    LoadLib,
+    /// A bad argument was provided.
+    #[error("CFE-ES: Bad Argument")]
+    BadArgument,
+    /// Failed to register a child task.
+    #[error("CFE-ES: Child Task Register Error")]
+    ChildTaskRegister,
+    /// Insufficient memory available in CDS.
+    #[error("CFE-ES: CDS Insufficient Memory")]
+    CdsInsufficientMemory,
+    /// The CDS name is invalid.
+    #[error("CFE-ES: CDS Invalid Name")]
+    CdsInvalidName,
+    /// The CDS size is invalid.
+    #[error("CFE-ES: CDS Invalid Size")]
+    CdsInvalidSize,
+    /// The CDS is invalid.
+    #[error("CFE-ES: CDS Invalid")]
+    CdsInvalid,
+    /// Failed to access the CDS.
+    #[error("CFE-ES: CDS Access Error")]
+    CdsAccessError,
+    /// A file I/O error occurred.
+    #[error("CFE-ES: File IO Error")]
+    FileIoErr,
+    /// Failed to access the reset area.
+    #[error("CFE-ES: Reset Area Access Error")]
+    RstAccessErr,
+    /// Failed to register the application.
+    #[error("CFE-ES: Application Register Error")]
+    AppRegister,
+    /// Failed to delete a child task.
+    #[error("CFE-ES: Child Task Delete Error")]
+    ChildTaskDelete,
+    /// Attempted to delete a main task with the child
+    /// task delete API.
+    #[error("CFE-ES: Attempted to delete a main task")]
+    ChildTaskDeleteMainTask,
+    /// The CDS block CRC check failed.
+    #[error("CFE-ES: CDS Block CRC Error")]
+    CdsBlockCrcErr,
+    /// Failed to delete a mutex semaphore.
+    #[error("CFE-ES: Mutex Semaphore Delete Error")]
+    MutSemDeleteErr,
+    /// Failed to delete a binary semaphore.
+    #[error("CFE-ES: Binary Semaphore Delete Error")]
+    BinSemDeleteErr,
+    /// Failed to delete a counting semaphore.
+    #[error("CFE-ES: Counting Semaphore Delete Error")]
+    CountSemDeleteErr,
+    /// Failed to delete a queue.
+    #[error("CFE-ES: Queue Delete Error")]
+    QueueDeleteErr,
+    /// Failed to close a file.
+    #[error("CFE-ES: File Close Error")]
+    FileCloseErr,
+    /// The CDS type does not match the expected type.
+    #[error("CFE-ES: CDS Wrong Type Error")]
+    CdsWrongTypeErr,
+    /// The CDS owner is still active.
+    #[error("CFE-ES: CDS Owner Active Error")]
+    CdsOwnerActiveErr,
+    /// Failed to clean up the application.
+    #[error("CFE-ES: Application Cleanup Error")]
+    AppCleanupErr,
+    /// Failed to delete a timer.
+    #[error("CFE-ES: Timer Delete Error")]
+    TimerDeleteErr,
+    /// The buffer is not in the pool.
+    #[error("CFE-ES: Buffer Not In Pool")]
+    BufferNotInPool,
+    /// Failed to delete a task.
+    #[error("CFE-ES: Task Delete Error")]
+    TaskDeleteErr,
+    /// The operation timed out.
+    #[error("CFE-ES: Operation Timed Out")]
+    OperationTimedOut,
+    /// No resource IDs are available.
+    #[error("CFE-ES: No Resource IDs Available")]
+    NoResourceIdsAvailable,
+    /// The pool block is invalid.
+    #[error("CFE-ES: Invalid pool block")]
+    PoolBlockInvalid,
+    /// A resource with that name already exists.
+    #[error("CFE-ES: Duplicate Name Error")]
+    DuplicateName,
+    /// The requested function is not implemented.
+    #[error("CFE-ES: Not Implemented")]
+    NotImplemented,
+}
+
+/// CFE Software Bus errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum SbError {
+    /// The receive operation timed out.
+    #[error("CFE-SB: Time Out")]
+    TimeOut,
+    /// No message is available on the pipe.
+    #[error("CFE-SB: No Message")]
+    NoMessage,
+    /// A bad argument was provided.
+    #[error("CFE-SB: Bad Argument")]
+    BadArgument,
+    /// The maximum number of pipes has been reached.
+    #[error("CFE-SB: Max Pipes Met")]
+    MaxPipesMet,
+    /// Failed to create a pipe.
+    #[error("CFE-SB: Pipe Create Error")]
+    PipeCrErr,
+    /// Failed to read from a pipe.
+    #[error("CFE-SB: Pipe Read Error")]
+    PipeRdErr,
+    /// The message exceeds the maximum allowed size.
+    #[error("CFE-SB: Message Too Big")]
+    MsgTooBig,
+    /// The SB message buffer pool has been depleted.
+    #[error("CFE-SB: Buffer Allocation Error")]
+    BufAllocErr,
+    /// The maximum number of messages has been reached.
+    #[error("CFE-SB: Max Messages Met")]
+    MaxMsgsMet,
+    /// The maximum number of destinations has been reached.
+    #[error("CFE-SB: Max Destinations Met")]
+    MaxDestsMet,
+    /// An internal SB error occurred.
+    #[error("CFE-SB: CFE-Internal Error")]
+    InternalErr,
+    /// The message type is incorrect for the operation.
+    #[error("CFE-SB: Wrong Message Type")]
+    WrongMsgType,
+    /// The buffer reference is invalid.
+    #[error("CFE-SB: Buffer Invalid")]
+    BufferInvalid,
+    /// The requested function is not implemented.
+    #[error("CFE-SB: Not Implemented")]
+    NotImplemented,
+}
+
+/// CFE File Services errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum FsError {
+    /// A bad argument was provided.
+    #[error("CFE-FS: Bad Argument")]
+    BadArgument,
+    /// The file path is invalid.
+    #[error("CFE-FS: Invalid Path")]
+    InvalidPath,
+    /// The filename exceeds the maximum allowed length.
+    #[error("CFE-FS: Filename Too Long")]
+    FnameTooLong,
+    /// The requested function is not implemented.
+    #[error("CFE-FS: Not Implemented")]
+    NotImplemented,
+}
+
+/// CFE Table Services errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TblError {
+    /// The table handle is invalid.
+    #[error("CFE-TBL: Invalid Handle")]
+    InvalidHandle,
+    /// The table name is invalid.
+    #[error("CFE-TBL: Invalid Name")]
+    InvalidName,
+    /// The table size is invalid.
+    #[error("CFE-TBL: Invalid Size")]
+    InvalidSize,
+    /// The table has never been loaded.
+    #[error("CFE-TBL: Never Loaded")]
+    NeverLoaded,
+    /// The table registry is full.
+    #[error("CFE-TBL: Registry Full")]
+    RegistryFull,
+    /// Access to the table was denied.
+    #[error("CFE-TBL: No Access")]
+    NoAccess,
+    /// The table is not registered.
+    #[error("CFE-TBL: Unregistered")]
+    Unregistered,
+    /// All available table handles are in use.
+    #[error("CFE-TBL: Handles Full")]
+    HandlesFull,
+    /// A duplicate table with a different size was found.
+    #[error("CFE-TBL: Duplicate Table With Different Size")]
+    DuplicateDiffSize,
+    /// A duplicate table was found but is not owned by the
+    /// calling application.
+    #[error("CFE-TBL: Duplicate Table And Not Owned")]
+    DuplicateNotOwned,
+    /// No working buffer is available.
+    #[error("CFE-TBL: No Buffer Available")]
+    NoBufferAvail,
+    /// The table is dump-only; load is not permitted.
+    #[error("CFE-TBL: Dump Only Error")]
+    DumpOnly,
+    /// The source type is illegal for this operation.
+    #[error("CFE-TBL: Illegal Source Type")]
+    IllegalSrcType,
+    /// A table load is already in progress.
+    #[error("CFE-TBL: Load In Progress")]
+    LoadInProgress,
+    /// The file is too large for the table.
+    #[error("CFE-TBL: File Too Large")]
+    FileTooLarge,
+    /// The content ID in the file header is invalid.
+    #[error("CFE-TBL: Bad Content ID")]
+    BadContentId,
+    /// The subtype ID in the file header is invalid.
+    #[error("CFE-TBL: Bad Subtype ID")]
+    BadSubtypeId,
+    /// The file size is inconsistent with the table size.
+    #[error("CFE-TBL: File Size Inconsistent")]
+    FileSizeInconsistent,
+    /// The file is missing a standard header.
+    #[error("CFE-TBL: No Standard Header")]
+    NoStdHeader,
+    /// The file is missing a table header.
+    #[error("CFE-TBL: No Table Header")]
+    NoTblHeader,
+    /// The filename exceeds the maximum allowed length.
+    #[error("CFE-TBL: Filename Too Long")]
+    FilenameTooLong,
+    /// The file is intended for a different table.
+    #[error("CFE-TBL: File For Wrong Table")]
+    FileForWrongTable,
+    /// The table load did not complete.
+    #[error("CFE-TBL: Load Incomplete")]
+    LoadIncomplete,
+    /// Only a partial load was performed.
+    #[error("CFE-TBL: Partial Load Error")]
+    PartialLoad,
+    /// The table options are invalid.
+    #[error("CFE-TBL: Invalid Options")]
+    InvalidOptions,
+    /// The spacecraft ID in the file header does not match.
+    #[error("CFE-TBL: Bad Spacecraft ID")]
+    BadSpacecraftId,
+    /// The processor ID in the file header does not match.
+    #[error("CFE-TBL: Bad Processor ID")]
+    BadProcessorId,
+    /// A message error occurred during table operations.
+    #[error("CFE-TBL: Message Error")]
+    MessageError,
+    /// The file is shorter than expected.
+    #[error("CFE-TBL: Short File")]
+    ShortFile,
+    /// A table access error occurred.
+    #[error("CFE-TBL: Access error")]
+    Access,
+    /// A bad argument was provided.
+    #[error("CFE-TBL: Bad Argument")]
+    BadArgument,
+    /// The requested function is not implemented.
+    #[error("CFE-TBL: Not Implemented")]
+    NotImplemented,
+}
+
+/// CFE Time Services errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TimeError {
+    /// The requested function is not implemented.
+    #[error("CFE-TIME: Not Implemented")]
+    NotImplemented,
+    /// The time function is for internal use only.
+    #[error("CFE-TIME: Internal Only")]
+    InternalOnly,
+    /// The time value is out of the valid range.
+    #[error("CFE-TIME: Out Of Range")]
+    OutOfRange,
+    /// Too many synchronization callbacks have been
+    /// registered.
+    #[error("CFE-TIME: Too Many Sync Callbacks")]
+    TooManySynchCallbacks,
+    /// The callback was not previously registered.
+    #[error("CFE-TIME: Callback Not Registered")]
+    CallbackNotRegistered,
+    /// A bad argument was provided.
+    #[error("CFE-TIME: Bad Argument")]
+    BadArgument,
+}
+
+/// OSAL errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum OsalError {
+    /// A generic OSAL error occurred.
+    #[error("OSAL: Generic error")]
+    Error,
+    /// An invalid pointer was provided.
+    #[error("OSAL: Invalid pointer")]
+    InvalidPointer,
+    /// The address is not properly aligned.
+    #[error("OSAL: Address misalignment")]
+    AddressMisaligned,
+    /// The operation timed out.
+    #[error("OSAL: Timeout")]
+    Timeout,
+    /// The interrupt number is invalid.
+    #[error("OSAL: Invalid Interrupt number")]
+    InvalidIntNum,
+    /// A semaphore operation failed.
+    #[error("OSAL: Semaphore failure")]
+    SemFailure,
+    /// A semaphore operation timed out.
+    #[error("OSAL: Semaphore timeout")]
+    SemTimeout,
+    /// The queue is empty.
+    #[error("OSAL: Queue empty")]
+    QueueEmpty,
+    /// The queue is full.
+    #[error("OSAL: Queue full")]
+    QueueFull,
+    /// A queue operation timed out.
+    #[error("OSAL: Queue timeout")]
+    QueueTimeout,
+    /// The queue size is invalid.
+    #[error("OSAL: Queue invalid size")]
+    QueueInvalidSize,
+    /// The queue ID is invalid.
+    #[error("OSAL: Queue ID error")]
+    QueueIdError,
+    /// The name exceeds the maximum allowed length.
+    #[error("OSAL: Name length too long")]
+    NameTooLong,
+    /// No free IDs are available.
+    #[error("OSAL: No free IDs")]
+    NoFreeIds,
+    /// The requested name is already taken.
+    #[error("OSAL: Name taken")]
+    NameTaken,
+    /// The object ID is invalid.
+    #[error("OSAL: Invalid ID")]
+    InvalidId,
+    /// The name was not found.
+    #[error("OSAL: Name not found")]
+    NameNotFound,
+    /// The semaphore is not full.
+    #[error("OSAL: Semaphore not full")]
+    SemNotFull,
+    /// The priority value is invalid.
+    #[error("OSAL: Invalid priority")]
+    InvalidPriority,
+    /// The semaphore value is invalid.
+    #[error("OSAL: Invalid semaphore value")]
+    InvalidSemValue,
+    /// A file operation error occurred.
+    #[error("OSAL: File error")]
+    File,
+    /// The requested function is not implemented.
+    #[error("OSAL: Not implemented")]
+    NotImplemented,
+    /// Invalid arguments were passed to a timer function.
+    #[error("OSAL: Timer invalid arguments")]
+    TimerInvalidArgs,
+    /// The timer ID is invalid.
+    #[error("OSAL: Timer ID error")]
+    TimerIdError,
+    /// The timer is unavailable.
+    #[error("OSAL: Timer unavailable")]
+    TimerUnavailable,
+    /// An internal timer error occurred.
+    #[error("OSAL: Timer internal error")]
+    TimerInternal,
+    /// The object is currently in use.
+    #[error("OSAL: Object in use")]
+    ObjectInUse,
+    /// The address is invalid.
+    #[error("OSAL: Bad address")]
+    BadAddress,
+    /// The object is in an incorrect state for the
+    /// requested operation.
+    #[error("OSAL: Incorrect object state")]
+    IncorrectObjState,
+    /// The object type is incorrect for the requested
+    /// operation.
+    #[error("OSAL: Incorrect object type")]
+    IncorrectObjType,
+    /// The stream has been disconnected.
+    #[error("OSAL: Stream disconnected")]
+    StreamDisconnected,
+    /// The requested operation is not supported on the
+    /// supplied objects.
+    #[error("OSAL: Requested operation not supported on supplied object(s)")]
+    OperationNotSupported,
+    /// The size is invalid.
+    #[error("OSAL: Invalid Size")]
+    InvalidSize,
+    /// The output size exceeds the limit.
+    #[error("OSAL: Size of output exceeds limit")]
+    OutputTooLarge,
+    /// The argument value is invalid.
+    #[error("OSAL: Invalid argument value")]
+    InvalidArgument,
+    /// The filesystem path exceeds the maximum length.
+    #[error("OSAL: FS path too long")]
+    FsPathTooLong,
+    /// The filesystem name exceeds the maximum length.
+    #[error("OSAL: FS name too long")]
+    FsNameTooLong,
+    /// The filesystem drive was not created.
+    #[error("OSAL: FS drive not created")]
+    FsDriveNotCreated,
+    /// The filesystem device is not free.
+    #[error("OSAL: FS device not free")]
+    FsDeviceNotFree,
+    /// The filesystem path is invalid.
+    #[error("OSAL: FS path invalid")]
+    FsPathInvalid,
+}
+
+// ── Top-level Error ─────────────────────────────────────────
+
+/// Represents all possible errors and status codes from the
+/// CFE and OSAL APIs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
+    /// An EVS (Event Services) error.
+    #[error(transparent)]
+    Evs(#[from] EvsError),
+    /// An ES (Executive Services) error.
+    #[error(transparent)]
+    Es(#[from] EsError),
+    /// An SB (Software Bus) error.
+    #[error(transparent)]
+    Sb(#[from] SbError),
+    /// An FS (File Services) error.
+    #[error(transparent)]
+    Fs(#[from] FsError),
+    /// A TBL (Table Services) error.
+    #[error(transparent)]
+    Tbl(#[from] TblError),
+    /// A TIME (Time Services) error.
+    #[error(transparent)]
+    Time(#[from] TimeError),
+    /// An OSAL error.
+    #[error(transparent)]
+    Osal(#[from] OsalError),
+
     // --- Generic CFE Status ---
-    /// Wrong Message Length.
+    /// The message length is incorrect.
     #[error("CFE: Wrong Message Length")]
-    CfeStatusWrongMsgLength,
-    /// Unknown Message ID.
+    WrongMsgLength,
+    /// The message ID is unknown.
     #[error("CFE: Unknown Message ID")]
-    CfeStatusUnknownMsgId,
-    /// Bad Command Code.
+    UnknownMsgId,
+    /// The command code is invalid.
     #[error("CFE: Bad Command Code")]
-    CfeStatusBadCommandCode,
-    /// External resource failure.
+    BadCommandCode,
+    /// An external resource failure occurred.
     #[error("CFE: External resource failure")]
-    CfeStatusExternalResourceFail,
-    /// Request already pending.
+    ExternalResourceFail,
+    /// The request is already pending.
     #[error("CFE: Request already pending")]
-    CfeStatusRequestAlreadyPending,
-    /// Request or input value failed basic structural validation.
+    RequestAlreadyPending,
+    /// Validation of the input failed.
     #[error("CFE: Validation Failure")]
-    CfeStatusValidationFailure,
-    /// Request or input value is out of range.
+    ValidationFailure,
+    /// The input value is out of the valid range.
     #[error("CFE: Input value out of range")]
-    CfeStatusRangeError,
-    /// Cannot process request at this time.
+    RangeError,
+    /// The request cannot be processed in the current state.
     #[error("CFE: Cannot process request in current state")]
-    CfeStatusIncorrectState,
-    /// Not Implemented.
+    IncorrectState,
+    /// The requested function is not implemented.
     #[error("CFE: Not Implemented")]
-    CfeStatusNotImplemented,
-
-    // --- CFE EVS (Event Services) ---
-    /// Unknown Filter scheme.
-    #[error("CFE-EVS: Unknown Filter scheme")]
-    CfeEvsUnknownFilter,
-    /// Application not registered with EVS.
-    #[error("CFE-EVS: Application not registered")]
-    CfeEvsAppNotRegistered,
-    /// Illegal Application ID.
-    #[error("CFE-EVS: Illegal Application ID")]
-    CfeEvsAppIllegalAppId,
-    /// Application event filter overload.
-    #[error("CFE-EVS: Application filter overload")]
-    CfeEvsAppFilterOverload,
-    /// Could not get pointer to the ES Reset area.
-    #[error("CFE-EVS: Reset Area Pointer Failure")]
-    CfeEvsResetAreaPointer,
-    /// EventID argument was not found in any registered event filter.
-    #[error("CFE-EVS: Event not registered for filtering")]
-    CfeEvsEvtNotRegistered,
-    /// A file write error occurred while processing an EVS command.
-    #[error("CFE-EVS: File write error")]
-    CfeEvsFileWriteError,
-    /// Invalid parameter supplied to EVS command.
-    #[error("CFE-EVS: Invalid parameter in command")]
-    CfeEvsInvalidParameter,
-    /// Event squelched due to being sent at too high a rate.
-    #[error("CFE-EVS: Event squelched due to high rate")]
-    CfeEvsAppSquelched,
-    /// EVS feature is not implemented.
-    #[error("CFE-EVS: Not Implemented")]
-    CfeEvsNotImplemented,
-
-    // --- CFE ES (Executive Services) ---
-    /// Resource ID is not valid.
-    #[error("CFE-ES: Resource ID is not valid")]
-    CfeEsErrResourceIdNotValid,
-    /// Resource Name not found.
-    #[error("CFE-ES: Resource Name not found")]
-    CfeEsErrNameNotFound,
-    /// Error loading or creating an App.
-    #[error("CFE-ES: Application Create Error")]
-    CfeEsErrAppCreate,
-    /// Error creating a child task.
-    #[error("CFE-ES: Child Task Create Error")]
-    CfeEsErrChildTaskCreate,
-    /// The cFE system Log is full.
-    #[error("CFE-ES: System Log Full")]
-    CfeEsErrSysLogFull,
-    /// The memory block size requested is invalid.
-    #[error("CFE-ES: Memory Block Size Error")]
-    CfeEsErrMemBlockSize,
-    /// Could not load the shared library.
-    #[error("CFE-ES: Load Library Error")]
-    CfeEsErrLoadLib,
-    /// Bad parameter passed into an ES API.
-    #[error("CFE-ES: Bad Argument")]
-    CfeEsBadArgument,
-    /// Errors occurred when trying to register a child task.
-    #[error("CFE-ES: Child Task Register Error")]
-    CfeEsErrChildTaskRegister,
-    /// CDS is larger than the remaining CDS memory.
-    #[error("CFE-ES: CDS Insufficient Memory")]
-    CfeEsCdsInsufficientMemory,
-    /// CDS name is too long or empty.
-    #[error("CFE-ES: CDS Invalid Name")]
-    CfeEsCdsInvalidName,
-    /// CDS size is beyond the applicable limits.
-    #[error("CFE-ES: CDS Invalid Size")]
-    CfeEsCdsInvalidSize,
-    /// The CDS contents are invalid.
-    #[error("CFE-ES: CDS Invalid")]
-    CfeEsCdsInvalid,
-    /// The CDS was inaccessible.
-    #[error("CFE-ES: CDS Access Error")]
-    CfeEsCdsAccessError,
-    /// A file operation failed.
-    #[error("CFE-ES: File IO Error")]
-    CfeEsFileIoErr,
-    /// BSP failed to return the reset area address.
-    #[error("CFE-ES: Reset Area Access Error")]
-    CfeEsRstAccessErr,
-    /// A task cannot be registered in ES global tables.
-    #[error("CFE-ES: Application Register Error")]
-    CfeEsErrAppRegister,
-    /// Error deleting a child task.
-    #[error("CFE-ES: Child Task Delete Error")]
-    CfeEsErrChildTaskDelete,
-    /// Attempted to delete a cFE App Main Task with DeleteChildTask API.
-    #[error("CFE-ES: Attempted to delete a main task")]
-    CfeEsErrChildTaskDeleteMainTask,
-    /// CDS Data Block CRC does not match stored CRC.
-    #[error("CFE-ES: CDS Block CRC Error")]
-    CfeEsCdsBlockCrcErr,
-    /// Error deleting a Mutex Semaphore during task cleanup.
-    #[error("CFE-ES: Mutex Semaphore Delete Error")]
-    CfeEsMutSemDeleteErr,
-    /// Error deleting a Binary Semaphore during task cleanup.
-    #[error("CFE-ES: Binary Semaphore Delete Error")]
-    CfeEsBinSemDeleteErr,
-    /// Error deleting a Counting Semaphore during task cleanup.
-    #[error("CFE-ES: Counting Semaphore Delete Error")]
-    CfeEsCountSemDeleteErr,
-    /// Error deleting a Queue during task cleanup.
-    #[error("CFE-ES: Queue Delete Error")]
-    CfeEsQueueDeleteErr,
-    /// Error closing a file during task cleanup.
-    #[error("CFE-ES: File Close Error")]
-    CfeEsFileCloseErr,
-    /// CDS is not the correct type for the operation.
-    #[error("CFE-ES: CDS Wrong Type Error")]
-    CfeEsCdsWrongTypeErr,
-    /// Attempted to delete a CDS while its owner application is still active.
-    #[error("CFE-ES: CDS Owner Active Error")]
-    CfeEsCdsOwnerActiveErr,
-    /// An error occurred during application cleanup.
-    #[error("CFE-ES: Application Cleanup Error")]
-    CfeEsAppCleanupErr,
-    /// Error deleting a Timer during task cleanup.
-    #[error("CFE-ES: Timer Delete Error")]
-    CfeEsTimerDeleteErr,
-    /// The specified address is not in the memory pool.
-    #[error("CFE-ES: Buffer Not In Pool")]
-    CfeEsBufferNotInPool,
-    /// Error deleting a task during cleanup.
-    #[error("CFE-ES: Task Delete Error")]
-    CfeEsTaskDeleteErr,
-    /// The timeout for a given operation was exceeded.
-    #[error("CFE-ES: Operation Timed Out")]
-    CfeEsOperationTimedOut,
-    /// Maximum number of resource identifiers has been reached.
-    #[error("CFE-ES: No Resource IDs Available")]
-    CfeEsNoResourceIdsAvailable,
-    /// Attempted to "put" a block back into a pool which does not belong to it.
-    #[error("CFE-ES: Invalid pool block")]
-    CfeEsPoolBlockInvalid,
-    /// Resource creation failed due to the name already existing.
-    #[error("CFE-ES: Duplicate Name Error")]
-    CfeEsErrDuplicateName,
-    /// ES feature is not implemented.
-    #[error("CFE-ES: Not Implemented")]
-    CfeEsNotImplemented,
-
-    // --- CFE FS (File Services) ---
-    /// A parameter given to a File Services API did not pass validation.
-    #[error("CFE-FS: Bad Argument")]
-    CfeFsBadArgument,
-    /// FS was unable to extract a filename from a path string.
-    #[error("CFE-FS: Invalid Path")]
-    CfeFsInvalidPath,
-    /// FS filename string is too long.
-    #[error("CFE-FS: Filename Too Long")]
-    CfeFsFnameTooLong,
-    /// FS feature is not implemented.
-    #[error("CFE-FS: Not Implemented")]
-    CfeFsNotImplemented,
-
-    // --- CFE SB (Software Bus) ---
-    /// A pipe receive operation timed out.
-    #[error("CFE-SB: Time Out")]
-    CfeSbTimeOut,
-    /// A pipe was polled but contained no message.
-    #[error("CFE-SB: No Message")]
-    CfeSbNoMessage,
-    /// A parameter given to a Software Bus API did not pass validation.
-    #[error("CFE-SB: Bad Argument")]
-    CfeSbBadArgument,
-    /// The maximum number of pipes are already in use.
-    #[error("CFE-SB: Max Pipes Met")]
-    CfeSbMaxPipesMet,
-    /// The underlying OS queue for a pipe could not be created.
-    #[error("CFE-SB: Pipe Create Error")]
-    CfeSbPipeCrErr,
-    /// An error occurred at the OS queue read level.
-    #[error("CFE-SB: Pipe Read Error")]
-    CfeSbPipeRdErr,
-    /// The message size exceeds the maximum allowed SB message size.
-    #[error("CFE-SB: Message Too Big")]
-    CfeSbMsgTooBig,
-    /// The SB message buffer pool has been depleted.
-    #[error("CFE-SB: Buffer Allocation Error")]
-    CfeSbBufAlocErr,
-    /// The SB routing table cannot accommodate another unique message ID.
-    #[error("CFE-SB: Max Messages Met")]
-    CfeSbMaxMsgsMet,
-    /// The SB routing table cannot accommodate another destination for a message ID.
-    #[error("CFE-SB: Max Destinations Met")]
-    CfeSbMaxDestsMet,
-    /// An internal SB index is out of range.
-    #[error("CFE-SB: CFE-Internal Error")]
-    CfeSbInternalErr,
-    /// A message header operation was requested on a message of the wrong type.
-    #[error("CFE-SB: Wrong Message Type")]
-    CfeSbWrongMsgType,
-    /// A request to release or send a zero-copy buffer is invalid.
-    #[error("CFE-SB: Buffer Invalid")]
-    CfeSbBufferInvalid,
-    /// SB feature is not implemented.
-    #[error("CFE-SB: Not Implemented")]
-    CfeSbNotImplemented,
-
-    // --- CFE TBL (Table Services) ---
-    /// The provided table handle is not valid.
-    #[error("CFE-TBL: Invalid Handle")]
-    CfeTblErrInvalidHandle,
-    /// The provided table name is not valid.
-    #[error("CFE-TBL: Invalid Name")]
-    CfeTblErrInvalidName,
-    /// The provided table size is not valid.
-    #[error("CFE-TBL: Invalid Size")]
-    CfeTblErrInvalidSize,
-    /// The table has not yet been loaded with data.
-    #[error("CFE-TBL: Never Loaded")]
-    CfeTblErrNeverLoaded,
-    /// The table registry is full.
-    #[error("CFE-TBL: Registry Full")]
-    CfeTblErrRegistryFull,
-    /// The application does not have access to the table.
-    #[error("CFE-TBL: No Access")]
-    CfeTblErrNoAccess,
-    /// The application is trying to access an unregistered table.
-    #[error("CFE-TBL: Unregistered")]
-    CfeTblErrUnregistered,
-    /// The table handle array is full.
-    #[error("CFE-TBL: Handles Full")]
-    CfeTblErrHandlesFull,
-    /// An app tried to register a table with the same name but a different size.
-    #[error("CFE-TBL: Duplicate Table With Different Size")]
-    CfeTblErrDuplicateDiffSize,
-    /// An app tried to register a table owned by a different application.
-    #[error("CFE-TBL: Duplicate Table And Not Owned")]
-    CfeTblErrDuplicateNotOwned,
-    /// No working buffer was available for a table load.
-    #[error("CFE-TBL: No Buffer Available")]
-    CfeTblErrNoBufferAvail,
-    /// A load was attempted on a "Dump Only" table.
-    #[error("CFE-TBL: Dump Only Error")]
-    CfeTblErrDumpOnly,
-    /// The source type for a table load was illegal.
-    #[error("CFE-TBL: Illegal Source Type")]
-    CfeTblErrIllegalSrcType,
-    /// A table load was attempted while another load was in progress.
-    #[error("CFE-TBL: Load In Progress")]
-    CfeTblErrLoadInProgress,
-    /// The table file is larger than the table's buffer.
-    #[error("CFE-TBL: File Too Large")]
-    CfeTblErrFileTooLarge,
-    /// The table file's content ID was not that of a table image.
-    #[error("CFE-TBL: Bad Content ID")]
-    CfeTblErrBadContentId,
-    /// The table file's Subtype ID was not a table image file.
-    #[error("CFE-TBL: Bad Subtype ID")]
-    CfeTblErrBadSubtypeId,
-    /// The table file's size is inconsistent with its header.
-    #[error("CFE-TBL: File Size Inconsistent")]
-    CfeTblErrFileSizeInconsistent,
-    /// The table file's standard cFE File Header was invalid.
-    #[error("CFE-TBL: No Standard Header")]
-    CfeTblErrNoStdHeader,
-    /// The table file's cFE Table File Header was invalid.
-    #[error("CFE-TBL: No Table Header")]
-    CfeTblErrNoTblHeader,
-    /// The filename for a table load was too long.
-    #[error("CFE-TBL: Filename Too Long")]
-    CfeTblErrFilenameTooLong,
-    /// The table file header indicates it is for a different table.
-    #[error("CFE-TBL: File For Wrong Table")]
-    CfeTblErrFileForWrongTable,
-    /// The table file load was larger than what was read from the file.
-    #[error("CFE-TBL: Load Incomplete")]
-    CfeTblErrLoadIncomplete,
-    /// A partial load was attempted on an uninitialized table.
-    #[error("CFE-TBL: Partial Load Error")]
-    CfeTblErrPartialLoad,
-    /// An illegal combination of table options was used.
-    #[error("CFE-TBL: Invalid Options")]
-    CfeTblErrInvalidOptions,
-    /// The table file failed validation for Spacecraft ID.
-    #[error("CFE-TBL: Bad Spacecraft ID")]
-    CfeTblErrBadSpacecraftId,
-    /// The table file failed validation for Processor ID.
-    #[error("CFE-TBL: Bad Processor ID")]
-    CfeTblErrBadProcessorId,
-    /// The TBL command was not processed successfully.
-    #[error("CFE-TBL: Message Error")]
-    CfeTblMessageError,
-    /// The TBL file is shorter than indicated in the file header.
-    #[error("CFE-TBL: Short File")]
-    CfeTblErrShortFile,
-    /// The TBL file could not be opened by the OS.
-    #[error("CFE-TBL: Access error")]
-    CfeTblErrAccess,
-    /// A parameter given to a Table API did not pass validation.
-    #[error("CFE-TBL: Bad Argument")]
-    CfeTblBadArgument,
-    /// TBL feature is not implemented.
-    #[error("CFE-TBL: Not Implemented")]
-    CfeTblNotImplemented,
-
-    // --- CFE TIME (Time Services) ---
-    /// TIME feature is not implemented.
-    #[error("CFE-TIME: Not Implemented")]
-    CfeTimeNotImplemented,
-    /// TIME Services is commanded to not accept external time data.
-    #[error("CFE-TIME: Internal Only")]
-    CfeTimeInternalOnly,
-    /// New time data from an external source is invalid.
-    #[error("CFE-TIME: Out Of Range")]
-    CfeTimeOutOfRange,
-    /// An attempt to register too many Time Services Synchronization callbacks was made.
-    #[error("CFE-TIME: Too Many Sync Callbacks")]
-    CfeTimeTooManySynchCallbacks,
-    /// The specified callback function was not in the Synchronization Callback Registry.
-    #[error("CFE-TIME: Callback Not Registered")]
-    CfeTimeCallbackNotRegistered,
-    /// A parameter given to a TIME Services API did not pass validation.
-    #[error("CFE-TIME: Bad Argument")]
-    CfeTimeBadArgument,
-
-    // --- OSAL Status Codes ---
-    /// Failed execution.
-    #[error("OSAL: Generic error")]
-    OsError,
-    /// Invalid pointer.
-    #[error("OSAL: Invalid pointer")]
-    OsInvalidPointer,
-    /// Address misalignment.
-    #[error("OSAL: Address misalignment")]
-    OsErrorAddressMisaligned,
-    /// Timeout.
-    #[error("OSAL: Timeout")]
-    OsErrorTimeout,
-    /// Invalid Interrupt number.
-    #[error("OSAL: Invalid Interrupt number")]
-    OsInvalidIntNum,
-    /// Semaphore failure.
-    #[error("OSAL: Semaphore failure")]
-    OsSemFailure,
-    /// Semaphore timeout.
-    #[error("OSAL: Semaphore timeout")]
-    OsSemTimeout,
-    /// Queue empty.
-    #[error("OSAL: Queue empty")]
-    OsQueueEmpty,
-    /// Queue full.
-    #[error("OSAL: Queue full")]
-    OsQueueFull,
-    /// Queue timeout.
-    #[error("OSAL: Queue timeout")]
-    OsQueueTimeout,
-    /// Queue invalid size.
-    #[error("OSAL: Queue invalid size")]
-    OsQueueInvalidSize,
-    /// Queue ID error.
-    #[error("OSAL: Queue ID error")]
-    OsQueueIdError,
-    /// Name length too long.
-    #[error("OSAL: Name length too long")]
-    OsErrNameTooLong,
-    /// No free IDs.
-    #[error("OSAL: No free IDs")]
-    OsErrNoFreeIds,
-    /// Name taken.
-    #[error("OSAL: Name taken")]
-    OsErrNameTaken,
-    /// Invalid ID.
-    #[error("OSAL: Invalid ID")]
-    OsErrInvalidId,
-    /// Name not found.
-    #[error("OSAL: Name not found")]
-    OsErrNameNotFound,
-    /// Semaphore not full.
-    #[error("OSAL: Semaphore not full")]
-    OsErrSemNotFull,
-    /// Invalid priority.
-    #[error("OSAL: Invalid priority")]
-    OsErrInvalidPriority,
-    /// Invalid semaphore value.
-    #[error("OSAL: Invalid semaphore value")]
-    OsInvalidSemValue,
-    /// Generic file error.
-    #[error("OSAL: File error")]
-    OsErrFile,
-    /// Not implemented.
-    #[error("OSAL: Not implemented")]
-    OsErrNotImplemented,
-    /// Timer invalid arguments.
-    #[error("OSAL: Timer invalid arguments")]
-    OsTimerErrInvalidArgs,
-    /// Timer ID error.
-    #[error("OSAL: Timer ID error")]
-    OsTimerErrTimerId,
-    /// Timer unavailable.
-    #[error("OSAL: Timer unavailable")]
-    OsTimerErrUnavailable,
-    /// Timer internal error.
-    #[error("OSAL: Timer internal error")]
-    OsTimerErrInternal,
-    /// Object in use.
-    #[error("OSAL: Object in use")]
-    OsErrObjectInUse,
-    /// Bad address.
-    #[error("OSAL: Bad address")]
-    OsErrBadAddress,
-    /// Incorrect object state.
-    #[error("OSAL: Incorrect object state")]
-    OsErrIncorrectObjState,
-    /// Incorrect object type.
-    #[error("OSAL: Incorrect object type")]
-    OsErrIncorrectObjType,
-    /// Stream disconnected.
-    #[error("OSAL: Stream disconnected")]
-    OsErrStreamDisconnected,
-    /// Requested operation not supported on supplied object(s).
-    #[error("OSAL: Requested operation not supported on supplied object(s)")]
-    OsErrOperationNotSupported,
-    /// Invalid Size.
-    #[error("OSAL: Invalid Size")]
-    OsErrInvalidSize,
-    /// Size of output exceeds limit.
-    #[error("OSAL: Size of output exceeds limit")]
-    OsErrOutputTooLarge,
-    /// Invalid argument value.
-    #[error("OSAL: Invalid argument value")]
-    OsErrInvalidArgument,
-    /// FS path too long.
-    #[error("OSAL: FS path too long")]
-    OsFsErrPathTooLong,
-    /// FS name too long.
-    #[error("OSAL: FS name too long")]
-    OsFsErrNameTooLong,
-    /// FS drive not created.
-    #[error("OSAL: FS drive not created")]
-    OsFsErrDriveNotCreated,
-    /// FS device not free.
-    #[error("OSAL: FS device not free")]
-    OsFsErrDeviceNotFree,
-    /// FS path invalid.
-    #[error("OSAL: FS path invalid")]
-    OsFsErrPathInvalid,
+    NotImplemented,
 
     // --- Other Errors ---
-    /// A string passed to the API contained an interior null character.
+    /// The string contains an interior null character.
     #[error("Invalid string: contains interior null character")]
     InvalidString,
     /// The task pool is full and cannot accept new tasks.
     #[error("The task pool is full")]
     TaskPoolFull,
-    /// The task's stack size exceeds the maximum allowed size.
+    /// The task's stack size exceeds the maximum allowed.
     #[error("The task's stack size exceeds the maximum allowed size")]
     TaskTooLarge,
-    /// The task's alignment requirement exceeds the maximum allowed alignment.
+    /// The task's alignment exceeds the maximum allowed.
     #[error("The task's alignment requirement exceeds the maximum allowed alignment")]
     TaskAlignmentTooLarge,
-    /// An error occurred during a type conversion.
+    /// A type conversion error occurred.
     #[error("Type conversion error")]
     ConversionError(&'static str),
-
-    /// An unhandled or unknown CFE/OSAL/PSP error code. This may indicate a
-    /// new or platform-specific error code not yet included in this enum.
+    /// An unhandled error code was returned by the C API.
     #[error("Unhandled error code: {0}")]
     Unhandled(i32),
 }
 
+// ── Backward-compatible aliases ─────────────────────────────
+
+#[allow(non_upper_case_globals, missing_docs)]
+impl Error {
+    // --- Generic CFE Status ---
+    pub const CfeStatusWrongMsgLength: Error = Error::WrongMsgLength;
+    pub const CfeStatusUnknownMsgId: Error = Error::UnknownMsgId;
+    pub const CfeStatusBadCommandCode: Error = Error::BadCommandCode;
+    pub const CfeStatusExternalResourceFail: Error =
+        Error::ExternalResourceFail;
+    pub const CfeStatusRequestAlreadyPending: Error =
+        Error::RequestAlreadyPending;
+    pub const CfeStatusValidationFailure: Error =
+        Error::ValidationFailure;
+    pub const CfeStatusRangeError: Error = Error::RangeError;
+    pub const CfeStatusIncorrectState: Error = Error::IncorrectState;
+    pub const CfeStatusNotImplemented: Error = Error::NotImplemented;
+
+    // --- CFE EVS ---
+    pub const CfeEvsUnknownFilter: Error =
+        Error::Evs(EvsError::UnknownFilter);
+    pub const CfeEvsAppNotRegistered: Error =
+        Error::Evs(EvsError::AppNotRegistered);
+    pub const CfeEvsAppIllegalAppId: Error =
+        Error::Evs(EvsError::AppIllegalAppId);
+    pub const CfeEvsAppFilterOverload: Error =
+        Error::Evs(EvsError::AppFilterOverload);
+    pub const CfeEvsResetAreaPointer: Error =
+        Error::Evs(EvsError::ResetAreaPointer);
+    pub const CfeEvsEvtNotRegistered: Error =
+        Error::Evs(EvsError::EvtNotRegistered);
+    pub const CfeEvsFileWriteError: Error =
+        Error::Evs(EvsError::FileWriteError);
+    pub const CfeEvsInvalidParameter: Error =
+        Error::Evs(EvsError::InvalidParameter);
+    pub const CfeEvsAppSquelched: Error =
+        Error::Evs(EvsError::AppSquelched);
+    pub const CfeEvsNotImplemented: Error =
+        Error::Evs(EvsError::NotImplemented);
+
+    // --- CFE ES ---
+    pub const CfeEsErrResourceIdNotValid: Error =
+        Error::Es(EsError::ResourceIdNotValid);
+    pub const CfeEsErrNameNotFound: Error =
+        Error::Es(EsError::NameNotFound);
+    pub const CfeEsErrAppCreate: Error =
+        Error::Es(EsError::AppCreate);
+    pub const CfeEsErrChildTaskCreate: Error =
+        Error::Es(EsError::ChildTaskCreate);
+    pub const CfeEsErrSysLogFull: Error =
+        Error::Es(EsError::SysLogFull);
+    pub const CfeEsErrMemBlockSize: Error =
+        Error::Es(EsError::MemBlockSize);
+    pub const CfeEsErrLoadLib: Error =
+        Error::Es(EsError::LoadLib);
+    pub const CfeEsBadArgument: Error =
+        Error::Es(EsError::BadArgument);
+    pub const CfeEsErrChildTaskRegister: Error =
+        Error::Es(EsError::ChildTaskRegister);
+    pub const CfeEsCdsInsufficientMemory: Error =
+        Error::Es(EsError::CdsInsufficientMemory);
+    pub const CfeEsCdsInvalidName: Error =
+        Error::Es(EsError::CdsInvalidName);
+    pub const CfeEsCdsInvalidSize: Error =
+        Error::Es(EsError::CdsInvalidSize);
+    pub const CfeEsCdsInvalid: Error =
+        Error::Es(EsError::CdsInvalid);
+    pub const CfeEsCdsAccessError: Error =
+        Error::Es(EsError::CdsAccessError);
+    pub const CfeEsFileIoErr: Error =
+        Error::Es(EsError::FileIoErr);
+    pub const CfeEsRstAccessErr: Error =
+        Error::Es(EsError::RstAccessErr);
+    pub const CfeEsErrAppRegister: Error =
+        Error::Es(EsError::AppRegister);
+    pub const CfeEsErrChildTaskDelete: Error =
+        Error::Es(EsError::ChildTaskDelete);
+    pub const CfeEsErrChildTaskDeleteMainTask: Error =
+        Error::Es(EsError::ChildTaskDeleteMainTask);
+    pub const CfeEsCdsBlockCrcErr: Error =
+        Error::Es(EsError::CdsBlockCrcErr);
+    pub const CfeEsMutSemDeleteErr: Error =
+        Error::Es(EsError::MutSemDeleteErr);
+    pub const CfeEsBinSemDeleteErr: Error =
+        Error::Es(EsError::BinSemDeleteErr);
+    pub const CfeEsCountSemDeleteErr: Error =
+        Error::Es(EsError::CountSemDeleteErr);
+    pub const CfeEsQueueDeleteErr: Error =
+        Error::Es(EsError::QueueDeleteErr);
+    pub const CfeEsFileCloseErr: Error =
+        Error::Es(EsError::FileCloseErr);
+    pub const CfeEsCdsWrongTypeErr: Error =
+        Error::Es(EsError::CdsWrongTypeErr);
+    pub const CfeEsCdsOwnerActiveErr: Error =
+        Error::Es(EsError::CdsOwnerActiveErr);
+    pub const CfeEsAppCleanupErr: Error =
+        Error::Es(EsError::AppCleanupErr);
+    pub const CfeEsTimerDeleteErr: Error =
+        Error::Es(EsError::TimerDeleteErr);
+    pub const CfeEsBufferNotInPool: Error =
+        Error::Es(EsError::BufferNotInPool);
+    pub const CfeEsTaskDeleteErr: Error =
+        Error::Es(EsError::TaskDeleteErr);
+    pub const CfeEsOperationTimedOut: Error =
+        Error::Es(EsError::OperationTimedOut);
+    pub const CfeEsNoResourceIdsAvailable: Error =
+        Error::Es(EsError::NoResourceIdsAvailable);
+    pub const CfeEsPoolBlockInvalid: Error =
+        Error::Es(EsError::PoolBlockInvalid);
+    pub const CfeEsErrDuplicateName: Error =
+        Error::Es(EsError::DuplicateName);
+    pub const CfeEsNotImplemented: Error =
+        Error::Es(EsError::NotImplemented);
+
+    // --- CFE SB ---
+    pub const CfeSbTimeOut: Error =
+        Error::Sb(SbError::TimeOut);
+    pub const CfeSbNoMessage: Error =
+        Error::Sb(SbError::NoMessage);
+    pub const CfeSbBadArgument: Error =
+        Error::Sb(SbError::BadArgument);
+    pub const CfeSbMaxPipesMet: Error =
+        Error::Sb(SbError::MaxPipesMet);
+    pub const CfeSbPipeCrErr: Error =
+        Error::Sb(SbError::PipeCrErr);
+    pub const CfeSbPipeRdErr: Error =
+        Error::Sb(SbError::PipeRdErr);
+    pub const CfeSbMsgTooBig: Error =
+        Error::Sb(SbError::MsgTooBig);
+    pub const CfeSbBufAlocErr: Error =
+        Error::Sb(SbError::BufAllocErr);
+    pub const CfeSbMaxMsgsMet: Error =
+        Error::Sb(SbError::MaxMsgsMet);
+    pub const CfeSbMaxDestsMet: Error =
+        Error::Sb(SbError::MaxDestsMet);
+    pub const CfeSbInternalErr: Error =
+        Error::Sb(SbError::InternalErr);
+    pub const CfeSbWrongMsgType: Error =
+        Error::Sb(SbError::WrongMsgType);
+    pub const CfeSbBufferInvalid: Error =
+        Error::Sb(SbError::BufferInvalid);
+    pub const CfeSbNotImplemented: Error =
+        Error::Sb(SbError::NotImplemented);
+
+    // --- CFE FS ---
+    pub const CfeFsBadArgument: Error =
+        Error::Fs(FsError::BadArgument);
+    pub const CfeFsInvalidPath: Error =
+        Error::Fs(FsError::InvalidPath);
+    pub const CfeFsFnameTooLong: Error =
+        Error::Fs(FsError::FnameTooLong);
+    pub const CfeFsNotImplemented: Error =
+        Error::Fs(FsError::NotImplemented);
+
+    // --- CFE TBL ---
+    pub const CfeTblErrInvalidHandle: Error =
+        Error::Tbl(TblError::InvalidHandle);
+    pub const CfeTblErrInvalidName: Error =
+        Error::Tbl(TblError::InvalidName);
+    pub const CfeTblErrInvalidSize: Error =
+        Error::Tbl(TblError::InvalidSize);
+    pub const CfeTblErrNeverLoaded: Error =
+        Error::Tbl(TblError::NeverLoaded);
+    pub const CfeTblErrRegistryFull: Error =
+        Error::Tbl(TblError::RegistryFull);
+    pub const CfeTblErrNoAccess: Error =
+        Error::Tbl(TblError::NoAccess);
+    pub const CfeTblErrUnregistered: Error =
+        Error::Tbl(TblError::Unregistered);
+    pub const CfeTblErrHandlesFull: Error =
+        Error::Tbl(TblError::HandlesFull);
+    pub const CfeTblErrDuplicateDiffSize: Error =
+        Error::Tbl(TblError::DuplicateDiffSize);
+    pub const CfeTblErrDuplicateNotOwned: Error =
+        Error::Tbl(TblError::DuplicateNotOwned);
+    pub const CfeTblErrNoBufferAvail: Error =
+        Error::Tbl(TblError::NoBufferAvail);
+    pub const CfeTblErrDumpOnly: Error =
+        Error::Tbl(TblError::DumpOnly);
+    pub const CfeTblErrIllegalSrcType: Error =
+        Error::Tbl(TblError::IllegalSrcType);
+    pub const CfeTblErrLoadInProgress: Error =
+        Error::Tbl(TblError::LoadInProgress);
+    pub const CfeTblErrFileTooLarge: Error =
+        Error::Tbl(TblError::FileTooLarge);
+    pub const CfeTblErrBadContentId: Error =
+        Error::Tbl(TblError::BadContentId);
+    pub const CfeTblErrBadSubtypeId: Error =
+        Error::Tbl(TblError::BadSubtypeId);
+    pub const CfeTblErrFileSizeInconsistent: Error =
+        Error::Tbl(TblError::FileSizeInconsistent);
+    pub const CfeTblErrNoStdHeader: Error =
+        Error::Tbl(TblError::NoStdHeader);
+    pub const CfeTblErrNoTblHeader: Error =
+        Error::Tbl(TblError::NoTblHeader);
+    pub const CfeTblErrFilenameTooLong: Error =
+        Error::Tbl(TblError::FilenameTooLong);
+    pub const CfeTblErrFileForWrongTable: Error =
+        Error::Tbl(TblError::FileForWrongTable);
+    pub const CfeTblErrLoadIncomplete: Error =
+        Error::Tbl(TblError::LoadIncomplete);
+    pub const CfeTblErrPartialLoad: Error =
+        Error::Tbl(TblError::PartialLoad);
+    pub const CfeTblErrInvalidOptions: Error =
+        Error::Tbl(TblError::InvalidOptions);
+    pub const CfeTblErrBadSpacecraftId: Error =
+        Error::Tbl(TblError::BadSpacecraftId);
+    pub const CfeTblErrBadProcessorId: Error =
+        Error::Tbl(TblError::BadProcessorId);
+    pub const CfeTblMessageError: Error =
+        Error::Tbl(TblError::MessageError);
+    pub const CfeTblErrShortFile: Error =
+        Error::Tbl(TblError::ShortFile);
+    pub const CfeTblErrAccess: Error =
+        Error::Tbl(TblError::Access);
+    pub const CfeTblBadArgument: Error =
+        Error::Tbl(TblError::BadArgument);
+    pub const CfeTblNotImplemented: Error =
+        Error::Tbl(TblError::NotImplemented);
+
+    // --- CFE TIME ---
+    pub const CfeTimeNotImplemented: Error =
+        Error::Time(TimeError::NotImplemented);
+    pub const CfeTimeInternalOnly: Error =
+        Error::Time(TimeError::InternalOnly);
+    pub const CfeTimeOutOfRange: Error =
+        Error::Time(TimeError::OutOfRange);
+    pub const CfeTimeTooManySynchCallbacks: Error =
+        Error::Time(TimeError::TooManySynchCallbacks);
+    pub const CfeTimeCallbackNotRegistered: Error =
+        Error::Time(TimeError::CallbackNotRegistered);
+    pub const CfeTimeBadArgument: Error =
+        Error::Time(TimeError::BadArgument);
+
+    // --- OSAL ---
+    pub const OsError: Error =
+        Error::Osal(OsalError::Error);
+    pub const OsInvalidPointer: Error =
+        Error::Osal(OsalError::InvalidPointer);
+    pub const OsErrorAddressMisaligned: Error =
+        Error::Osal(OsalError::AddressMisaligned);
+    pub const OsErrorTimeout: Error =
+        Error::Osal(OsalError::Timeout);
+    pub const OsInvalidIntNum: Error =
+        Error::Osal(OsalError::InvalidIntNum);
+    pub const OsSemFailure: Error =
+        Error::Osal(OsalError::SemFailure);
+    pub const OsSemTimeout: Error =
+        Error::Osal(OsalError::SemTimeout);
+    pub const OsQueueEmpty: Error =
+        Error::Osal(OsalError::QueueEmpty);
+    pub const OsQueueFull: Error =
+        Error::Osal(OsalError::QueueFull);
+    pub const OsQueueTimeout: Error =
+        Error::Osal(OsalError::QueueTimeout);
+    pub const OsQueueInvalidSize: Error =
+        Error::Osal(OsalError::QueueInvalidSize);
+    pub const OsQueueIdError: Error =
+        Error::Osal(OsalError::QueueIdError);
+    pub const OsErrNameTooLong: Error =
+        Error::Osal(OsalError::NameTooLong);
+    pub const OsErrNoFreeIds: Error =
+        Error::Osal(OsalError::NoFreeIds);
+    pub const OsErrNameTaken: Error =
+        Error::Osal(OsalError::NameTaken);
+    pub const OsErrInvalidId: Error =
+        Error::Osal(OsalError::InvalidId);
+    pub const OsErrNameNotFound: Error =
+        Error::Osal(OsalError::NameNotFound);
+    pub const OsErrSemNotFull: Error =
+        Error::Osal(OsalError::SemNotFull);
+    pub const OsErrInvalidPriority: Error =
+        Error::Osal(OsalError::InvalidPriority);
+    pub const OsInvalidSemValue: Error =
+        Error::Osal(OsalError::InvalidSemValue);
+    pub const OsErrFile: Error =
+        Error::Osal(OsalError::File);
+    pub const OsErrNotImplemented: Error =
+        Error::Osal(OsalError::NotImplemented);
+    pub const OsTimerErrInvalidArgs: Error =
+        Error::Osal(OsalError::TimerInvalidArgs);
+    pub const OsTimerErrTimerId: Error =
+        Error::Osal(OsalError::TimerIdError);
+    pub const OsTimerErrUnavailable: Error =
+        Error::Osal(OsalError::TimerUnavailable);
+    pub const OsTimerErrInternal: Error =
+        Error::Osal(OsalError::TimerInternal);
+    pub const OsErrObjectInUse: Error =
+        Error::Osal(OsalError::ObjectInUse);
+    pub const OsErrBadAddress: Error =
+        Error::Osal(OsalError::BadAddress);
+    pub const OsErrIncorrectObjState: Error =
+        Error::Osal(OsalError::IncorrectObjState);
+    pub const OsErrIncorrectObjType: Error =
+        Error::Osal(OsalError::IncorrectObjType);
+    pub const OsErrStreamDisconnected: Error =
+        Error::Osal(OsalError::StreamDisconnected);
+    pub const OsErrOperationNotSupported: Error =
+        Error::Osal(OsalError::OperationNotSupported);
+    pub const OsErrInvalidSize: Error =
+        Error::Osal(OsalError::InvalidSize);
+    pub const OsErrOutputTooLarge: Error =
+        Error::Osal(OsalError::OutputTooLarge);
+    pub const OsErrInvalidArgument: Error =
+        Error::Osal(OsalError::InvalidArgument);
+    pub const OsFsErrPathTooLong: Error =
+        Error::Osal(OsalError::FsPathTooLong);
+    pub const OsFsErrNameTooLong: Error =
+        Error::Osal(OsalError::FsNameTooLong);
+    pub const OsFsErrDriveNotCreated: Error =
+        Error::Osal(OsalError::FsDriveNotCreated);
+    pub const OsFsErrDeviceNotFree: Error =
+        Error::Osal(OsalError::FsDeviceNotFree);
+    pub const OsFsErrPathInvalid: Error =
+        Error::Osal(OsalError::FsPathInvalid);
+}
+
+// ── From<CFE_Status_t> ─────────────────────────────────────
+
 impl From<ffi::CFE_Status_t> for Error {
-    /// Converts a raw `CFE_Status_t` code into an `Error` enum.
     fn from(status: ffi::CFE_Status_t) -> Self {
         match status {
             // --- Generic CFE Status ---
-            ffi::CFE_STATUS_WRONG_MSG_LENGTH => Error::CfeStatusWrongMsgLength,
-            ffi::CFE_STATUS_UNKNOWN_MSG_ID => Error::CfeStatusUnknownMsgId,
-            ffi::CFE_STATUS_BAD_COMMAND_CODE => Error::CfeStatusBadCommandCode,
-            ffi::CFE_STATUS_EXTERNAL_RESOURCE_FAIL => Error::CfeStatusExternalResourceFail,
-            ffi::CFE_STATUS_REQUEST_ALREADY_PENDING => Error::CfeStatusRequestAlreadyPending,
-            ffi::CFE_STATUS_VALIDATION_FAILURE => Error::CfeStatusValidationFailure,
-            ffi::CFE_STATUS_RANGE_ERROR => Error::CfeStatusRangeError,
-            ffi::CFE_STATUS_INCORRECT_STATE => Error::CfeStatusIncorrectState,
-            ffi::CFE_STATUS_NOT_IMPLEMENTED => Error::CfeStatusNotImplemented,
+            ffi::CFE_STATUS_WRONG_MSG_LENGTH => Error::WrongMsgLength,
+            ffi::CFE_STATUS_UNKNOWN_MSG_ID => Error::UnknownMsgId,
+            ffi::CFE_STATUS_BAD_COMMAND_CODE => Error::BadCommandCode,
+            ffi::CFE_STATUS_EXTERNAL_RESOURCE_FAIL => Error::ExternalResourceFail,
+            ffi::CFE_STATUS_REQUEST_ALREADY_PENDING => Error::RequestAlreadyPending,
+            ffi::CFE_STATUS_VALIDATION_FAILURE => Error::ValidationFailure,
+            ffi::CFE_STATUS_RANGE_ERROR => Error::RangeError,
+            ffi::CFE_STATUS_INCORRECT_STATE => Error::IncorrectState,
+            ffi::CFE_STATUS_NOT_IMPLEMENTED => Error::NotImplemented,
 
             // --- CFE EVS (Event Services) ---
-            ffi::CFE_EVS_UNKNOWN_FILTER => Error::CfeEvsUnknownFilter,
-            ffi::CFE_EVS_APP_NOT_REGISTERED => Error::CfeEvsAppNotRegistered,
-            ffi::CFE_EVS_APP_ILLEGAL_APP_ID => Error::CfeEvsAppIllegalAppId,
-            ffi::CFE_EVS_APP_FILTER_OVERLOAD => Error::CfeEvsAppFilterOverload,
-            ffi::CFE_EVS_RESET_AREA_POINTER => Error::CfeEvsResetAreaPointer,
-            ffi::CFE_EVS_EVT_NOT_REGISTERED => Error::CfeEvsEvtNotRegistered,
-            ffi::CFE_EVS_FILE_WRITE_ERROR => Error::CfeEvsFileWriteError,
-            ffi::CFE_EVS_INVALID_PARAMETER => Error::CfeEvsInvalidParameter,
-            ffi::CFE_EVS_APP_SQUELCHED => Error::CfeEvsAppSquelched,
-            ffi::CFE_EVS_NOT_IMPLEMENTED => Error::CfeEvsNotImplemented,
+            ffi::CFE_EVS_UNKNOWN_FILTER => EvsError::UnknownFilter.into(),
+            ffi::CFE_EVS_APP_NOT_REGISTERED => EvsError::AppNotRegistered.into(),
+            ffi::CFE_EVS_APP_ILLEGAL_APP_ID => EvsError::AppIllegalAppId.into(),
+            ffi::CFE_EVS_APP_FILTER_OVERLOAD => EvsError::AppFilterOverload.into(),
+            ffi::CFE_EVS_RESET_AREA_POINTER => EvsError::ResetAreaPointer.into(),
+            ffi::CFE_EVS_EVT_NOT_REGISTERED => EvsError::EvtNotRegistered.into(),
+            ffi::CFE_EVS_FILE_WRITE_ERROR => EvsError::FileWriteError.into(),
+            ffi::CFE_EVS_INVALID_PARAMETER => EvsError::InvalidParameter.into(),
+            ffi::CFE_EVS_APP_SQUELCHED => EvsError::AppSquelched.into(),
+            ffi::CFE_EVS_NOT_IMPLEMENTED => EvsError::NotImplemented.into(),
 
             // --- CFE ES (Executive Services) ---
-            ffi::CFE_ES_ERR_RESOURCEID_NOT_VALID => Error::CfeEsErrResourceIdNotValid,
-            ffi::CFE_ES_ERR_NAME_NOT_FOUND => Error::CfeEsErrNameNotFound,
-            ffi::CFE_ES_ERR_APP_CREATE => Error::CfeEsErrAppCreate,
-            ffi::CFE_ES_ERR_CHILD_TASK_CREATE => Error::CfeEsErrChildTaskCreate,
-            ffi::CFE_ES_ERR_SYS_LOG_FULL => Error::CfeEsErrSysLogFull,
-            ffi::CFE_ES_ERR_MEM_BLOCK_SIZE => Error::CfeEsErrMemBlockSize,
-            ffi::CFE_ES_ERR_LOAD_LIB => Error::CfeEsErrLoadLib,
-            ffi::CFE_ES_BAD_ARGUMENT => Error::CfeEsBadArgument,
-            ffi::CFE_ES_ERR_CHILD_TASK_REGISTER => Error::CfeEsErrChildTaskRegister,
-            ffi::CFE_ES_CDS_INSUFFICIENT_MEMORY => Error::CfeEsCdsInsufficientMemory,
-            ffi::CFE_ES_CDS_INVALID_NAME => Error::CfeEsCdsInvalidName,
-            ffi::CFE_ES_CDS_INVALID_SIZE => Error::CfeEsCdsInvalidSize,
-            ffi::CFE_ES_CDS_INVALID => Error::CfeEsCdsInvalid,
-            ffi::CFE_ES_CDS_ACCESS_ERROR => Error::CfeEsCdsAccessError,
-            ffi::CFE_ES_FILE_IO_ERR => Error::CfeEsFileIoErr,
-            ffi::CFE_ES_RST_ACCESS_ERR => Error::CfeEsRstAccessErr,
-            ffi::CFE_ES_ERR_APP_REGISTER => Error::CfeEsErrAppRegister,
-            ffi::CFE_ES_ERR_CHILD_TASK_DELETE => Error::CfeEsErrChildTaskDelete,
-            ffi::CFE_ES_ERR_CHILD_TASK_DELETE_MAIN_TASK => Error::CfeEsErrChildTaskDeleteMainTask,
-            ffi::CFE_ES_CDS_BLOCK_CRC_ERR => Error::CfeEsCdsBlockCrcErr,
-            ffi::CFE_ES_MUT_SEM_DELETE_ERR => Error::CfeEsMutSemDeleteErr,
-            ffi::CFE_ES_BIN_SEM_DELETE_ERR => Error::CfeEsBinSemDeleteErr,
-            ffi::CFE_ES_COUNT_SEM_DELETE_ERR => Error::CfeEsCountSemDeleteErr,
-            ffi::CFE_ES_QUEUE_DELETE_ERR => Error::CfeEsQueueDeleteErr,
-            ffi::CFE_ES_FILE_CLOSE_ERR => Error::CfeEsFileCloseErr,
-            ffi::CFE_ES_CDS_WRONG_TYPE_ERR => Error::CfeEsCdsWrongTypeErr,
-            ffi::CFE_ES_CDS_OWNER_ACTIVE_ERR => Error::CfeEsCdsOwnerActiveErr,
-            ffi::CFE_ES_APP_CLEANUP_ERR => Error::CfeEsAppCleanupErr,
-            ffi::CFE_ES_TIMER_DELETE_ERR => Error::CfeEsTimerDeleteErr,
-            ffi::CFE_ES_BUFFER_NOT_IN_POOL => Error::CfeEsBufferNotInPool,
-            ffi::CFE_ES_TASK_DELETE_ERR => Error::CfeEsTaskDeleteErr,
-            ffi::CFE_ES_OPERATION_TIMED_OUT => Error::CfeEsOperationTimedOut,
-            ffi::CFE_ES_NO_RESOURCE_IDS_AVAILABLE => Error::CfeEsNoResourceIdsAvailable,
-            ffi::CFE_ES_POOL_BLOCK_INVALID => Error::CfeEsPoolBlockInvalid,
-            ffi::CFE_ES_ERR_DUPLICATE_NAME => Error::CfeEsErrDuplicateName,
-            ffi::CFE_ES_NOT_IMPLEMENTED => Error::CfeEsNotImplemented,
+            ffi::CFE_ES_ERR_RESOURCEID_NOT_VALID => EsError::ResourceIdNotValid.into(),
+            ffi::CFE_ES_ERR_NAME_NOT_FOUND => EsError::NameNotFound.into(),
+            ffi::CFE_ES_ERR_APP_CREATE => EsError::AppCreate.into(),
+            ffi::CFE_ES_ERR_CHILD_TASK_CREATE => EsError::ChildTaskCreate.into(),
+            ffi::CFE_ES_ERR_SYS_LOG_FULL => EsError::SysLogFull.into(),
+            ffi::CFE_ES_ERR_MEM_BLOCK_SIZE => EsError::MemBlockSize.into(),
+            ffi::CFE_ES_ERR_LOAD_LIB => EsError::LoadLib.into(),
+            ffi::CFE_ES_BAD_ARGUMENT => EsError::BadArgument.into(),
+            ffi::CFE_ES_ERR_CHILD_TASK_REGISTER => EsError::ChildTaskRegister.into(),
+            ffi::CFE_ES_CDS_INSUFFICIENT_MEMORY => EsError::CdsInsufficientMemory.into(),
+            ffi::CFE_ES_CDS_INVALID_NAME => EsError::CdsInvalidName.into(),
+            ffi::CFE_ES_CDS_INVALID_SIZE => EsError::CdsInvalidSize.into(),
+            ffi::CFE_ES_CDS_INVALID => EsError::CdsInvalid.into(),
+            ffi::CFE_ES_CDS_ACCESS_ERROR => EsError::CdsAccessError.into(),
+            ffi::CFE_ES_FILE_IO_ERR => EsError::FileIoErr.into(),
+            ffi::CFE_ES_RST_ACCESS_ERR => EsError::RstAccessErr.into(),
+            ffi::CFE_ES_ERR_APP_REGISTER => EsError::AppRegister.into(),
+            ffi::CFE_ES_ERR_CHILD_TASK_DELETE => EsError::ChildTaskDelete.into(),
+            ffi::CFE_ES_ERR_CHILD_TASK_DELETE_MAIN_TASK => EsError::ChildTaskDeleteMainTask.into(),
+            ffi::CFE_ES_CDS_BLOCK_CRC_ERR => EsError::CdsBlockCrcErr.into(),
+            ffi::CFE_ES_MUT_SEM_DELETE_ERR => EsError::MutSemDeleteErr.into(),
+            ffi::CFE_ES_BIN_SEM_DELETE_ERR => EsError::BinSemDeleteErr.into(),
+            ffi::CFE_ES_COUNT_SEM_DELETE_ERR => EsError::CountSemDeleteErr.into(),
+            ffi::CFE_ES_QUEUE_DELETE_ERR => EsError::QueueDeleteErr.into(),
+            ffi::CFE_ES_FILE_CLOSE_ERR => EsError::FileCloseErr.into(),
+            ffi::CFE_ES_CDS_WRONG_TYPE_ERR => EsError::CdsWrongTypeErr.into(),
+            ffi::CFE_ES_CDS_OWNER_ACTIVE_ERR => EsError::CdsOwnerActiveErr.into(),
+            ffi::CFE_ES_APP_CLEANUP_ERR => EsError::AppCleanupErr.into(),
+            ffi::CFE_ES_TIMER_DELETE_ERR => EsError::TimerDeleteErr.into(),
+            ffi::CFE_ES_BUFFER_NOT_IN_POOL => EsError::BufferNotInPool.into(),
+            ffi::CFE_ES_TASK_DELETE_ERR => EsError::TaskDeleteErr.into(),
+            ffi::CFE_ES_OPERATION_TIMED_OUT => EsError::OperationTimedOut.into(),
+            ffi::CFE_ES_NO_RESOURCE_IDS_AVAILABLE => EsError::NoResourceIdsAvailable.into(),
+            ffi::CFE_ES_POOL_BLOCK_INVALID => EsError::PoolBlockInvalid.into(),
+            ffi::CFE_ES_ERR_DUPLICATE_NAME => EsError::DuplicateName.into(),
+            ffi::CFE_ES_NOT_IMPLEMENTED => EsError::NotImplemented.into(),
 
             // --- CFE FS (File Services) ---
-            ffi::CFE_FS_BAD_ARGUMENT => Error::CfeFsBadArgument,
-            ffi::CFE_FS_INVALID_PATH => Error::CfeFsInvalidPath,
-            ffi::CFE_FS_FNAME_TOO_LONG => Error::CfeFsFnameTooLong,
-            ffi::CFE_FS_NOT_IMPLEMENTED => Error::CfeFsNotImplemented,
+            ffi::CFE_FS_BAD_ARGUMENT => FsError::BadArgument.into(),
+            ffi::CFE_FS_INVALID_PATH => FsError::InvalidPath.into(),
+            ffi::CFE_FS_FNAME_TOO_LONG => FsError::FnameTooLong.into(),
+            ffi::CFE_FS_NOT_IMPLEMENTED => FsError::NotImplemented.into(),
 
             // --- CFE SB (Software Bus) ---
-            ffi::CFE_SB_TIME_OUT => Error::CfeSbTimeOut,
-            ffi::CFE_SB_NO_MESSAGE => Error::CfeSbNoMessage,
-            ffi::CFE_SB_BAD_ARGUMENT => Error::CfeSbBadArgument,
-            ffi::CFE_SB_MAX_PIPES_MET => Error::CfeSbMaxPipesMet,
-            ffi::CFE_SB_PIPE_CR_ERR => Error::CfeSbPipeCrErr,
-            ffi::CFE_SB_PIPE_RD_ERR => Error::CfeSbPipeRdErr,
-            ffi::CFE_SB_MSG_TOO_BIG => Error::CfeSbMsgTooBig,
-            ffi::CFE_SB_BUF_ALOC_ERR => Error::CfeSbBufAlocErr,
-            ffi::CFE_SB_MAX_MSGS_MET => Error::CfeSbMaxMsgsMet,
-            ffi::CFE_SB_MAX_DESTS_MET => Error::CfeSbMaxDestsMet,
-            ffi::CFE_SB_INTERNAL_ERR => Error::CfeSbInternalErr,
-            ffi::CFE_SB_WRONG_MSG_TYPE => Error::CfeSbWrongMsgType,
-            ffi::CFE_SB_BUFFER_INVALID => Error::CfeSbBufferInvalid,
-            ffi::CFE_SB_NOT_IMPLEMENTED => Error::CfeSbNotImplemented,
+            ffi::CFE_SB_TIME_OUT => SbError::TimeOut.into(),
+            ffi::CFE_SB_NO_MESSAGE => SbError::NoMessage.into(),
+            ffi::CFE_SB_BAD_ARGUMENT => SbError::BadArgument.into(),
+            ffi::CFE_SB_MAX_PIPES_MET => SbError::MaxPipesMet.into(),
+            ffi::CFE_SB_PIPE_CR_ERR => SbError::PipeCrErr.into(),
+            ffi::CFE_SB_PIPE_RD_ERR => SbError::PipeRdErr.into(),
+            ffi::CFE_SB_MSG_TOO_BIG => SbError::MsgTooBig.into(),
+            ffi::CFE_SB_BUF_ALOC_ERR => SbError::BufAllocErr.into(),
+            ffi::CFE_SB_MAX_MSGS_MET => SbError::MaxMsgsMet.into(),
+            ffi::CFE_SB_MAX_DESTS_MET => SbError::MaxDestsMet.into(),
+            ffi::CFE_SB_INTERNAL_ERR => SbError::InternalErr.into(),
+            ffi::CFE_SB_WRONG_MSG_TYPE => SbError::WrongMsgType.into(),
+            ffi::CFE_SB_BUFFER_INVALID => SbError::BufferInvalid.into(),
+            ffi::CFE_SB_NOT_IMPLEMENTED => SbError::NotImplemented.into(),
 
             // --- CFE TBL (Table Services) ---
-            ffi::CFE_TBL_ERR_INVALID_HANDLE => Error::CfeTblErrInvalidHandle,
-            ffi::CFE_TBL_ERR_INVALID_NAME => Error::CfeTblErrInvalidName,
-            ffi::CFE_TBL_ERR_INVALID_SIZE => Error::CfeTblErrInvalidSize,
-            ffi::CFE_TBL_ERR_NEVER_LOADED => Error::CfeTblErrNeverLoaded,
-            ffi::CFE_TBL_ERR_REGISTRY_FULL => Error::CfeTblErrRegistryFull,
-            ffi::CFE_TBL_ERR_NO_ACCESS => Error::CfeTblErrNoAccess,
-            ffi::CFE_TBL_ERR_UNREGISTERED => Error::CfeTblErrUnregistered,
-            ffi::CFE_TBL_ERR_HANDLES_FULL => Error::CfeTblErrHandlesFull,
-            ffi::CFE_TBL_ERR_DUPLICATE_DIFF_SIZE => Error::CfeTblErrDuplicateDiffSize,
-            ffi::CFE_TBL_ERR_DUPLICATE_NOT_OWNED => Error::CfeTblErrDuplicateNotOwned,
-            ffi::CFE_TBL_ERR_NO_BUFFER_AVAIL => Error::CfeTblErrNoBufferAvail,
-            ffi::CFE_TBL_ERR_DUMP_ONLY => Error::CfeTblErrDumpOnly,
-            ffi::CFE_TBL_ERR_ILLEGAL_SRC_TYPE => Error::CfeTblErrIllegalSrcType,
-            ffi::CFE_TBL_ERR_LOAD_IN_PROGRESS => Error::CfeTblErrLoadInProgress,
-            ffi::CFE_TBL_ERR_FILE_TOO_LARGE => Error::CfeTblErrFileTooLarge,
-            ffi::CFE_TBL_ERR_BAD_CONTENT_ID => Error::CfeTblErrBadContentId,
-            ffi::CFE_TBL_ERR_BAD_SUBTYPE_ID => Error::CfeTblErrBadSubtypeId,
-            ffi::CFE_TBL_ERR_FILE_SIZE_INCONSISTENT => Error::CfeTblErrFileSizeInconsistent,
-            ffi::CFE_TBL_ERR_NO_STD_HEADER => Error::CfeTblErrNoStdHeader,
-            ffi::CFE_TBL_ERR_NO_TBL_HEADER => Error::CfeTblErrNoTblHeader,
-            ffi::CFE_TBL_ERR_FILENAME_TOO_LONG => Error::CfeTblErrFilenameTooLong,
-            ffi::CFE_TBL_ERR_FILE_FOR_WRONG_TABLE => Error::CfeTblErrFileForWrongTable,
-            ffi::CFE_TBL_ERR_LOAD_INCOMPLETE => Error::CfeTblErrLoadIncomplete,
-            ffi::CFE_TBL_ERR_PARTIAL_LOAD => Error::CfeTblErrPartialLoad,
-            ffi::CFE_TBL_ERR_INVALID_OPTIONS => Error::CfeTblErrInvalidOptions,
-            ffi::CFE_TBL_ERR_BAD_SPACECRAFT_ID => Error::CfeTblErrBadSpacecraftId,
-            ffi::CFE_TBL_ERR_BAD_PROCESSOR_ID => Error::CfeTblErrBadProcessorId,
-            ffi::CFE_TBL_MESSAGE_ERROR => Error::CfeTblMessageError,
-            ffi::CFE_TBL_ERR_SHORT_FILE => Error::CfeTblErrShortFile,
-            ffi::CFE_TBL_ERR_ACCESS => Error::CfeTblErrAccess,
-            ffi::CFE_TBL_BAD_ARGUMENT => Error::CfeTblBadArgument,
-            ffi::CFE_TBL_NOT_IMPLEMENTED => Error::CfeTblNotImplemented,
+            ffi::CFE_TBL_ERR_INVALID_HANDLE => TblError::InvalidHandle.into(),
+            ffi::CFE_TBL_ERR_INVALID_NAME => TblError::InvalidName.into(),
+            ffi::CFE_TBL_ERR_INVALID_SIZE => TblError::InvalidSize.into(),
+            ffi::CFE_TBL_ERR_NEVER_LOADED => TblError::NeverLoaded.into(),
+            ffi::CFE_TBL_ERR_REGISTRY_FULL => TblError::RegistryFull.into(),
+            ffi::CFE_TBL_ERR_NO_ACCESS => TblError::NoAccess.into(),
+            ffi::CFE_TBL_ERR_UNREGISTERED => TblError::Unregistered.into(),
+            ffi::CFE_TBL_ERR_HANDLES_FULL => TblError::HandlesFull.into(),
+            ffi::CFE_TBL_ERR_DUPLICATE_DIFF_SIZE => TblError::DuplicateDiffSize.into(),
+            ffi::CFE_TBL_ERR_DUPLICATE_NOT_OWNED => TblError::DuplicateNotOwned.into(),
+            ffi::CFE_TBL_ERR_NO_BUFFER_AVAIL => TblError::NoBufferAvail.into(),
+            ffi::CFE_TBL_ERR_DUMP_ONLY => TblError::DumpOnly.into(),
+            ffi::CFE_TBL_ERR_ILLEGAL_SRC_TYPE => TblError::IllegalSrcType.into(),
+            ffi::CFE_TBL_ERR_LOAD_IN_PROGRESS => TblError::LoadInProgress.into(),
+            ffi::CFE_TBL_ERR_FILE_TOO_LARGE => TblError::FileTooLarge.into(),
+            ffi::CFE_TBL_ERR_BAD_CONTENT_ID => TblError::BadContentId.into(),
+            ffi::CFE_TBL_ERR_BAD_SUBTYPE_ID => TblError::BadSubtypeId.into(),
+            ffi::CFE_TBL_ERR_FILE_SIZE_INCONSISTENT => TblError::FileSizeInconsistent.into(),
+            ffi::CFE_TBL_ERR_NO_STD_HEADER => TblError::NoStdHeader.into(),
+            ffi::CFE_TBL_ERR_NO_TBL_HEADER => TblError::NoTblHeader.into(),
+            ffi::CFE_TBL_ERR_FILENAME_TOO_LONG => TblError::FilenameTooLong.into(),
+            ffi::CFE_TBL_ERR_FILE_FOR_WRONG_TABLE => TblError::FileForWrongTable.into(),
+            ffi::CFE_TBL_ERR_LOAD_INCOMPLETE => TblError::LoadIncomplete.into(),
+            ffi::CFE_TBL_ERR_PARTIAL_LOAD => TblError::PartialLoad.into(),
+            ffi::CFE_TBL_ERR_INVALID_OPTIONS => TblError::InvalidOptions.into(),
+            ffi::CFE_TBL_ERR_BAD_SPACECRAFT_ID => TblError::BadSpacecraftId.into(),
+            ffi::CFE_TBL_ERR_BAD_PROCESSOR_ID => TblError::BadProcessorId.into(),
+            ffi::CFE_TBL_MESSAGE_ERROR => TblError::MessageError.into(),
+            ffi::CFE_TBL_ERR_SHORT_FILE => TblError::ShortFile.into(),
+            ffi::CFE_TBL_ERR_ACCESS => TblError::Access.into(),
+            ffi::CFE_TBL_BAD_ARGUMENT => TblError::BadArgument.into(),
+            ffi::CFE_TBL_NOT_IMPLEMENTED => TblError::NotImplemented.into(),
 
             // --- CFE TIME (Time Services) ---
-            ffi::CFE_TIME_NOT_IMPLEMENTED => Error::CfeTimeNotImplemented,
-            ffi::CFE_TIME_INTERNAL_ONLY => Error::CfeTimeInternalOnly,
-            ffi::CFE_TIME_OUT_OF_RANGE => Error::CfeTimeOutOfRange,
-            ffi::CFE_TIME_TOO_MANY_SYNCH_CALLBACKS => Error::CfeTimeTooManySynchCallbacks,
-            ffi::CFE_TIME_CALLBACK_NOT_REGISTERED => Error::CfeTimeCallbackNotRegistered,
-            ffi::CFE_TIME_BAD_ARGUMENT => Error::CfeTimeBadArgument,
+            ffi::CFE_TIME_NOT_IMPLEMENTED => TimeError::NotImplemented.into(),
+            ffi::CFE_TIME_INTERNAL_ONLY => TimeError::InternalOnly.into(),
+            ffi::CFE_TIME_OUT_OF_RANGE => TimeError::OutOfRange.into(),
+            ffi::CFE_TIME_TOO_MANY_SYNCH_CALLBACKS => TimeError::TooManySynchCallbacks.into(),
+            ffi::CFE_TIME_CALLBACK_NOT_REGISTERED => TimeError::CallbackNotRegistered.into(),
+            ffi::CFE_TIME_BAD_ARGUMENT => TimeError::BadArgument.into(),
 
             // --- OSAL Status Codes ---
-            ffi::OS_ERROR => Error::OsError,
-            ffi::OS_INVALID_POINTER => Error::OsInvalidPointer,
-            ffi::OS_ERROR_ADDRESS_MISALIGNED => Error::OsErrorAddressMisaligned,
-            ffi::OS_ERROR_TIMEOUT => Error::OsErrorTimeout,
-            ffi::OS_INVALID_INT_NUM => Error::OsInvalidIntNum,
-            ffi::OS_SEM_FAILURE => Error::OsSemFailure,
-            ffi::OS_SEM_TIMEOUT => Error::OsSemTimeout,
-            ffi::OS_QUEUE_EMPTY => Error::OsQueueEmpty,
-            ffi::OS_QUEUE_FULL => Error::OsQueueFull,
-            ffi::OS_QUEUE_TIMEOUT => Error::OsQueueTimeout,
-            ffi::OS_QUEUE_INVALID_SIZE => Error::OsQueueInvalidSize,
-            ffi::OS_QUEUE_ID_ERROR => Error::OsQueueIdError,
-            ffi::OS_ERR_NAME_TOO_LONG => Error::OsErrNameTooLong,
-            ffi::OS_ERR_NO_FREE_IDS => Error::OsErrNoFreeIds,
-            ffi::OS_ERR_NAME_TAKEN => Error::OsErrNameTaken,
-            ffi::OS_ERR_INVALID_ID => Error::OsErrInvalidId,
-            ffi::OS_ERR_NAME_NOT_FOUND => Error::OsErrNameNotFound,
-            ffi::OS_ERR_SEM_NOT_FULL => Error::OsErrSemNotFull,
-            ffi::OS_ERR_INVALID_PRIORITY => Error::OsErrInvalidPriority,
-            ffi::OS_INVALID_SEM_VALUE => Error::OsInvalidSemValue,
-            ffi::OS_ERR_FILE => Error::OsErrFile,
-            ffi::OS_ERR_NOT_IMPLEMENTED => Error::OsErrNotImplemented,
-            ffi::OS_TIMER_ERR_INVALID_ARGS => Error::OsTimerErrInvalidArgs,
-            ffi::OS_TIMER_ERR_TIMER_ID => Error::OsTimerErrTimerId,
-            ffi::OS_TIMER_ERR_UNAVAILABLE => Error::OsTimerErrUnavailable,
-            ffi::OS_TIMER_ERR_INTERNAL => Error::OsTimerErrInternal,
-            ffi::OS_ERR_OBJECT_IN_USE => Error::OsErrObjectInUse,
-            ffi::OS_ERR_BAD_ADDRESS => Error::OsErrBadAddress,
-            ffi::OS_ERR_INCORRECT_OBJ_STATE => Error::OsErrIncorrectObjState,
-            ffi::OS_ERR_INCORRECT_OBJ_TYPE => Error::OsErrIncorrectObjType,
-            ffi::OS_ERR_STREAM_DISCONNECTED => Error::OsErrStreamDisconnected,
-            ffi::OS_ERR_OPERATION_NOT_SUPPORTED => Error::OsErrOperationNotSupported,
-            ffi::OS_ERR_INVALID_SIZE => Error::OsErrInvalidSize,
-            ffi::OS_ERR_OUTPUT_TOO_LARGE => Error::OsErrOutputTooLarge,
-            ffi::OS_ERR_INVALID_ARGUMENT => Error::OsErrInvalidArgument,
-            ffi::OS_FS_ERR_PATH_TOO_LONG => Error::OsFsErrPathTooLong,
-            ffi::OS_FS_ERR_NAME_TOO_LONG => Error::OsFsErrNameTooLong,
-            ffi::OS_FS_ERR_DRIVE_NOT_CREATED => Error::OsFsErrDriveNotCreated,
-            ffi::OS_FS_ERR_DEVICE_NOT_FREE => Error::OsFsErrDeviceNotFree,
-            ffi::OS_FS_ERR_PATH_INVALID => Error::OsFsErrPathInvalid,
+            ffi::OS_ERROR => OsalError::Error.into(),
+            ffi::OS_INVALID_POINTER => OsalError::InvalidPointer.into(),
+            ffi::OS_ERROR_ADDRESS_MISALIGNED => OsalError::AddressMisaligned.into(),
+            ffi::OS_ERROR_TIMEOUT => OsalError::Timeout.into(),
+            ffi::OS_INVALID_INT_NUM => OsalError::InvalidIntNum.into(),
+            ffi::OS_SEM_FAILURE => OsalError::SemFailure.into(),
+            ffi::OS_SEM_TIMEOUT => OsalError::SemTimeout.into(),
+            ffi::OS_QUEUE_EMPTY => OsalError::QueueEmpty.into(),
+            ffi::OS_QUEUE_FULL => OsalError::QueueFull.into(),
+            ffi::OS_QUEUE_TIMEOUT => OsalError::QueueTimeout.into(),
+            ffi::OS_QUEUE_INVALID_SIZE => OsalError::QueueInvalidSize.into(),
+            ffi::OS_QUEUE_ID_ERROR => OsalError::QueueIdError.into(),
+            ffi::OS_ERR_NAME_TOO_LONG => OsalError::NameTooLong.into(),
+            ffi::OS_ERR_NO_FREE_IDS => OsalError::NoFreeIds.into(),
+            ffi::OS_ERR_NAME_TAKEN => OsalError::NameTaken.into(),
+            ffi::OS_ERR_INVALID_ID => OsalError::InvalidId.into(),
+            ffi::OS_ERR_NAME_NOT_FOUND => OsalError::NameNotFound.into(),
+            ffi::OS_ERR_SEM_NOT_FULL => OsalError::SemNotFull.into(),
+            ffi::OS_ERR_INVALID_PRIORITY => OsalError::InvalidPriority.into(),
+            ffi::OS_INVALID_SEM_VALUE => OsalError::InvalidSemValue.into(),
+            ffi::OS_ERR_FILE => OsalError::File.into(),
+            ffi::OS_ERR_NOT_IMPLEMENTED => OsalError::NotImplemented.into(),
+            ffi::OS_TIMER_ERR_INVALID_ARGS => OsalError::TimerInvalidArgs.into(),
+            ffi::OS_TIMER_ERR_TIMER_ID => OsalError::TimerIdError.into(),
+            ffi::OS_TIMER_ERR_UNAVAILABLE => OsalError::TimerUnavailable.into(),
+            ffi::OS_TIMER_ERR_INTERNAL => OsalError::TimerInternal.into(),
+            ffi::OS_ERR_OBJECT_IN_USE => OsalError::ObjectInUse.into(),
+            ffi::OS_ERR_BAD_ADDRESS => OsalError::BadAddress.into(),
+            ffi::OS_ERR_INCORRECT_OBJ_STATE => OsalError::IncorrectObjState.into(),
+            ffi::OS_ERR_INCORRECT_OBJ_TYPE => OsalError::IncorrectObjType.into(),
+            ffi::OS_ERR_STREAM_DISCONNECTED => OsalError::StreamDisconnected.into(),
+            ffi::OS_ERR_OPERATION_NOT_SUPPORTED => OsalError::OperationNotSupported.into(),
+            ffi::OS_ERR_INVALID_SIZE => OsalError::InvalidSize.into(),
+            ffi::OS_ERR_OUTPUT_TOO_LARGE => OsalError::OutputTooLarge.into(),
+            ffi::OS_ERR_INVALID_ARGUMENT => OsalError::InvalidArgument.into(),
+            ffi::OS_FS_ERR_PATH_TOO_LONG => OsalError::FsPathTooLong.into(),
+            ffi::OS_FS_ERR_NAME_TOO_LONG => OsalError::FsNameTooLong.into(),
+            ffi::OS_FS_ERR_DRIVE_NOT_CREATED => OsalError::FsDriveNotCreated.into(),
+            ffi::OS_FS_ERR_DEVICE_NOT_FREE => OsalError::FsDeviceNotFree.into(),
+            ffi::OS_FS_ERR_PATH_INVALID => OsalError::FsPathInvalid.into(),
 
             other => Error::Unhandled(other),
         }
     }
 }
 
+// ── Helper functions ────────────────────────────────────────
+
 impl Error {
     /// Retrieves the symbolic name for an OSAL status code.
-    pub fn name(error: i32) -> Result<CString<{ ffi::OS_ERROR_NAME_LENGTH as usize }>> {
+    pub fn name(
+        error: i32,
+    ) -> Result<CString<{ ffi::OS_ERROR_NAME_LENGTH as usize }>> {
         const SIZE: usize = ffi::OS_ERROR_NAME_LENGTH as usize;
         let mut name_buf = [0u8; SIZE];
         check(unsafe {
-            ffi::OS_GetErrorName(error, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE])
+            ffi::OS_GetErrorName(
+                error,
+                &mut name_buf as *mut _ as *mut [libc::c_char; SIZE],
+            )
         })?;
 
-        // The result from OS_GetErrorName is null-terminated.
         let mut s = CString::new();
         s.extend_from_bytes(&name_buf)
             .map_err(|_| Error::OsErrNameTooLong)?;
@@ -703,7 +1079,10 @@ pub fn get_cfe_status_name(
     const SIZE: usize = ffi::CFE_STATUS_STRING_LENGTH as usize;
     let mut name_buf = [0u8; SIZE];
     unsafe {
-        ffi::CFE_ES_StatusToString(status, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE])
+        ffi::CFE_ES_StatusToString(
+            status,
+            &mut name_buf as *mut _ as *mut [libc::c_char; SIZE],
+        )
     };
 
     let mut s = CString::new();
@@ -712,13 +1091,19 @@ pub fn get_cfe_status_name(
     Ok(s)
 }
 
-/// Converts an OSAL status code to its decimal or hex string representation.
+/// Converts an OSAL status code to its decimal or hex string
+/// representation.
 pub fn osal_status_to_string(
     status: i32,
 ) -> Result<CString<{ ffi::OS_STATUS_STRING_LENGTH as usize }>> {
     const SIZE: usize = ffi::OS_STATUS_STRING_LENGTH as usize;
     let mut name_buf = [0u8; SIZE];
-    unsafe { ffi::OS_StatusToString(status, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE]) };
+    unsafe {
+        ffi::OS_StatusToString(
+            status,
+            &mut name_buf as *mut _ as *mut [libc::c_char; SIZE],
+        )
+    };
 
     let mut s = CString::new();
     s.extend_from_bytes(&name_buf)

@@ -1,6 +1,6 @@
 //! Safe, idiomatic wrappers for OSAL networking APIs (sockets).
 
-use crate::error::{Error, Result};
+use crate::error::{Error, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::time::OsTime;
@@ -533,7 +533,7 @@ impl UdpSocket {
         core::future::poll_fn(|_| {
             let recv_future = self.recv_from(buf, Timeout::Poll);
             match recv_future {
-                Err(Error::OsErrorTimeout | Error::OsQueueEmpty) => Poll::Pending,
+                Err(Error::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
                 Ok(result) => Poll::Ready(Ok(result)),
                 Err(e) => Poll::Ready(Err(e)),
             }
@@ -549,7 +549,7 @@ impl UdpSocket {
         core::future::poll_fn(|_| {
             // send_to is typically non-blocking for UDP, but wrap it anyway
             match self.send_to(buf, target) {
-                Err(Error::OsErrorTimeout | Error::OsQueueEmpty) => Poll::Pending,
+                Err(Error::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
                 Ok(result) => Poll::Ready(Ok(result)),
                 Err(e) => Poll::Ready(Err(e)),
             }

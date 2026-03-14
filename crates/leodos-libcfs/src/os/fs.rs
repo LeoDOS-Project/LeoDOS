@@ -5,7 +5,7 @@
 //! It also provides wrappers for standalone filesystem operations like `mkdir` and `remove`.
 
 use crate::cfe::time::SysTime;
-use crate::error::{Error, Result};
+use crate::error::{Error, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::time::OsTime;
@@ -222,7 +222,7 @@ impl Iterator for Directory {
                     Err(_) => Some(Err(Error::OsErrNameTooLong)),
                 }
             }
-            Err(Error::OsError) => None,
+            Err(Error::Osal(OsalError::Error)) => None,
             Err(err) => Some(Err(err)),
         }
     }
@@ -803,7 +803,7 @@ impl File {
     pub fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> impl Future<Output = Result<usize>> + 'a {
         core::future::poll_fn(|_| match self.timed_read(buf, 0) {
             Ok(n) => core::task::Poll::Ready(Ok(n)),
-            Err(Error::OsErrorTimeout | Error::OsQueueEmpty) => Poll::Pending,
+            Err(Error::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
             Err(e) => core::task::Poll::Ready(Err(e)),
         })
     }
@@ -812,7 +812,7 @@ impl File {
     pub fn write<'a>(&'a mut self, buf: &'a [u8]) -> impl Future<Output = Result<usize>> + 'a {
         core::future::poll_fn(|_| match self.timed_write(buf, 0) {
             Ok(n) => core::task::Poll::Ready(Ok(n)),
-            Err(Error::OsErrorTimeout | Error::OsQueueFull) => Poll::Pending,
+            Err(Error::Osal(OsalError::Timeout | OsalError::QueueFull)) => Poll::Pending,
             Err(e) => core::task::Poll::Ready(Err(e)),
         })
     }

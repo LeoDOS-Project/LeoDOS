@@ -1,6 +1,6 @@
 //! Software Bus pipe management for receiving messages.
 use crate::cfe::sb::msg::MsgId;
-use crate::error::{Error, Result};
+use crate::error::{Error, OsalError, Result};
 use crate::ffi::{self, CFE_SB_DEFAULT_QOS};
 use crate::status::check;
 use bitflags::bitflags;
@@ -283,7 +283,7 @@ impl Pipe {
         core::future::poll_fn(|_| {
             let recv_future = self.timed_recv(buf, Timeout::Poll);
             match recv_future {
-                Err(Error::OsErrorTimeout | Error::OsQueueEmpty) => Poll::Pending,
+                Err(Error::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
                 Ok(result) => Poll::Ready(Ok(result)),
                 Err(e) => Poll::Ready(Err(e)),
             }
