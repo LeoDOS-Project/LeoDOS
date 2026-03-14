@@ -16,5 +16,5 @@ pub mod task;
 pub mod time;
 pub mod timebase;
 pub mod timer;
-pub mod util;
+pub(crate) mod util;
 pub mod version;

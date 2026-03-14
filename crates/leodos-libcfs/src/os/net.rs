@@ -4,13 +4,14 @@ use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::time::OsTime;
+use crate::cstring;
 use crate::status::check;
 use core::ffi::CStr;
 use core::fmt::Write;
 use core::future::Future;
 use core::mem::MaybeUninit;
 use core::task::Poll;
-use heapless::{CString, String};
+use heapless::String;
 
 /// A wrapper for a CFE/OSAL socket address.
 #[derive(Clone)]
@@ -499,10 +500,7 @@ pub struct SocketProp {
 
 /// Finds an existing socket ID by its name.
 pub fn get_socket_id_by_name(name: &str) -> Result<OsalId> {
-    let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-    c_name
-        .extend_from_bytes(name.as_bytes())
-        .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+    let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
     let mut sock_id = MaybeUninit::uninit();
     check(unsafe { ffi::OS_SocketGetIdByName(sock_id.as_mut_ptr(), c_name.as_ptr()) })?;
     Ok(OsalId(unsafe { sock_id.assume_init() }))

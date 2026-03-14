@@ -4,6 +4,7 @@ use crate::cfe::es::app::AppId;
 use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::task::TaskFlags;
+use crate::cstring;
 use crate::status::check;
 use core::ffi::CStr;
 use core::mem::MaybeUninit;
@@ -49,10 +50,7 @@ impl ChildTask {
         priority: u16,
         flags: TaskFlags,
     ) -> Result<Self> {
-        let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
 
         let mut task_id = MaybeUninit::uninit();
         check(unsafe {
@@ -175,10 +173,7 @@ impl TaskId {
 
     /// Retrieves the cFE Task ID for a given task name.
     pub fn from_name(name: &str) -> Result<Self> {
-        let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
 
         let mut task_id = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_ES_GetTaskIDByName(task_id.as_mut_ptr(), c_name.as_ptr()) })?;

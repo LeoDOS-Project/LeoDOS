@@ -2,13 +2,14 @@
 use crate::cfe::sb::msg::MsgId;
 use crate::error::{CfsError, OsalError, SbError, Result};
 use crate::ffi::{self, CFE_SB_DEFAULT_QOS};
+use crate::cstring;
 use crate::status::check;
 use bitflags::bitflags;
 use core::future::Future;
 use core::mem::MaybeUninit;
 use core::slice;
 use core::task::Poll;
-use heapless::{CString, String};
+use heapless::String;
 
 /// A type-safe, zero-cost wrapper for a cFE Software Bus Pipe ID.
 #[derive(Debug, Clone, Copy)]
@@ -97,10 +98,7 @@ impl Pipe {
     /// * `name` - A unique string to identify the pipe.
     /// * `depth` - The maximum number of messages the pipe can hold.
     pub fn new(name: &str, depth: u16) -> Result<Self> {
-        let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
 
         let mut pipe_id_uninit = MaybeUninit::<ffi::CFE_SB_PipeId_t>::uninit();
         let status =
@@ -242,10 +240,7 @@ impl Pipe {
 
     /// Finds the `PipeId` for a pipe with the given name.
     pub fn get_id_by_name(name: &str) -> Result<PipeId> {
-        let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
 
         let mut pipe_id = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_SB_GetPipeIdByName(pipe_id.as_mut_ptr(), c_name.as_ptr()) })?;

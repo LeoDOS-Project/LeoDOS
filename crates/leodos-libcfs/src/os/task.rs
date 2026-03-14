@@ -8,6 +8,7 @@ use bitflags::bitflags;
 use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
+use crate::cstring;
 use crate::status::check;
 use core::ffi::CStr;
 use core::mem::MaybeUninit;
@@ -53,10 +54,7 @@ impl TaskId {
 
     /// Finds an existing OSAL task ID by its name.
     pub fn from_name(name: &str) -> Result<Self> {
-        let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
 
         let mut task_id = MaybeUninit::uninit();
         check(unsafe { ffi::OS_TaskGetIdByName(task_id.as_mut_ptr(), c_name.as_ptr()) })?;
@@ -111,10 +109,7 @@ impl Task {
         priority: u8,
         flags: TaskFlags,
     ) -> Result<Self> {
-        let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
 
         let mut task_id = MaybeUninit::uninit();
         check(unsafe {

@@ -3,13 +3,13 @@
 use crate::cfe::sb::msg::MsgId;
 use crate::cfe::time::SysTime;
 use crate::error::{CfsError, Result, TblError};
+use crate::cstring;
 use crate::status::check;
 use crate::{ffi, status};
 use core::ffi::c_void;
 use core::marker::PhantomData;
 use core::mem::{size_of, MaybeUninit};
 use core::ops::{Deref, Drop};
-use heapless::CString;
 
 /// A type alias for the callback function used to validate table loads.
 ///
@@ -130,9 +130,7 @@ impl<T: Sized> Table<T> {
     /// * `validation_fn`: An optional callback function to validate table loads.
     pub fn new(name: &str, options: TableOptions, validation_fn: ValidationFn) -> Result<Self> {
         let mut handle = MaybeUninit::uninit();
-        let mut c_name = CString::<{ ffi::CFE_MISSION_TBL_MAX_NAME_LENGTH as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
+        let c_name = cstring::<{ ffi::CFE_MISSION_TBL_MAX_NAME_LENGTH as usize }>(name)
             .map_err(|_| CfsError::Tbl(TblError::InvalidName))?;
 
         let status = unsafe {
@@ -162,9 +160,7 @@ impl<T: Sized> Table<T> {
     /// * `name`: The full name of the table, in the format "AppName.TableName".
     pub fn share(name: &str) -> Result<Self> {
         let mut handle = MaybeUninit::uninit();
-        let mut c_name = CString::<{ ffi::CFE_MISSION_TBL_MAX_FULL_NAME_LEN as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
+        let c_name = cstring::<{ ffi::CFE_MISSION_TBL_MAX_FULL_NAME_LEN as usize }>(name)
             .map_err(|_| CfsError::Tbl(TblError::InvalidName))?;
 
         let status = unsafe { ffi::CFE_TBL_Share(handle.as_mut_ptr(), c_name.as_ptr()) };
@@ -181,9 +177,7 @@ impl<T: Sized> Table<T> {
     ///
     /// This call can block. Must not be called from ISR context.
     pub fn load_from_file(&self, filename: &str) -> Result<()> {
-        let mut c_filename = CString::<{ ffi::OS_MAX_PATH_LEN as usize }>::new();
-        c_filename
-            .extend_from_bytes(filename.as_bytes())
+        let c_filename = cstring::<{ ffi::OS_MAX_PATH_LEN as usize }>(filename)
             .map_err(|_| CfsError::Tbl(TblError::FilenameTooLong))?;
         let status = unsafe {
             ffi::CFE_TBL_Load(
@@ -241,9 +235,7 @@ impl<T: Sized> Table<T> {
     /// # Arguments
     /// * `name`: The full name of the table, in the format "AppName.TableName".
     pub fn get_info(name: &str) -> Result<TableInfo> {
-        let mut c_name = CString::<{ ffi::CFE_MISSION_TBL_MAX_FULL_NAME_LEN as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
+        let c_name = cstring::<{ ffi::CFE_MISSION_TBL_MAX_FULL_NAME_LEN as usize }>(name)
             .map_err(|_| CfsError::Tbl(TblError::InvalidName))?;
 
         let mut tbl_info_uninit = MaybeUninit::uninit();

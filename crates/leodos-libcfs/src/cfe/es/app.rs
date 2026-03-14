@@ -15,6 +15,7 @@ use crate::error::{CfsError, OsalError};
 use crate::error::Result;
 use crate::ffi;
 use crate::log;
+use crate::cstring;
 use crate::status::check;
 
 /// Represents the possible run statuses returned by `CFE_ES_RunLoop`.
@@ -146,9 +147,7 @@ impl AppId {
     /// Returns an error if the `app_id` is invalid, the filename is invalid,
     /// the file cannot be accessed, or the reload command fails.
     pub fn reload(&self, filename: &str) -> Result<()> {
-        let mut c_filename = CString::<{ ffi::OS_MAX_PATH_LEN as usize }>::new();
-        c_filename
-            .extend_from_bytes(filename.as_bytes())
+        let c_filename = cstring::<{ ffi::OS_MAX_PATH_LEN as usize }>(filename)
             .map_err(|_| CfsError::Osal(OsalError::FsPathTooLong))?;
         check(unsafe { ffi::CFE_ES_ReloadApp(self.0, c_filename.as_ptr()) })?;
         Ok(())
@@ -174,10 +173,7 @@ impl AppId {
     /// Returns an error if no application with the given name is found, or if the
     /// name is too long for the internal CFE buffers.
     pub fn from_name(name: &str) -> Result<AppId> {
-        let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
 
         let mut app_id = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_ES_GetAppIDByName(app_id.as_mut_ptr(), c_name.as_ptr()) })?;

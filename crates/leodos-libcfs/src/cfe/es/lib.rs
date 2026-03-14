@@ -3,9 +3,10 @@
 use crate::cfe::es::app::AppInfo;
 use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
+use crate::cstring;
 use crate::status::check;
 use core::mem::MaybeUninit;
-use heapless::{CString, String};
+use heapless::String;
 
 /// A type-safe, zero-cost wrapper for a cFE Library ID.
 ///
@@ -25,10 +26,7 @@ impl LibId {
     ///
     /// Returns an error if no library with the given name is found.
     pub fn from_name(name: &str) -> Result<Self> {
-        let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
 
         let mut lib_id = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_ES_GetLibIDByName(lib_id.as_mut_ptr(), c_name.as_ptr()) })?;

@@ -31,6 +31,8 @@ pub mod status;
 pub mod runtime;
 pub mod macros;
 pub mod app;
+pub mod util;
+pub use util::cstring;
 #[cfg(feature = "cfdp")]
 pub mod cf;
 #[cfg(feature = "nos3")]

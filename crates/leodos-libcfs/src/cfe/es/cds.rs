@@ -6,12 +6,12 @@
 use crate::error::{CfsError, EsError, OsalError};
 use crate::error::Result;
 use crate::ffi;
+use crate::cstring;
 use crate::status;
 use crate::status::check;
 use core::marker::PhantomData;
 use core::mem;
 use core::mem::MaybeUninit;
-use heapless::CString;
 use heapless::String;
 
 /// A type-safe, zero-cost wrapper for a cFE Critical Data Store handle.
@@ -83,9 +83,7 @@ impl<T: Copy + Sized> CdsBlock<T> {
     /// # Arguments
     /// * `name`: A unique, application-local name for the CDS block.
     pub fn new(name: &str) -> Result<(Self, CdsInfo)> {
-        let mut c_name = CString::<{ ffi::CFE_MISSION_ES_CDS_MAX_NAME_LENGTH as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
+        let c_name = cstring::<{ ffi::CFE_MISSION_ES_CDS_MAX_NAME_LENGTH as usize }>(name)
             .map_err(|_| CfsError::Es(EsError::CdsInvalidName))?;
 
         let mut handle = MaybeUninit::uninit();
@@ -147,10 +145,7 @@ impl<T: Copy + Sized> CdsBlock<T> {
 
     /// Finds an existing CDS Block ID by its full name ("AppName.CDSName").
     pub fn get_id_by_name(name: &str) -> Result<CdsHandle> {
-        let mut c_name = CString::<{ ffi::CFE_MISSION_ES_CDS_MAX_FULL_NAME_LEN as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::CFE_MISSION_ES_CDS_MAX_FULL_NAME_LEN as usize }>(name)?;
 
         let mut handle = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_ES_GetCDSBlockIDByName(handle.as_mut_ptr(), c_name.as_ptr()) })?;

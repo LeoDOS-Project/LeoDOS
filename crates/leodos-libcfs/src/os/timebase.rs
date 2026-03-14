@@ -7,6 +7,7 @@
 use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
+use crate::cstring;
 use crate::os::util::c_name_from_str;
 use crate::status::check;
 use core::ffi::CStr;
@@ -80,10 +81,7 @@ impl TimeBase {
     /// # Arguments
     /// * `name`: A unique string to identify the time base.
     pub fn new(name: &str) -> Result<Self> {
-        let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
 
         let mut timebase_id = MaybeUninit::uninit();
         check(unsafe {

@@ -5,9 +5,10 @@
 
 use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
+use crate::cstring;
 use crate::status::check;
 use core::mem::MaybeUninit;
-use heapless::{CString, String};
+use heapless::String;
 
 /// A handle to a cFE generic counter.
 ///
@@ -30,10 +31,7 @@ impl Counter {
     /// # Arguments
     /// * `name`: A unique string to identify the counter.
     pub fn new(name: &str) -> Result<Self> {
-        let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
 
         let mut counter_id = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_ES_RegisterGenCounter(counter_id.as_mut_ptr(), c_name.as_ptr()) })?;
@@ -71,10 +69,7 @@ impl Counter {
 
     /// Gets the cFE ID for a generic counter by its registered name.
     pub fn get_id_by_name(name: &str) -> Result<CounterId> {
-        let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
-        c_name
-            .extend_from_bytes(name.as_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_name = cstring::<{ ffi::OS_MAX_API_NAME as usize }>(name)?;
 
         let mut counter_id = MaybeUninit::uninit();
         check(unsafe {

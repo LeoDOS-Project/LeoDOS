@@ -3,8 +3,8 @@
 use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::fs::File;
+use crate::cstring;
 use crate::status::check;
-use heapless::CString;
 
 /// Executes a shell command and redirects its standard output to a file.
 ///
@@ -16,9 +16,7 @@ use heapless::CString;
 ///   command's output will be written. The file must remain open for the
 ///   duration of this call.
 pub fn command_to_file(command: &str, output_file: &File) -> Result<()> {
-    let mut c_command = CString::<{ ffi::OS_MAX_CMD_LEN as usize }>::new();
-    c_command
-        .extend_from_bytes(command.as_bytes())
+    let c_command = cstring::<{ ffi::OS_MAX_CMD_LEN as usize }>(command)
         .map_err(|_| CfsError::Osal(OsalError::InvalidArgument))?;
 
     check(unsafe { ffi::OS_ShellOutputToFile(c_command.as_ptr(), output_file.id().0) })?;
