@@ -4,7 +4,7 @@
 //! to ensure that memory allocated from a pool is always returned, preventing
 //! memory leaks.
 
-use crate::error::{Error, Result};
+use crate::error::{CfsError, Result};
 use crate::ffi;
 use crate::status::check;
 use core::marker::PhantomData;
@@ -163,7 +163,7 @@ impl MemPool {
         let mut buf_ptr = core::ptr::null_mut();
         let actual_size = unsafe { ffi::CFE_ES_GetPoolBuf(&mut buf_ptr, self.handle, size) };
         if actual_size < 0 {
-            return Err(Error::from(actual_size));
+            return Err(CfsError::from(actual_size));
         }
 
         Ok(PoolBuffer {
@@ -195,7 +195,7 @@ impl MemPool {
     pub fn get_buf_info(&self, buf: &PoolBuffer) -> Result<usize> {
         let status = unsafe { ffi::CFE_ES_GetPoolBufInfo(self.handle, buf.ptr) };
         if status < 0 {
-            Err(Error::from(status))
+            Err(CfsError::from(status))
         } else {
             Ok(status as usize)
         }

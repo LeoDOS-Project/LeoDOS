@@ -5,7 +5,7 @@ use crate::cf::crc::Crc;
 use crate::cf::pdu::LogicalPduBuffer;
 use crate::cf::timer::Timer;
 use crate::cf::types::{CfdpClass, TxnState, TxnStatus};
-use crate::error::Error;
+use crate::error::CfsError;
 use crate::status::{self, Status};
 
 /// CFDP Transaction state object.
@@ -136,29 +136,29 @@ impl Transaction {
     }
 
     /// Sends a metadata PDU.
-    pub fn send_md(&mut self) -> Result<Status, Error> {
+    pub fn send_md(&mut self) -> Result<Status, CfsError> {
         status::check(unsafe { ffi::CF_CFDP_SendMd(&mut self.0) })
     }
 
     /// Sends an EOF PDU.
-    pub fn send_eof(&mut self) -> Result<Status, Error> {
+    pub fn send_eof(&mut self) -> Result<Status, CfsError> {
         status::check(unsafe { ffi::CF_CFDP_SendEof(&mut self.0) })
     }
 
     /// Sends a FIN PDU.
-    pub fn send_fin(&mut self) -> Result<Status, Error> {
+    pub fn send_fin(&mut self) -> Result<Status, CfsError> {
         status::check(unsafe { ffi::CF_CFDP_SendFin(&mut self.0) })
     }
 
     /// Sends an ACK PDU for the specified directive code.
-    pub fn send_ack(&mut self, dir_code: u8) -> Result<Status, Error> {
+    pub fn send_ack(&mut self, dir_code: u8) -> Result<Status, CfsError> {
         status::check(unsafe {
             ffi::CF_CFDP_SendAck(&mut self.0, dir_code as ffi::CF_CFDP_FileDirective_t)
         })
     }
 
     /// Sends file data PDU.
-    pub fn send_fd(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, Error> {
+    pub fn send_fd(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, CfsError> {
         status::check(unsafe { ffi::CF_CFDP_SendFd(&mut self.0, &mut ph.0) })
     }
 
@@ -168,32 +168,32 @@ impl Transaction {
     }
 
     /// Receives and processes a metadata PDU.
-    pub fn recv_md(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, Error> {
+    pub fn recv_md(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, CfsError> {
         status::check(unsafe { ffi::CF_CFDP_RecvMd(&mut self.0, &mut ph.0) })
     }
 
     /// Receives and processes a file data PDU.
-    pub fn recv_fd(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, Error> {
+    pub fn recv_fd(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, CfsError> {
         status::check(unsafe { ffi::CF_CFDP_RecvFd(&mut self.0, &mut ph.0) })
     }
 
     /// Receives and processes an EOF PDU.
-    pub fn recv_eof(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, Error> {
+    pub fn recv_eof(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, CfsError> {
         status::check(unsafe { ffi::CF_CFDP_RecvEof(&mut self.0, &mut ph.0) })
     }
 
     /// Receives and processes an ACK PDU.
-    pub fn recv_ack(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, Error> {
+    pub fn recv_ack(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, CfsError> {
         status::check(unsafe { ffi::CF_CFDP_RecvAck(&mut self.0, &mut ph.0) })
     }
 
     /// Receives and processes a FIN PDU.
-    pub fn recv_fin(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, Error> {
+    pub fn recv_fin(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, CfsError> {
         status::check(unsafe { ffi::CF_CFDP_RecvFin(&mut self.0, &mut ph.0) })
     }
 
     /// Receives and processes a NAK PDU.
-    pub fn recv_nak(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, Error> {
+    pub fn recv_nak(&mut self, ph: &mut LogicalPduBuffer) -> Result<Status, CfsError> {
         status::check(unsafe { ffi::CF_CFDP_RecvNak(&mut self.0, &mut ph.0) })
     }
 

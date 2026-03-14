@@ -4,7 +4,7 @@
 //! time bases, which act as sources for timer ticks. The `TimeBase` struct uses
 //! RAII to ensure the underlying OSAL resource is properly cleaned up.
 
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::util::c_name_from_str;
@@ -83,7 +83,7 @@ impl TimeBase {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut timebase_id = MaybeUninit::uninit();
         check(unsafe {
@@ -111,11 +111,11 @@ impl TimeBase {
         let start_usecs = start
             .as_micros()
             .try_into()
-            .map_err(|_| Error::OsErrInvalidArgument)?;
+            .map_err(|_| CfsError::Osal(OsalError::InvalidArgument))?;
         let interval_usecs = interval
             .as_micros()
             .try_into()
-            .map_err(|_| Error::OsErrInvalidArgument)?;
+            .map_err(|_| CfsError::Osal(OsalError::InvalidArgument))?;
 
         check(unsafe { ffi::OS_TimeBaseSet(self.id.0, start_usecs, interval_usecs) })?;
         Ok(())
@@ -135,7 +135,7 @@ impl TimeBase {
         let name_cstr = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
         let mut name = CString::new();
         name.extend_from_bytes(name_cstr.to_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         Ok(TimeBaseProp {
             name,

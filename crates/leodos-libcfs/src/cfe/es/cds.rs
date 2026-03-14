@@ -3,7 +3,7 @@
 //! This module provides a generic, type-safe `CdsBlock<T>` for persisting
 //! application data across resets.
 
-use crate::error::Error;
+use crate::error::{CfsError, EsError, OsalError};
 use crate::error::Result;
 use crate::ffi;
 use crate::status;
@@ -31,8 +31,8 @@ impl CdsHandle {
             )
         })?;
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
-        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| Error::OsErrNameTooLong)?;
-        let str = String::from_utf8(vec).map_err(|_| Error::OsErrNameTooLong)?;
+        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let str = String::from_utf8(vec).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         Ok(str)
     }
 }
@@ -86,7 +86,7 @@ impl<T: Copy + Sized> CdsBlock<T> {
         let mut c_name = CString::<{ ffi::CFE_MISSION_ES_CDS_MAX_NAME_LENGTH as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::CfeEsCdsInvalidName)?;
+            .map_err(|_| CfsError::Es(EsError::CdsInvalidName))?;
 
         let mut handle = MaybeUninit::uninit();
         let status = unsafe {
@@ -150,7 +150,7 @@ impl<T: Copy + Sized> CdsBlock<T> {
         let mut c_name = CString::<{ ffi::CFE_MISSION_ES_CDS_MAX_FULL_NAME_LEN as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut handle = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_ES_GetCDSBlockIDByName(handle.as_mut_ptr(), c_name.as_ptr()) })?;

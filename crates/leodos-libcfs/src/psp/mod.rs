@@ -9,8 +9,7 @@ use core::ffi::CStr;
 
 use heapless::CString;
 
-use crate::error::Error;
-use crate::error::Result;
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 
 pub mod cds;
@@ -59,6 +58,6 @@ pub fn status_to_string(
     let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const libc::c_char) };
     let mut s = CString::new();
     s.extend_from_bytes(c_str.to_bytes())
-        .map_err(|_| Error::OsErrNameTooLong)?;
+        .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
     Ok(s)
 }

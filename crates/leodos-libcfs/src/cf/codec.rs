@@ -1,11 +1,11 @@
 //! CFDP PDU codec functions for encoding and decoding PDUs.
 
-use crate::ffi;
 use crate::cf::pdu::{
     DecoderState, EncoderState, LogicalPduAck, LogicalPduEof, LogicalPduFin, LogicalPduHeader,
     LogicalPduMd, LogicalPduNak,
 };
-use crate::error::Error;
+use crate::error::CfsError;
+use crate::ffi;
 use crate::status::{self, Status};
 
 impl EncoderState<'_> {
@@ -75,7 +75,7 @@ impl EncoderState<'_> {
 
 impl DecoderState<'_> {
     /// Decodes a PDU header.
-    pub fn decode_header(&mut self, header: &mut LogicalPduHeader) -> Result<Status, Error> {
+    pub fn decode_header(&mut self, header: &mut LogicalPduHeader) -> Result<Status, CfsError> {
         status::check(unsafe { ffi::CF_CFDP_DecodeHeader(self.as_raw_mut(), &mut header.0) })
     }
 
@@ -249,11 +249,7 @@ impl DecoderState<'_> {
     }
 
     /// Decodes all TLVs into a list.
-    pub fn decode_all_tlv(
-        &mut self,
-        tlv_list: &mut crate::cf::pdu::LogicalTlvList,
-        limit: u8,
-    ) {
+    pub fn decode_all_tlv(&mut self, tlv_list: &mut crate::cf::pdu::LogicalTlvList, limit: u8) {
         unsafe {
             ffi::CF_CFDP_DecodeAllTlv(self.as_raw_mut(), &mut tlv_list.0, limit);
         }

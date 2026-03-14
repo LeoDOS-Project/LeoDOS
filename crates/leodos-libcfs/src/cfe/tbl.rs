@@ -2,7 +2,7 @@
 
 use crate::cfe::sb::msg::MsgId;
 use crate::cfe::time::SysTime;
-use crate::error::{Error, Result};
+use crate::error::{CfsError, Result, TblError};
 use crate::status::check;
 use crate::{ffi, status};
 use core::ffi::c_void;
@@ -133,7 +133,7 @@ impl<T: Sized> Table<T> {
         let mut c_name = CString::<{ ffi::CFE_MISSION_TBL_MAX_NAME_LENGTH as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::CfeTblErrInvalidName)?;
+            .map_err(|_| CfsError::Tbl(TblError::InvalidName))?;
 
         let status = unsafe {
             ffi::CFE_TBL_Register(
@@ -165,7 +165,7 @@ impl<T: Sized> Table<T> {
         let mut c_name = CString::<{ ffi::CFE_MISSION_TBL_MAX_FULL_NAME_LEN as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::CfeTblErrInvalidName)?;
+            .map_err(|_| CfsError::Tbl(TblError::InvalidName))?;
 
         let status = unsafe { ffi::CFE_TBL_Share(handle.as_mut_ptr(), c_name.as_ptr()) };
         check(status)?;
@@ -184,7 +184,7 @@ impl<T: Sized> Table<T> {
         let mut c_filename = CString::<{ ffi::OS_MAX_PATH_LEN as usize }>::new();
         c_filename
             .extend_from_bytes(filename.as_bytes())
-            .map_err(|_| Error::CfeTblErrFilenameTooLong)?;
+            .map_err(|_| CfsError::Tbl(TblError::FilenameTooLong))?;
         let status = unsafe {
             ffi::CFE_TBL_Load(
                 self.handle.0,
@@ -244,7 +244,7 @@ impl<T: Sized> Table<T> {
         let mut c_name = CString::<{ ffi::CFE_MISSION_TBL_MAX_FULL_NAME_LEN as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::CfeTblErrInvalidName)?;
+            .map_err(|_| CfsError::Tbl(TblError::InvalidName))?;
 
         let mut tbl_info_uninit = MaybeUninit::uninit();
 
@@ -365,7 +365,7 @@ impl<'a, T> TableAccessor<'a, T> {
         let status = unsafe { ffi::CFE_TBL_GetAddress(&mut ptr, handle.0) };
         // CFE_TBL_INFO_UPDATED is a success code, but indicates a change.
         if status != ffi::CFE_SUCCESS && status != ffi::CFE_TBL_INFO_UPDATED {
-            return Err(Error::from(status));
+            return Err(CfsError::from(status));
         }
 
         Ok(Self {

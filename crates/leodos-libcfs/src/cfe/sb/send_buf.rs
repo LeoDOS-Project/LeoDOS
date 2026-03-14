@@ -3,7 +3,7 @@ use core::mem;
 use core::slice;
 
 use crate::cfe::sb::msg::MessageMut;
-use crate::error::Error;
+use crate::error::{CfsError, SbError};
 use crate::error::Result;
 use crate::ffi;
 
@@ -26,7 +26,7 @@ impl SendBuffer {
     pub fn new(size: usize) -> Result<Self> {
         let ptr = unsafe { ffi::CFE_SB_AllocateMessageBuffer(size) };
         if ptr.is_null() {
-            Err(Error::CfeSbBufAlocErr)
+            Err(CfsError::Sb(SbError::BufAllocErr))
         } else {
             Ok(Self { ptr, size })
         }
@@ -53,7 +53,7 @@ impl SendBuffer {
             mem::forget(self);
             Ok(())
         } else {
-            Err(Error::from(status))
+            Err(CfsError::from(status))
         }
     }
 

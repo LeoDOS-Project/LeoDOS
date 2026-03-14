@@ -7,7 +7,7 @@ use core::task::Poll;
 
 use heapless::Vec;
 
-use crate::error::Error;
+use crate::error::CfsError;
 use crate::runtime::task::Task;
 
 /// A scope that can spawn and manage multiple tasks
@@ -23,13 +23,13 @@ impl<'a, const MAX_TASK_SIZE: usize, const MAX_TASKS: usize> Scope<'a, MAX_TASK_
     }
 
     /// Spawn a task into this scope
-    pub fn spawn<F>(&mut self, future: F) -> Result<(), Error>
+    pub fn spawn<F>(&mut self, future: F) -> Result<(), CfsError>
     where
-        F: Future<Output = Result<(), Error>> + 'a,
+        F: Future<Output = Result<(), CfsError>> + 'a,
     {
         self.tasks
             .push(Task::new(future))
-            .map_err(|_| Error::TaskPoolFull)
+            .map_err(|_| CfsError::TaskPoolFull)
     }
 }
 
@@ -37,7 +37,7 @@ impl<'a, const MAX_TASK_SIZE: usize, const MAX_TASKS: usize> Scope<'a, MAX_TASK_
 impl<'a, const MAX_TASK_SIZE: usize, const MAX_TASKS: usize> Future
     for Scope<'a, MAX_TASK_SIZE, MAX_TASKS>
 {
-    type Output = Result<(), Error>;
+    type Output = Result<(), CfsError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut all_done = true;

@@ -5,7 +5,7 @@
 //! struct uses RAII to ensure the underlying OSAL resource is deleted when it
 //! is dropped.
 
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::timebase::TimeBaseId;
@@ -156,7 +156,7 @@ impl Timer {
         let mut name_string = CString::new();
         name_string
             .extend_from_bytes(name_cstr.to_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         Ok(TimerProp {
             name: name_string,

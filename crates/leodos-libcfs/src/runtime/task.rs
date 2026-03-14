@@ -1,13 +1,13 @@
 use crate::comptime_assert_align_le;
 use crate::comptime_assert_size_le;
-use crate::error::Error;
+use crate::error::CfsError;
 use core::future::Future;
 use core::marker::PhantomData;
 use core::pin::Pin;
 use core::task::Context;
 use core::task::Poll;
 
-pub type TaskResult = Result<(), Error>;
+pub type TaskResult = Result<(), CfsError>;
 pub const DEFAULT_MAX_TASK_SIZE: usize = 512;
 
 #[repr(align(16))]

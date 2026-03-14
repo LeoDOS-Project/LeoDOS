@@ -2,7 +2,7 @@
 
 use crate::cf::types::{CfdpClass, TxnState, TxnStatus};
 use crate::cf::{engine, tx_file};
-use crate::error::Error;
+use crate::error::CfsError;
 use core::ffi::CStr;
 use core::future::Future;
 use core::pin::Pin;
@@ -12,13 +12,13 @@ use core::task::{Context, Poll};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransferError {
     /// The transfer could not be initiated.
-    InitFailed(Error),
+    InitFailed(CfsError),
     /// The transfer failed after starting.
     TransferFailed(TxnStatus),
 }
 
-impl From<Error> for TransferError {
-    fn from(e: Error) -> Self {
+impl From<CfsError> for TransferError {
+    fn from(e: CfsError) -> Self {
         TransferError::InitFailed(e)
     }
 }

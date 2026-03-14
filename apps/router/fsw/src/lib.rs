@@ -3,7 +3,7 @@
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
-use leodos_libcfs::error::Error as CfsError;
+use leodos_libcfs::error::CfsError;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::Runtime;
 use leodos_libcfs::{err, info};
@@ -68,7 +68,7 @@ fn orb_ip(orb: u8, out: &mut [u8; 16]) -> Result<&str, CfsError> {
     leodos_protocols::fmt!(out, "172.20.{orb}.10")
         .ok()
         .and_then(|len| core::str::from_utf8(&out[..len]).ok())
-        .ok_or_else(|| CfsError::CfeStatusValidationFailure)
+        .ok_or_else(|| CfsError::ValidationFailure)
 }
 
 fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> {

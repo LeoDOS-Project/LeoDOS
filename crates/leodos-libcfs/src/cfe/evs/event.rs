@@ -1,7 +1,7 @@
 //! Event generation and management APIs.
 use crate::cfe::es::app::AppId;
 use crate::cfe::time::SysTime;
-use crate::error::{Error, Result};
+use crate::error::{CfsError, Result};
 use crate::ffi::{self, CFE_EVS_BinFilter_t};
 use crate::status::check;
 
@@ -97,7 +97,7 @@ pub fn send(event_id: u16, event_type: EventType, message: &str) -> Result<()> {
 
     c_message
         .extend_from_bytes(message.as_bytes())
-        .map_err(|_| Error::CfeStatusValidationFailure)?;
+        .map_err(|_| CfsError::ValidationFailure)?;
 
     let status = unsafe {
         // We pass the string as a single argument to a "%s" format specifier.
@@ -147,7 +147,7 @@ impl AppId {
 
         c_message
             .extend_from_bytes(message.as_bytes())
-            .map_err(|_| Error::CfeStatusValidationFailure)?;
+            .map_err(|_| CfsError::ValidationFailure)?;
 
         let status = unsafe {
             ffi::CFE_EVS_SendEventWithAppID(
@@ -175,7 +175,7 @@ pub fn send_timed_event(
 
     c_message
         .extend_from_bytes(message.as_bytes())
-        .map_err(|_| Error::CfeStatusValidationFailure)?;
+        .map_err(|_| CfsError::ValidationFailure)?;
 
     let status = unsafe {
         ffi::CFE_EVS_SendTimedEvent(

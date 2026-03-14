@@ -1,7 +1,7 @@
 //! Safe, idiomatic wrappers for CFE Executive Services Task query APIs.
 
 use crate::cfe::es::app::AppId;
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::task::TaskFlags;
 use crate::status::check;
@@ -52,7 +52,7 @@ impl ChildTask {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut task_id = MaybeUninit::uninit();
         check(unsafe {
@@ -113,7 +113,7 @@ impl TaskInfo {
         let c_str = unsafe { CStr::from_ptr(self.inner.TaskName.as_ptr()) };
         let mut s = CString::new();
         s.extend_from_bytes(c_str.to_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         Ok(s)
     }
 
@@ -122,7 +122,7 @@ impl TaskInfo {
         let c_str = unsafe { CStr::from_ptr(self.inner.AppName.as_ptr()) };
         let mut s = CString::new();
         s.extend_from_bytes(c_str.to_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         Ok(s)
     }
 }
@@ -162,7 +162,7 @@ impl TaskId {
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(0);
         let mut s = CString::new();
         s.extend_from_bytes(&buffer[..len])
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         Ok(s)
     }
 
@@ -178,7 +178,7 @@ impl TaskId {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut task_id = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_ES_GetTaskIDByName(task_id.as_mut_ptr(), c_name.as_ptr()) })?;

@@ -5,7 +5,7 @@
 
 use bitflags::bitflags;
 
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::status::check;
@@ -45,7 +45,7 @@ impl TaskId {
         let id = unsafe { ffi::OS_TaskGetId() };
         if id == 0 {
             // OS_TaskGetId returns 0 if not called from a valid task context.
-            Err(Error::OsErrInvalidId)
+            Err(CfsError::Osal(OsalError::InvalidId))
         } else {
             Ok(Self(id))
         }
@@ -56,7 +56,7 @@ impl TaskId {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut task_id = MaybeUninit::uninit();
         check(unsafe { ffi::OS_TaskGetIdByName(task_id.as_mut_ptr(), c_name.as_ptr()) })?;
@@ -114,7 +114,7 @@ impl Task {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut task_id = MaybeUninit::uninit();
         check(unsafe {
@@ -149,7 +149,7 @@ impl Task {
         let c_str = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
         name_str
             .extend_from_bytes(c_str.to_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         Ok(TaskProp {
             name: name_str,

@@ -4,7 +4,7 @@
 //! dynamically loaded shared library, ensuring it is properly unloaded when
 //! it goes out of scope.
 
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::util::c_path_from_str;
 use crate::status::check;
@@ -110,13 +110,13 @@ impl Module {
 
         let name_bytes = unsafe { CStr::from_ptr(prop.name.as_ptr()) }.to_bytes();
         let name_vec =
-            heapless::Vec::from_slice(name_bytes).map_err(|_| Error::OsErrNameTooLong)?;
-        let name = String::from_utf8(name_vec).map_err(|_| Error::InvalidString)?;
+            heapless::Vec::from_slice(name_bytes).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let name = String::from_utf8(name_vec).map_err(|_| CfsError::InvalidString)?;
 
         let filename_bytes = unsafe { CStr::from_ptr(prop.filename.as_ptr()) }.to_bytes();
         let filename_vec =
-            heapless::Vec::from_slice(filename_bytes).map_err(|_| Error::OsFsErrPathTooLong)?;
-        let filename = String::from_utf8(filename_vec).map_err(|_| Error::InvalidString)?;
+            heapless::Vec::from_slice(filename_bytes).map_err(|_| CfsError::Osal(OsalError::FsPathTooLong))?;
+        let filename = String::from_utf8(filename_vec).map_err(|_| CfsError::InvalidString)?;
 
         Ok(ModuleProp {
             name,
@@ -138,7 +138,7 @@ fn c_string_from_str(name: &str) -> Result<CString<{ ffi::OS_MAX_API_NAME as usi
     let mut c_str = CString::new();
     c_str
         .extend_from_bytes(name.as_bytes())
-        .map_err(|_| Error::OsErrNameTooLong)?;
+        .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
     Ok(c_str)
 }
 

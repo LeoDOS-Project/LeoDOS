@@ -11,7 +11,7 @@ use core::str;
 use heapless::CString;
 use heapless::String;
 
-use crate::error::Error;
+use crate::error::{CfsError, OsalError};
 use crate::error::Result;
 use crate::ffi;
 use crate::log;
@@ -102,8 +102,8 @@ impl AppId {
         };
         check(status)?;
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
-        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| Error::OsErrNameTooLong)?;
-        String::from_utf8(vec).map_err(|_| Error::InvalidString)
+        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        String::from_utf8(vec).map_err(|_| CfsError::InvalidString)
     }
 
     /// Converts the App ID into a zero-based integer suitable for array indexing.
@@ -149,7 +149,7 @@ impl AppId {
         let mut c_filename = CString::<{ ffi::OS_MAX_PATH_LEN as usize }>::new();
         c_filename
             .extend_from_bytes(filename.as_bytes())
-            .map_err(|_| Error::OsFsErrPathTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::FsPathTooLong))?;
         check(unsafe { ffi::CFE_ES_ReloadApp(self.0, c_filename.as_ptr()) })?;
         Ok(())
     }
@@ -177,7 +177,7 @@ impl AppId {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut app_id = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_ES_GetAppIDByName(app_id.as_mut_ptr(), c_name.as_ptr()) })?;
@@ -228,7 +228,7 @@ impl AppInfo {
         let bytes = c_str.to_bytes();
         let mut s = CString::new();
         s.extend_from_bytes(bytes)
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         Ok(s)
     }
 
@@ -245,11 +245,11 @@ impl AppInfo {
         let c_str = unsafe { CStr::from_ptr(self.inner.EntryPoint.as_ptr()) };
         let bytes = c_str.to_bytes();
         if bytes.len() >= buffer.len() {
-            return Err(Error::OsErrInvalidSize);
+            return Err(CfsError::Osal(OsalError::InvalidSize));
         }
         buffer[..bytes.len()].copy_from_slice(bytes);
         buffer[bytes.len()] = 0;
-        str::from_utf8(&buffer[..bytes.len()]).map_err(|_| Error::InvalidString)
+        str::from_utf8(&buffer[..bytes.len()]).map_err(|_| CfsError::InvalidString)
     }
 
     /// Copies the file name of the application into the provided buffer.
@@ -265,11 +265,11 @@ impl AppInfo {
         let c_str = unsafe { CStr::from_ptr(self.inner.FileName.as_ptr()) };
         let bytes = c_str.to_bytes();
         if bytes.len() >= buffer.len() {
-            return Err(Error::OsErrInvalidSize);
+            return Err(CfsError::Osal(OsalError::InvalidSize));
         }
         buffer[..bytes.len()].copy_from_slice(bytes);
         buffer[bytes.len()] = 0;
-        str::from_utf8(&buffer[..bytes.len()]).map_err(|_| Error::InvalidString)
+        str::from_utf8(&buffer[..bytes.len()]).map_err(|_| CfsError::InvalidString)
     }
 }
 

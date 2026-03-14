@@ -1,7 +1,7 @@
 //! Safe wrappers for CFE Library query APIs.
 
 use crate::cfe::es::app::AppInfo;
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::status::check;
 use core::mem::MaybeUninit;
@@ -28,7 +28,7 @@ impl LibId {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut lib_id = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_ES_GetLibIDByName(lib_id.as_mut_ptr(), c_name.as_ptr()) })?;
@@ -51,8 +51,8 @@ impl LibId {
             )
         })?;
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
-        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| Error::OsErrNameTooLong)?;
-        String::from_utf8(vec).map_err(|_| Error::InvalidString)
+        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        String::from_utf8(vec).map_err(|_| CfsError::InvalidString)
     }
 
     /// Retrieves detailed information about the library with this ID.

@@ -1,6 +1,6 @@
 //! Software Bus pipe management for receiving messages.
 use crate::cfe::sb::msg::MsgId;
-use crate::error::{Error, OsalError, Result};
+use crate::error::{CfsError, OsalError, SbError, Result};
 use crate::ffi::{self, CFE_SB_DEFAULT_QOS};
 use crate::status::check;
 use bitflags::bitflags;
@@ -100,7 +100,7 @@ impl Pipe {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut pipe_id_uninit = MaybeUninit::<ffi::CFE_SB_PipeId_t>::uninit();
         let status =
@@ -176,7 +176,7 @@ impl Pipe {
             Timeout::Milliseconds(ms) => {
                 // Convert to i32, ensuring it fits.
                 if ms > i32::MAX as u32 {
-                    return Err(Error::CfeSbBadArgument);
+                    return Err(CfsError::Sb(SbError::BadArgument));
                 } else {
                     ms as i32
                 }
@@ -196,7 +196,7 @@ impl Pipe {
             unsafe {
                 check(ffi::CFE_SB_ReleaseMessageBuffer(buf_ptr))?;
             }
-            return Err(Error::OsErrInvalidSize);
+            return Err(CfsError::Osal(OsalError::InvalidSize));
         }
 
         let src_slice = unsafe { slice::from_raw_parts(buf_ptr as *const u8, size) };
@@ -236,8 +236,8 @@ impl Pipe {
             )
         })?;
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
-        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| Error::OsErrNameTooLong)?;
-        String::from_utf8(vec).map_err(|_| Error::InvalidString)
+        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        String::from_utf8(vec).map_err(|_| CfsError::InvalidString)
     }
 
     /// Finds the `PipeId` for a pipe with the given name.
@@ -245,7 +245,7 @@ impl Pipe {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut pipe_id = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_SB_GetPipeIdByName(pipe_id.as_mut_ptr(), c_name.as_ptr()) })?;
@@ -283,7 +283,7 @@ impl Pipe {
         core::future::poll_fn(|_| {
             let recv_future = self.timed_recv(buf, Timeout::Poll);
             match recv_future {
-                Err(Error::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
+                Err(CfsError::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
                 Ok(result) => Poll::Ready(Ok(result)),
                 Err(e) => Poll::Ready(Err(e)),
             }

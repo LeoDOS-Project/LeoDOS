@@ -1,6 +1,6 @@
 //! Safe, idiomatic wrappers for OSAL networking APIs (sockets).
 
-use crate::error::{Error, OsalError, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::time::OsTime;
@@ -42,8 +42,8 @@ impl SocketAddr {
         // 2. Set the IP address from a string
         let mut c_ip: String<{ ffi::OS_MAX_PATH_LEN as usize }> = String::new();
         c_ip.push_str(ip_addr)
-            .map_err(|_| Error::OsErrNameTooLong)?;
-        c_ip.push('\0').map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        c_ip.push('\0').map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         check(unsafe {
             ffi::OS_SocketAddrFromString(
                 addr_uninit.as_mut_ptr(),
@@ -75,14 +75,14 @@ impl SocketAddr {
             )
         })?;
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
-        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| Error::OsErrNameTooLong)?;
-        let s = String::from_utf8(vec).map_err(|_| Error::InvalidString)?;
+        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let s = String::from_utf8(vec).map_err(|_| CfsError::InvalidString)?;
         Ok(s)
     }
 }
 
 impl TryFrom<core::net::SocketAddr> for SocketAddr {
-    type Error = Error;
+    type Error = CfsError;
 
     fn try_from(addr: core::net::SocketAddr) -> Result<Self> {
         let mut addr_uninit = MaybeUninit::uninit();
@@ -96,8 +96,8 @@ impl TryFrom<core::net::SocketAddr> for SocketAddr {
 
         // Format IP to C-String for OSAL
         let mut c_ip: String<{ ffi::OS_MAX_PATH_LEN as usize }> = String::new();
-        write!(c_ip, "{}", addr.ip()).map_err(|_| Error::OsErrNameTooLong)?;
-        c_ip.push('\0').map_err(|_| Error::OsErrNameTooLong)?;
+        write!(c_ip, "{}", addr.ip()).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        c_ip.push('\0').map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         check(unsafe {
             ffi::OS_SocketAddrFromString(
@@ -196,7 +196,7 @@ impl UdpSocket {
         };
 
         if num_bytes < 0 {
-            Err(Error::from(num_bytes))
+            Err(CfsError::from(num_bytes))
         } else {
             let remote_addr = unsafe { remote_addr_uninit.assume_init() };
             Ok((num_bytes as usize, SocketAddr(remote_addr)))
@@ -209,7 +209,7 @@ impl UdpSocket {
             ffi::OS_SocketSendTo((self.0).0, buf.as_ptr() as *const _, buf.len(), &target.0)
         };
         if num_bytes < 0 {
-            Err(Error::from(num_bytes))
+            Err(CfsError::from(num_bytes))
         } else {
             Ok(num_bytes as usize)
         }
@@ -233,7 +233,7 @@ impl UdpSocket {
         };
 
         if num_bytes < 0 {
-            Err(Error::from(num_bytes))
+            Err(CfsError::from(num_bytes))
         } else {
             let remote_addr = SocketAddr(unsafe { remote_addr_uninit.assume_init() });
             Ok((num_bytes as usize, remote_addr))
@@ -336,7 +336,7 @@ impl TcpStream {
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let bytes_read = unsafe { ffi::OS_read(self.0 .0, buf.as_mut_ptr() as *mut _, buf.len()) };
         if bytes_read < 0 {
-            Err(Error::from(bytes_read))
+            Err(CfsError::from(bytes_read))
         } else {
             Ok(bytes_read as usize)
         }
@@ -347,7 +347,7 @@ impl TcpStream {
         let bytes_written =
             unsafe { ffi::OS_write(self.0 .0, buf.as_ptr() as *const _, buf.len()) };
         if bytes_written < 0 {
-            Err(Error::from(bytes_written))
+            Err(CfsError::from(bytes_written))
         } else {
             Ok(bytes_written as usize)
         }
@@ -407,8 +407,8 @@ pub fn get_host_name() -> Result<String<{ ffi::OS_MAX_PATH_LEN as usize }>> {
         ffi::OS_NetworkGetHostName(buffer.as_mut_ptr() as *mut libc::c_char, buffer.len())
     })?;
     let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
-    let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| Error::OsErrNameTooLong)?;
-    let s = String::from_utf8(vec).map_err(|_| Error::InvalidString)?;
+    let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+    let s = String::from_utf8(vec).map_err(|_| CfsError::InvalidString)?;
     Ok(s)
 }
 
@@ -502,7 +502,7 @@ pub fn get_socket_id_by_name(name: &str) -> Result<OsalId> {
     let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
     c_name
         .extend_from_bytes(name.as_bytes())
-        .map_err(|_| Error::OsErrNameTooLong)?;
+        .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
     let mut sock_id = MaybeUninit::uninit();
     check(unsafe { ffi::OS_SocketGetIdByName(sock_id.as_mut_ptr(), c_name.as_ptr()) })?;
     Ok(OsalId(unsafe { sock_id.assume_init() }))
@@ -515,8 +515,8 @@ pub fn get_socket_info(sock_id: OsalId) -> Result<SocketProp> {
     let prop = unsafe { prop.assume_init() };
 
     let name_cstr = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
-    let name_str = name_cstr.to_str().map_err(|_| Error::InvalidString)?;
-    let name = String::try_from(name_str).map_err(|_| Error::OsErrNameTooLong)?;
+    let name_str = name_cstr.to_str().map_err(|_| CfsError::InvalidString)?;
+    let name = String::try_from(name_str).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
     Ok(SocketProp {
         name,
@@ -533,7 +533,7 @@ impl UdpSocket {
         core::future::poll_fn(|_| {
             let recv_future = self.recv_from(buf, Timeout::Poll);
             match recv_future {
-                Err(Error::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
+                Err(CfsError::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
                 Ok(result) => Poll::Ready(Ok(result)),
                 Err(e) => Poll::Ready(Err(e)),
             }
@@ -549,7 +549,7 @@ impl UdpSocket {
         core::future::poll_fn(|_| {
             // send_to is typically non-blocking for UDP, but wrap it anyway
             match self.send_to(buf, target) {
-                Err(Error::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
+                Err(CfsError::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
                 Ok(result) => Poll::Ready(Ok(result)),
                 Err(e) => Poll::Ready(Err(e)),
             }

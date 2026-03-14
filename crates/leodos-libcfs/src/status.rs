@@ -6,7 +6,7 @@
 //! outcomes, and a `check` function to triage a raw `CFE_Status_t` into either
 //! a `Result<Status, Error>`.
 
-use crate::error::Error;
+use crate::error::CfsError;
 use crate::ffi;
 
 /// Represents non-error, informational status codes from cFE APIs.
@@ -75,12 +75,12 @@ impl core::fmt::Display for Status {
     }
 }
 /// Converts a raw CFE status code into a `Result<Status, Error>` for idiomatic error handling.
-pub fn check(code: ffi::CFE_Status_t) -> Result<Status, Error> {
+pub fn check(code: ffi::CFE_Status_t) -> Result<Status, CfsError> {
     Status::try_from(code)
 }
 
 impl TryFrom<ffi::CFE_Status_t> for Status {
-    type Error = Error;
+    type Error = CfsError;
     fn try_from(status: ffi::CFE_Status_t) -> Result<Self, Self::Error> {
         let ok = match status {
             ffi::CFE_SUCCESS => Status::Success,
@@ -101,7 +101,7 @@ impl TryFrom<ffi::CFE_Status_t> for Status {
             ffi::CFE_TBL_WARN_NOT_CRITICAL => Status::TblWarnNotCritical,
             ffi::CFE_TBL_INFO_RECOVERED_TBL => Status::TblInfoRecoveredTbl,
 
-            other => return Err(Error::from(other)),
+            other => return Err(CfsError::from(other)),
         };
         Ok(ok)
     }

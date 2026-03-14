@@ -17,7 +17,7 @@
 //! err!("{} failed", subsystem)?;
 //! ```
 
-use crate::error::Error;
+use crate::error::{CfsError, OsalError};
 use crate::error::Result;
 use crate::ffi;
 use crate::status::check;
@@ -110,7 +110,7 @@ macro_rules! log {
             $crate::log::syslog(&buffer)
         } else {
             // This error occurs if the formatted string is too large for the buffer.
-            Err($crate::error::Error::CfeStatusValidationFailure)
+            Err($crate::error::CfsError::ValidationFailure)
         }
     }};
 }
@@ -130,7 +130,7 @@ pub fn syslog(message: &str) -> Result<()> {
     let mut c_string = CString::<256>::new();
     c_string
         .extend_from_bytes(message.as_bytes())
-        .map_err(|_| Error::OsErrNameTooLong)?;
+        .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
     check(unsafe { ffi::CFE_ES_WriteToSysLog(c_string.as_ptr()) })?;
     Ok(())
@@ -207,7 +207,7 @@ macro_rules! info {
                 &buf,
             )
         } else {
-            Err($crate::error::Error::CfeStatusValidationFailure)
+            Err($crate::error::CfsError::ValidationFailure)
         }
     }};
 }
@@ -239,7 +239,7 @@ macro_rules! warn {
                 &buf,
             )
         } else {
-            Err($crate::error::Error::CfeStatusValidationFailure)
+            Err($crate::error::CfsError::ValidationFailure)
         }
     }};
 }
@@ -268,7 +268,7 @@ macro_rules! err {
                 &buf,
             )
         } else {
-            Err($crate::error::Error::CfeStatusValidationFailure)
+            Err($crate::error::CfsError::ValidationFailure)
         }
     }};
 }

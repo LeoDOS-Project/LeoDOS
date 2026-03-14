@@ -4,7 +4,7 @@
 //! message passing. The `Queue` struct is an RAII wrapper that ensures the
 //! underlying OSAL resource is properly cleaned up.
 
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::util::c_name_from_str;
@@ -105,7 +105,7 @@ impl<T: Copy + Sized> Queue<T> {
 
         let size_copied = unsafe { size_copied.assume_init() };
         if size_copied != mem::size_of::<T>() {
-            return Err(Error::OsQueueInvalidSize);
+            return Err(CfsError::Osal(OsalError::QueueInvalidSize));
         }
 
         Ok(unsafe { message.assume_init() })
@@ -134,7 +134,7 @@ impl<T: Copy + Sized> Queue<T> {
         let c_str = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
         name_str
             .extend_from_bytes(c_str.to_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         Ok(QueueProp {
             name: name_str,

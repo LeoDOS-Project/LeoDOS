@@ -2,7 +2,7 @@ use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::cfe::sb::pipe::Pipe;
 use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
 
-use leodos_libcfs::error::Error as CfsError;
+use leodos_libcfs::error::CfsError as CfsError;
 
 use crate::datalink::{DatalinkRead, DatalinkWrite};
 

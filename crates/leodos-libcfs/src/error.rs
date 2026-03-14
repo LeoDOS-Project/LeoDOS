@@ -5,7 +5,7 @@ use crate::status::check;
 use heapless::CString;
 
 /// A specialized `Result` type for CFE operations.
-pub type Result<T> = core::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, CfsError>;
 
 // ── Sub-error enums ─────────────────────────────────────────
 
@@ -482,7 +482,7 @@ pub enum OsalError {
 /// CFE and OSAL APIs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
-pub enum Error {
+pub enum CfsError {
     /// An EVS (Event Services) error.
     #[error(transparent)]
     Evs(#[from] EvsError),
@@ -555,338 +555,21 @@ pub enum Error {
     Unhandled(i32),
 }
 
-// ── Backward-compatible aliases ─────────────────────────────
-
-#[allow(non_upper_case_globals, missing_docs)]
-impl Error {
-    // --- Generic CFE Status ---
-    pub const CfeStatusWrongMsgLength: Error = Error::WrongMsgLength;
-    pub const CfeStatusUnknownMsgId: Error = Error::UnknownMsgId;
-    pub const CfeStatusBadCommandCode: Error = Error::BadCommandCode;
-    pub const CfeStatusExternalResourceFail: Error =
-        Error::ExternalResourceFail;
-    pub const CfeStatusRequestAlreadyPending: Error =
-        Error::RequestAlreadyPending;
-    pub const CfeStatusValidationFailure: Error =
-        Error::ValidationFailure;
-    pub const CfeStatusRangeError: Error = Error::RangeError;
-    pub const CfeStatusIncorrectState: Error = Error::IncorrectState;
-    pub const CfeStatusNotImplemented: Error = Error::NotImplemented;
-
-    // --- CFE EVS ---
-    pub const CfeEvsUnknownFilter: Error =
-        Error::Evs(EvsError::UnknownFilter);
-    pub const CfeEvsAppNotRegistered: Error =
-        Error::Evs(EvsError::AppNotRegistered);
-    pub const CfeEvsAppIllegalAppId: Error =
-        Error::Evs(EvsError::AppIllegalAppId);
-    pub const CfeEvsAppFilterOverload: Error =
-        Error::Evs(EvsError::AppFilterOverload);
-    pub const CfeEvsResetAreaPointer: Error =
-        Error::Evs(EvsError::ResetAreaPointer);
-    pub const CfeEvsEvtNotRegistered: Error =
-        Error::Evs(EvsError::EvtNotRegistered);
-    pub const CfeEvsFileWriteError: Error =
-        Error::Evs(EvsError::FileWriteError);
-    pub const CfeEvsInvalidParameter: Error =
-        Error::Evs(EvsError::InvalidParameter);
-    pub const CfeEvsAppSquelched: Error =
-        Error::Evs(EvsError::AppSquelched);
-    pub const CfeEvsNotImplemented: Error =
-        Error::Evs(EvsError::NotImplemented);
-
-    // --- CFE ES ---
-    pub const CfeEsErrResourceIdNotValid: Error =
-        Error::Es(EsError::ResourceIdNotValid);
-    pub const CfeEsErrNameNotFound: Error =
-        Error::Es(EsError::NameNotFound);
-    pub const CfeEsErrAppCreate: Error =
-        Error::Es(EsError::AppCreate);
-    pub const CfeEsErrChildTaskCreate: Error =
-        Error::Es(EsError::ChildTaskCreate);
-    pub const CfeEsErrSysLogFull: Error =
-        Error::Es(EsError::SysLogFull);
-    pub const CfeEsErrMemBlockSize: Error =
-        Error::Es(EsError::MemBlockSize);
-    pub const CfeEsErrLoadLib: Error =
-        Error::Es(EsError::LoadLib);
-    pub const CfeEsBadArgument: Error =
-        Error::Es(EsError::BadArgument);
-    pub const CfeEsErrChildTaskRegister: Error =
-        Error::Es(EsError::ChildTaskRegister);
-    pub const CfeEsCdsInsufficientMemory: Error =
-        Error::Es(EsError::CdsInsufficientMemory);
-    pub const CfeEsCdsInvalidName: Error =
-        Error::Es(EsError::CdsInvalidName);
-    pub const CfeEsCdsInvalidSize: Error =
-        Error::Es(EsError::CdsInvalidSize);
-    pub const CfeEsCdsInvalid: Error =
-        Error::Es(EsError::CdsInvalid);
-    pub const CfeEsCdsAccessError: Error =
-        Error::Es(EsError::CdsAccessError);
-    pub const CfeEsFileIoErr: Error =
-        Error::Es(EsError::FileIoErr);
-    pub const CfeEsRstAccessErr: Error =
-        Error::Es(EsError::RstAccessErr);
-    pub const CfeEsErrAppRegister: Error =
-        Error::Es(EsError::AppRegister);
-    pub const CfeEsErrChildTaskDelete: Error =
-        Error::Es(EsError::ChildTaskDelete);
-    pub const CfeEsErrChildTaskDeleteMainTask: Error =
-        Error::Es(EsError::ChildTaskDeleteMainTask);
-    pub const CfeEsCdsBlockCrcErr: Error =
-        Error::Es(EsError::CdsBlockCrcErr);
-    pub const CfeEsMutSemDeleteErr: Error =
-        Error::Es(EsError::MutSemDeleteErr);
-    pub const CfeEsBinSemDeleteErr: Error =
-        Error::Es(EsError::BinSemDeleteErr);
-    pub const CfeEsCountSemDeleteErr: Error =
-        Error::Es(EsError::CountSemDeleteErr);
-    pub const CfeEsQueueDeleteErr: Error =
-        Error::Es(EsError::QueueDeleteErr);
-    pub const CfeEsFileCloseErr: Error =
-        Error::Es(EsError::FileCloseErr);
-    pub const CfeEsCdsWrongTypeErr: Error =
-        Error::Es(EsError::CdsWrongTypeErr);
-    pub const CfeEsCdsOwnerActiveErr: Error =
-        Error::Es(EsError::CdsOwnerActiveErr);
-    pub const CfeEsAppCleanupErr: Error =
-        Error::Es(EsError::AppCleanupErr);
-    pub const CfeEsTimerDeleteErr: Error =
-        Error::Es(EsError::TimerDeleteErr);
-    pub const CfeEsBufferNotInPool: Error =
-        Error::Es(EsError::BufferNotInPool);
-    pub const CfeEsTaskDeleteErr: Error =
-        Error::Es(EsError::TaskDeleteErr);
-    pub const CfeEsOperationTimedOut: Error =
-        Error::Es(EsError::OperationTimedOut);
-    pub const CfeEsNoResourceIdsAvailable: Error =
-        Error::Es(EsError::NoResourceIdsAvailable);
-    pub const CfeEsPoolBlockInvalid: Error =
-        Error::Es(EsError::PoolBlockInvalid);
-    pub const CfeEsErrDuplicateName: Error =
-        Error::Es(EsError::DuplicateName);
-    pub const CfeEsNotImplemented: Error =
-        Error::Es(EsError::NotImplemented);
-
-    // --- CFE SB ---
-    pub const CfeSbTimeOut: Error =
-        Error::Sb(SbError::TimeOut);
-    pub const CfeSbNoMessage: Error =
-        Error::Sb(SbError::NoMessage);
-    pub const CfeSbBadArgument: Error =
-        Error::Sb(SbError::BadArgument);
-    pub const CfeSbMaxPipesMet: Error =
-        Error::Sb(SbError::MaxPipesMet);
-    pub const CfeSbPipeCrErr: Error =
-        Error::Sb(SbError::PipeCrErr);
-    pub const CfeSbPipeRdErr: Error =
-        Error::Sb(SbError::PipeRdErr);
-    pub const CfeSbMsgTooBig: Error =
-        Error::Sb(SbError::MsgTooBig);
-    pub const CfeSbBufAlocErr: Error =
-        Error::Sb(SbError::BufAllocErr);
-    pub const CfeSbMaxMsgsMet: Error =
-        Error::Sb(SbError::MaxMsgsMet);
-    pub const CfeSbMaxDestsMet: Error =
-        Error::Sb(SbError::MaxDestsMet);
-    pub const CfeSbInternalErr: Error =
-        Error::Sb(SbError::InternalErr);
-    pub const CfeSbWrongMsgType: Error =
-        Error::Sb(SbError::WrongMsgType);
-    pub const CfeSbBufferInvalid: Error =
-        Error::Sb(SbError::BufferInvalid);
-    pub const CfeSbNotImplemented: Error =
-        Error::Sb(SbError::NotImplemented);
-
-    // --- CFE FS ---
-    pub const CfeFsBadArgument: Error =
-        Error::Fs(FsError::BadArgument);
-    pub const CfeFsInvalidPath: Error =
-        Error::Fs(FsError::InvalidPath);
-    pub const CfeFsFnameTooLong: Error =
-        Error::Fs(FsError::FnameTooLong);
-    pub const CfeFsNotImplemented: Error =
-        Error::Fs(FsError::NotImplemented);
-
-    // --- CFE TBL ---
-    pub const CfeTblErrInvalidHandle: Error =
-        Error::Tbl(TblError::InvalidHandle);
-    pub const CfeTblErrInvalidName: Error =
-        Error::Tbl(TblError::InvalidName);
-    pub const CfeTblErrInvalidSize: Error =
-        Error::Tbl(TblError::InvalidSize);
-    pub const CfeTblErrNeverLoaded: Error =
-        Error::Tbl(TblError::NeverLoaded);
-    pub const CfeTblErrRegistryFull: Error =
-        Error::Tbl(TblError::RegistryFull);
-    pub const CfeTblErrNoAccess: Error =
-        Error::Tbl(TblError::NoAccess);
-    pub const CfeTblErrUnregistered: Error =
-        Error::Tbl(TblError::Unregistered);
-    pub const CfeTblErrHandlesFull: Error =
-        Error::Tbl(TblError::HandlesFull);
-    pub const CfeTblErrDuplicateDiffSize: Error =
-        Error::Tbl(TblError::DuplicateDiffSize);
-    pub const CfeTblErrDuplicateNotOwned: Error =
-        Error::Tbl(TblError::DuplicateNotOwned);
-    pub const CfeTblErrNoBufferAvail: Error =
-        Error::Tbl(TblError::NoBufferAvail);
-    pub const CfeTblErrDumpOnly: Error =
-        Error::Tbl(TblError::DumpOnly);
-    pub const CfeTblErrIllegalSrcType: Error =
-        Error::Tbl(TblError::IllegalSrcType);
-    pub const CfeTblErrLoadInProgress: Error =
-        Error::Tbl(TblError::LoadInProgress);
-    pub const CfeTblErrFileTooLarge: Error =
-        Error::Tbl(TblError::FileTooLarge);
-    pub const CfeTblErrBadContentId: Error =
-        Error::Tbl(TblError::BadContentId);
-    pub const CfeTblErrBadSubtypeId: Error =
-        Error::Tbl(TblError::BadSubtypeId);
-    pub const CfeTblErrFileSizeInconsistent: Error =
-        Error::Tbl(TblError::FileSizeInconsistent);
-    pub const CfeTblErrNoStdHeader: Error =
-        Error::Tbl(TblError::NoStdHeader);
-    pub const CfeTblErrNoTblHeader: Error =
-        Error::Tbl(TblError::NoTblHeader);
-    pub const CfeTblErrFilenameTooLong: Error =
-        Error::Tbl(TblError::FilenameTooLong);
-    pub const CfeTblErrFileForWrongTable: Error =
-        Error::Tbl(TblError::FileForWrongTable);
-    pub const CfeTblErrLoadIncomplete: Error =
-        Error::Tbl(TblError::LoadIncomplete);
-    pub const CfeTblErrPartialLoad: Error =
-        Error::Tbl(TblError::PartialLoad);
-    pub const CfeTblErrInvalidOptions: Error =
-        Error::Tbl(TblError::InvalidOptions);
-    pub const CfeTblErrBadSpacecraftId: Error =
-        Error::Tbl(TblError::BadSpacecraftId);
-    pub const CfeTblErrBadProcessorId: Error =
-        Error::Tbl(TblError::BadProcessorId);
-    pub const CfeTblMessageError: Error =
-        Error::Tbl(TblError::MessageError);
-    pub const CfeTblErrShortFile: Error =
-        Error::Tbl(TblError::ShortFile);
-    pub const CfeTblErrAccess: Error =
-        Error::Tbl(TblError::Access);
-    pub const CfeTblBadArgument: Error =
-        Error::Tbl(TblError::BadArgument);
-    pub const CfeTblNotImplemented: Error =
-        Error::Tbl(TblError::NotImplemented);
-
-    // --- CFE TIME ---
-    pub const CfeTimeNotImplemented: Error =
-        Error::Time(TimeError::NotImplemented);
-    pub const CfeTimeInternalOnly: Error =
-        Error::Time(TimeError::InternalOnly);
-    pub const CfeTimeOutOfRange: Error =
-        Error::Time(TimeError::OutOfRange);
-    pub const CfeTimeTooManySynchCallbacks: Error =
-        Error::Time(TimeError::TooManySynchCallbacks);
-    pub const CfeTimeCallbackNotRegistered: Error =
-        Error::Time(TimeError::CallbackNotRegistered);
-    pub const CfeTimeBadArgument: Error =
-        Error::Time(TimeError::BadArgument);
-
-    // --- OSAL ---
-    pub const OsError: Error =
-        Error::Osal(OsalError::Error);
-    pub const OsInvalidPointer: Error =
-        Error::Osal(OsalError::InvalidPointer);
-    pub const OsErrorAddressMisaligned: Error =
-        Error::Osal(OsalError::AddressMisaligned);
-    pub const OsErrorTimeout: Error =
-        Error::Osal(OsalError::Timeout);
-    pub const OsInvalidIntNum: Error =
-        Error::Osal(OsalError::InvalidIntNum);
-    pub const OsSemFailure: Error =
-        Error::Osal(OsalError::SemFailure);
-    pub const OsSemTimeout: Error =
-        Error::Osal(OsalError::SemTimeout);
-    pub const OsQueueEmpty: Error =
-        Error::Osal(OsalError::QueueEmpty);
-    pub const OsQueueFull: Error =
-        Error::Osal(OsalError::QueueFull);
-    pub const OsQueueTimeout: Error =
-        Error::Osal(OsalError::QueueTimeout);
-    pub const OsQueueInvalidSize: Error =
-        Error::Osal(OsalError::QueueInvalidSize);
-    pub const OsQueueIdError: Error =
-        Error::Osal(OsalError::QueueIdError);
-    pub const OsErrNameTooLong: Error =
-        Error::Osal(OsalError::NameTooLong);
-    pub const OsErrNoFreeIds: Error =
-        Error::Osal(OsalError::NoFreeIds);
-    pub const OsErrNameTaken: Error =
-        Error::Osal(OsalError::NameTaken);
-    pub const OsErrInvalidId: Error =
-        Error::Osal(OsalError::InvalidId);
-    pub const OsErrNameNotFound: Error =
-        Error::Osal(OsalError::NameNotFound);
-    pub const OsErrSemNotFull: Error =
-        Error::Osal(OsalError::SemNotFull);
-    pub const OsErrInvalidPriority: Error =
-        Error::Osal(OsalError::InvalidPriority);
-    pub const OsInvalidSemValue: Error =
-        Error::Osal(OsalError::InvalidSemValue);
-    pub const OsErrFile: Error =
-        Error::Osal(OsalError::File);
-    pub const OsErrNotImplemented: Error =
-        Error::Osal(OsalError::NotImplemented);
-    pub const OsTimerErrInvalidArgs: Error =
-        Error::Osal(OsalError::TimerInvalidArgs);
-    pub const OsTimerErrTimerId: Error =
-        Error::Osal(OsalError::TimerIdError);
-    pub const OsTimerErrUnavailable: Error =
-        Error::Osal(OsalError::TimerUnavailable);
-    pub const OsTimerErrInternal: Error =
-        Error::Osal(OsalError::TimerInternal);
-    pub const OsErrObjectInUse: Error =
-        Error::Osal(OsalError::ObjectInUse);
-    pub const OsErrBadAddress: Error =
-        Error::Osal(OsalError::BadAddress);
-    pub const OsErrIncorrectObjState: Error =
-        Error::Osal(OsalError::IncorrectObjState);
-    pub const OsErrIncorrectObjType: Error =
-        Error::Osal(OsalError::IncorrectObjType);
-    pub const OsErrStreamDisconnected: Error =
-        Error::Osal(OsalError::StreamDisconnected);
-    pub const OsErrOperationNotSupported: Error =
-        Error::Osal(OsalError::OperationNotSupported);
-    pub const OsErrInvalidSize: Error =
-        Error::Osal(OsalError::InvalidSize);
-    pub const OsErrOutputTooLarge: Error =
-        Error::Osal(OsalError::OutputTooLarge);
-    pub const OsErrInvalidArgument: Error =
-        Error::Osal(OsalError::InvalidArgument);
-    pub const OsFsErrPathTooLong: Error =
-        Error::Osal(OsalError::FsPathTooLong);
-    pub const OsFsErrNameTooLong: Error =
-        Error::Osal(OsalError::FsNameTooLong);
-    pub const OsFsErrDriveNotCreated: Error =
-        Error::Osal(OsalError::FsDriveNotCreated);
-    pub const OsFsErrDeviceNotFree: Error =
-        Error::Osal(OsalError::FsDeviceNotFree);
-    pub const OsFsErrPathInvalid: Error =
-        Error::Osal(OsalError::FsPathInvalid);
-}
-
 // ── From<CFE_Status_t> ─────────────────────────────────────
 
-impl From<ffi::CFE_Status_t> for Error {
+impl From<ffi::CFE_Status_t> for CfsError {
     fn from(status: ffi::CFE_Status_t) -> Self {
         match status {
             // --- Generic CFE Status ---
-            ffi::CFE_STATUS_WRONG_MSG_LENGTH => Error::WrongMsgLength,
-            ffi::CFE_STATUS_UNKNOWN_MSG_ID => Error::UnknownMsgId,
-            ffi::CFE_STATUS_BAD_COMMAND_CODE => Error::BadCommandCode,
-            ffi::CFE_STATUS_EXTERNAL_RESOURCE_FAIL => Error::ExternalResourceFail,
-            ffi::CFE_STATUS_REQUEST_ALREADY_PENDING => Error::RequestAlreadyPending,
-            ffi::CFE_STATUS_VALIDATION_FAILURE => Error::ValidationFailure,
-            ffi::CFE_STATUS_RANGE_ERROR => Error::RangeError,
-            ffi::CFE_STATUS_INCORRECT_STATE => Error::IncorrectState,
-            ffi::CFE_STATUS_NOT_IMPLEMENTED => Error::NotImplemented,
+            ffi::CFE_STATUS_WRONG_MSG_LENGTH => CfsError::WrongMsgLength,
+            ffi::CFE_STATUS_UNKNOWN_MSG_ID => CfsError::UnknownMsgId,
+            ffi::CFE_STATUS_BAD_COMMAND_CODE => CfsError::BadCommandCode,
+            ffi::CFE_STATUS_EXTERNAL_RESOURCE_FAIL => CfsError::ExternalResourceFail,
+            ffi::CFE_STATUS_REQUEST_ALREADY_PENDING => CfsError::RequestAlreadyPending,
+            ffi::CFE_STATUS_VALIDATION_FAILURE => CfsError::ValidationFailure,
+            ffi::CFE_STATUS_RANGE_ERROR => CfsError::RangeError,
+            ffi::CFE_STATUS_INCORRECT_STATE => CfsError::IncorrectState,
+            ffi::CFE_STATUS_NOT_IMPLEMENTED => CfsError::NotImplemented,
 
             // --- CFE EVS (Event Services) ---
             ffi::CFE_EVS_UNKNOWN_FILTER => EvsError::UnknownFilter.into(),
@@ -1044,30 +727,25 @@ impl From<ffi::CFE_Status_t> for Error {
             ffi::OS_FS_ERR_DEVICE_NOT_FREE => OsalError::FsDeviceNotFree.into(),
             ffi::OS_FS_ERR_PATH_INVALID => OsalError::FsPathInvalid.into(),
 
-            other => Error::Unhandled(other),
+            other => CfsError::Unhandled(other),
         }
     }
 }
 
 // ── Helper functions ────────────────────────────────────────
 
-impl Error {
+impl CfsError {
     /// Retrieves the symbolic name for an OSAL status code.
-    pub fn name(
-        error: i32,
-    ) -> Result<CString<{ ffi::OS_ERROR_NAME_LENGTH as usize }>> {
+    pub fn name(error: i32) -> Result<CString<{ ffi::OS_ERROR_NAME_LENGTH as usize }>> {
         const SIZE: usize = ffi::OS_ERROR_NAME_LENGTH as usize;
         let mut name_buf = [0u8; SIZE];
         check(unsafe {
-            ffi::OS_GetErrorName(
-                error,
-                &mut name_buf as *mut _ as *mut [libc::c_char; SIZE],
-            )
+            ffi::OS_GetErrorName(error, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE])
         })?;
 
         let mut s = CString::new();
         s.extend_from_bytes(&name_buf)
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         Ok(s)
     }
 }
@@ -1079,15 +757,12 @@ pub fn get_cfe_status_name(
     const SIZE: usize = ffi::CFE_STATUS_STRING_LENGTH as usize;
     let mut name_buf = [0u8; SIZE];
     unsafe {
-        ffi::CFE_ES_StatusToString(
-            status,
-            &mut name_buf as *mut _ as *mut [libc::c_char; SIZE],
-        )
+        ffi::CFE_ES_StatusToString(status, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE])
     };
 
     let mut s = CString::new();
     s.extend_from_bytes(&name_buf)
-        .map_err(|_| Error::OsErrNameTooLong)?;
+        .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
     Ok(s)
 }
 
@@ -1098,15 +773,10 @@ pub fn osal_status_to_string(
 ) -> Result<CString<{ ffi::OS_STATUS_STRING_LENGTH as usize }>> {
     const SIZE: usize = ffi::OS_STATUS_STRING_LENGTH as usize;
     let mut name_buf = [0u8; SIZE];
-    unsafe {
-        ffi::OS_StatusToString(
-            status,
-            &mut name_buf as *mut _ as *mut [libc::c_char; SIZE],
-        )
-    };
+    unsafe { ffi::OS_StatusToString(status, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE]) };
 
     let mut s = CString::new();
     s.extend_from_bytes(&name_buf)
-        .map_err(|_| Error::OsErrNameTooLong)?;
+        .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
     Ok(s)
 }

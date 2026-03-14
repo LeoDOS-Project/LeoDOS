@@ -4,7 +4,7 @@
 //! Counting Semaphores. It uses RAII guards for mutexes to ensure they are
 //! always released, preventing deadlocks.
 
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::time::OsTime;
@@ -74,7 +74,7 @@ impl Mutex {
         let c_str = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
         name_str
             .extend_from_bytes(c_str.to_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         Ok(MutexProp {
             name: name_str,

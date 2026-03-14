@@ -4,7 +4,7 @@
 //! processor exceptions captured by the PSP. This is useful for advanced
 //! health monitoring or crash analysis tools.
 
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::task::TaskId;
 use crate::status::check;
@@ -51,8 +51,8 @@ pub fn get_summary() -> Result<ExceptionSummary> {
         .position(|&b| b == 0)
         .unwrap_or(reason_buf.len());
     let reason_vec =
-        heapless::Vec::from_slice(&reason_buf[..len]).map_err(|_| Error::OsErrNameTooLong)?;
-    let reason = String::from_utf8(reason_vec).map_err(|_| Error::InvalidString)?;
+        heapless::Vec::from_slice(&reason_buf[..len]).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+    let reason = String::from_utf8(reason_vec).map_err(|_| CfsError::InvalidString)?;
 
     Ok(ExceptionSummary {
         context_log_id: unsafe { context_id.assume_init() },
@@ -78,7 +78,7 @@ pub unsafe fn copy_context(context_log_id: u32, context_buf: &mut [u8]) -> Resul
     );
 
     if bytes_copied < 0 {
-        Err(Error::from(bytes_copied))
+        Err(CfsError::from(bytes_copied))
     } else {
         Ok(bytes_copied as usize)
     }

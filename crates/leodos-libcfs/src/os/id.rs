@@ -3,7 +3,7 @@
 //! This module provides utilities for working with generic `OsalId`s, which
 //! are the underlying type for all OSAL resources (tasks, queues, mutexes, etc.).
 
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi::{self, OS_OBJECT_CREATOR_ANY};
 use crate::status::check;
 use core::mem::MaybeUninit;
@@ -40,7 +40,7 @@ impl OsalId {
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(0);
         let mut s = CString::new();
         s.extend_from_bytes(&buffer[..len])
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         Ok(s)
     }
 

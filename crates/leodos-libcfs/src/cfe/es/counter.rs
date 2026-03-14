@@ -3,7 +3,7 @@
 //! This module provides a `Counter` struct that is a thread-safe, RAII-based
 //! handle for creating, incrementing, and managing generic counters.
 
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::status::check;
 use core::mem::MaybeUninit;
@@ -33,7 +33,7 @@ impl Counter {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut counter_id = MaybeUninit::uninit();
         check(unsafe { ffi::CFE_ES_RegisterGenCounter(counter_id.as_mut_ptr(), c_name.as_ptr()) })?;
@@ -74,7 +74,7 @@ impl Counter {
         let mut c_name = CString::<{ ffi::OS_MAX_API_NAME as usize }>::new();
         c_name
             .extend_from_bytes(name.as_bytes())
-            .map_err(|_| Error::OsErrNameTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
 
         let mut counter_id = MaybeUninit::uninit();
         check(unsafe {
@@ -103,8 +103,8 @@ impl CounterId {
             )
         })?;
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
-        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| Error::OsErrNameTooLong)?;
-        String::from_utf8(vec).map_err(|_| Error::InvalidString)
+        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        String::from_utf8(vec).map_err(|_| CfsError::InvalidString)
     }
 
     /// Converts the Counter ID into a zero-based integer suitable for array indexing.

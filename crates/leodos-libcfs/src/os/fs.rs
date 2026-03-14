@@ -5,7 +5,7 @@
 //! It also provides wrappers for standalone filesystem operations like `mkdir` and `remove`.
 
 use crate::cfe::time::SysTime;
-use crate::error::{Error, OsalError, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::time::OsTime;
@@ -117,7 +117,7 @@ impl FsHeader {
         // This will truncate if the description is too long, which is acceptable.
         c_desc
             .extend_from_bytes(description.as_bytes())
-            .map_err(|_| Error::OsFsErrPathTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::FsPathTooLong))?;
 
         unsafe {
             // CFE_FS_InitHeader takes a pointer and initializes the memory it points to.
@@ -219,10 +219,10 @@ impl Iterator for Directory {
                 let mut s = CString::new();
                 match s.extend_from_bytes(c_str.to_bytes()) {
                     Ok(_) => Some(Ok(s)),
-                    Err(_) => Some(Err(Error::OsErrNameTooLong)),
+                    Err(_) => Some(Err(CfsError::Osal(OsalError::NameTooLong))),
                 }
             }
-            Err(Error::Osal(OsalError::Error)) => None,
+            Err(CfsError::Osal(OsalError::Error)) => None,
             Err(err) => Some(Err(err)),
         }
     }
@@ -316,7 +316,7 @@ impl File {
     pub fn sync_read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let bytes_read = unsafe { ffi::OS_read(self.id.0, buf.as_mut_ptr() as *mut _, buf.len()) };
         if bytes_read < 0 {
-            Err(Error::from(bytes_read))
+            Err(CfsError::from(bytes_read))
         } else {
             Ok(bytes_read as usize)
         }
@@ -329,7 +329,7 @@ impl File {
         let bytes_written =
             unsafe { ffi::OS_write(self.id.0, buf.as_ptr() as *const _, buf.len()) };
         if bytes_written < 0 {
-            Err(Error::from(bytes_written))
+            Err(CfsError::from(bytes_written))
         } else {
             Ok(bytes_written as usize)
         }
@@ -347,7 +347,7 @@ impl File {
 
         let new_pos = unsafe { ffi::OS_lseek(self.id.0, offset, whence) };
         if new_pos < 0 {
-            Err(Error::from(new_pos))
+            Err(CfsError::from(new_pos))
         } else {
             Ok(new_pos as u32)
         }
@@ -385,7 +385,7 @@ impl File {
         let c_str = unsafe { CStr::from_ptr(prop.Path.as_ptr()) };
         path_str
             .extend_from_bytes(c_str.to_bytes())
-            .map_err(|_| Error::OsFsErrPathTooLong)?;
+            .map_err(|_| CfsError::Osal(OsalError::FsPathTooLong))?;
 
         Ok(FileProp {
             path: path_str,
@@ -400,7 +400,7 @@ impl File {
             ffi::OS_TimedRead(self.id.0, buf.as_mut_ptr() as *mut _, buf.len(), timeout_ms)
         };
         if bytes_read < 0 {
-            Err(Error::from(bytes_read))
+            Err(CfsError::from(bytes_read))
         } else {
             Ok(bytes_read as usize)
         }
@@ -412,7 +412,7 @@ impl File {
             ffi::OS_TimedReadAbs(self.id.0, buf.as_mut_ptr() as *mut _, buf.len(), abstime.0)
         };
         if bytes_read < 0 {
-            Err(Error::from(bytes_read))
+            Err(CfsError::from(bytes_read))
         } else {
             Ok(bytes_read as usize)
         }
@@ -424,7 +424,7 @@ impl File {
             ffi::OS_TimedWrite(self.id.0, buf.as_ptr() as *const _, buf.len(), timeout_ms)
         };
         if bytes_written < 0 {
-            Err(Error::from(bytes_written))
+            Err(CfsError::from(bytes_written))
         } else {
             Ok(bytes_written as usize)
         }
@@ -436,7 +436,7 @@ impl File {
             ffi::OS_TimedWriteAbs(self.id.0, buf.as_ptr() as *const _, buf.len(), abstime.0)
         };
         if bytes_written < 0 {
-            Err(Error::from(bytes_written))
+            Err(CfsError::from(bytes_written))
         } else {
             Ok(bytes_written as usize)
         }
@@ -565,7 +565,7 @@ pub fn extract_filename_from_path<'a>(
     check(status)?;
 
     let c_str = unsafe { CStr::from_ptr(filename_buf.as_ptr() as *const libc::c_char) };
-    c_str.to_str().map_err(|_| Error::InvalidString)
+    c_str.to_str().map_err(|_| CfsError::InvalidString)
 }
 
 /// Parses a filename from an input string, applying default path and extension.
@@ -600,7 +600,7 @@ pub fn parse_input_filename<'a>(
 
     // Find the null terminator to determine the actual length of the output string.
     let len = output_buf.iter().position(|&b| b == 0).unwrap_or(0);
-    core::str::from_utf8(&output_buf[..len]).map_err(|_| Error::InvalidString)
+    core::str::from_utf8(&output_buf[..len]).map_err(|_| CfsError::InvalidString)
 }
 
 /// Checks if a file with the given name is currently open.
@@ -683,7 +683,7 @@ pub fn get_phys_drive_name(mountpoint: &str) -> Result<CString<{ ffi::OS_MAX_PAT
     let len = buffer.iter().position(|&b| b == 0).unwrap_or(0);
     let mut s = CString::new();
     s.extend_from_bytes(&buffer[..len])
-        .map_err(|_| Error::OsErrNameTooLong)?;
+        .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
     Ok(s)
 }
 
@@ -699,7 +699,7 @@ pub fn translate_path(
     let len = buffer.iter().position(|&b| b == 0).unwrap_or(0);
     let mut s = CString::new();
     s.extend_from_bytes(&buffer[..len])
-        .map_err(|_| Error::OsErrNameTooLong)?;
+        .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
     Ok(s)
 }
 
@@ -803,7 +803,7 @@ impl File {
     pub fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> impl Future<Output = Result<usize>> + 'a {
         core::future::poll_fn(|_| match self.timed_read(buf, 0) {
             Ok(n) => core::task::Poll::Ready(Ok(n)),
-            Err(Error::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
+            Err(CfsError::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
             Err(e) => core::task::Poll::Ready(Err(e)),
         })
     }
@@ -812,7 +812,7 @@ impl File {
     pub fn write<'a>(&'a mut self, buf: &'a [u8]) -> impl Future<Output = Result<usize>> + 'a {
         core::future::poll_fn(|_| match self.timed_write(buf, 0) {
             Ok(n) => core::task::Poll::Ready(Ok(n)),
-            Err(Error::Osal(OsalError::Timeout | OsalError::QueueFull)) => Poll::Pending,
+            Err(CfsError::Osal(OsalError::Timeout | OsalError::QueueFull)) => Poll::Pending,
             Err(e) => core::task::Poll::Ready(Err(e)),
         })
     }

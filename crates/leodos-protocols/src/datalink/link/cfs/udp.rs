@@ -1,4 +1,4 @@
-use leodos_libcfs::error::Error as CfsError;
+use leodos_libcfs::error::CfsError as CfsError;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::os::net::UdpSocket;
 

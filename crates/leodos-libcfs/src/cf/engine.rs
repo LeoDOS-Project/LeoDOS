@@ -2,7 +2,7 @@
 
 use crate::cf::transaction::Transaction;
 use crate::cf::types::{CfdpClass, TxnState};
-use crate::error::Error;
+use crate::error::CfsError;
 use crate::ffi;
 use crate::status::{self, Status};
 use core::ffi::CStr;
@@ -44,7 +44,7 @@ pub fn transaction_state_raw(seq_num: u32, src_eid: u32) -> Option<TxnState> {
 }
 
 /// Initializes the CFDP engine.
-pub fn init() -> Result<Status, Error> {
+pub fn init() -> Result<Status, CfsError> {
     status::check(unsafe { ffi::CF_CFDP_InitEngine() })
 }
 
@@ -76,7 +76,7 @@ pub fn tx_file(
     chan: u8,
     priority: u8,
     dest_id: u32,
-) -> Result<Status, Error> {
+) -> Result<Status, CfsError> {
     status::check(unsafe {
         ffi::CF_CFDP_TxFile(
             src_filename.as_ptr(),
@@ -108,7 +108,7 @@ pub fn playback_dir(
     chan: u8,
     priority: u8,
     dest_id: u16,
-) -> Result<Status, Error> {
+) -> Result<Status, CfsError> {
     status::check(unsafe {
         ffi::CF_CFDP_PlaybackDir(
             src_filename.as_ptr(),
@@ -133,7 +133,7 @@ pub fn start_rx_transaction(chan_num: u8) -> Option<&'static mut Transaction> {
 }
 
 /// Initializes the CF application.
-pub fn app_init() -> Result<Status, Error> {
+pub fn app_init() -> Result<Status, CfsError> {
     status::check(unsafe { ffi::CF_AppInit() })
 }
 
@@ -143,7 +143,7 @@ pub fn app_main() {
 }
 
 /// Initializes the CF tables.
-pub fn table_init() -> Result<Status, Error> {
+pub fn table_init() -> Result<Status, CfsError> {
     status::check(unsafe { ffi::CF_TableInit() })
 }
 
@@ -190,7 +190,10 @@ pub fn append_tlv(tlv_list: &mut crate::cf::pdu::LogicalTlvList, tlv_type: crate
 }
 
 /// Receives and processes a PDU header from a channel.
-pub fn recv_ph(chan_num: u8, ph: &mut crate::cf::pdu::LogicalPduBuffer) -> Result<Status, Error> {
+pub fn recv_ph(
+    chan_num: u8,
+    ph: &mut crate::cf::pdu::LogicalPduBuffer,
+) -> Result<Status, CfsError> {
     status::check(unsafe { ffi::CF_CFDP_RecvPh(chan_num, &mut ph.0) })
 }
 

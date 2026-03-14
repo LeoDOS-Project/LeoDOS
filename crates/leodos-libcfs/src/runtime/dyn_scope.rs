@@ -5,11 +5,11 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use heapless::Vec;
 
-use crate::error::Error;
+use crate::error::CfsError;
 
 /// A scope that holds Pinned mutable references to dyn-futures.
 pub struct DynScope<'a, const MAX_TASKS: usize = 8> {
-    tasks: Vec<Pin<&'a mut dyn Future<Output = Result<(), Error>>>, MAX_TASKS>,
+    tasks: Vec<Pin<&'a mut dyn Future<Output = Result<(), CfsError>>>, MAX_TASKS>,
 }
 
 impl<'a, const MAX_TASKS: usize> DynScope<'a, MAX_TASKS> {
@@ -22,21 +22,21 @@ impl<'a, const MAX_TASKS: usize> DynScope<'a, MAX_TASKS> {
     ///
     /// The argument must be a `Pin<&mut F>`. This ensures that the
     /// underlying future has already been safely pinned by the caller.
-    pub fn spawn<F>(&mut self, future: Pin<&'a mut F>) -> Result<(), Error>
+    pub fn spawn<F>(&mut self, future: Pin<&'a mut F>) -> Result<(), CfsError>
     where
-        F: Future<Output = Result<(), Error>> + 'a,
+        F: Future<Output = Result<(), CfsError>> + 'a,
     {
-        self.tasks.push(future).map_err(|_| Error::TaskPoolFull)
+        self.tasks.push(future).map_err(|_| CfsError::TaskPoolFull)
     }
 }
 
 impl<'a, const MAX_TASKS: usize> Future for DynScope<'a, MAX_TASKS> {
-    type Output = Result<(), Error>;
+    type Output = Result<(), CfsError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let tasks = &mut self.tasks;
 
-        let mut errors: Option<Error> = None;
+        let mut errors: Option<CfsError> = None;
 
         let mut i = tasks.len();
         while i > 0 {

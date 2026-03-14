@@ -6,7 +6,7 @@
 //! associated with raw pointer manipulation.
 
 use crate::cfe::time::SysTime;
-use crate::error::{Error, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::status::check;
 use core::mem::MaybeUninit;
@@ -380,7 +380,7 @@ impl<'a> MessageMut<'a> {
         if status == ffi::CFE_SUCCESS {
             Ok(())
         } else {
-            Err(Error::from(status))
+            Err(CfsError::from(status))
         }
     }
 
@@ -390,7 +390,7 @@ impl<'a> MessageMut<'a> {
     /// and then populates the message ID and length fields.
     pub fn init(&mut self, msg_id: MsgId, size: usize) -> Result<()> {
         if size > self.slice.len() {
-            return Err(Error::OsErrInvalidSize);
+            return Err(CfsError::Osal(OsalError::InvalidSize));
         }
         let status = unsafe {
             ffi::CFE_MSG_Init(
@@ -406,7 +406,7 @@ impl<'a> MessageMut<'a> {
     /// Sets the total size of the message in its header.
     pub fn set_size(&mut self, size: usize) -> Result<()> {
         if size > self.slice.len() {
-            return Err(Error::OsErrInvalidSize);
+            return Err(CfsError::Osal(OsalError::InvalidSize));
         }
         let status = unsafe {
             ffi::CFE_MSG_SetSize(self.slice.as_mut_ptr() as *mut ffi::CFE_MSG_Message_t, size)
@@ -542,7 +542,7 @@ impl<'a> MessageMut<'a> {
     /// than the available user data length in the message buffer.
     pub fn payload<P: Sized>(&mut self) -> Result<&mut P> {
         if core::mem::size_of::<P>() > self.user_data_length() {
-            return Err(Error::CfeStatusWrongMsgLength);
+            return Err(CfsError::WrongMsgLength);
         }
         // This is safe because:
         // 1. We have a mutable reference to the slice, ensuring exclusive access.
@@ -626,7 +626,7 @@ pub fn message_string_set(dest: &mut [i8], src: &str) -> Result<usize> {
         )
     };
     if bytes_copied < 0 {
-        Err(Error::from(bytes_copied))
+        Err(CfsError::from(bytes_copied))
     } else {
         Ok(bytes_copied as usize)
     }
@@ -657,9 +657,9 @@ pub fn message_string_get<'a>(
         )
     };
     if bytes_copied < 0 {
-        return Err(Error::from(bytes_copied));
+        return Err(CfsError::from(bytes_copied));
     }
-    core::str::from_utf8(&dest[..bytes_copied as usize]).map_err(|_| Error::InvalidString)
+    core::str::from_utf8(&dest[..bytes_copied as usize]).map_err(|_| CfsError::InvalidString)
 }
 
 /// Gets the next sequence count value, handling rollovers correctly.
