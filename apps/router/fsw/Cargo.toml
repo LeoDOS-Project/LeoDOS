@@ -1,0 +1,25 @@
+[package]
+name = "router"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "router"
+crate-type = ["cdylib"]
+
+[dependencies]
+leodos-protocols = { path = "../../../crates/leodos-protocols", features = ["cfs"] }
+leodos-libcfs = { path = "../../../crates/leodos-libcfs" }
+heapless = "0.9"
+thiserror = { version = "2.0.17", default-features = false }
+
+[profile.release]
+lto = true
+panic = "abort"
+opt-level = "z"
+
+[profile.dev]
+panic = "abort"
+
+[build-dependencies]
+bindgen = "0.72.1"
