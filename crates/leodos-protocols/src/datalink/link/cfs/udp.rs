@@ -77,13 +77,14 @@ impl UdpDatalink {
     }
 }
 
+
 impl Datalink for UdpDatalink {
     type ReadError = CfsError;
     type WriteError = CfsError;
     type Reader<'a> = UdpFrameReader<'a>;
     type Writer<'a> = UdpFrameWriter<'a>;
 
-    fn split(&self) -> (Self::Reader<'_>, Self::Writer<'_>) {
+    fn split(&mut self) -> (UdpFrameReader<'_>, UdpFrameWriter<'_>) {
         (
             UdpFrameReader::new(&self.socket),
             UdpFrameWriter::new(&self.socket, &self.remote),

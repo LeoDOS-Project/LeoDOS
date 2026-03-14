@@ -50,8 +50,38 @@ pub trait Datalink {
         Self: 'a;
 
     /// Split into independent read and write halves.
-    ///
-    /// Both halves borrow `self`, allowing concurrent use
-    /// without requiring exclusive access to the whole link.
-    fn split(&self) -> (Self::Reader<'_>, Self::Writer<'_>);
+    fn split(&mut self) -> (Self::Reader<'_>, Self::Writer<'_>);
+}
+
+impl<R: DatalinkRead, W: DatalinkWrite> Datalink for (R, W) {
+    type ReadError = R::Error;
+    type WriteError = W::Error;
+    type Reader<'a> = &'a mut R where Self: 'a;
+    type Writer<'a> = &'a mut W where Self: 'a;
+
+    fn split(&mut self) -> (&mut R, &mut W) {
+        (&mut self.0, &mut self.1)
+    }
+}
+
+impl<T: DatalinkRead + ?Sized> DatalinkRead for &mut T {
+    type Error = T::Error;
+
+    async fn read(
+        &mut self,
+        buffer: &mut [u8],
+    ) -> Result<usize, Self::Error> {
+        T::read(self, buffer).await
+    }
+}
+
+impl<T: DatalinkWrite + ?Sized> DatalinkWrite for &mut T {
+    type Error = T::Error;
+
+    async fn write(
+        &mut self,
+        data: &[u8],
+    ) -> Result<(), Self::Error> {
+        T::write(self, data).await
+    }
 }

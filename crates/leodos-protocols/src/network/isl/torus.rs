@@ -14,7 +14,7 @@ impl Point {
     }
 }
 
-/// Cardinal direction on the toroidal grid, plus ground and local links.
+/// Cardinal direction on the toroidal ISL grid.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Direction {
     /// Toward lower satellite index (intra-plane).
@@ -25,9 +25,28 @@ pub enum Direction {
     East,
     /// Toward lower orbital plane index (cross-plane).
     West,
-    /// Toward the ground station.
+}
+
+impl Direction {
+    /// Returns the opposite direction.
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::North => Self::South,
+            Self::South => Self::North,
+            Self::East => Self::West,
+            Self::West => Self::East,
+        }
+    }
+}
+
+/// Next-hop routing decision.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum Hop {
+    /// Forward on an ISL link.
+    Isl(Direction),
+    /// Send to the ground station.
     Ground,
-    /// Destined for the local node itself.
+    /// Deliver to the local node.
     Local,
 }
 
@@ -53,7 +72,6 @@ impl Torus {
             Direction::South => Point::new(point.orb, Self::next(point.sat, self.num_sats)),
             Direction::East => Point::new(Self::next(point.orb, self.num_orbs), point.sat),
             Direction::West => Point::new(Self::prev(point.orb, self.num_orbs), point.sat),
-            Direction::Ground | Direction::Local => point,
         }
     }
 
@@ -98,20 +116,20 @@ impl Torus {
         Self::prev(p.orb, self.num_orbs)
     }
 
-    /// Forward distance between two points along the orbital plane axis.
+    /// Returns the distance between two orbits.
     pub fn distance_orb(&self, from: Point, to: Point) -> u8 {
         Self::distance(from.orb, to.orb, self.num_orbs)
     }
 
-    /// Forward distance between two points along the satellite axis.
+    /// Returns the distance between two satellites.
     pub fn distance_sat(&self, from: Point, to: Point) -> u8 {
         Self::distance(from.sat, to.sat, self.num_sats)
     }
 
-    /// Returns the shortest-path direction along the satellite axis.
-    pub fn shortest_path_direction_sat(&self, current: Point, target: Point) -> Direction {
-        let north_dist = self.distance_sat(target, current);
-        let south_dist = self.distance_sat(current, target);
+    /// Returns the direction to move from `from` to `to` along the satellite axis.
+    pub fn direction_to_sat(&self, from: Point, to: Point) -> Direction {
+        let north_dist = self.distance_sat(to, from);
+        let south_dist = self.distance_sat(from, to);
         if north_dist < south_dist {
             Direction::North
         } else {
@@ -119,10 +137,10 @@ impl Torus {
         }
     }
 
-    /// Returns the shortest-path direction along the orbital plane axis.
-    pub fn shortest_path_direction_orb(&self, current: Point, target: Point) -> Direction {
-        let west_dist = self.distance_orb(target, current);
-        let east_dist = self.distance_orb(current, target);
+    /// Returns the direction to move from `from` to `to` along the orbital plane axis.
+    pub fn direction_to_orb(&self, from: Point, to: Point) -> Direction {
+        let west_dist = self.distance_orb(to, from);
+        let east_dist = self.distance_orb(from, to);
         if west_dist < east_dist {
             Direction::West
         } else {

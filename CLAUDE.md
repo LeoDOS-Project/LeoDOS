@@ -17,8 +17,10 @@ already exist.
 - [ ] `Router::poll_links` uses `select_biased!` — all
   `DatalinkReader::read()` impls must be cancel safe (atomic
   read or no partial consumption on drop).
-- [ ] RouterService (client/driver) copies data through
+- [x] RouterService (client/driver) copies data through
   LocalChannel instead of zero-copy like SRSPP direct use.
+  — Replaced with generic RouterDriver<D: DatalinkRead +
+  DatalinkWrite>; RouterClient/RouterService removed.
 
 ### Stack cleanup (in progress)
 

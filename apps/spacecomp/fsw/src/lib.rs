@@ -25,7 +25,7 @@ use leodos_protocols::network::isl::routing::algorithm::gateway::GatewayTable;
 use leodos_protocols::network::isl::routing::Router;
 use leodos_protocols::utils::clock::MetClock;
 use leodos_protocols::network::isl::shell::Shell;
-use leodos_protocols::network::isl::torus::Direction;
+use leodos_protocols::network::isl::torus::{Direction, Hop};
 use leodos_protocols::network::isl::torus::Point;
 use leodos_protocols::network::isl::torus::Torus;
 use leodos_protocols::network::spp::Apid;
@@ -89,23 +89,23 @@ const LOCALHOST: &str = "127.0.0.1";
 
 const PORTS_PER_SAT: u16 = 10;
 
-fn port_offset(direction: Direction) -> u16 {
-    match direction {
-        Direction::North => 0,
-        Direction::South => 2,
-        Direction::East => 4,
-        Direction::West => 6,
-        Direction::Ground => 8,
-        Direction::Local => unreachable!(),
+fn port_offset(hop: Hop) -> u16 {
+    match hop {
+        Hop::Isl(Direction::North) => 0,
+        Hop::Isl(Direction::South) => 2,
+        Hop::Isl(Direction::East) => 4,
+        Hop::Isl(Direction::West) => 6,
+        Hop::Ground => 8,
+        Hop::Local => unreachable!(),
     }
 }
 
-fn send_port(point: Point, direction: Direction) -> u16 {
-    PORT_BASE + point.sat as u16 * PORTS_PER_SAT + port_offset(direction)
+fn send_port(point: Point, hop: Hop) -> u16 {
+    PORT_BASE + point.sat as u16 * PORTS_PER_SAT + port_offset(hop)
 }
 
-fn recv_port(point: Point, direction: Direction) -> u16 {
-    send_port(point, direction) + 1
+fn recv_port(point: Point, hop: Hop) -> u16 {
+    send_port(point, hop) + 1
 }
 
 fn orbit_ip(orbit: u8, out: &mut [u8; 16]) -> Result<usize, core::fmt::Error> {
@@ -145,27 +145,33 @@ pub extern "C" fn SPACECOMP_AppMain() {
         let east_point = TORUS.neighbor(point, Direction::East);
         let west_point = TORUS.neighbor(point, Direction::West);
 
+        let n = Hop::Isl(Direction::North);
+        let s = Hop::Isl(Direction::South);
+        let e = Hop::Isl(Direction::East);
+        let w = Hop::Isl(Direction::West);
+        let g = Hop::Ground;
+
         let north_link = local_link(
-            send_port(point, Direction::North),
-            recv_port(north_point, Direction::South),
+            send_port(point, n),
+            recv_port(north_point, s),
         )?;
         let south_link = local_link(
-            send_port(point, Direction::South),
-            recv_port(south_point, Direction::North),
+            send_port(point, s),
+            recv_port(south_point, n),
         )?;
         let east_link = remote_link(
-            send_port(point, Direction::East),
+            send_port(point, e),
             east_point.orb,
-            recv_port(east_point, Direction::West),
+            recv_port(east_point, w),
         )?;
         let west_link = remote_link(
-            send_port(point, Direction::West),
+            send_port(point, w),
             west_point.orb,
-            recv_port(west_point, Direction::East),
+            recv_port(west_point, e),
         )?;
         let ground_link = local_link(
-            send_port(point, Direction::Ground),
-            recv_port(point, Direction::Ground),
+            send_port(point, g),
+            recv_port(point, g),
         )?;
 
         let mut gateway_table = GatewayTable::<4>::new(5.0);

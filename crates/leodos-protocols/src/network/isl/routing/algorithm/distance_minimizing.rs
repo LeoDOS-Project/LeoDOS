@@ -6,7 +6,7 @@ use crate::network::isl::address::Address;
 use crate::network::isl::routing::algorithm::RoutingAlgorithm;
 use crate::network::isl::routing::algorithm::gateway::GatewayTable;
 use crate::network::isl::shell::Shell;
-use crate::network::isl::torus::Direction;
+use crate::network::isl::torus::{Direction, Hop};
 use crate::network::isl::torus::Point;
 
 /// Physics-aware routing that considers orbital mechanics to
@@ -61,24 +61,20 @@ impl<const N: usize> DistanceMinimizing<N> {
     ) -> Direction {
         let torus = &self.shell.torus;
 
-        if current == target {
-            return Direction::Local;
-        }
-
         if current.orb == target.orb {
-            return torus.shortest_path_direction_sat(
+            return torus.direction_to_sat(
                 current, target,
             );
         }
 
         if current.sat == target.sat {
-            return torus.shortest_path_direction_orb(
+            return torus.direction_to_orb(
                 current, target,
             );
         }
 
         let v_dir =
-            torus.shortest_path_direction_orb(current, target);
+            torus.direction_to_orb(current, target);
         let toward_orb = match v_dir {
             Direction::East => torus.next_orb(current),
             _ => torus.prev_orb(current),
@@ -96,7 +92,7 @@ impl<const N: usize> DistanceMinimizing<N> {
         if toward_factor < curr_factor {
             v_dir
         } else {
-            torus.shortest_path_direction_sat(current, target)
+            torus.direction_to_sat(current, target)
         }
     }
 }
@@ -107,9 +103,9 @@ impl<const N: usize> RoutingAlgorithm for DistanceMinimizing<N> {
         current: Point,
         target: Address,
         time_s: u32,
-    ) -> Direction {
-        let (target_point, local_dir) = match target {
-            Address::Satellite(p) => (p, Direction::Local),
+    ) -> Hop {
+        let (target_point, local_hop) = match target {
+            Address::Satellite(p) => (p, Hop::Local),
             Address::Ground { station } => {
                 let gw = self
                     .gateway_table
@@ -118,16 +114,16 @@ impl<const N: usize> RoutingAlgorithm for DistanceMinimizing<N> {
                         orb: 0,
                         sat: station,
                     });
-                (gw, Direction::Ground)
+                (gw, Hop::Ground)
             }
             Address::ServiceArea { orb } => (
                 Point { orb: current.orb, sat: orb },
-                Direction::Local,
+                Hop::Local,
             ),
         };
         if current == target_point {
-            return local_dir;
+            return local_hop;
         }
-        self.route_to_point(current, target_point, time_s)
+        Hop::Isl(self.route_to_point(current, target_point, time_s))
     }
 }

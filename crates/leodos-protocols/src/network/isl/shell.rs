@@ -50,39 +50,38 @@ impl Shell {
         2.0 * PI * libm::sqrtf(r * r * r / GRAVITATIONAL_PARAM)
     }
 
-    fn satellite_spacing_angle(&self) -> f32 {
+    fn sat_spacing_angle(&self) -> f32 {
         2.0 * PI / self.torus.num_orbs as f32
     }
 
-    fn plane_spacing_angle(&self) -> f32 {
+    fn orb_spacing_angle(&self) -> f32 {
         2.0 * PI / self.torus.num_sats as f32
     }
 
     /// Returns the chord distance between adjacent satellites in the same plane.
-    pub fn within_plane_distance(&self) -> f32 {
-        chord_length(self.orbital_radius(), self.satellite_spacing_angle())
+    pub fn within_orb_distance(&self) -> f32 {
+        chord_length(self.orbital_radius(), self.sat_spacing_angle())
     }
 
     /// Returns the equatorial chord distance between adjacent orbital planes.
-    pub fn cross_plane_base_distance(&self) -> f32 {
-        chord_length(self.orbital_radius(), self.plane_spacing_angle())
+    pub fn cross_orb_base_distance(&self) -> f32 {
+        chord_length(self.orbital_radius(), self.orb_spacing_angle())
     }
 
-    /// Returns the cross-plane ISL distance at a given orbital phase (0.0-1.0).
-    pub fn cross_plane_distance(&self, phase: f32) -> f32 {
+    /// Returns the cross-orbit ISL distance at a given orbital phase (0.0-1.0).
+    pub fn cross_orb_distance(&self, phase: f32) -> f32 {
         let theta = 2.0 * PI * phase;
         let cos_theta = libm::cosf(theta);
         let sin_theta = libm::sinf(theta);
         let cos_inc = libm::cosf(self.inclination_rad);
 
         let factor = libm::sqrtf(cos_theta * cos_theta + cos_inc * cos_inc * sin_theta * sin_theta);
-        self.cross_plane_base_distance() * factor
+        self.cross_orb_base_distance() * factor
     }
 
-    /// Returns the cross-plane ISL distance for a satellite at the given row.
-    pub fn cross_plane_distance_at_row(&self, row: u8) -> f32 {
-        let phase = row as f32 / self.torus.num_orbs as f32;
-        self.cross_plane_distance(phase)
+    /// Returns the cross-plane ISL distance for a satellite.
+    pub fn cross_orb_distance_at_sat(&self, sat: u8) -> f32 {
+        self.cross_orb_distance(sat as f32 / self.torus.num_orbs as f32)
     }
 }
 
@@ -103,20 +102,25 @@ mod tests {
     }
 
     #[test]
-    fn test_within_plane_distance() {
+    fn test_within_orb_distance() {
         let torus = Torus::new(22, 72);
         let shell = Shell::new(torus, 550_000.0, 53.0);
-        let dist = shell.within_plane_distance();
+        let dist = shell.within_orb_distance();
         assert!(dist > 1_000_000.0 && dist < 2_500_000.0, "dist={}", dist);
     }
 
     #[test]
-    fn test_cross_plane_varies() {
+    fn test_cross_orb_varies() {
         let torus = Torus::new(22, 72);
         let shell = Shell::new(torus, 550_000.0, 87.0);
-        let at_equator = shell.cross_plane_distance(0.0);
-        let at_pole = shell.cross_plane_distance(0.25);
-        assert!(at_pole < at_equator, "pole {} < equator {}", at_pole, at_equator);
+        let at_equator = shell.cross_orb_distance(0.0);
+        let at_pole = shell.cross_orb_distance(0.25);
+        assert!(
+            at_pole < at_equator,
+            "pole {} < equator {}",
+            at_pole,
+            at_equator
+        );
     }
 
     #[test]
@@ -125,9 +129,14 @@ mod tests {
         let low = Shell::new(torus, 550_000.0, 53.0);
         let high = Shell::new(torus, 550_000.0, 87.0);
 
-        let low_ratio = low.cross_plane_distance(0.0) / low.cross_plane_distance(0.25);
-        let high_ratio = high.cross_plane_distance(0.0) / high.cross_plane_distance(0.25);
+        let low_ratio = low.cross_orb_distance(0.0) / low.cross_orb_distance(0.25);
+        let high_ratio = high.cross_orb_distance(0.0) / high.cross_orb_distance(0.25);
 
-        assert!(high_ratio > low_ratio, "high {} > low {}", high_ratio, low_ratio);
+        assert!(
+            high_ratio > low_ratio,
+            "high {} > low {}",
+            high_ratio,
+            low_ratio
+        );
     }
 }

@@ -4,8 +4,6 @@ pub mod algorithm;
 pub mod local;
 /// ISL routable packet definitions and builders.
 pub mod packet;
-/// Standalone router service with driver/client split.
-pub mod service;
 
 use futures::FutureExt as _;
 use futures::future::Either;
@@ -20,8 +18,8 @@ use crate::network::isl;
 use crate::network::isl::address::Address;
 use crate::network::isl::routing::algorithm::RoutingAlgorithm;
 use crate::network::isl::routing::packet::IslRoutingTelecommand;
-use crate::network::isl::torus::Direction;
 use crate::network::isl::torus::Point;
+use crate::network::isl::torus::{Direction, Hop};
 use crate::utils::clock::Clock;
 use crate::utils::ringbuf::RingBuffer;
 
@@ -161,27 +159,27 @@ where
             .algorithm
             .route(Point::from(self.address), target, self.clock.now());
         match next {
-            Direction::North => {
+            Hop::Isl(Direction::North) => {
                 let (_, mut w) = self.north.link.split();
                 w.write(bytes).await.map_err(RouterError::North)
             }
-            Direction::South => {
+            Hop::Isl(Direction::South) => {
                 let (_, mut w) = self.south.link.split();
                 w.write(bytes).await.map_err(RouterError::South)
             }
-            Direction::East => {
+            Hop::Isl(Direction::East) => {
                 let (_, mut w) = self.east.link.split();
                 w.write(bytes).await.map_err(RouterError::East)
             }
-            Direction::West => {
+            Hop::Isl(Direction::West) => {
                 let (_, mut w) = self.west.link.split();
                 w.write(bytes).await.map_err(RouterError::West)
             }
-            Direction::Ground => {
+            Hop::Ground => {
                 let (_, mut w) = self.ground.link.split();
                 w.write(bytes).await.map_err(RouterError::Ground)
             }
-            Direction::Local => Ok(()),
+            Hop::Local => Ok(()),
         }
     }
 }
@@ -232,9 +230,10 @@ where
             }
 
             enum Event<RE, GRE> {
-                Read(Result<usize, RE>, Direction),
+                IslRead(Result<usize, RE>, Direction),
                 GroundRead(Result<usize, GRE>),
-                WriteComplete(Direction),
+                IslWrite(Direction),
+                GroundWrite,
             }
 
             // Route a received packet: return if local,
@@ -251,7 +250,7 @@ where
                         clock.now(),
                     );
 
-                    if next == Direction::Local {
+                    if next == Hop::Local {
                         if buffer.len() < $len {
                             return Err(RouterError::BufferTooSmall {
                                 needed: $len,
@@ -263,22 +262,22 @@ where
                     }
 
                     match next {
-                        Direction::North => {
+                        Hop::Isl(Direction::North) => {
                             north.out.push(buf);
                         }
-                        Direction::South => {
+                        Hop::Isl(Direction::South) => {
                             south.out.push(buf);
                         }
-                        Direction::East => {
+                        Hop::Isl(Direction::East) => {
                             east.out.push(buf);
                         }
-                        Direction::West => {
+                        Hop::Isl(Direction::West) => {
                             west.out.push(buf);
                         }
-                        Direction::Ground => {
+                        Hop::Ground => {
                             ground.out.push(buf);
                         }
-                        Direction::Local => {}
+                        Hop::Local => {}
                     }
                 }};
             }
@@ -303,39 +302,37 @@ where
                 // wait in the link's own buffer; this prevents
                 // write starvation under heavy load.
                 futures::select_biased! {
-                    _ = nw => Event::WriteComplete(Direction::North),
-                    _ = sw => Event::WriteComplete(Direction::South),
-                    _ = ew => Event::WriteComplete(Direction::East),
-                    _ = ww => Event::WriteComplete(Direction::West),
-                    _ = gw => Event::WriteComplete(Direction::Ground),
-                    r = nr => Event::Read(r, Direction::North),
-                    r = sr => Event::Read(r, Direction::South),
-                    r = er => Event::Read(r, Direction::East),
-                    r = wr => Event::Read(r, Direction::West),
+                    _ = nw => Event::IslWrite(Direction::North),
+                    _ = sw => Event::IslWrite(Direction::South),
+                    _ = ew => Event::IslWrite(Direction::East),
+                    _ = ww => Event::IslWrite(Direction::West),
+                    _ = gw => Event::GroundWrite,
+                    r = nr => Event::IslRead(r, Direction::North),
+                    r = sr => Event::IslRead(r, Direction::South),
+                    r = er => Event::IslRead(r, Direction::East),
+                    r = wr => Event::IslRead(r, Direction::West),
                     r = gr => Event::GroundRead(r),
                 }
             };
 
             match event {
-                Event::WriteComplete(dir) => match dir {
+                Event::IslWrite(dir) => match dir {
                     Direction::North => north.out.pop(),
                     Direction::South => south.out.pop(),
                     Direction::East => east.out.pop(),
                     Direction::West => west.out.pop(),
-                    Direction::Ground => ground.out.pop(),
-                    Direction::Local => {}
                 },
+                Event::GroundWrite => ground.out.pop(),
                 Event::GroundRead(result) => {
                     let len = result.map_err(RouterError::Ground)?;
                     route_packet!(ground.buf, len, Ground);
                 }
-                Event::Read(result, dir) => {
+                Event::IslRead(result, dir) => {
                     let (buf, len) = match dir {
                         Direction::North => (&north.buf, result.map_err(RouterError::North)?),
                         Direction::South => (&south.buf, result.map_err(RouterError::South)?),
                         Direction::East => (&east.buf, result.map_err(RouterError::East)?),
                         Direction::West => (&west.buf, result.map_err(RouterError::West)?),
-                        _ => unreachable!(),
                     };
                     route_packet!(buf, len, Isl);
                 }

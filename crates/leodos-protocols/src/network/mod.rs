@@ -1,5 +1,7 @@
 use core::future::Future;
 
+/// Bidirectional bridge between network and datalink layers.
+pub mod bridge;
 /// CCSDS core Flight Executive (cFE) command and telemetry headers.
 pub mod cfe;
 /// Inter-Satellite Link (ISL) addressing, routing, and gossip protocols.
@@ -26,4 +28,25 @@ pub trait NetworkRead {
 
     /// Reads a packet into the provided buffer, returning its length.
     fn read(&mut self, buffer: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>>;
+}
+
+/// A bidirectional network layer that can be split into
+/// independent read and write halves.
+pub trait Network {
+    /// Read half type.
+    type Reader: NetworkRead;
+    /// Write half type.
+    type Writer: NetworkWrite;
+
+    /// Split into independent read and write halves.
+    fn split(&mut self) -> (&mut Self::Reader, &mut Self::Writer);
+}
+
+impl<R: NetworkRead, W: NetworkWrite> Network for (R, W) {
+    type Reader = R;
+    type Writer = W;
+
+    fn split(&mut self) -> (&mut R, &mut W) {
+        (&mut self.0, &mut self.1)
+    }
 }
