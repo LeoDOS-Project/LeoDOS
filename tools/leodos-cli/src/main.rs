@@ -6,6 +6,7 @@ mod dashboard;
 mod datagen;
 mod definitions;
 mod deploy;
+mod fs;
 mod logs;
 mod sim;
 mod status;
@@ -122,6 +123,12 @@ enum Commands {
         port: u16,
     },
 
+    /// Remote filesystem operations via fs_srv.
+    Fs {
+        #[command(subcommand)]
+        action: FsAction,
+    },
+
     /// Interactive dashboard with logs, constellation view,
     /// and satellite status table.
     Dashboard {
@@ -136,6 +143,64 @@ enum Commands {
         /// Satellites per plane.
         #[arg(long, default_value_t = 3)]
         sats: u8,
+    },
+}
+
+#[derive(Subcommand)]
+enum FsAction {
+    /// List directory contents.
+    Ls {
+        /// Remote path.
+        path: String,
+        /// Target satellite.
+        #[arg(long, default_value = "0.0")]
+        sat: String,
+    },
+    /// Upload a file.
+    Put {
+        /// Local file path.
+        src: String,
+        /// Remote file path.
+        dest: String,
+        /// Target satellite.
+        #[arg(long, default_value = "0.0")]
+        sat: String,
+    },
+    /// Download a file.
+    Get {
+        /// Remote file path.
+        src: String,
+        /// Local file path.
+        dest: String,
+        /// Target satellite.
+        #[arg(long, default_value = "0.0")]
+        sat: String,
+    },
+    /// Remove a file.
+    Rm {
+        /// Remote path.
+        path: String,
+        /// Target satellite.
+        #[arg(long, default_value = "0.0")]
+        sat: String,
+    },
+    /// Rename or move a file.
+    Mv {
+        /// Source path.
+        src: String,
+        /// Destination path.
+        dest: String,
+        /// Target satellite.
+        #[arg(long, default_value = "0.0")]
+        sat: String,
+    },
+    /// Get file info.
+    Info {
+        /// Remote path.
+        path: String,
+        /// Target satellite.
+        #[arg(long, default_value = "0.0")]
+        sat: String,
     },
 }
 
@@ -239,6 +304,26 @@ async fn main() -> Result<()> {
             .await
         }
         Commands::Listen { port } => tm::listen(port).await,
+        Commands::Fs { action } => match action {
+            FsAction::Ls { path, sat } => {
+                fs::ls(&sat_ip(&sat)?, &path).await
+            }
+            FsAction::Put { src, dest, sat } => {
+                fs::put(&sat_ip(&sat)?, &src, &dest).await
+            }
+            FsAction::Get { src, dest, sat } => {
+                fs::get(&sat_ip(&sat)?, &src, &dest).await
+            }
+            FsAction::Rm { path, sat } => {
+                fs::rm(&sat_ip(&sat)?, &path).await
+            }
+            FsAction::Mv { src, dest, sat } => {
+                fs::mv(&sat_ip(&sat)?, &src, &dest).await
+            }
+            FsAction::Info { path, sat } => {
+                fs::info(&sat_ip(&sat)?, &path).await
+            }
+        },
         Commands::Dashboard {
             port,
             orbits,
