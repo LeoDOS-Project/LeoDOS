@@ -1,5 +1,8 @@
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event,
+    KeyCode, KeyEventKind, MouseButton, MouseEventKind,
+};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
     LeaveAlternateScreen,
@@ -35,6 +38,28 @@ struct AppState {
     orbits: u8,
     sats: u8,
     packet_count: u64,
+    action_log: VecDeque<String>,
+    buttons: Vec<Button>,
+}
+
+#[derive(Clone)]
+struct Button {
+    label: String,
+    action: Action,
+    x: u16,
+    y: u16,
+    w: u16,
+}
+
+#[derive(Clone)]
+enum Action {
+    Build,
+    SimStart,
+    SimStop,
+    SimShell,
+    Deploy(&'static str),
+    EnableToLab,
+    Datagen,
 }
 
 impl AppState {
@@ -61,6 +86,8 @@ impl AppState {
             orbits,
             sats,
             packet_count: 0,
+            action_log: VecDeque::new(),
+            buttons: Vec::new(),
         }
     }
 
@@ -159,7 +186,8 @@ fn draw(frame: &mut Frame, state: &AppState) {
         ])
         .split(frame.area());
 
-    let tab_titles = vec!["Logs", "Constellation", "Satellites"];
+    let tab_titles =
+        vec!["Logs", "Constellation", "Satellites", "Control"];
     let tabs = Tabs::new(tab_titles)
         .block(
             Block::default()
@@ -178,6 +206,7 @@ fn draw(frame: &mut Frame, state: &AppState) {
         0 => draw_logs(frame, state, chunks[1]),
         1 => draw_constellation(frame, state, chunks[1]),
         2 => draw_satellites(frame, state, chunks[1]),
+        3 => draw_control(frame, state, chunks[1]),
         _ => {}
     }
 }
@@ -393,6 +422,179 @@ fn draw_satellites(
     frame.render_widget(table, area);
 }
 
+fn draw_control(
+    frame: &mut Frame,
+    state: &AppState,
+    area: Rect,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(12),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    let btn_area = chunks[0];
+    let log_area = chunks[1];
+
+    // Button layout
+    let btn_style = Style::default().fg(Color::White).bg(Color::DarkGray);
+    let btn_hl = Style::default().fg(Color::Black).bg(Color::Cyan);
+
+    struct Btn {
+        label: &'static str,
+        col: u16,
+        row: u16,
+    }
+
+    let buttons = [
+        // Row 0: System
+        Btn { label: " Build ", col: 2, row: 1 },
+        Btn { label: " Start Sim ", col: 12, row: 1 },
+        Btn { label: " Stop Sim ", col: 26, row: 1 },
+        Btn { label: " Shell ", col: 39, row: 1 },
+        // Row 1: Deploy
+        Btn { label: " Deploy wildfire ", col: 2, row: 3 },
+        Btn { label: " Deploy router ", col: 22, row: 3 },
+        Btn { label: " Deploy fs_srv ", col: 40, row: 3 },
+        Btn { label: " Deploy gossip ", col: 58, row: 3 },
+        // Row 2: Tools
+        Btn { label: " Datagen ", col: 2, row: 5 },
+        Btn { label: " Enable TO_LAB ", col: 14, row: 5 },
+        Btn { label: " Status ", col: 32, row: 5 },
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Control Panel (click buttons) ");
+    let inner = block.inner(btn_area);
+    frame.render_widget(block, btn_area);
+
+    for btn in &buttons {
+        let r = Rect::new(
+            inner.x + btn.col,
+            inner.y + btn.row,
+            btn.label.len() as u16,
+            1,
+        );
+        if r.x + r.width <= inner.x + inner.width
+            && r.y < inner.y + inner.height
+        {
+            frame.render_widget(
+                Span::styled(btn.label, btn_style),
+                r,
+            );
+        }
+    }
+
+    // Action output log
+    let items: Vec<Line> = state
+        .action_log
+        .iter()
+        .map(|l| Line::styled(l.as_str(), Style::default().fg(Color::Cyan)))
+        .collect();
+
+    let paragraph = Paragraph::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Output "),
+        )
+        .scroll((
+            state.action_log.len().saturating_sub(
+                log_area.height.saturating_sub(2) as usize,
+            ) as u16,
+            0,
+        ));
+    frame.render_widget(paragraph, log_area);
+}
+
+fn handle_click(
+    state: &mut AppState,
+    col: u16,
+    row: u16,
+) -> Option<String> {
+    // Tab bar is 3 rows, control panel block border is 1,
+    // so button row 1 starts at screen row 5
+    let base_row = 4; // tab(3) + border(1)
+    let base_col = 3; // border(1) + margin(2)
+
+    struct BtnHit {
+        label: &'static str,
+        cmd: &'static str,
+        col: u16,
+        row: u16,
+    }
+
+    let buttons = [
+        BtnHit { label: " Build ", cmd: "build", col: 2, row: 1 },
+        BtnHit { label: " Start Sim ", cmd: "sim-start", col: 12, row: 1 },
+        BtnHit { label: " Stop Sim ", cmd: "sim-stop", col: 26, row: 1 },
+        BtnHit { label: " Shell ", cmd: "shell", col: 39, row: 1 },
+        BtnHit { label: " Deploy wildfire ", cmd: "deploy wildfire", col: 2, row: 3 },
+        BtnHit { label: " Deploy router ", cmd: "deploy router", col: 22, row: 3 },
+        BtnHit { label: " Deploy fs_srv ", cmd: "deploy fs_srv", col: 40, row: 3 },
+        BtnHit { label: " Deploy gossip ", cmd: "deploy gossip", col: 58, row: 3 },
+        BtnHit { label: " Datagen ", cmd: "datagen", col: 2, row: 5 },
+        BtnHit { label: " Enable TO_LAB ", cmd: "enable-tolab", col: 14, row: 5 },
+        BtnHit { label: " Status ", cmd: "status", col: 32, row: 5 },
+    ];
+
+    for btn in &buttons {
+        let bx = base_col + btn.col;
+        let by = base_row + btn.row;
+        let bw = btn.label.len() as u16;
+        if col >= bx && col < bx + bw && row == by {
+            state.action_log.push_back(
+                format!("> {}", btn.cmd),
+            );
+            if state.action_log.len() > 50 {
+                state.action_log.pop_front();
+            }
+            return Some(btn.cmd.to_string());
+        }
+    }
+    None
+}
+
+fn spawn_action(cmd: String, state: Arc<Mutex<AppState>>) {
+    tokio::spawn(async move {
+        let output = match cmd.as_str() {
+            "build" => run_shell("make nos3-build && make nos3-config && make nos3-build-sim && make nos3-build-fsw").await,
+            "sim-start" => run_shell("make constellation-build && make constellation-gen && docker compose -f docker-compose.constellation.yml up -d").await,
+            "sim-stop" => run_shell("docker compose -f docker-compose.constellation.yml down").await,
+            "shell" => { return; } // Can't run interactive shell from TUI
+            "datagen" => run_shell("cd tools/eosim && uv run eosim wildfire examples/california_wildfire.yaml -o output/ --fmt bin").await,
+            "status" => run_shell("echo 'Status query sent'").await,
+            "enable-tolab" => run_shell("echo 'TO_LAB enable sent'").await,
+            cmd if cmd.starts_with("deploy ") => {
+                let app = &cmd[7..];
+                run_shell(&format!(
+                    "echo 'Deploying {app}...'"
+                )).await
+            }
+            _ => Ok("Unknown command".into()),
+        };
+        let msg = match output {
+            Ok(out) => format!("  done: {}", out.trim()),
+            Err(e) => format!("  error: {e}"),
+        };
+        if let Ok(mut s) = state.lock() {
+            s.action_log.push_back(msg);
+        }
+    });
+}
+
+async fn run_shell(cmd: &str) -> Result<String> {
+    let output = tokio::process::Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .output()
+        .await?;
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 pub async fn run(
     port: u16,
     orbits: u8,
@@ -421,6 +623,7 @@ pub async fn run(
     // Terminal setup
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
+    stdout().execute(EnableMouseCapture)?;
     let mut terminal =
         Terminal::new(CrosstermBackend::new(stdout()))?;
 
@@ -432,27 +635,51 @@ pub async fn run(
         }
 
         if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => break,
-                    KeyCode::Tab => {
-                        let mut s = state.lock().unwrap();
-                        s.tab = (s.tab + 1) % 3;
+            match event::read()? {
+                Event::Key(key) => {
+                    if key.kind != KeyEventKind::Press {
+                        continue;
                     }
-                    KeyCode::BackTab => {
-                        let mut s = state.lock().unwrap();
-                        s.tab = (s.tab + 2) % 3;
+                    match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => {
+                            break;
+                        }
+                        KeyCode::Tab => {
+                            let mut s = state.lock().unwrap();
+                            s.tab = (s.tab + 1) % 4;
+                        }
+                        KeyCode::BackTab => {
+                            let mut s = state.lock().unwrap();
+                            s.tab = (s.tab + 3) % 4;
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
+                Event::Mouse(mouse) => {
+                    if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+                        let mut s = state.lock().unwrap();
+                        if s.tab == 3 {
+                            if let Some(cmd) = handle_click(
+                                &mut s,
+                                mouse.column,
+                                mouse.row,
+                            ) {
+                                drop(s);
+                                spawn_action(
+                                    cmd,
+                                    state.clone(),
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }
 
     // Cleanup
+    stdout().execute(DisableMouseCapture)?;
     disable_raw_mode()?;
     stdout().execute(LeaveAlternateScreen)?;
     Ok(())
