@@ -39,29 +39,9 @@ struct AppState {
     sats: u8,
     packet_count: u64,
     action_log: VecDeque<String>,
-    buttons: Vec<Button>,
+    btns: Vec<(String, String)>,
     selected_btn: usize,
     hover_btn: Option<usize>,
-}
-
-#[derive(Clone)]
-struct Button {
-    label: String,
-    action: Action,
-    x: u16,
-    y: u16,
-    w: u16,
-}
-
-#[derive(Clone)]
-enum Action {
-    Build,
-    SimStart,
-    SimStop,
-    SimShell,
-    Deploy(&'static str),
-    EnableToLab,
-    Datagen,
 }
 
 impl AppState {
@@ -89,7 +69,7 @@ impl AppState {
             sats,
             packet_count: 0,
             action_log: VecDeque::new(),
-            buttons: Vec::new(),
+            btns: discover_buttons(),
             selected_btn: 0,
             hover_btn: None,
         }
@@ -426,52 +406,62 @@ fn draw_satellites(
     frame.render_widget(table, area);
 }
 
-const BUTTONS: &[(&str, &str)] = &[
-    (" Build ", "build"),
-    (" Start Sim ", "sim-start"),
-    (" Stop Sim ", "sim-stop"),
-    (" Shell ", "shell"),
-    ("", ""),
-    (" Deploy wildfire ", "deploy wildfire"),
-    (" Deploy router ", "deploy router"),
-    (" Deploy fs_srv ", "deploy fs_srv"),
-    (" Deploy gossip ", "deploy gossip"),
-    ("", ""),
-    (" Datagen ", "datagen"),
-    (" Enable TO_LAB ", "enable-tolab"),
-    (" Status ", "status"),
-];
+fn discover_buttons() -> Vec<(String, String)> {
+    let mut btns = vec![
+        (" Build ".into(), "build".into()),
+        (" Start Sim ".into(), "sim-start".into()),
+        (" Stop Sim ".into(), "sim-stop".into()),
+        (" Shell ".into(), "shell".into()),
+        (String::new(), String::new()),
+    ];
 
-fn btn_index_to_real(idx: usize) -> usize {
+    // Discover apps with fsw/Cargo.toml
+    if let Ok(entries) = std::fs::read_dir("apps") {
+        let mut apps: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().join("fsw/Cargo.toml").exists())
+            .map(|e| {
+                e.file_name().to_string_lossy().to_string()
+            })
+            .collect();
+        apps.sort();
+        for app in apps {
+            btns.push((
+                format!(" Deploy {app} "),
+                format!("deploy {app}"),
+            ));
+        }
+    }
+
+    btns.push((String::new(), String::new()));
+    btns.push((" Datagen ".into(), "datagen".into()));
+    btns.push((" Enable TO_LAB ".into(), "enable-tolab".into()));
+    btns.push((" Status ".into(), "status".into()));
+    btns
+}
+
+fn btn_index_to_real(btns: &[(String, String)], idx: usize) -> usize {
     let mut real = 0;
-    for (i, (label, _)) in BUTTONS.iter().enumerate() {
-        if label.is_empty() {
-            continue;
-        }
-        if real == idx {
-            return i;
-        }
+    for (i, (label, _)) in btns.iter().enumerate() {
+        if label.is_empty() { continue; }
+        if real == idx { return i; }
         real += 1;
     }
     0
 }
 
-fn real_to_btn_index(real: usize) -> usize {
+fn real_to_btn_index(btns: &[(String, String)], real: usize) -> usize {
     let mut idx = 0;
-    for (i, (label, _)) in BUTTONS.iter().enumerate() {
-        if label.is_empty() {
-            continue;
-        }
-        if i == real {
-            return idx;
-        }
+    for (i, (label, _)) in btns.iter().enumerate() {
+        if label.is_empty() { continue; }
+        if i == real { return idx; }
         idx += 1;
     }
     0
 }
 
-fn btn_count() -> usize {
-    BUTTONS.iter().filter(|(l, _)| !l.is_empty()).count()
+fn btn_count(btns: &[(String, String)]) -> usize {
+    btns.iter().filter(|(l, _)| !l.is_empty()).count()
 }
 
 fn draw_control(
@@ -505,9 +495,9 @@ fn draw_control(
     let inner = block.inner(btn_area);
     frame.render_widget(block, btn_area);
 
-    let selected_real = btn_index_to_real(state.selected_btn);
+    let selected_real = btn_index_to_real(&state.btns, state.selected_btn);
 
-    for (i, (label, _)) in BUTTONS.iter().enumerate() {
+    for (i, (label, _)) in state.btns.iter().enumerate() {
         if label.is_empty() || i as u16 >= inner.height {
             continue;
         }
@@ -526,7 +516,7 @@ fn draw_control(
         );
         if r.y < inner.y + inner.height {
             frame.render_widget(
-                Span::styled(*label, style),
+                Span::styled(label.as_str(), style),
                 r,
             );
         }
@@ -562,7 +552,7 @@ fn handle_click(
     let base_row = 4; // tab(3) + border(1)
     let base_col = 2;
 
-    for (i, (label, cmd)) in BUTTONS.iter().enumerate() {
+    for (i, (label, cmd)) in state.btns.clone().iter().enumerate() {
         if label.is_empty() {
             continue;
         }
@@ -570,7 +560,7 @@ fn handle_click(
         let bx = base_col;
         let bw = label.len() as u16;
         if row == by && col >= bx && col < bx + bw {
-            state.selected_btn = real_to_btn_index(i);
+            state.selected_btn = real_to_btn_index(&state.btns, i);
             return Some(trigger_btn(state, cmd));
         }
     }
@@ -580,7 +570,7 @@ fn handle_click(
 fn handle_hover(state: &mut AppState, _col: u16, row: u16) {
     let base_row = 4;
     state.hover_btn = None;
-    for (i, (label, _)) in BUTTONS.iter().enumerate() {
+    for (i, (label, _)) in state.btns.iter().enumerate() {
         if label.is_empty() {
             continue;
         }
@@ -592,12 +582,12 @@ fn handle_hover(state: &mut AppState, _col: u16, row: u16) {
 }
 
 fn activate_selected(state: &mut AppState) -> Option<String> {
-    let real = btn_index_to_real(state.selected_btn);
-    let (_, cmd) = BUTTONS[real];
+    let real = btn_index_to_real(&state.btns, state.selected_btn);
+    let cmd = state.btns[real].1.clone();
     if cmd.is_empty() {
         return None;
     }
-    Some(trigger_btn(state, cmd))
+    Some(trigger_btn(state, &cmd))
 }
 
 fn trigger_btn(state: &mut AppState, cmd: &str) -> String {
@@ -705,7 +695,7 @@ pub async fn run(
                         KeyCode::Up | KeyCode::Char('k')
                             if s.tab == 3 =>
                         {
-                            let count = btn_count();
+                            let count = btn_count(&s.btns);
                             s.selected_btn =
                                 (s.selected_btn + count - 1) % count;
                         }
@@ -713,7 +703,7 @@ pub async fn run(
                             if s.tab == 3 =>
                         {
                             s.selected_btn =
-                                (s.selected_btn + 1) % btn_count();
+                                (s.selected_btn + 1) % btn_count(&s.btns);
                         }
                         KeyCode::Enter if s.tab == 3 => {
                             if let Some(cmd) =
