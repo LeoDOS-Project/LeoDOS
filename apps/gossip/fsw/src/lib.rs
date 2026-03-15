@@ -3,16 +3,15 @@
 use futures::FutureExt as _;
 use leodos_libcfs::cfe::duration::Duration;
 use leodos_libcfs::cfe::es::system;
-use zerocopy::FromBytes as _;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
+use leodos_libcfs::cfe::sb::pipe::{Pipe, Timeout};
 use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
 use leodos_libcfs::error::CfsError;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::Runtime;
 use leodos_libcfs::runtime::time::sleep;
 use leodos_libcfs::{err, info};
-use zerocopy::IntoBytes;
 
 use leodos_protocols::datalink::link::cfs::udp::UdpDatalink;
 use leodos_protocols::datalink::{DatalinkRead, DatalinkWrite};
@@ -21,6 +20,7 @@ use leodos_protocols::network::isl::gossip::packet::IslGossipTelecommand;
 use leodos_protocols::network::isl::gossip::{GossipChannel, GossipConfig};
 use leodos_protocols::network::isl::torus::{Direction, Point, Torus};
 use leodos_protocols::network::spp::Apid;
+use zerocopy::FromBytes as _;
 
 mod bindings {
     #![allow(non_upper_case_globals)]
@@ -32,40 +32,52 @@ mod bindings {
 
 const NUM_ORBS: u8 = bindings::GOSSIP_NUM_ORBS as u8;
 const NUM_SATS: u8 = bindings::GOSSIP_NUM_SATS as u8;
-
 const TORUS: Torus = Torus::new(NUM_ORBS, NUM_SATS);
 
 const LOCALHOST: &str = "127.0.0.1";
 const PORT_BASE: u16 = bindings::GOSSIP_PORT_BASE as u16;
-const PORTS_PER_SAT: u16 =
-    bindings::GOSSIP_PORTS_PER_SAT as u16;
-const INTERVAL_SECS: u32 =
-    bindings::GOSSIP_INTERVAL_SECS as u32;
+const PORTS_PER_SAT: u16 = bindings::GOSSIP_PORTS_PER_SAT as u16;
+const INTERVAL_SECS: u32 = bindings::GOSSIP_INTERVAL_SECS as u32;
+const MAX_ROUTES: usize = bindings::GOSSIP_MAX_ROUTES as usize;
 
 const MTU: usize = 512;
 const SB_HEADER_SIZE: usize = 8;
 
 const GOSSIP_APID: u16 = bindings::GOSSIP_APID as u16;
-const GOSSIP_FC: u8 =
-    bindings::GOSSIP_FUNCTION_CODE as u8;
-const SW_VERSION: u8 = bindings::GOSSIP_SW_VERSION as u8;
+const GOSSIP_FC: u8 = bindings::GOSSIP_FUNCTION_CODE as u8;
 
-#[repr(C, packed)]
-#[derive(
-    Clone,
-    Copy,
-    zerocopy::FromBytes,
-    zerocopy::IntoBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
-struct HealthState {
-    orb: u8,
-    sat: u8,
-    alive: u8,
-    sw_version: u8,
-    pass_count: u16,
-    error_count: u16,
+struct Route {
+    apid: u16,
+    topic: MsgId,
+}
+
+fn build_routing_table() -> heapless::Vec<Route, MAX_ROUTES> {
+    let mut table = heapless::Vec::new();
+    macro_rules! add_route {
+        ($apid:expr, $topic:expr) => {
+            let _ = table.push(Route {
+                apid: $apid as u16,
+                topic: MsgId::from_local_tlm($topic as u16),
+            });
+        };
+    }
+    add_route!(
+        bindings::GOSSIP_ROUTE_0_APID,
+        bindings::GOSSIP_ROUTE_0_TOPIC
+    );
+    add_route!(
+        bindings::GOSSIP_ROUTE_1_APID,
+        bindings::GOSSIP_ROUTE_1_TOPIC
+    );
+    add_route!(
+        bindings::GOSSIP_ROUTE_2_APID,
+        bindings::GOSSIP_ROUTE_2_TOPIC
+    );
+    table
+}
+
+fn lookup_topic(table: &[Route], apid: u16) -> Option<MsgId> {
+    table.iter().find(|r| r.apid == apid).map(|r| r.topic)
 }
 
 fn isl_port_offset(dir: Direction) -> u16 {
@@ -77,36 +89,22 @@ fn isl_port_offset(dir: Direction) -> u16 {
     }
 }
 
-fn isl_ports(
-    point: Point,
-    dir: Direction,
-) -> (u16, u16) {
-    let base = PORT_BASE
-        + point.sat as u16 * PORTS_PER_SAT
-        + isl_port_offset(dir);
+fn isl_ports(point: Point, dir: Direction) -> (u16, u16) {
+    let base =
+        PORT_BASE + point.sat as u16 * PORTS_PER_SAT + isl_port_offset(dir);
     (base, base + 1)
 }
 
-fn orb_ip(
-    orb: u8,
-    out: &mut [u8; 16],
-) -> Result<&str, CfsError> {
+fn orb_ip(orb: u8, out: &mut [u8; 16]) -> Result<&str, CfsError> {
     leodos_protocols::fmt!(out, "172.20.{orb}.10")
         .ok()
-        .and_then(|len| {
-            core::str::from_utf8(&out[..len]).ok()
-        })
+        .and_then(|len| core::str::from_utf8(&out[..len]).ok())
         .ok_or(CfsError::ValidationFailure)
 }
 
-fn local_link(
-    local_port: u16,
-    remote_port: u16,
-) -> Result<UdpDatalink, CfsError> {
-    let local =
-        SocketAddr::new_ipv4(LOCALHOST, local_port)?;
-    let remote =
-        SocketAddr::new_ipv4(LOCALHOST, remote_port)?;
+fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> {
+    let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
+    let remote = SocketAddr::new_ipv4(LOCALHOST, remote_port)?;
     UdpDatalink::bind(local, remote)
 }
 
@@ -117,21 +115,15 @@ fn remote_link(
 ) -> Result<UdpDatalink, CfsError> {
     let mut buf = [0u8; 16];
     let ip = orb_ip(remote_orb, &mut buf)?;
-    let local =
-        SocketAddr::new_ipv4(LOCALHOST, local_port)?;
-    let remote =
-        SocketAddr::new_ipv4(ip, remote_port)?;
+    let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
+    let remote = SocketAddr::new_ipv4(ip, remote_port)?;
     UdpDatalink::bind(local, remote)
 }
 
-fn isl_link(
-    point: Point,
-    dir: Direction,
-) -> Result<UdpDatalink, CfsError> {
+fn isl_link(point: Point, dir: Direction) -> Result<UdpDatalink, CfsError> {
     let neighbor = TORUS.neighbor(point, dir);
     let (send, _) = isl_ports(point, dir);
-    let (_, recv) =
-        isl_ports(neighbor, dir.opposite());
+    let (_, recv) = isl_ports(neighbor, dir.opposite());
     if point.orb == neighbor.orb {
         local_link(send, recv)
     } else {
@@ -139,15 +131,12 @@ fn isl_link(
     }
 }
 
-fn publish_to_sb(
-    mid: MsgId,
-    data: &[u8],
-) -> Result<(), CfsError> {
-    let total_size = SB_HEADER_SIZE + data.len();
-    let mut buf = SendBuffer::new(total_size)?;
+fn publish_to_sb(mid: MsgId, data: &[u8]) -> Result<(), CfsError> {
+    let total = SB_HEADER_SIZE + data.len();
+    let mut buf = SendBuffer::new(total)?;
     {
         let mut msg = buf.view();
-        msg.init(mid, total_size)?;
+        msg.init(mid, total)?;
         let slice = buf.as_mut_slice();
         slice[SB_HEADER_SIZE..].copy_from_slice(data);
     }
@@ -155,17 +144,22 @@ fn publish_to_sb(
     Ok(())
 }
 
-async fn try_read_one(
-    link: &mut UdpDatalink,
-    buf: &mut [u8],
-) -> Option<usize> {
+async fn try_read(link: &mut UdpDatalink, buf: &mut [u8]) -> Option<usize> {
     let read = link.read(buf).fuse();
     let timeout = sleep(Duration::from_millis(10)).fuse();
     pin_utils::pin_mut!(read, timeout);
-
     futures::select_biased! {
         r = read => r.ok(),
         _ = timeout => None,
+    }
+}
+
+fn dir_index(dir: Direction) -> usize {
+    match dir {
+        Direction::North => 0,
+        Direction::South => 1,
+        Direction::East => 2,
+        Direction::West => 3,
     }
 }
 
@@ -175,11 +169,10 @@ pub extern "C" fn GOSSIP_AppMain() {
         event::register(&[])?;
         info!("Gossip app starting")?;
 
-        let scid =
-            SpacecraftId::new(system::get_spacecraft_id());
+        let scid = SpacecraftId::new(system::get_spacecraft_id());
         let address = scid.to_address(NUM_SATS);
         let Address::Satellite(point) = address else {
-            err!("Invalid spacecraft ID for gossip")?;
+            err!("Invalid spacecraft ID")?;
             return Ok(());
         };
 
@@ -193,74 +186,60 @@ pub extern "C" fn GOSSIP_AppMain() {
         let apid = Apid::new(GOSSIP_APID)
             .map_err(|_| CfsError::ValidationFailure)?;
 
-        let channel = GossipChannel::<8, 256>::new(
-            GossipConfig {
-                torus: TORUS,
-                my_address: address,
-                apid,
-                function_code: GOSSIP_FC,
-            },
+        let channel = GossipChannel::<8, 256>::new(GossipConfig {
+            torus: TORUS,
+            my_address: address,
+            apid,
+            function_code: GOSSIP_FC,
+        });
+
+        let (mut sender, mut receiver, driver) = channel.split();
+
+        let routes = build_routing_table();
+        info!("Loaded {} APID routes", routes.len())?;
+
+        // SB pipe for local apps to publish gossip data
+        let send_mid = MsgId::from_local_cmd(
+            bindings::GOSSIP_SEND_TOPICID as u16,
         );
+        let mut pipe = Pipe::new("GOSSIP_SB", 16)?;
+        pipe.subscribe(send_mid)?;
 
-        let (mut sender, mut receiver, driver) =
-            channel.split();
+        info!("Gossip ready at ({}, {})", point.orb, point.sat)?;
 
-        let hk_mid = MsgId::from_local_tlm(
-            bindings::GOSSIP_HK_TLM_TOPICID as u16,
-        );
-
-        info!(
-            "Gossip ready at ({}, {})",
-            point.orb, point.sat
-        )?;
-
-        let mut pass_count: u16 = 0;
-        let mut error_count: u16 = 0;
         let mut pkt_buf = [0u8; MTU];
         let mut recv_buf = [0u8; MTU];
-        let mut fwd_buf = [0u8; MTU];
+        let mut sb_buf = [0u8; MTU + SB_HEADER_SIZE];
 
         loop {
-            sleep(Duration::from_secs(INTERVAL_SECS)).await;
-            pass_count = pass_count.wrapping_add(1);
-
-            let state = HealthState {
-                orb: point.orb,
-                sat: point.sat,
-                alive: 1,
-                sw_version: SW_VERSION,
-                pass_count,
-                error_count,
-            };
-
-            if sender
-                .send(0, u8::MAX, state.as_bytes())
-                .await
-                .is_err()
-            {
-                error_count =
-                    error_count.wrapping_add(1);
+            // 1. Check SB for outbound gossip from local apps
+            loop {
+                match pipe.timed_recv(&mut sb_buf, Timeout::Poll) {
+                    Ok(len) if len > SB_HEADER_SIZE => {
+                        let payload = &sb_buf[SB_HEADER_SIZE..len];
+                        let _ = sender
+                            .send(0, u8::MAX, payload)
+                            .await;
+                    }
+                    _ => break,
+                }
             }
 
+            // 2. Drain outbound gossip packets to ISL
             while let Some((len, directions)) =
                 driver.poll_outgoing(&mut pkt_buf)
             {
                 for dir in directions.iter() {
-                    let idx = dir_index(*dir);
-                    if links[idx]
+                    let _ = links[dir_index(*dir)]
                         .write(&pkt_buf[..len])
-                        .await
-                        .is_err()
-                    {
-                        error_count =
-                            error_count.wrapping_add(1);
-                    }
+                        .await;
                 }
             }
 
+            // 3. Receive gossip from ISL neighbors
             for dir_idx in 0..4 {
                 loop {
-                    let len = match try_read_one(
+                    let len = match try_read(
                         &mut links[dir_idx],
                         &mut recv_buf,
                     )
@@ -270,47 +249,36 @@ pub extern "C" fn GOSSIP_AppMain() {
                         _ => break,
                     };
 
-                    fwd_buf[..len]
-                        .copy_from_slice(&recv_buf[..len]);
-
-                    let pkt = match
-                        IslGossipTelecommand::ref_from_bytes(
-                            &fwd_buf[..len],
-                        )
-                    {
+                    let pkt = match IslGossipTelecommand::ref_from_bytes(
+                        &recv_buf[..len],
+                    ) {
                         Ok(p) => p,
                         Err(_) => continue,
                     };
 
-                    let forwards =
-                        driver.process_incoming(pkt);
-
-                    let mut fwd_dirs: heapless::Vec<
-                        Direction,
-                        4,
-                    > = heapless::Vec::new();
+                    let forwards = driver.process_incoming(pkt);
                     for (d, _) in forwards.iter() {
-                        let _ = fwd_dirs.push(*d);
-                    }
-
-                    for d in fwd_dirs.iter() {
-                        let idx = dir_index(*d);
-                        let _ = links[idx]
-                            .write(&fwd_buf[..len])
+                        let _ = links[dir_index(*d)]
+                            .write(&recv_buf[..len])
                             .await;
                     }
                 }
             }
 
+            // 4. Deliver received gossip to local apps by APID
             let mut payload_buf = [0u8; 256];
-            while let Some(msg) =
-                receiver.try_recv(&mut payload_buf)
-            {
-                let _ = publish_to_sb(
-                    hk_mid,
-                    &payload_buf[..msg.len],
-                );
+            while let Some(msg) = receiver.try_recv(&mut payload_buf) {
+                let data = &payload_buf[..msg.len];
+                if data.len() >= 2 {
+                    let apid =
+                        u16::from_be_bytes([data[0], data[1]]) & 0x07FF;
+                    if let Some(mid) = lookup_topic(&routes, apid) {
+                        let _ = publish_to_sb(mid, data);
+                    }
+                }
             }
+
+            sleep(Duration::from_secs(INTERVAL_SECS)).await;
         }
 
         #[allow(unreachable_code)]
@@ -318,19 +286,8 @@ pub extern "C" fn GOSSIP_AppMain() {
     });
 }
 
-fn dir_index(dir: Direction) -> usize {
-    match dir {
-        Direction::North => 0,
-        Direction::South => 1,
-        Direction::East => 2,
-        Direction::West => 3,
-    }
-}
-
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    leodos_libcfs::cfe::es::app::default_panic_handler(
-        info,
-    )
+    leodos_libcfs::cfe::es::app::default_panic_handler(info)
 }

@@ -20,4 +20,14 @@
 /* Software version published in health state. */
 #define GOSSIP_SW_VERSION          1
 
+/* APID-based delivery routing table. */
+#define GOSSIP_MAX_ROUTES          8
+
+#define GOSSIP_ROUTE_0_APID        0x70
+#define GOSSIP_ROUTE_0_TOPIC       0xB0
+#define GOSSIP_ROUTE_1_APID        0x71
+#define GOSSIP_ROUTE_1_TOPIC       0xB1
+#define GOSSIP_ROUTE_2_APID        0x60
+#define GOSSIP_ROUTE_2_TOPIC       0xB2
+
 #endif
