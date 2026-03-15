@@ -37,13 +37,16 @@ pub mod time;
 pub mod scope;
 pub mod dyn_scope;
 
+pub use futures::select_biased;
+pub use futures::FutureExt;
+pub use pin_utils::pin_mut;
+
 use crate::cfe::es::app::RunStatus;
 use crate::error::Result;
 use crate::ffi;
 use crate::log;
 use core::future::Future;
 use core::task::{RawWaker, RawWakerVTable, Waker};
-use pin_utils::pin_mut;
 
 /// An async runtime designed to integrate with the cFS application lifecycle.
 ///
