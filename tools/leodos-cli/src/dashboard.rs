@@ -705,17 +705,15 @@ pub async fn run(
                         KeyCode::Up | KeyCode::Char('k')
                             if s.tab == 3 =>
                         {
-                            if s.selected_btn > 0 {
-                                s.selected_btn -= 1;
-                            }
+                            let count = btn_count();
+                            s.selected_btn =
+                                (s.selected_btn + count - 1) % count;
                         }
                         KeyCode::Down | KeyCode::Char('j')
                             if s.tab == 3 =>
                         {
-                            let max = btn_count().saturating_sub(1);
-                            if s.selected_btn < max {
-                                s.selected_btn += 1;
-                            }
+                            s.selected_btn =
+                                (s.selected_btn + 1) % btn_count();
                         }
                         KeyCode::Enter if s.tab == 3 => {
                             if let Some(cmd) =
