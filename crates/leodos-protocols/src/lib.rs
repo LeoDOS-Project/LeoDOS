@@ -18,5 +18,7 @@ pub mod network;
 pub mod physical;
 /// Transport layer protocols.
 pub mod transport;
+/// Other CCSDS protocols: SLE, etc.
+pub mod other;
 /// Shared utilities: bitfield helpers, checksums, time formats.
 pub mod utils;
