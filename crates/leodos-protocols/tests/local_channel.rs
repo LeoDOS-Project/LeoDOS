@@ -1,5 +1,5 @@
 use leodos_protocols::datalink::{DatalinkRead, DatalinkWrite};
-use leodos_protocols::network::isl::routing::local::LocalChannel;
+use leodos_protocols::datalink::link::channel_local::LocalChannel;
 use leodos_protocols::network::{NetworkRead, NetworkWrite};
 
 #[test]

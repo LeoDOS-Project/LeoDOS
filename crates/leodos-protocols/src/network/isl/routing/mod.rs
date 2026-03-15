@@ -1,7 +1,5 @@
 /// Routing algorithm trait and implementations.
 pub mod algorithm;
-/// Local in-process channel between router and application.
-pub mod local;
 /// ISL routable packet definitions and builders.
 pub mod packet;
 

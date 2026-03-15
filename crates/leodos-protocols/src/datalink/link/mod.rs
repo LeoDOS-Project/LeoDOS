@@ -2,6 +2,8 @@
 pub mod asymmetric;
 /// Generic frame link channel, generic over FrameWrite/FrameRead.
 pub mod channel;
+/// In-process bidirectional channel.
+pub mod channel_local;
 /// CCSDS File Delivery Service link support.
 #[cfg(feature = "cfs")]
 pub mod cfs;
