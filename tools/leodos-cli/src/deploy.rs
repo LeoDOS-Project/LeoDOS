@@ -1,6 +1,5 @@
 use anyhow::Result;
 use std::path::Path;
-use std::process::Command;
 
 pub async fn run(
     app: &str,
@@ -29,24 +28,12 @@ pub async fn run(
         anyhow::bail!("File not found: {so_path}");
     }
 
+    let remote_path = format!("/cf/{app}.so");
+
     println!("Deploying {app} from {so_path}...");
 
-    // Step 1: Copy .so to the running container's /cf/ directory
-    // This assumes the FSW container is named "fsw" in docker-compose.
-    let container = "fsw";
-    let dest = format!("{container}:/cf/{app}.so");
-
-    let status = Command::new("docker")
-        .args(["cp", &so_path, &dest])
-        .status()?;
-
-    if !status.success() {
-        anyhow::bail!(
-            "Failed to copy {so_path} to container {container}"
-        );
-    }
-
-    println!("Copied to {dest}");
+    // Step 1: Upload .so via fs_srv file protocol
+    crate::fs::put(host, &so_path, &remote_path).await?;
 
     // Step 2: Send ES RELOAD_APP command
     // CFE_ES_CMD_MID = 0x1806, RELOAD_APP_CC = 7
@@ -56,8 +43,7 @@ pub async fn run(
 
     let mut payload = [0u8; 84];
     let name_bytes = app.as_bytes();
-    let file_bytes = format!("/cf/{app}.so");
-    let file_bytes = file_bytes.as_bytes();
+    let file_bytes = remote_path.as_bytes();
 
     let name_len = name_bytes.len().min(19);
     payload[..name_len].copy_from_slice(&name_bytes[..name_len]);

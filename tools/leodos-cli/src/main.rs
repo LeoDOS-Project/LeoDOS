@@ -45,7 +45,7 @@ enum Commands {
         fmt: String,
     },
 
-    /// Deploy a new app binary to a running satellite.
+    /// Deploy a new app binary to a running satellite over the network.
     Deploy {
         /// Name of the app to deploy.
         app: String,
