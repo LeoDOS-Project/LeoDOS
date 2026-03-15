@@ -8,6 +8,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../config/default_router_platform_cfg.h");
 
     let bindings = bindgen::Builder::default()
+        .clang_arg(format!("-I{}/inc", std::env::var("BUILD_DIR").unwrap_or_default()))
         .header("../config/default_router_msgids.h")
         .header("../config/default_router_perfids.h")
         .header("../config/default_router_platform_cfg.h")

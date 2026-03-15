@@ -7,6 +7,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../config/default_nos3_demo_perfids.h");
 
     let bindings = bindgen::Builder::default()
+        .clang_arg(format!("-I{}/inc", std::env::var("BUILD_DIR").unwrap_or_default()))
         .header("../config/default_nos3_demo_msgids.h")
         .header("../config/default_nos3_demo_perfids.h")
         .allowlist_var("NOS3_DEMO_.*")
