@@ -428,9 +428,9 @@ fn draw_control(
     area: Rect,
 ) {
     let chunks = Layout::default()
-        .direction(Direction::Vertical)
+        .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(12),
+            Constraint::Length(22),
             Constraint::Min(0),
         ])
         .split(area);
@@ -438,51 +438,44 @@ fn draw_control(
     let btn_area = chunks[0];
     let log_area = chunks[1];
 
-    // Button layout
-    let btn_style = Style::default().fg(Color::White).bg(Color::DarkGray);
-    let btn_hl = Style::default().fg(Color::Black).bg(Color::Cyan);
-
-    struct Btn {
-        label: &'static str,
-        col: u16,
-        row: u16,
-    }
+    let btn_style =
+        Style::default().fg(Color::White).bg(Color::DarkGray);
 
     let buttons = [
-        // Row 0: System
-        Btn { label: " Build ", col: 2, row: 1 },
-        Btn { label: " Start Sim ", col: 12, row: 1 },
-        Btn { label: " Stop Sim ", col: 26, row: 1 },
-        Btn { label: " Shell ", col: 39, row: 1 },
-        // Row 1: Deploy
-        Btn { label: " Deploy wildfire ", col: 2, row: 3 },
-        Btn { label: " Deploy router ", col: 22, row: 3 },
-        Btn { label: " Deploy fs_srv ", col: 40, row: 3 },
-        Btn { label: " Deploy gossip ", col: 58, row: 3 },
-        // Row 2: Tools
-        Btn { label: " Datagen ", col: 2, row: 5 },
-        Btn { label: " Enable TO_LAB ", col: 14, row: 5 },
-        Btn { label: " Status ", col: 32, row: 5 },
+        " Build ",
+        " Start Sim ",
+        " Stop Sim ",
+        " Shell ",
+        "",
+        " Deploy wildfire ",
+        " Deploy router ",
+        " Deploy fs_srv ",
+        " Deploy gossip ",
+        "",
+        " Datagen ",
+        " Enable TO_LAB ",
+        " Status ",
     ];
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" Control Panel (click buttons) ");
+        .title(" Control ");
     let inner = block.inner(btn_area);
     frame.render_widget(block, btn_area);
 
-    for btn in &buttons {
+    for (i, label) in buttons.iter().enumerate() {
+        if label.is_empty() || i as u16 >= inner.height {
+            continue;
+        }
         let r = Rect::new(
-            inner.x + btn.col,
-            inner.y + btn.row,
-            btn.label.len() as u16,
+            inner.x + 1,
+            inner.y + i as u16,
+            label.len() as u16,
             1,
         );
-        if r.x + r.width <= inner.x + inner.width
-            && r.y < inner.y + inner.height
-        {
+        if r.y < inner.y + inner.height {
             frame.render_widget(
-                Span::styled(btn.label, btn_style),
+                Span::styled(*label, btn_style),
                 r,
             );
         }
@@ -515,44 +508,40 @@ fn handle_click(
     col: u16,
     row: u16,
 ) -> Option<String> {
-    // Tab bar is 3 rows, control panel block border is 1,
-    // so button row 1 starts at screen row 5
-    let base_row = 4; // tab(3) + border(1)
-    let base_col = 3; // border(1) + margin(2)
+    // Vertical button list: tab bar(3) + border(1) = row 4
+    // Buttons are at col offset 2 (border + padding)
+    let base_row = 4;
+    let base_col = 2;
 
-    struct BtnHit {
-        label: &'static str,
-        cmd: &'static str,
-        col: u16,
-        row: u16,
-    }
-
-    let buttons = [
-        BtnHit { label: " Build ", cmd: "build", col: 2, row: 1 },
-        BtnHit { label: " Start Sim ", cmd: "sim-start", col: 12, row: 1 },
-        BtnHit { label: " Stop Sim ", cmd: "sim-stop", col: 26, row: 1 },
-        BtnHit { label: " Shell ", cmd: "shell", col: 39, row: 1 },
-        BtnHit { label: " Deploy wildfire ", cmd: "deploy wildfire", col: 2, row: 3 },
-        BtnHit { label: " Deploy router ", cmd: "deploy router", col: 22, row: 3 },
-        BtnHit { label: " Deploy fs_srv ", cmd: "deploy fs_srv", col: 40, row: 3 },
-        BtnHit { label: " Deploy gossip ", cmd: "deploy gossip", col: 58, row: 3 },
-        BtnHit { label: " Datagen ", cmd: "datagen", col: 2, row: 5 },
-        BtnHit { label: " Enable TO_LAB ", cmd: "enable-tolab", col: 14, row: 5 },
-        BtnHit { label: " Status ", cmd: "status", col: 32, row: 5 },
+    let commands = [
+        (" Build ", "build"),
+        (" Start Sim ", "sim-start"),
+        (" Stop Sim ", "sim-stop"),
+        (" Shell ", "shell"),
+        ("", ""),
+        (" Deploy wildfire ", "deploy wildfire"),
+        (" Deploy router ", "deploy router"),
+        (" Deploy fs_srv ", "deploy fs_srv"),
+        (" Deploy gossip ", "deploy gossip"),
+        ("", ""),
+        (" Datagen ", "datagen"),
+        (" Enable TO_LAB ", "enable-tolab"),
+        (" Status ", "status"),
     ];
 
-    for btn in &buttons {
-        let bx = base_col + btn.col;
-        let by = base_row + btn.row;
-        let bw = btn.label.len() as u16;
-        if col >= bx && col < bx + bw && row == by {
-            state.action_log.push_back(
-                format!("> {}", btn.cmd),
-            );
+    for (i, (label, cmd)) in commands.iter().enumerate() {
+        if label.is_empty() {
+            continue;
+        }
+        let by = base_row + i as u16;
+        let bx = base_col;
+        let bw = label.len() as u16;
+        if row == by && col >= bx && col < bx + bw {
+            state.action_log.push_back(format!("> {cmd}"));
             if state.action_log.len() > 50 {
                 state.action_log.pop_front();
             }
-            return Some(btn.cmd.to_string());
+            return Some(cmd.to_string());
         }
     }
     None
