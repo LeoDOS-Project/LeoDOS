@@ -64,12 +64,19 @@ impl From<u32> for RunStatus {
 
 /// Checks whether the application should continue running.
 ///
-/// Returns `true` if the app should keep running, `false`
-/// if cFS has commanded it to exit.
-pub fn run_loop() -> bool {
+/// Returns `Ok(())` if the app should keep running, or
+/// `Err(status)` with the reason if cFS has commanded
+/// the app to stop.
+pub fn run_loop() -> core::result::Result<(), RunStatus> {
     let mut status = RunStatus::Run as u32;
-    let should_run = unsafe { ffi::CFE_ES_RunLoop(&mut status) };
-    should_run && RunStatus::from(status) == RunStatus::Run
+    let should_run =
+        unsafe { ffi::CFE_ES_RunLoop(&mut status) };
+    let status = RunStatus::from(status);
+    if should_run && status == RunStatus::Run {
+        Ok(())
+    } else {
+        Err(status)
+    }
 }
 
 /// Exits the application with the given status.

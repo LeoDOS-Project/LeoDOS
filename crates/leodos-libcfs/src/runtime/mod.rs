@@ -67,23 +67,40 @@ impl Runtime {
     /// the app to exit. All resources owned by the future
     /// are dropped before `CFE_ES_ExitApp` is called.
     pub fn run(self, main_future: impl Future<Output = Result<()>>) -> ! {
-        self.poll_until_done(main_future);
-        app::exit_app(app::RunStatus::Exit);
+        let status = self.poll_until_done(main_future);
+        app::exit_app(status);
     }
 
     /// Polls the future in the cFS run loop until completion
-    /// or shutdown. The future and all its owned resources
+    /// or shutdown. Returns the exit status to pass to
+    /// `exit_app`. The future and all its owned resources
     /// are dropped when this function returns.
-    fn poll_until_done(self, main_future: impl Future<Output = Result<()>>) {
+    fn poll_until_done(
+        self,
+        main_future: impl Future<Output = Result<()>>,
+    ) -> app::RunStatus {
         pin_mut!(main_future);
 
         let waker = noop_waker();
-        let mut context = core::task::Context::from_waker(&waker);
+        let mut context =
+            core::task::Context::from_waker(&waker);
 
-        while app::run_loop() {
-            if main_future.as_mut().poll(&mut context).is_ready() {
-                log!("Top-level async task finished.").ok();
-                return;
+        loop {
+            match app::run_loop() {
+                Ok(()) => {
+                    if main_future
+                        .as_mut()
+                        .poll(&mut context)
+                        .is_ready()
+                    {
+                        log!("Async task finished.").ok();
+                        return app::RunStatus::Exit;
+                    }
+                }
+                Err(status) => {
+                    log!("Exit requested.").ok();
+                    return status;
+                }
             }
         }
     }
