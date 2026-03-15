@@ -62,6 +62,22 @@ impl From<u32> for RunStatus {
     }
 }
 
+/// Checks whether the application should continue running.
+///
+/// Returns `true` if the app should keep running, `false`
+/// if cFS has commanded it to exit.
+pub fn run_loop() -> bool {
+    let mut status = RunStatus::Run as u32;
+    let should_run = unsafe { ffi::CFE_ES_RunLoop(&mut status) };
+    should_run && RunStatus::from(status) == RunStatus::Run
+}
+
+/// Exits the application with the given status.
+pub fn exit_app(status: RunStatus) -> ! {
+    unsafe { ffi::CFE_ES_ExitApp(status as u32) };
+    loop {}
+}
+
 /// A type-safe, zero-cost wrapper for a cFE Application ID.
 ///
 /// This is a lightweight, `Copy`-able handle that represents a unique application.

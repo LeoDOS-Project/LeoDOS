@@ -41,9 +41,8 @@ pub use futures::select_biased;
 pub use futures::FutureExt;
 pub use pin_utils::pin_mut;
 
-use crate::cfe::es::app::RunStatus;
+use crate::cfe::es::app;
 use crate::error::Result;
-use crate::ffi;
 use crate::log;
 use core::future::Future;
 use core::task::{RawWaker, RawWakerVTable, Waker};
@@ -67,50 +66,24 @@ impl Runtime {
     /// Polls the future until it completes or cFS commands
     /// the app to exit. All resources owned by the future
     /// are dropped before `CFE_ES_ExitApp` is called.
-    pub fn run<F>(self, main_future: F) -> !
-    where
-        F: Future<Output = Result<()>>,
-    {
-        Self::poll_until_done(main_future);
-        unsafe { ffi::CFE_ES_ExitApp(RunStatus::Exit as u32) };
-        loop {}
+    pub fn run(self, main_future: impl Future<Output = Result<()>>) -> ! {
+        self.poll_until_done(main_future);
+        app::exit_app(app::RunStatus::Exit);
     }
 
     /// Polls the future in the cFS run loop until completion
     /// or shutdown. The future and all its owned resources
     /// are dropped when this function returns.
-    fn poll_until_done<F>(main_future: F)
-    where
-        F: Future<Output = Result<()>>,
-    {
+    fn poll_until_done(self, main_future: impl Future<Output = Result<()>>) {
         pin_mut!(main_future);
 
         let waker = noop_waker();
-        let mut context =
-            core::task::Context::from_waker(&waker);
+        let mut context = core::task::Context::from_waker(&waker);
 
-        loop {
-            let mut status =
-                ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_RUN;
-            let should_run =
-                unsafe { ffi::CFE_ES_RunLoop(&mut status) };
-
-            match RunStatus::from(status) {
-                RunStatus::Run if should_run => {
-                    if main_future
-                        .as_mut()
-                        .poll(&mut context)
-                        .is_ready()
-                    {
-                        log!("Top-level async task finished.")
-                            .ok();
-                        return;
-                    }
-                }
-                _ => {
-                    log!("Received command to exit.").ok();
-                    return;
-                }
+        while app::run_loop() {
+            if main_future.as_mut().poll(&mut context).is_ready() {
+                log!("Top-level async task finished.").ok();
+                return;
             }
         }
     }
