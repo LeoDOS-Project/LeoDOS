@@ -10,7 +10,7 @@ use leodos_protocols::datalink::framing::sdlp::tc::{
 use leodos_protocols::datalink::framing::sdlp::tm::{
     TmFrameReader, TmFrameWriter, TmFrameWriterConfig,
 };
-use leodos_protocols::datalink::link::channel::{
+use leodos_protocols::datalink::link::framed::{
     DatalinkReader, DatalinkWriter,
 };
 use leodos_protocols::datalink::{DatalinkRead, DatalinkWrite};

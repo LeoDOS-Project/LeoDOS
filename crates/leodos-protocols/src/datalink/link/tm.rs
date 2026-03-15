@@ -7,7 +7,7 @@ pub use crate::datalink::framing::sdlp::tm::{
     TmFrameReader, TmFrameWriter, TmFrameWriterConfig,
 };
 
-pub use super::channel::{
+pub use super::framed::{
     DatalinkError as TmError, DatalinkReader as TmLinkReader,
     DatalinkWriter as TmLinkWriter,
 };

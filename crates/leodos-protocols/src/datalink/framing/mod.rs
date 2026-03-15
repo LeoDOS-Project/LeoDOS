@@ -49,7 +49,7 @@ pub trait FrameWrite {
 /// [`feed()`](FrameRead::feed) validates the header.
 /// [`data_field()`](FrameRead::data_field) returns the raw
 /// data field — packet extraction is handled by
-/// [`DatalinkReader`](super::super::link::channel::DatalinkReader).
+/// [`DatalinkReader`](super::super::link::framed::DatalinkReader).
 pub trait FrameRead {
     /// Error type for frame parsing.
     type Error;

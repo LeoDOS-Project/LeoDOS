@@ -7,7 +7,7 @@ pub use crate::datalink::framing::sdlp::tc::{
     BypassFlag, ControlFlag, TcFrameReader, TcFrameWriter, TcFrameWriterConfig,
 };
 
-pub use super::channel::{
+pub use super::framed::{
     DatalinkError as TcError, DatalinkReader as TcLinkReader, DatalinkWriter as TcLinkWriter,
 };
 
