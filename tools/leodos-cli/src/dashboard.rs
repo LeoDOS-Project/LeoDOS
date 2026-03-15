@@ -185,23 +185,38 @@ fn draw_constellation(
     area: Rect,
 ) {
     let mut lines: Vec<Line> = Vec::new();
-    let col_w = 10;
-    let link = "───────";
-    let margin = "       ";
+    let link = "────";
+    let margin = "    ";
+    let label_style = Style::default().fg(Color::DarkGray);
+    let link_style = Style::default().fg(Color::DarkGray);
 
-    // Header
-    let mut header = String::from(margin);
+    // Header — each node is 1 display-char wide, each link
+    // is link_len chars. "S0" is 2 chars, so pad 1 less
+    // after each label to stay aligned.
+    let link_len = link.chars().count();
+    let mut hdr_spans: Vec<Span> = Vec::new();
+    hdr_spans.push(Span::styled(margin, label_style));
     for s in 0..state.sats {
-        let label = format!("Sat {s}");
-        header.push_str(&format!("{label:<col_w$}"));
+        let label = format!("S{s}");
+        let label_w = label.len();
+        hdr_spans.push(Span::styled(label, label_style));
+        if s < state.sats - 1 {
+            // node is 1 char + link_len chars = gap.
+            // label is label_w chars, so pad by
+            // (1 + link_len - label_w) to realign.
+            let pad = 1 + link_len - label_w;
+            hdr_spans.push(Span::raw(" ".repeat(pad)));
+        }
     }
-    lines.push(Line::from(header));
+    lines.push(Line::from(hdr_spans));
     lines.push(Line::from(""));
 
     for o in 0..state.orbits {
-        // Row with nodes and horizontal ISL links between them
         let mut spans: Vec<Span> = Vec::new();
-        spans.push(Span::raw(format!("Orb {o}  ")));
+        spans.push(Span::styled(
+            format!("O{o}  "),
+            label_style,
+        ));
 
         for s in 0..state.sats {
             let idx =
@@ -209,52 +224,60 @@ fn draw_constellation(
             let info = &state.satellites[idx];
 
             let (symbol, color) = if info.last_seen == "—" {
-                ("○", Color::DarkGray)
+                ("○", Color::Gray)
             } else if info.err_count > 0 {
-                ("◉", Color::Red)
+                ("◉", Color::LightRed)
             } else {
-                ("●", Color::Green)
+                ("●", Color::LightGreen)
             };
 
             spans.push(Span::styled(
                 symbol,
-                Style::default().fg(color),
+                Style::default()
+                    .fg(color)
+                    .add_modifier(Modifier::BOLD),
             ));
 
             if s < state.sats - 1 {
-                spans.push(Span::styled(
-                    link,
-                    Style::default().fg(Color::DarkGray),
-                ));
+                spans.push(Span::styled(link, link_style));
             }
         }
         lines.push(Line::from(spans));
 
-        // Vertical ISL links to next orbit row
         if o < state.orbits - 1 {
-            let mut vlink = String::from(margin);
+            let mut vspans: Vec<Span> = Vec::new();
+            vspans.push(Span::raw(String::from(margin)));
             for s in 0..state.sats {
-                vlink.push('│');
+                vspans.push(Span::styled("│", link_style));
                 if s < state.sats - 1 {
-                    for _ in 0..link.chars().count() {
-                        vlink.push(' ');
-                    }
+                    let pad = " ".repeat(link.chars().count());
+                    vspans.push(Span::raw(pad));
                 }
             }
-            lines.push(Line::styled(
-                vlink,
-                Style::default().fg(Color::DarkGray),
-            ));
+            lines.push(Line::from(vspans));
         }
     }
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("  ○", Style::default().fg(Color::DarkGray)),
-        Span::raw(" not seen  "),
-        Span::styled("●", Style::default().fg(Color::Green)),
+        Span::styled(
+            "  ○",
+            Style::default().fg(Color::Gray),
+        ),
+        Span::raw(" offline  "),
+        Span::styled(
+            "●",
+            Style::default()
+                .fg(Color::LightGreen)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" active  "),
-        Span::styled("◉", Style::default().fg(Color::Red)),
+        Span::styled(
+            "◉",
+            Style::default()
+                .fg(Color::LightRed)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" errors"),
     ]));
 
