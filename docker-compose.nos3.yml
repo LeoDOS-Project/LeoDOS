@@ -43,13 +43,15 @@ services:
 
   # All component simulators in a single process.
   # Simulates IMU, CSS, FSS, MAG, star tracker, GPS,
-  # reaction wheels, torquers, EPS, radio, camera, thruster.
+  # reaction wheels, torquers, EPS, radio, camera, thruster,
+  # thermal camera.
   simulators:
     <<: *nos3-common
     hostname: nos3-sims
     container_name: nos3-simulators
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
+      - ./tools/eosim/output:/sim/thermal_data:ro
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
     command: ./nos3-all-simulators -f nos3-simulator.xml
     depends_on:

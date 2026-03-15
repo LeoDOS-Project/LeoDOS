@@ -75,7 +75,7 @@ endif
 
 # The "LOCALTGTS" defines the top-level targets that are implemented in this makefile
 # Any other target may also be given, in that case it will simply be passed through.
-LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test constellation-build constellation-gen constellation-up constellation-down nos3-build nos3-config nos3-build-fsw nos3-build-sim nos3-launch nos3-stop nos3-shell
+LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test constellation-build constellation-gen constellation-up constellation-down nos3-build nos3-config nos3-build-fsw nos3-build-sim nos3-launch nos3-stop nos3-shell eosim-gen
 OTHERTGTS := $(filter-out $(LOCALTGTS),$(MAKECMDGOALS))
 
 # As this makefile does not build any real files, treat everything as a PHONY target
@@ -225,3 +225,11 @@ nos3-stop:
 
 nos3-shell:
 	$(NOS3_DC) run --rm fsw bash
+
+# Synthetic sensor data generation (eosim)
+EOSIM_DIR = tools/eosim
+EOSIM_SCENARIO ?= $(EOSIM_DIR)/examples/california_wildfire.yaml
+EOSIM_OUTPUT = $(EOSIM_DIR)/output
+
+eosim-gen:
+	cd $(EOSIM_DIR) && uv run eosim wildfire $(abspath $(EOSIM_SCENARIO)) -o $(abspath $(EOSIM_OUTPUT)) --fmt bin

@@ -1,0 +1,8 @@
+#ifndef NOS3_DEMO_MSGIDS_H
+#define NOS3_DEMO_MSGIDS_H
+
+#define NOS3_DEMO_CMD_MID      0x18FC
+#define NOS3_DEMO_SEND_HK_MID  0x18FD
+#define NOS3_DEMO_HK_TLM_MID   0x08FE
+
+#endif

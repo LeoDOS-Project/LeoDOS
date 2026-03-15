@@ -1,0 +1,19 @@
+[project]
+name = "eosim"
+version = "0.1.0"
+description = "Synthetic Earth observation data generator for LeoDOS workflow simulation"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.0",
+    "rasterio>=1.4",
+    "click>=8.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+eosim = "eosim.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

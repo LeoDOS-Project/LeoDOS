@@ -1,0 +1,6 @@
+#ifndef NOS3_DEMO_PERFIDS_H
+#define NOS3_DEMO_PERFIDS_H
+
+#define NOS3_DEMO_APPMAIN_PERF_ID  89
+
+#endif

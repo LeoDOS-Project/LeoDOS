@@ -1,0 +1,28 @@
+scenario:
+  name: california-wildfire
+  # Bounding box: [west, south, east, north]
+  # Northern California fire-prone region
+  aoi: [-122.5, 38.0, -121.5, 39.0]
+  width_px: 512
+  height_px: 512
+  background_temp_k: 295.0    # ambient land surface
+  background_std_k: 4.0       # spatial variation (terrain, land cover)
+  sensor_nedt_k: 0.5          # noise-equivalent delta temperature
+  num_passes: 10
+
+  fires:
+    # Fire 1: ignites on pass 3, moderate intensity
+    - lat: 38.6
+      lon: -122.1
+      onset_pass: 3
+      peak_temp_k: 550.0
+      spread_rate_px: 3.0
+      initial_radius_px: 2.0
+
+    # Fire 2: ignites on pass 5, high intensity
+    - lat: 38.3
+      lon: -121.8
+      onset_pass: 5
+      peak_temp_k: 700.0
+      spread_rate_px: 4.0
+      initial_radius_px: 3.0

@@ -1,0 +1,22 @@
+[package]
+name = "nos3_demo"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "nos3_demo"
+crate-type = ["cdylib"]
+
+[dependencies]
+leodos-libcfs = { path = "../../../crates/leodos-libcfs", features = ["nos3"] }
+
+[profile.release]
+lto = true
+panic = "abort"
+opt-level = "z"
+
+[profile.dev]
+panic = "abort"
+
+[build-dependencies]
+bindgen = "0.72.1"

@@ -1,0 +1,22 @@
+[package]
+name = "leodos-lib42"
+version = "0.1.0"
+edition = "2021"
+description = "Rust bindings for NASA 42 spacecraft dynamics simulator"
+
+[features]
+default = []
+std = []
+# Dummy features so root rust-analyzer.toml's global
+# `features = ["tokio", "cfs"]` doesn't break this crate.
+tokio = []
+cfs = []
+
+[dependencies]
+libc = { version = "0.2", default-features = false }
+
+[build-dependencies]
+bindgen = "0.72.1"
+cc = "1.2.43"
+regex = "1.12.2"
+walkdir = "2.5.0"
