@@ -9,18 +9,16 @@ use leodos_libcfs::cfe::sb::pipe::{Pipe, Timeout};
 use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
 use leodos_libcfs::error::CfsError;
 use leodos_libcfs::os::net::SocketAddr;
-use leodos_libcfs::runtime::Runtime;
 use leodos_libcfs::runtime::time::sleep;
+use leodos_libcfs::runtime::Runtime;
 use leodos_libcfs::{err, info};
 
 use leodos_protocols::datalink::link::cfs::udp::UdpDatalink;
-use leodos_protocols::datalink::{DatalinkRead, DatalinkWrite};
 use leodos_protocols::network::isl::address::{Address, SpacecraftId};
-use leodos_protocols::network::isl::gossip::packet::IslGossipTelecommand;
-use leodos_protocols::network::isl::gossip::{GossipChannel, GossipConfig};
+use leodos_protocols::network::isl::gossip::Gossip;
 use leodos_protocols::network::isl::torus::{Direction, Point, Torus};
 use leodos_protocols::network::spp::Apid;
-use zerocopy::FromBytes as _;
+use leodos_protocols::network::{NetworkRead, NetworkWrite};
 
 mod bindings {
     #![allow(non_upper_case_globals)]
@@ -90,19 +88,26 @@ fn isl_port_offset(dir: Direction) -> u16 {
 }
 
 fn isl_ports(point: Point, dir: Direction) -> (u16, u16) {
-    let base =
-        PORT_BASE + point.sat as u16 * PORTS_PER_SAT + isl_port_offset(dir);
+    let base = PORT_BASE
+        + point.sat as u16 * PORTS_PER_SAT
+        + isl_port_offset(dir);
     (base, base + 1)
 }
 
-fn orb_ip(orb: u8, out: &mut [u8; 16]) -> Result<&str, CfsError> {
+fn orb_ip(
+    orb: u8,
+    out: &mut [u8; 16],
+) -> Result<&str, CfsError> {
     leodos_protocols::fmt!(out, "172.20.{orb}.10")
         .ok()
         .and_then(|len| core::str::from_utf8(&out[..len]).ok())
         .ok_or(CfsError::ValidationFailure)
 }
 
-fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> {
+fn local_link(
+    local_port: u16,
+    remote_port: u16,
+) -> Result<UdpDatalink, CfsError> {
     let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
     let remote = SocketAddr::new_ipv4(LOCALHOST, remote_port)?;
     UdpDatalink::bind(local, remote)
@@ -120,7 +125,10 @@ fn remote_link(
     UdpDatalink::bind(local, remote)
 }
 
-fn isl_link(point: Point, dir: Direction) -> Result<UdpDatalink, CfsError> {
+fn isl_link(
+    point: Point,
+    dir: Direction,
+) -> Result<UdpDatalink, CfsError> {
     let neighbor = TORUS.neighbor(point, dir);
     let (send, _) = isl_ports(point, dir);
     let (_, recv) = isl_ports(neighbor, dir.opposite());
@@ -131,7 +139,10 @@ fn isl_link(point: Point, dir: Direction) -> Result<UdpDatalink, CfsError> {
     }
 }
 
-fn publish_to_sb(mid: MsgId, data: &[u8]) -> Result<(), CfsError> {
+fn publish_to_sb(
+    mid: MsgId,
+    data: &[u8],
+) -> Result<(), CfsError> {
     let total = SB_HEADER_SIZE + data.len();
     let mut buf = SendBuffer::new(total)?;
     {
@@ -142,25 +153,6 @@ fn publish_to_sb(mid: MsgId, data: &[u8]) -> Result<(), CfsError> {
     }
     buf.send(true)?;
     Ok(())
-}
-
-async fn try_read(link: &mut UdpDatalink, buf: &mut [u8]) -> Option<usize> {
-    let read = link.read(buf).fuse();
-    let timeout = sleep(Duration::from_millis(10)).fuse();
-    pin_utils::pin_mut!(read, timeout);
-    futures::select_biased! {
-        r = read => r.ok(),
-        _ = timeout => None,
-    }
-}
-
-fn dir_index(dir: Direction) -> usize {
-    match dir {
-        Direction::North => 0,
-        Direction::South => 1,
-        Direction::East => 2,
-        Direction::West => 3,
-    }
 }
 
 #[no_mangle]
@@ -176,109 +168,92 @@ pub extern "C" fn GOSSIP_AppMain() {
             return Ok(());
         };
 
-        let mut links = [
-            isl_link(point, Direction::North)?,
-            isl_link(point, Direction::South)?,
-            isl_link(point, Direction::East)?,
-            isl_link(point, Direction::West)?,
-        ];
-
         let apid = Apid::new(GOSSIP_APID)
             .map_err(|_| CfsError::ValidationFailure)?;
 
-        let channel = GossipChannel::<8, 256>::new(GossipConfig {
-            torus: TORUS,
-            my_address: address,
-            apid,
-            function_code: GOSSIP_FC,
-        });
-
-        let (mut sender, mut receiver, driver) = channel.split();
+        let mut gossip: Gossip<UdpDatalink> = Gossip::builder()
+            .north(isl_link(point, Direction::North)?)
+            .south(isl_link(point, Direction::South)?)
+            .east(isl_link(point, Direction::East)?)
+            .west(isl_link(point, Direction::West)?)
+            .address(address)
+            .torus(TORUS)
+            .apid(apid)
+            .function_code(GOSSIP_FC)
+            .build();
 
         let routes = build_routing_table();
         info!("Loaded {} APID routes", routes.len())?;
 
-        // SB pipe for local apps to publish gossip data
         let send_mid = MsgId::from_local_cmd(
             bindings::GOSSIP_SEND_TOPICID as u16,
         );
         let mut pipe = Pipe::new("GOSSIP_SB", 16)?;
         pipe.subscribe(send_mid)?;
 
-        info!("Gossip ready at ({}, {})", point.orb, point.sat)?;
+        info!(
+            "Gossip ready at ({}, {})",
+            point.orb, point.sat
+        )?;
 
-        let mut pkt_buf = [0u8; MTU];
         let mut recv_buf = [0u8; MTU];
         let mut sb_buf = [0u8; MTU + SB_HEADER_SIZE];
 
+        enum Event {
+            Received(usize),
+            Timeout,
+            Err,
+        }
+
         loop {
-            // 1. Check SB for outbound gossip from local apps
+            // Drain SB pipe for outbound gossip from local apps
             loop {
-                match pipe.timed_recv(&mut sb_buf, Timeout::Poll) {
+                match pipe.timed_recv(
+                    &mut sb_buf,
+                    Timeout::Poll,
+                ) {
                     Ok(len) if len > SB_HEADER_SIZE => {
-                        let payload = &sb_buf[SB_HEADER_SIZE..len];
-                        let _ = sender
-                            .send(0, u8::MAX, payload)
-                            .await;
+                        let payload =
+                            &sb_buf[SB_HEADER_SIZE..len];
+                        let _ = gossip.write(payload).await;
                     }
                     _ => break,
                 }
             }
 
-            // 2. Drain outbound gossip packets to ISL
-            while let Some((len, directions)) =
-                driver.poll_outgoing(&mut pkt_buf)
-            {
-                for dir in directions.iter() {
-                    let _ = links[dir_index(*dir)]
-                        .write(&pkt_buf[..len])
-                        .await;
+            // Read from ISL with a timeout so we can
+            // check the SB pipe again
+            let event = {
+                let read =
+                    gossip.read(&mut recv_buf).fuse();
+                let timeout = sleep(
+                    Duration::from_secs(INTERVAL_SECS),
+                )
+                .fuse();
+                pin_utils::pin_mut!(read, timeout);
+
+                futures::select_biased! {
+                    r = read => match r {
+                        Ok(len) => Event::Received(len),
+                        Err(_) => Event::Err,
+                    },
+                    _ = timeout => Event::Timeout,
                 }
-            }
+            };
 
-            // 3. Receive gossip from ISL neighbors
-            for dir_idx in 0..4 {
-                loop {
-                    let len = match try_read(
-                        &mut links[dir_idx],
-                        &mut recv_buf,
-                    )
-                    .await
-                    {
-                        Some(n) if n > 0 => n,
-                        _ => break,
-                    };
-
-                    let pkt = match IslGossipTelecommand::ref_from_bytes(
-                        &recv_buf[..len],
-                    ) {
-                        Ok(p) => p,
-                        Err(_) => continue,
-                    };
-
-                    let forwards = driver.process_incoming(pkt);
-                    for (d, _) in forwards.iter() {
-                        let _ = links[dir_index(*d)]
-                            .write(&recv_buf[..len])
-                            .await;
-                    }
-                }
-            }
-
-            // 4. Deliver received gossip to local apps by APID
-            let mut payload_buf = [0u8; 256];
-            while let Some(msg) = receiver.try_recv(&mut payload_buf) {
-                let data = &payload_buf[..msg.len];
+            if let Event::Received(len) = event {
+                let data = &recv_buf[..len];
                 if data.len() >= 2 {
-                    let apid =
-                        u16::from_be_bytes([data[0], data[1]]) & 0x07FF;
-                    if let Some(mid) = lookup_topic(&routes, apid) {
+                    let apid = u16::from_be_bytes(
+                        [data[0], data[1]],
+                    ) & 0x07FF;
+                    if let Some(mid) =
+                        lookup_topic(&routes, apid)
+                    {
                         let _ = publish_to_sb(mid, data);
                     }
                 }
             }
-
-            sleep(Duration::from_secs(INTERVAL_SECS)).await;
         }
 
         #[allow(unreachable_code)]

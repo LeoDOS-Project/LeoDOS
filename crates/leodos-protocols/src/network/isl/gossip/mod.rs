@@ -1,25 +1,28 @@
-//! ISL Gossip protocol with channel-based sender/receiver/driver split.
+//! ISL Gossip protocol — epidemic flood with epoch dedup.
 //!
-//! The [`GossipChannel`] owns shared state and is split into three handles:
-//! - [`GossipSender`] — app-side, queues gossip for flooding
-//! - [`GossipReceiver`] — app-side, receives unique gossip messages
-//! - [`GossipDriver`] — router-side, processes incoming packets and
-//!   drains outgoing gossip
+//! [`Gossip`] owns four directional datalinks and implements
+//! [`NetworkRead`] + [`NetworkWrite`]. Every packet is flooded
+//! to all neighbors (minus the predecessor) and delivered
+//! locally. Duplicate epochs are silently dropped.
 
 /// Sliding-window duplicate filter for epoch-based deduplication.
 pub mod bitmap;
 /// Gossip packet structure and builder.
 pub mod packet;
 
-use core::future::poll_fn;
-use core::task::Poll;
-
-use bitmap::DuplicateFilter;
-use heapless::Deque;
-use heapless::Vec;
-use zerocopy::IntoBytes;
+use futures::FutureExt as _;
+use futures::future::Either;
+use zerocopy::FromBytes as _;
+use zerocopy::IntoBytes as _;
 use zerocopy::network_endian::U16;
 
+use bitmap::DuplicateFilter;
+
+use crate::datalink::Datalink;
+use crate::datalink::DatalinkRead;
+use crate::datalink::DatalinkWrite;
+use crate::network::NetworkRead;
+use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
 use crate::network::isl::gossip::packet::Epoch;
 use crate::network::isl::gossip::packet::IslGossipTelecommand;
@@ -27,349 +30,382 @@ use crate::network::isl::torus::Direction;
 use crate::network::isl::torus::Point;
 use crate::network::isl::torus::Torus;
 use crate::network::spp::Apid;
-use crate::utils::cell::SyncRefCell;
+use crate::utils::ringbuf::RingBuffer;
 
-/// Error from a gossip channel operation.
-#[derive(Debug, Clone)]
-pub enum GossipError {
-    /// The channel has been closed.
-    Closed,
+/// Per-direction link state: the link itself plus its input
+/// buffer, output queue, and staging buffer.
+struct Port<L, const MTU: usize, const OUT: usize> {
+    link: L,
+    buf: [u8; MTU],
+    out: RingBuffer<OUT>,
+    stage: [u8; MTU],
 }
 
-impl core::fmt::Display for GossipError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Closed => write!(f, "gossip channel closed"),
-        }
-    }
-}
-
-impl core::error::Error for GossipError {}
-
-/// Configuration for a gossip channel.
-#[derive(Clone, Debug)]
-pub struct GossipConfig {
-    /// Network topology.
-    pub torus: Torus,
-    /// This node's address.
-    pub my_address: Address,
-    /// APID for outgoing gossip packets.
-    pub apid: Apid,
-    /// cFE function code for outgoing gossip packets.
-    pub function_code: u8,
-}
-
-/// Metadata about a received gossip message, returned by
-/// [`GossipReceiver::recv`].
-#[derive(Clone, Debug)]
-pub struct GossipMessage {
-    /// The node that originated this gossip.
-    pub origin: Address,
-    /// Number of payload bytes written to the buffer.
-    pub len: usize,
-}
-
-// ── Internal buffer types ──
-
-struct PacketBuf<const MTU: usize> {
-    origin: Address,
-    data: [u8; MTU],
-    len: usize,
-}
-
-struct OutgoingGossip<const MTU: usize> {
-    service_area_min: u8,
-    service_area_max: u8,
-    data: [u8; MTU],
-    len: usize,
-}
-
-struct GossipState<const QUEUE: usize, const MTU: usize> {
-    /// Locally-originated gossip waiting to be flooded.
-    outbox: Deque<OutgoingGossip<MTU>, QUEUE>,
-    /// Unique received gossip waiting for the app to read.
-    inbox: Deque<PacketBuf<MTU>, QUEUE>,
-    /// Sliding-window epoch deduplication filter.
-    dedup: DuplicateFilter,
-    /// Counter for assigning epochs to locally-originated gossip.
-    next_epoch: u16,
-    /// Whether the channel has been closed.
-    closed: bool,
-}
-
-// ── Channel ──
-
-/// Shared gossip state that is split into sender, receiver, and
-/// driver handles.
-pub struct GossipChannel<const QUEUE: usize = 8, const MTU: usize = 256> {
-    state: SyncRefCell<GossipState<QUEUE, MTU>>,
-    config: GossipConfig,
-}
-
-impl<const QUEUE: usize, const MTU: usize> GossipChannel<QUEUE, MTU> {
-    /// Creates a new gossip channel.
-    pub fn new(config: GossipConfig) -> Self {
+impl<L, const MTU: usize, const OUT: usize> Port<L, MTU, OUT> {
+    fn new(link: L) -> Self {
         Self {
-            state: SyncRefCell::new(GossipState {
-                outbox: Deque::new(),
-                inbox: Deque::new(),
-                dedup: DuplicateFilter::new(),
-                next_epoch: 0,
-                closed: false,
-            }),
-            config,
+            link,
+            buf: [0u8; MTU],
+            out: RingBuffer::new(),
+            stage: [0u8; MTU],
+        }
+    }
+}
+
+/// Error from a directional link or from gossip parsing.
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum GossipError<E> {
+    /// Error on the north link.
+    #[error("North link error: {0}")]
+    North(E),
+    /// Error on the south link.
+    #[error("South link error: {0}")]
+    South(E),
+    /// Error on the east link.
+    #[error("East link error: {0}")]
+    East(E),
+    /// Error on the west link.
+    #[error("West link error: {0}")]
+    West(E),
+    /// The caller's buffer is too small for the payload.
+    #[error("buffer too small: need {needed} bytes, got {provided}")]
+    BufferTooSmall {
+        /// Payload size in bytes.
+        needed: usize,
+        /// Caller buffer size in bytes.
+        provided: usize,
+    },
+}
+
+/// Epidemic gossip flood over a 4-connected torus mesh.
+///
+/// Implements [`NetworkWrite`] (wrap + flood) and
+/// [`NetworkRead`] (receive, dedup, forward, deliver).
+pub struct Gossip<N, const MTU: usize = 256, const OUT: usize = 2048> {
+    north: Port<N, MTU, OUT>,
+    south: Port<N, MTU, OUT>,
+    east: Port<N, MTU, OUT>,
+    west: Port<N, MTU, OUT>,
+    address: Address,
+    torus: Torus,
+    apid: Apid,
+    function_code: u8,
+    dedup: DuplicateFilter,
+    next_epoch: u16,
+    buf: [u8; MTU],
+}
+
+#[bon::bon]
+impl<N, const MTU: usize, const OUT: usize> Gossip<N, MTU, OUT>
+where
+    N: Datalink,
+{
+    #[builder]
+    /// Creates a new gossip node with directional links.
+    pub fn new(
+        north: N,
+        south: N,
+        east: N,
+        west: N,
+        address: Address,
+        torus: Torus,
+        apid: Apid,
+        function_code: u8,
+    ) -> Self {
+        Self {
+            north: Port::new(north),
+            south: Port::new(south),
+            east: Port::new(east),
+            west: Port::new(west),
+            address,
+            torus,
+            apid,
+            function_code,
+            dedup: DuplicateFilter::new(),
+            next_epoch: 0,
+            buf: [0u8; MTU],
         }
     }
 
-    /// Splits into app-side sender/receiver and a router-side driver.
-    pub fn split(
+    /// Returns this node's own address.
+    pub fn address(&self) -> Address {
+        self.address
+    }
+}
+
+impl<N, const MTU: usize, const OUT: usize> Gossip<N, MTU, OUT>
+where
+    N: Datalink,
+{
+    /// Compute which directions to flood a locally-originated
+    /// packet (all neighbors in service area).
+    fn flood_directions(
         &self,
-    ) -> (
-        GossipSender<'_, QUEUE, MTU>,
-        GossipReceiver<'_, QUEUE, MTU>,
-        GossipDriver<'_, QUEUE, MTU>,
-    ) {
-        (
-            GossipSender { channel: self },
-            GossipReceiver { channel: self },
-            GossipDriver { channel: self },
-        )
-    }
-
-    /// Closes the channel.
-    pub fn close(&self) {
-        self.state.with_mut(|s| s.closed = true);
-    }
-}
-
-// ── App-side sender ──
-
-/// Handle for originating gossip messages.
-pub struct GossipSender<'a, const QUEUE: usize, const MTU: usize> {
-    channel: &'a GossipChannel<QUEUE, MTU>,
-}
-
-impl<'a, const QUEUE: usize, const MTU: usize> GossipSender<'a, QUEUE, MTU> {
-    /// Queue a gossip message for flooding to neighbors.
-    ///
-    /// Waits asynchronously if the outbox is full.
-    pub async fn send(
-        &mut self,
         service_area_min: u8,
         service_area_max: u8,
-        data: &[u8],
-    ) -> Result<(), GossipError> {
-        poll_fn(|_cx| {
-            self.channel.state.with_mut(|state| {
-                if state.closed {
-                    return Poll::Ready(Err(GossipError::Closed));
-                }
-
-                if state.outbox.is_full() {
-                    return Poll::Pending;
-                }
-
-                let len = data.len().min(MTU);
-                let mut buf = OutgoingGossip {
-                    service_area_min,
-                    service_area_max,
-                    data: [0u8; MTU],
-                    len,
-                };
-                buf.data[..len].copy_from_slice(&data[..len]);
-                state.outbox.push_back(buf).ok();
-
-                Poll::Ready(Ok(()))
-            })
-        })
-        .await
-    }
-}
-
-// ── App-side receiver ──
-
-/// Handle for receiving unique gossip messages.
-pub struct GossipReceiver<'a, const QUEUE: usize, const MTU: usize> {
-    channel: &'a GossipChannel<QUEUE, MTU>,
-}
-
-impl<'a, const QUEUE: usize, const MTU: usize> GossipReceiver<'a, QUEUE, MTU> {
-    /// Receive the next unique gossip message.
-    ///
-    /// Blocks until a message is available. The payload is copied
-    /// into `buf` and metadata is returned in [`GossipMessage`].
-    pub async fn recv(&mut self, buf: &mut [u8]) -> Result<GossipMessage, GossipError> {
-        poll_fn(|_cx| {
-            self.channel.state.with_mut(|state| {
-                if let Some(pkt) = state.inbox.pop_front() {
-                    let len = pkt.len.min(buf.len());
-                    buf[..len].copy_from_slice(&pkt.data[..len]);
-                    return Poll::Ready(Ok(GossipMessage {
-                        origin: pkt.origin,
-                        len,
-                    }));
-                }
-
-                if state.closed {
-                    return Poll::Ready(Err(GossipError::Closed));
-                }
-
-                Poll::Pending
-            })
-        })
-        .await
-    }
-
-    /// Try to receive without blocking.
-    pub fn try_recv(&mut self, buf: &mut [u8]) -> Option<GossipMessage> {
-        self.channel.state.with_mut(|state| {
-            let pkt = state.inbox.pop_front()?;
-            let len = pkt.len.min(buf.len());
-            buf[..len].copy_from_slice(&pkt.data[..len]);
-            Some(GossipMessage {
-                origin: pkt.origin,
-                len,
-            })
-        })
-    }
-}
-
-// ── Router-side driver ──
-
-/// Handle used by the router to process incoming gossip and drain
-/// outgoing gossip.
-pub struct GossipDriver<'a, const QUEUE: usize, const MTU: usize> {
-    channel: &'a GossipChannel<QUEUE, MTU>,
-}
-
-impl<'a, const QUEUE: usize, const MTU: usize> GossipDriver<'a, QUEUE, MTU> {
-    /// Process an incoming gossip packet.
-    ///
-    /// Deduplicates by epoch, enqueues unique messages for the
-    /// receiver, and returns the directions to forward the packet.
-    pub fn process_incoming<'p>(
-        &self,
-        packet: &'p IslGossipTelecommand,
-    ) -> Vec<(Direction, &'p IslGossipTelecommand), 4> {
-        let header = &packet.gossip_header;
-        let epoch = header.epoch();
-
-        let is_new = self.channel.state.with_mut(|state| {
-            if state.dedup.is_duplicate(epoch.0.get()) {
-                return false;
-            }
-
-            if !state.inbox.is_full() {
-                let payload = &packet.payload;
-                let len = payload.len().min(MTU);
-                let mut entry = PacketBuf {
-                    origin: header.origin(),
-                    data: [0u8; MTU],
-                    len,
-                };
-                entry.data[..len].copy_from_slice(&payload[..len]);
-                state.inbox.push_back(entry).ok();
-            }
-
-            true
-        });
-
-        if is_new {
-            self.forward_gossip(packet)
-        } else {
-            Vec::new()
+    ) -> [bool; 4] {
+        let my_point = Point::from(self.address);
+        let all = [
+            Direction::North,
+            Direction::South,
+            Direction::East,
+            Direction::West,
+        ];
+        let mut dirs = [false; 4];
+        for (i, direction) in all.iter().enumerate() {
+            let neighbor = self.torus.neighbor(my_point, *direction);
+            let addr = Address::from(neighbor);
+            dirs[i] = addr.is_in_service_area(
+                service_area_min,
+                service_area_max,
+            );
         }
+        dirs
     }
 
-    /// Take the next locally-originated gossip packet for flooding.
-    ///
-    /// Builds the full gossip packet in `buf`. Returns the packet
-    /// length and the directions to send it, or `None` if the
-    /// outbox is empty.
-    pub fn poll_outgoing(&self, buf: &mut [u8]) -> Option<(usize, Vec<Direction, 4>)> {
-        let (outgoing, epoch) = self.channel.state.with_mut(|state| {
-            let outgoing = state.outbox.pop_front()?;
-            let e = state.next_epoch;
-            state.next_epoch = state.next_epoch.wrapping_add(1);
-            let epoch = Epoch(U16::new(e));
-            state.dedup.is_duplicate(epoch.0.get());
-            Some((outgoing, epoch))
-        })?;
+}
 
-        let config = &self.channel.config;
+impl<N, const MTU: usize, const OUT: usize> NetworkWrite
+    for Gossip<N, MTU, OUT>
+where
+    N: Datalink,
+{
+    type Error = GossipError<N::WriteError>;
+
+    async fn write(
+        &mut self,
+        data: &[u8],
+    ) -> Result<(), Self::Error> {
+        let epoch_val = self.next_epoch;
+        self.next_epoch = self.next_epoch.wrapping_add(1);
+        let epoch = Epoch(U16::new(epoch_val));
+        self.dedup.is_duplicate(epoch.0.get());
+
         let pkt = IslGossipTelecommand::builder()
-            .buffer(buf)
-            .apid(config.apid)
-            .function_code(config.function_code)
-            .origin(config.my_address)
-            .predecessor(config.my_address)
-            .service_area_min(outgoing.service_area_min)
-            .service_area_max(outgoing.service_area_max)
+            .buffer(&mut self.buf)
+            .apid(self.apid)
+            .function_code(self.function_code)
+            .origin(self.address)
+            .predecessor(self.address)
+            .service_area_min(0)
+            .service_area_max(255)
             .epoch(epoch)
-            .payload_len(outgoing.len)
+            .payload_len(data.len())
             .build()
-            .ok()?;
-        pkt.payload.copy_from_slice(&outgoing.data[..outgoing.len]);
+            .ok();
+
+        let Some(pkt) = pkt else {
+            return Ok(());
+        };
+        pkt.payload.copy_from_slice(data);
         pkt.set_cfe_checksum();
         let len = pkt.as_bytes().len();
 
-        let directions =
-            self.flood_directions(outgoing.service_area_min, outgoing.service_area_max);
+        let dirs = self.flood_directions(0, 255);
 
-        Some((len, directions))
+        if dirs[0] {
+            let (_, mut w) = self.north.link.split();
+            w.write(&self.buf[..len])
+                .await
+                .map_err(GossipError::North)?;
+        }
+        if dirs[1] {
+            let (_, mut w) = self.south.link.split();
+            w.write(&self.buf[..len])
+                .await
+                .map_err(GossipError::South)?;
+        }
+        if dirs[2] {
+            let (_, mut w) = self.east.link.split();
+            w.write(&self.buf[..len])
+                .await
+                .map_err(GossipError::East)?;
+        }
+        if dirs[3] {
+            let (_, mut w) = self.west.link.split();
+            w.write(&self.buf[..len])
+                .await
+                .map_err(GossipError::West)?;
+        }
+
+        Ok(())
     }
+}
 
-    /// Compute which neighbor directions to forward a packet to.
-    fn forward_gossip<'p>(
-        &self,
-        packet: &'p IslGossipTelecommand,
-    ) -> Vec<(Direction, &'p IslGossipTelecommand), 4> {
-        let header = &packet.gossip_header;
-        let from_address = header.predecessor();
-        let config = &self.channel.config;
+impl<N, const MTU: usize, const OUT: usize> NetworkRead
+    for Gossip<N, MTU, OUT>
+where
+    N: Datalink,
+{
+    type Error = GossipError<N::ReadError>;
 
-        let mut forwards = Vec::new();
-        for direction in [
-            Direction::North,
-            Direction::South,
-            Direction::East,
-            Direction::West,
-        ] {
-            let my_point = Point::from(config.my_address);
-            let neighbor_point = config.torus.neighbor(my_point, direction);
-            let to_address = Address::from(neighbor_point);
+    async fn read(
+        &mut self,
+        buffer: &mut [u8],
+    ) -> Result<usize, Self::Error> {
+        loop {
+            let Self {
+                north,
+                south,
+                east,
+                west,
+                address,
+                torus,
+                dedup,
+                ..
+            } = self;
 
-            if to_address != from_address
-                && to_address.is_in_service_area(header.service_area_min, header.service_area_max)
-            {
-                forwards
-                    .push((direction, packet))
-                    .expect("cannot exceed capacity");
+            let (mut nr, mut nw) = north.link.split();
+            let (mut sr, mut sw) = south.link.split();
+            let (mut er, mut ew) = east.link.split();
+            let (mut wr, mut ww) = west.link.split();
+
+            macro_rules! stage {
+                ($w:expr, $port:expr) => {
+                    match $port.out.front() {
+                        Some(data) => {
+                            let len = data.len();
+                            $port.stage[..len]
+                                .copy_from_slice(data);
+                            Either::Left(
+                                $w.write(&$port.stage[..len])
+                                    .fuse(),
+                            )
+                        }
+                        None => {
+                            Either::Right(
+                                futures::future::pending(),
+                            )
+                        }
+                    }
+                };
+            }
+
+            enum Event<RE> {
+                Read(Result<usize, RE>, Direction),
+                Write(Direction),
+            }
+
+            let event = {
+                let nw_f = stage!(nw, north);
+                let sw_f = stage!(sw, south);
+                let ew_f = stage!(ew, east);
+                let ww_f = stage!(ww, west);
+
+                let nr_f = nr.read(&mut north.buf).fuse();
+                let sr_f = sr.read(&mut south.buf).fuse();
+                let er_f = er.read(&mut east.buf).fuse();
+                let wr_f = wr.read(&mut west.buf).fuse();
+
+                pin_utils::pin_mut!(
+                    nr_f, sr_f, er_f, wr_f, nw_f, sw_f,
+                    ew_f, ww_f
+                );
+
+                futures::select_biased! {
+                    _ = nw_f => Event::Write(Direction::North),
+                    _ = sw_f => Event::Write(Direction::South),
+                    _ = ew_f => Event::Write(Direction::East),
+                    _ = ww_f => Event::Write(Direction::West),
+                    r = nr_f => Event::Read(r, Direction::North),
+                    r = sr_f => Event::Read(r, Direction::South),
+                    r = er_f => Event::Read(r, Direction::East),
+                    r = wr_f => Event::Read(r, Direction::West),
+                }
+            };
+
+            match event {
+                Event::Write(dir) => match dir {
+                    Direction::North => north.out.pop(),
+                    Direction::South => south.out.pop(),
+                    Direction::East => east.out.pop(),
+                    Direction::West => west.out.pop(),
+                },
+                Event::Read(result, dir) => {
+                    let (buf, len) = match dir {
+                        Direction::North => (
+                            &north.buf[..],
+                            result.map_err(GossipError::North)?,
+                        ),
+                        Direction::South => (
+                            &south.buf[..],
+                            result.map_err(GossipError::South)?,
+                        ),
+                        Direction::East => (
+                            &east.buf[..],
+                            result.map_err(GossipError::East)?,
+                        ),
+                        Direction::West => (
+                            &west.buf[..],
+                            result.map_err(GossipError::West)?,
+                        ),
+                    };
+
+                    let raw = &buf[..len];
+                    let Ok(pkt) =
+                        IslGossipTelecommand::ref_from_bytes(raw)
+                    else {
+                        continue;
+                    };
+
+                    let header = &pkt.gossip_header;
+                    let epoch = header.epoch();
+
+                    if dedup.is_duplicate(epoch.0.get()) {
+                        continue;
+                    }
+
+                    let predecessor = header.predecessor();
+                    let my_point = Point::from(*address);
+                    let all = [
+                        Direction::North,
+                        Direction::South,
+                        Direction::East,
+                        Direction::West,
+                    ];
+                    let fwd = {
+                        let mut dirs = [false; 4];
+                        for (i, d) in
+                            all.iter().enumerate()
+                        {
+                            let n =
+                                torus.neighbor(my_point, *d);
+                            let a = Address::from(n);
+                            dirs[i] = a != predecessor
+                                && a.is_in_service_area(
+                                    header.service_area_min,
+                                    header.service_area_max,
+                                );
+                        }
+                        dirs
+                    };
+
+                    if fwd[0] {
+                        north.out.push(raw);
+                    }
+                    if fwd[1] {
+                        south.out.push(raw);
+                    }
+                    if fwd[2] {
+                        east.out.push(raw);
+                    }
+                    if fwd[3] {
+                        west.out.push(raw);
+                    }
+
+                    let payload = &pkt.payload;
+                    let payload_len = payload.len();
+                    if buffer.len() < payload_len {
+                        return Err(GossipError::BufferTooSmall {
+                            needed: payload_len,
+                            provided: buffer.len(),
+                        });
+                    }
+                    buffer[..payload_len]
+                        .copy_from_slice(payload);
+                    return Ok(payload_len);
+                }
             }
         }
-        forwards
-    }
-
-    /// Compute flood directions for a locally-originated packet
-    /// (no sender to skip).
-    fn flood_directions(&self, service_area_min: u8, service_area_max: u8) -> Vec<Direction, 4> {
-        let config = &self.channel.config;
-
-        let mut directions = Vec::new();
-        for direction in [
-            Direction::North,
-            Direction::South,
-            Direction::East,
-            Direction::West,
-        ] {
-            let my_point = Point::from(config.my_address);
-            let neighbor_point = config.torus.neighbor(my_point, direction);
-            let to_address = Address::from(neighbor_point);
-
-            if to_address.is_in_service_area(service_area_min, service_area_max) {
-                directions.push(direction).expect("cannot exceed capacity");
-            }
-        }
-        directions
     }
 }
