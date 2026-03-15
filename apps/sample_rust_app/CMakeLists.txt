@@ -1,16 +1,11 @@
 # Set the minimum required version of CMake.
 cmake_minimum_required(VERSION 3.10)
 
-# 1. Define a placeholder C source file. This is just to satisfy the
-#    `add_cfe_app` function signature.
-set(APP_SRC_FILES
-  fsw/src/placeholder.c
-)
+# cFS requires at least one C source to create the shared library
+# target. The Rust cargo build overwrites it in the POST_BUILD step.
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c "")
 
-# 2. Register the application with the cFS build system.
-#    This creates the "sample_rust_app" target with all the standard cFS compiler flags,
-#    include paths, and default link libraries.
-add_cfe_app(sample_rust_app ${APP_SRC_FILES})
+add_cfe_app(sample_rust_app ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c)
 
 # 3. Define the path to where Cargo will place our compiled library.
 #    We build in release mode, so the library will be in the `release` subdirectory.

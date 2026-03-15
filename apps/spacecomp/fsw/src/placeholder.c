@@ -1,1 +1,0 @@
-typedef int cfs_spacecomp_placeholder_t;

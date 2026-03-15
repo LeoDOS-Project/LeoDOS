@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.10)
 
-set(APP_SRC_FILES
-  fsw/src/placeholder.c
-)
+# cFS requires at least one C source to create the shared library
+# target. The Rust cargo build overwrites it in the POST_BUILD step.
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c "")
 
-add_cfe_app(srspp_receiver ${APP_SRC_FILES})
+add_cfe_app(srspp_receiver ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c)
 
 set(SRSPP_RECEIVER_OUTPUT_LIB ${CMAKE_CURRENT_BINARY_DIR}/cargo_build/release/libsrspp_receiver.so)
 
