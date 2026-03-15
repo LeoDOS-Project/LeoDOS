@@ -29,13 +29,13 @@
 //! }
 //! ```
 
+pub mod dyn_scope;
 pub mod join;
+pub mod scope;
 pub mod select_either;
 pub mod sync;
 mod task;
 pub mod time;
-pub mod scope;
-pub mod dyn_scope;
 
 pub use futures::select_biased;
 pub use futures::FutureExt;
@@ -63,42 +63,56 @@ impl Runtime {
     }
 
     /// Runs the main async task for the application.
+    ///
+    /// Polls the future until it completes or cFS commands
+    /// the app to exit. All resources owned by the future
+    /// are dropped before `CFE_ES_ExitApp` is called.
     pub fn run<F>(self, main_future: F) -> !
     where
         F: Future<Output = Result<()>>,
     {
-        // Pin the future on the stack so it can be polled.
+        Self::poll_until_done(main_future);
+        unsafe { ffi::CFE_ES_ExitApp(RunStatus::Exit as u32) };
+        loop {}
+    }
+
+    /// Polls the future in the cFS run loop until completion
+    /// or shutdown. The future and all its owned resources
+    /// are dropped when this function returns.
+    fn poll_until_done<F>(main_future: F)
+    where
+        F: Future<Output = Result<()>>,
+    {
         pin_mut!(main_future);
 
-        // Create the waker and context needed to poll the future.
         let waker = noop_waker();
-        let mut context = core::task::Context::from_waker(&waker);
+        let mut context =
+            core::task::Context::from_waker(&waker);
 
         loop {
-            let mut status = ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_RUN;
-            let should_run = unsafe { ffi::CFE_ES_RunLoop(&mut status) };
+            let mut status =
+                ffi::CFE_ES_RunStatus_CFE_ES_RunStatus_APP_RUN;
+            let should_run =
+                unsafe { ffi::CFE_ES_RunLoop(&mut status) };
 
             match RunStatus::from(status) {
                 RunStatus::Run if should_run => {
-                    if main_future.as_mut().poll(&mut context).is_ready() {
-                        log!("Top-level async task finished. Exiting.").ok();
-                        break;
+                    if main_future
+                        .as_mut()
+                        .poll(&mut context)
+                        .is_ready()
+                    {
+                        log!("Top-level async task finished.")
+                            .ok();
+                        return;
                     }
                 }
                 _ => {
-                    // cFE has commanded us to shut down.
-                    log!("Received command to exit application.").ok();
-                    break;
+                    log!("Received command to exit.").ok();
+                    return;
                 }
             }
         }
-
-        // Perform a graceful exit.
-        unsafe { ffi::CFE_ES_ExitApp(RunStatus::Exit as u32) };
-
-        // CFE_ES_ExitApp may not be immediate. Loop forever to ensure
-        // this function's `!` return type is satisfied.
-        loop {}
     }
 }
 
