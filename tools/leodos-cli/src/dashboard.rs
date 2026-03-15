@@ -40,6 +40,8 @@ struct AppState {
     packet_count: u64,
     action_log: VecDeque<String>,
     buttons: Vec<Button>,
+    selected_btn: usize,
+    hover_btn: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -88,6 +90,8 @@ impl AppState {
             packet_count: 0,
             action_log: VecDeque::new(),
             buttons: Vec::new(),
+            selected_btn: 0,
+            hover_btn: None,
         }
     }
 
@@ -422,6 +426,54 @@ fn draw_satellites(
     frame.render_widget(table, area);
 }
 
+const BUTTONS: &[(&str, &str)] = &[
+    (" Build ", "build"),
+    (" Start Sim ", "sim-start"),
+    (" Stop Sim ", "sim-stop"),
+    (" Shell ", "shell"),
+    ("", ""),
+    (" Deploy wildfire ", "deploy wildfire"),
+    (" Deploy router ", "deploy router"),
+    (" Deploy fs_srv ", "deploy fs_srv"),
+    (" Deploy gossip ", "deploy gossip"),
+    ("", ""),
+    (" Datagen ", "datagen"),
+    (" Enable TO_LAB ", "enable-tolab"),
+    (" Status ", "status"),
+];
+
+fn btn_index_to_real(idx: usize) -> usize {
+    let mut real = 0;
+    for (i, (label, _)) in BUTTONS.iter().enumerate() {
+        if label.is_empty() {
+            continue;
+        }
+        if real == idx {
+            return i;
+        }
+        real += 1;
+    }
+    0
+}
+
+fn real_to_btn_index(real: usize) -> usize {
+    let mut idx = 0;
+    for (i, (label, _)) in BUTTONS.iter().enumerate() {
+        if label.is_empty() {
+            continue;
+        }
+        if i == real {
+            return idx;
+        }
+        idx += 1;
+    }
+    0
+}
+
+fn btn_count() -> usize {
+    BUTTONS.iter().filter(|(l, _)| !l.is_empty()).count()
+}
+
 fn draw_control(
     frame: &mut Frame,
     state: &AppState,
@@ -438,24 +490,14 @@ fn draw_control(
     let btn_area = chunks[0];
     let log_area = chunks[1];
 
-    let btn_style =
+    let btn_normal =
         Style::default().fg(Color::White).bg(Color::DarkGray);
-
-    let buttons = [
-        " Build ",
-        " Start Sim ",
-        " Stop Sim ",
-        " Shell ",
-        "",
-        " Deploy wildfire ",
-        " Deploy router ",
-        " Deploy fs_srv ",
-        " Deploy gossip ",
-        "",
-        " Datagen ",
-        " Enable TO_LAB ",
-        " Status ",
-    ];
+    let btn_selected = Style::default()
+        .fg(Color::Black)
+        .bg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let btn_hover =
+        Style::default().fg(Color::Black).bg(Color::Gray);
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -463,10 +505,19 @@ fn draw_control(
     let inner = block.inner(btn_area);
     frame.render_widget(block, btn_area);
 
-    for (i, label) in buttons.iter().enumerate() {
+    let selected_real = btn_index_to_real(state.selected_btn);
+
+    for (i, (label, _)) in BUTTONS.iter().enumerate() {
         if label.is_empty() || i as u16 >= inner.height {
             continue;
         }
+        let style = if i == selected_real {
+            btn_selected
+        } else if state.hover_btn == Some(i) {
+            btn_hover
+        } else {
+            btn_normal
+        };
         let r = Rect::new(
             inner.x + 1,
             inner.y + i as u16,
@@ -475,7 +526,7 @@ fn draw_control(
         );
         if r.y < inner.y + inner.height {
             frame.render_widget(
-                Span::styled(*label, btn_style),
+                Span::styled(*label, style),
                 r,
             );
         }
@@ -508,28 +559,10 @@ fn handle_click(
     col: u16,
     row: u16,
 ) -> Option<String> {
-    // Vertical button list: tab bar(3) + border(1) = row 4
-    // Buttons are at col offset 2 (border + padding)
-    let base_row = 4;
+    let base_row = 4; // tab(3) + border(1)
     let base_col = 2;
 
-    let commands = [
-        (" Build ", "build"),
-        (" Start Sim ", "sim-start"),
-        (" Stop Sim ", "sim-stop"),
-        (" Shell ", "shell"),
-        ("", ""),
-        (" Deploy wildfire ", "deploy wildfire"),
-        (" Deploy router ", "deploy router"),
-        (" Deploy fs_srv ", "deploy fs_srv"),
-        (" Deploy gossip ", "deploy gossip"),
-        ("", ""),
-        (" Datagen ", "datagen"),
-        (" Enable TO_LAB ", "enable-tolab"),
-        (" Status ", "status"),
-    ];
-
-    for (i, (label, cmd)) in commands.iter().enumerate() {
+    for (i, (label, cmd)) in BUTTONS.iter().enumerate() {
         if label.is_empty() {
             continue;
         }
@@ -537,14 +570,42 @@ fn handle_click(
         let bx = base_col;
         let bw = label.len() as u16;
         if row == by && col >= bx && col < bx + bw {
-            state.action_log.push_back(format!("> {cmd}"));
-            if state.action_log.len() > 50 {
-                state.action_log.pop_front();
-            }
-            return Some(cmd.to_string());
+            state.selected_btn = real_to_btn_index(i);
+            return Some(trigger_btn(state, cmd));
         }
     }
     None
+}
+
+fn handle_hover(state: &mut AppState, _col: u16, row: u16) {
+    let base_row = 4;
+    state.hover_btn = None;
+    for (i, (label, _)) in BUTTONS.iter().enumerate() {
+        if label.is_empty() {
+            continue;
+        }
+        if row == base_row + i as u16 {
+            state.hover_btn = Some(i);
+            return;
+        }
+    }
+}
+
+fn activate_selected(state: &mut AppState) -> Option<String> {
+    let real = btn_index_to_real(state.selected_btn);
+    let (_, cmd) = BUTTONS[real];
+    if cmd.is_empty() {
+        return None;
+    }
+    Some(trigger_btn(state, cmd))
+}
+
+fn trigger_btn(state: &mut AppState, cmd: &str) -> String {
+    state.action_log.push_back(format!("> {cmd}"));
+    if state.action_log.len() > 50 {
+        state.action_log.pop_front();
+    }
+    cmd.to_string()
 }
 
 fn spawn_action(cmd: String, state: Arc<Mutex<AppState>>) {
@@ -629,36 +690,78 @@ pub async fn run(
                     if key.kind != KeyEventKind::Press {
                         continue;
                     }
+                    let mut s = state.lock().unwrap();
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => {
+                            drop(s);
                             break;
                         }
                         KeyCode::Tab => {
-                            let mut s = state.lock().unwrap();
                             s.tab = (s.tab + 1) % 4;
                         }
                         KeyCode::BackTab => {
-                            let mut s = state.lock().unwrap();
                             s.tab = (s.tab + 3) % 4;
                         }
-                        _ => {}
-                    }
-                }
-                Event::Mouse(mouse) => {
-                    if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
-                        let mut s = state.lock().unwrap();
-                        if s.tab == 3 {
-                            if let Some(cmd) = handle_click(
-                                &mut s,
-                                mouse.column,
-                                mouse.row,
-                            ) {
+                        KeyCode::Up | KeyCode::Char('k')
+                            if s.tab == 3 =>
+                        {
+                            if s.selected_btn > 0 {
+                                s.selected_btn -= 1;
+                            }
+                        }
+                        KeyCode::Down | KeyCode::Char('j')
+                            if s.tab == 3 =>
+                        {
+                            let max = btn_count().saturating_sub(1);
+                            if s.selected_btn < max {
+                                s.selected_btn += 1;
+                            }
+                        }
+                        KeyCode::Enter if s.tab == 3 => {
+                            if let Some(cmd) =
+                                activate_selected(&mut s)
+                            {
                                 drop(s);
                                 spawn_action(
                                     cmd,
                                     state.clone(),
                                 );
+                                continue;
                             }
+                        }
+                        _ => {}
+                    }
+                }
+                Event::Mouse(mouse) => {
+                    let mut s = state.lock().unwrap();
+                    if s.tab == 3 {
+                        match mouse.kind {
+                            MouseEventKind::Down(
+                                MouseButton::Left,
+                            ) => {
+                                if let Some(cmd) =
+                                    handle_click(
+                                        &mut s,
+                                        mouse.column,
+                                        mouse.row,
+                                    )
+                                {
+                                    drop(s);
+                                    spawn_action(
+                                        cmd,
+                                        state.clone(),
+                                    );
+                                    continue;
+                                }
+                            }
+                            MouseEventKind::Moved => {
+                                handle_hover(
+                                    &mut s,
+                                    mouse.column,
+                                    mouse.row,
+                                );
+                            }
+                            _ => {}
                         }
                     }
                 }
