@@ -185,61 +185,61 @@ fn draw_constellation(
     area: Rect,
 ) {
     let mut lines: Vec<Line> = Vec::new();
-    let spacing = 8;
+    let col_w = 10;
+    let link = "───────";
+    let margin = "       ";
 
     // Header
-    let mut header = String::from("       ");
+    let mut header = String::from(margin);
     for s in 0..state.sats {
-        header.push_str(&format!("Sat {s:<width$}", width = spacing - 4));
+        let label = format!("Sat {s}");
+        header.push_str(&format!("{label:<col_w$}"));
     }
     lines.push(Line::from(header));
     lines.push(Line::from(""));
 
-    // Grid
     for o in 0..state.orbits {
-        let mut row = format!("Orb {o}  ");
-        for s in 0..state.sats {
-            let idx = o as usize * state.sats as usize
-                + s as usize;
-            let info = &state.satellites[idx];
-            let symbol = if info.last_seen == "—" {
-                "○"
-            } else if info.err_count > 0 {
-                "◉"
-            } else {
-                "●"
-            };
-            row.push_str(&format!(
-                "{symbol:<width$}",
-                width = spacing
-            ));
-        }
-        lines.push(Line::from(row));
+        // Row with nodes and horizontal ISL links between them
+        let mut spans: Vec<Span> = Vec::new();
+        spans.push(Span::raw(format!("Orb {o}  ")));
 
-        // ISL links between sats (horizontal)
-        if state.sats > 1 {
-            let mut link_row = String::from("       ");
-            for s in 0..state.sats - 1 {
-                link_row.push_str(&format!(
-                    "───────{blank}",
-                    blank = ""
+        for s in 0..state.sats {
+            let idx =
+                o as usize * state.sats as usize + s as usize;
+            let info = &state.satellites[idx];
+
+            let (symbol, color) = if info.last_seen == "—" {
+                ("○", Color::DarkGray)
+            } else if info.err_count > 0 {
+                ("◉", Color::Red)
+            } else {
+                ("●", Color::Green)
+            };
+
+            spans.push(Span::styled(
+                symbol,
+                Style::default().fg(color),
+            ));
+
+            if s < state.sats - 1 {
+                spans.push(Span::styled(
+                    link,
+                    Style::default().fg(Color::DarkGray),
                 ));
             }
-            lines.push(Line::styled(
-                link_row,
-                Style::default().fg(Color::DarkGray),
-            ));
         }
+        lines.push(Line::from(spans));
 
-        // Vertical ISL links
+        // Vertical ISL links to next orbit row
         if o < state.orbits - 1 {
-            let mut vlink = String::from("       ");
-            for _ in 0..state.sats {
-                vlink.push_str(&format!(
-                    "│{blank:<width$}",
-                    blank = "",
-                    width = spacing - 1
-                ));
+            let mut vlink = String::from(margin);
+            for s in 0..state.sats {
+                vlink.push('│');
+                if s < state.sats - 1 {
+                    for _ in 0..link.chars().count() {
+                        vlink.push(' ');
+                    }
+                }
             }
             lines.push(Line::styled(
                 vlink,
@@ -249,10 +249,14 @@ fn draw_constellation(
     }
 
     lines.push(Line::from(""));
-    lines.push(Line::styled(
-        " ○ not seen  ● active  ◉ errors",
-        Style::default().fg(Color::DarkGray),
-    ));
+    lines.push(Line::from(vec![
+        Span::styled("  ○", Style::default().fg(Color::DarkGray)),
+        Span::raw(" not seen  "),
+        Span::styled("●", Style::default().fg(Color::Green)),
+        Span::raw(" active  "),
+        Span::styled("◉", Style::default().fg(Color::Red)),
+        Span::raw(" errors"),
+    ]));
 
     let paragraph = Paragraph::new(lines).block(
         Block::default()

@@ -1,11 +1,6 @@
 use anyhow::{Context, Result};
-use leodos_protocols::network::cfe::tc::Telecommand;
-use leodos_protocols::network::cfe::tm::Telemetry;
-use leodos_protocols::network::spp::Apid;
-use leodos_protocols::network::spp::SequenceCount;
 use tokio::net::UdpSocket;
 use tokio::time::{Duration, timeout};
-use zerocopy::IntoBytes;
 
 const FS_SRV_APID: u16 = 0x71;
 const CI_PORT: u16 = 1234;
