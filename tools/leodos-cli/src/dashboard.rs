@@ -5,7 +5,7 @@ use crossterm::terminal::{
     LeaveAlternateScreen,
 };
 use crossterm::ExecutableCommand;
-use leodos_protocols::network::spp::SpacePacket;
+use leodos_protocols::network::spp::{PacketType, SpacePacket};
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use std::collections::VecDeque;
@@ -34,6 +34,7 @@ struct AppState {
     satellites: Vec<SatInfo>,
     orbits: u8,
     sats: u8,
+    packet_count: u64,
 }
 
 impl AppState {
@@ -59,6 +60,7 @@ impl AppState {
             satellites,
             orbits,
             sats,
+            packet_count: 0,
         }
     }
 
@@ -78,42 +80,74 @@ fn extract_cstr(data: &[u8]) -> &str {
     core::str::from_utf8(&data[..end]).unwrap_or("")
 }
 
+// cFS TLM secondary header size (8-byte time + 2-byte spare).
+const CFE_TLM_HDR_SIZE: usize = 10;
+
 fn process_packet(state: &mut AppState, raw: &[u8]) {
     let Ok(pkt) = SpacePacket::parse(raw) else {
         return;
     };
 
+    state.packet_count += 1;
+
     let payload = pkt.data_field();
-    if payload.len() < 26 {
+
+    // Try EVS long event format first:
+    //   AppName[20] + EventID(u16) + EventType(u16) + Message[...]
+    if payload.len() >= 26 {
+        let app_name = extract_cstr(&payload[..20]);
+        let msg_offset = 24;
+        if msg_offset < payload.len() {
+            let message = extract_cstr(&payload[msg_offset..]);
+            if !app_name.is_empty() && !message.is_empty() {
+                let event_type = u16::from_le_bytes([
+                    payload[22],
+                    payload[23],
+                ]);
+                let severity = match event_type {
+                    1 => "DEBUG",
+                    2 => "INFO",
+                    3 => "ERROR",
+                    4 => "CRIT",
+                    _ => "???",
+                };
+                state.push_log(format!(
+                    "[{severity}] {app_name}: {message}"
+                ));
+            }
+        }
+    }
+
+    // TODO: Currently all packets update satellite 0.0.
+    // Per-satellite routing requires separate telemetry
+    // ports or an in-band satellite identifier.
+    if !state.satellites.is_empty() {
+        update_sat_from_packet(
+            &mut state.satellites[0],
+            &pkt,
+            payload,
+        );
+    }
+}
+
+fn update_sat_from_packet(
+    sat: &mut SatInfo,
+    pkt: &SpacePacket,
+    payload: &[u8],
+) {
+    sat.last_seen = "active".into();
+
+    if pkt.packet_type() != PacketType::Telemetry {
         return;
     }
 
-    let app_name = extract_cstr(&payload[..20]);
-    let msg_offset = 24;
-    if msg_offset >= payload.len() {
-        return;
+    // HK telemetry payloads carry the cFS TLM secondary
+    // header followed by cmd_count(u8) + err_count(u8).
+    let hk_offset = CFE_TLM_HDR_SIZE;
+    if payload.len() >= hk_offset + 2 {
+        sat.cmd_count = payload[hk_offset] as u16;
+        sat.err_count = payload[hk_offset + 1] as u16;
     }
-
-    let message = extract_cstr(&payload[msg_offset..]);
-    if app_name.is_empty() || message.is_empty() {
-        return;
-    }
-
-    let event_type = u16::from_le_bytes([
-        payload[22],
-        payload[23],
-    ]);
-    let severity = match event_type {
-        1 => "DEBUG",
-        2 => "INFO",
-        3 => "ERROR",
-        4 => "CRIT",
-        _ => "???",
-    };
-
-    state.push_log(format!(
-        "[{severity}] {app_name}: {message}"
-    ));
 }
 
 fn draw(frame: &mut Frame, state: &AppState) {
@@ -164,11 +198,15 @@ fn draw_logs(frame: &mut Frame, state: &AppState, area: Rect) {
         })
         .collect();
 
+    let log_title = format!(
+        " Event Log ({} packets) ",
+        state.packet_count,
+    );
     let paragraph = Paragraph::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Event Log "),
+                .title(log_title),
         )
         .scroll((
             state.logs.len().saturating_sub(
