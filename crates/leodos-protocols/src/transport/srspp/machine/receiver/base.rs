@@ -81,8 +81,7 @@ impl ReceiverBase {
 
     /// Emit a SendAck action with the current cumulative ACK and bitmap.
     pub fn emit_ack(&mut self, actions: &mut ReceiverActions) {
-        let cumulative =
-            self.expected_seq.wrapping_sub(1) & SequenceCount::MAX;
+        let cumulative = self.expected_seq.wrapping_sub(1) & SequenceCount::MAX;
 
         if self.ack_timer_running {
             actions.push(ReceiverAction::StopAckTimer);
@@ -136,11 +135,7 @@ impl ReceiverBase {
     }
 
     /// Emit timer actions after processing a progress timeout.
-    pub fn apply_post_progress_logic(
-        &mut self,
-        actions: &mut ReceiverActions,
-        has_gap: bool,
-    ) {
+    pub fn apply_post_progress_logic(&mut self, actions: &mut ReceiverActions, has_gap: bool) {
         if has_gap {
             if let Some(ticks) = self.config.progress_timeout_ticks {
                 actions.push(ReceiverAction::StartProgressTimer { ticks });

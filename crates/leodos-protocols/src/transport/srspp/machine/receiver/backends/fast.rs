@@ -1,11 +1,10 @@
 use crate::network::isl::address::Address;
 use crate::network::spp::{SequenceCount, SequenceFlag};
 
-use super::super::utils::{Bitset, SlotMap};
 use super::super::base::ReceiverBase;
+use super::super::utils::{Bitset, SlotMap};
 use super::super::{
-    ReceiverAction, ReceiverActions, ReceiverConfig, ReceiverError,
-    ReceiverEvent,
+    ReceiverAction, ReceiverActions, ReceiverBackend, ReceiverConfig, ReceiverError,
 };
 
 /// Fastest backend — O(1) insert and O(1) delivery.
@@ -24,12 +23,8 @@ use super::super::{
 /// * `MTU` — maximum segment payload size
 /// * `REASM` — reassembly buffer size
 /// * `TOTAL` — total slot storage (`WIN * MTU`)
-pub struct FastReceiver<
-    const WIN: usize,
-    const MTU: usize,
-    const REASM: usize,
-    const TOTAL: usize,
-> {
+pub struct FastReceiver<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
+{
     /// Shared receiver state (sequence tracking, timers, ACK logic).
     base: ReceiverBase,
     /// Bitset tracking which window slots hold buffered segments.
@@ -48,14 +43,10 @@ pub struct FastReceiver<
     complete_message_len: Option<usize>,
 }
 
-impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
-    FastReceiver<WIN, MTU, REASM, TOTAL>
+impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize> ReceiverBackend
+    for FastReceiver<WIN, MTU, REASM, TOTAL>
 {
-    /// Maximum forward distance accepted for out-of-order packets.
-    const MAX_AHEAD: u16 = WIN as u16;
-
-    /// Create a new receiver for a specific remote sender.
-    pub fn new(config: ReceiverConfig, remote_address: Address) -> Self {
+    fn new(config: ReceiverConfig, remote_address: Address) -> Self {
         Self {
             base: ReceiverBase::new(config, remote_address),
             occupied: Bitset::new(),
@@ -68,76 +59,10 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
         }
     }
 
-    /// Get the remote address.
-    pub fn remote_address(&self) -> Address {
+    fn remote_address(&self) -> Address {
         self.base.remote_address()
     }
 
-    /// Process an event and produce actions.
-    pub fn handle(
-        &mut self,
-        event: ReceiverEvent<'_>,
-        actions: &mut ReceiverActions,
-    ) -> Result<(), ReceiverError> {
-        actions.clear();
-        match event {
-            ReceiverEvent::DataReceived {
-                seq,
-                flags,
-                payload,
-            } => self.handle_data(seq, flags, payload, actions),
-            ReceiverEvent::AckTimeout => {
-                self.base.handle_ack_timeout(actions);
-                Ok(())
-            }
-            ReceiverEvent::ProgressTimeout => {
-                self.handle_progress_timeout(actions)
-            }
-        }
-    }
-
-    /// Take the complete message.
-    pub fn take_message(&mut self) -> Option<&[u8]> {
-        self.complete_message_len
-            .take()
-            .map(|len| &self.reassembly[..len])
-    }
-
-    /// Returns a slice of the reassembly buffer.
-    pub fn reassembly_data(&self, len: usize) -> &[u8] {
-        &self.reassembly[..len]
-    }
-
-    /// Check if there's a complete message ready.
-    pub fn has_message(&self) -> bool {
-        self.complete_message_len.is_some()
-    }
-
-    /// Returns the length of the pending message, if any.
-    pub fn message_len(&self) -> Option<usize> {
-        self.complete_message_len
-    }
-
-    /// Pass the pending message to `f` and mark it consumed.
-    pub fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
-    where
-        F: FnOnce(&[u8]) -> Ret,
-    {
-        let len = self.complete_message_len.take()?;
-        Some(f(&self.reassembly[..len]))
-    }
-
-    /// Get the current expected sequence number.
-    pub fn expected_seq(&self) -> SequenceCount {
-        self.base.expected_seq()
-    }
-
-    /// Map a raw sequence number to a window slot index.
-    fn slot_idx(seq: u16) -> usize {
-        seq as usize % WIN
-    }
-
-    /// Process an incoming data segment, buffering or delivering it.
     fn handle_data(
         &mut self,
         seq: SequenceCount,
@@ -145,6 +70,7 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
         payload: &[u8],
         actions: &mut ReceiverActions,
     ) -> Result<(), ReceiverError> {
+
         let distance = self.base.distance(seq);
         let seq_before = self.base.expected_seq_raw();
 
@@ -162,19 +88,21 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
             }
         }
 
-        let progressed =
-            self.base.expected_seq_raw() != seq_before;
+        let progressed = self.base.expected_seq_raw() != seq_before;
         let has_gap = self.occupied.any();
         self.base
             .apply_post_data_logic(actions, progressed, has_gap);
         Ok(())
     }
 
-    /// Handle a progress timeout by discarding partial reassembly and advancing.
-    fn handle_progress_timeout(
-        &mut self,
-        actions: &mut ReceiverActions,
-    ) -> Result<(), ReceiverError> {
+    fn handle_ack(&mut self, actions: &mut ReceiverActions) {
+
+        self.base.handle_ack_timeout(actions);
+    }
+
+    fn handle_timeout(&mut self, actions: &mut ReceiverActions) -> Result<(), ReceiverError> {
+
+
         if self.reassembly_in_progress {
             self.reassembly_len = 0;
             self.reassembly_in_progress = false;
@@ -188,18 +116,51 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
         }
 
         let has_gap = self.occupied.any();
-        self.base
-            .apply_post_progress_logic(actions, has_gap);
+        self.base.apply_post_progress_logic(actions, has_gap);
         Ok(())
     }
 
+    fn take_message(&mut self) -> Option<&[u8]> {
+        self.complete_message_len
+            .take()
+            .map(|len| &self.reassembly[..len])
+    }
+
+    fn reassembly_data(&self, len: usize) -> &[u8] {
+        &self.reassembly[..len]
+    }
+
+    fn has_message(&self) -> bool {
+        self.complete_message_len.is_some()
+    }
+
+    fn message_len(&self) -> Option<usize> {
+        self.complete_message_len
+    }
+
+    fn consume_message<Ret>(&mut self, f: impl FnOnce(&[u8]) -> Ret) -> Option<Ret> {
+        let len = self.complete_message_len.take()?;
+        Some(f(&self.reassembly[..len]))
+    }
+
+    fn expected_seq(&self) -> SequenceCount {
+        self.base.expected_seq()
+    }
+}
+
+impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
+    FastReceiver<WIN, MTU, REASM, TOTAL>
+{
+    /// Maximum forward distance accepted for out-of-order packets.
+    const MAX_AHEAD: u16 = WIN as u16;
+
+    /// Map a raw sequence number to a window slot index.
+    fn slot_idx(seq: u16) -> usize {
+        seq as usize % WIN
+    }
+
     /// Store an out-of-order segment into a fixed slot.
-    fn store_ooo(
-        &mut self,
-        seq: u16,
-        flags: SequenceFlag,
-        payload: &[u8],
-    ) {
+    fn store_ooo(&mut self, seq: u16, flags: SequenceFlag, payload: &[u8]) {
         let idx = Self::slot_idx(seq);
         if self.occupied.is_set(idx) {
             return;
@@ -210,10 +171,7 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
     }
 
     /// Deliver consecutive buffered segments starting from the expected sequence.
-    fn deliver_buffered(
-        &mut self,
-        actions: &mut ReceiverActions,
-    ) -> Result<(), ReceiverError> {
+    fn deliver_buffered(&mut self, actions: &mut ReceiverActions) -> Result<(), ReceiverError> {
         let mut temp = [0u8; MTU];
         loop {
             let seq = self.base.expected_seq_raw();
@@ -237,18 +195,13 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
     }
 
     /// Append or complete a packet into the reassembly buffer based on its flags.
-    fn deliver_packet(
-        &mut self,
-        flags: SequenceFlag,
-        payload: &[u8],
-    ) -> Result<(), ReceiverError> {
+    fn deliver_packet(&mut self, flags: SequenceFlag, payload: &[u8]) -> Result<(), ReceiverError> {
         match flags {
             SequenceFlag::Unsegmented => {
                 if payload.len() > REASM {
                     return Err(ReceiverError::MessageTooLarge);
                 }
-                self.reassembly[..payload.len()]
-                    .copy_from_slice(payload);
+                self.reassembly[..payload.len()].copy_from_slice(payload);
                 self.complete_message_len = Some(payload.len());
                 self.reassembly_in_progress = false;
             }
@@ -256,8 +209,7 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
                 if payload.len() > REASM {
                     return Err(ReceiverError::MessageTooLarge);
                 }
-                self.reassembly[..payload.len()]
-                    .copy_from_slice(payload);
+                self.reassembly[..payload.len()].copy_from_slice(payload);
                 self.reassembly_len = payload.len();
                 self.reassembly_in_progress = true;
                 self.complete_message_len = None;
@@ -270,13 +222,11 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
                 if new_len > REASM {
                     return Err(ReceiverError::MessageTooLarge);
                 }
-                self.reassembly[self.reassembly_len..new_len]
-                    .copy_from_slice(payload);
+                self.reassembly[self.reassembly_len..new_len].copy_from_slice(payload);
                 self.reassembly_len = new_len;
 
                 if flags == SequenceFlag::Last {
-                    self.complete_message_len =
-                        Some(self.reassembly_len);
+                    self.complete_message_len = Some(self.reassembly_len);
                     self.reassembly_in_progress = false;
                 }
             }

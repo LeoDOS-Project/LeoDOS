@@ -1,12 +1,11 @@
-use crate::network::{NetworkRead, NetworkWrite};
 use crate::network::isl::address::Address;
 use crate::network::spp::Apid;
 use crate::network::spp::SequenceCount;
+use crate::network::{NetworkRead, NetworkWrite};
 use crate::transport::srspp::machine::receiver::ReceiverAction;
 use crate::transport::srspp::machine::receiver::ReceiverActions;
 use crate::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
-use crate::transport::srspp::machine::receiver::ReceiverEvent;
 use crate::transport::srspp::packet::SrsppAckPacket;
 use crate::transport::srspp::packet::SrsppDataPacket;
 use crate::transport::srspp::packet::SrsppPacket;
@@ -21,7 +20,11 @@ use super::ticks_to_duration;
 ///
 /// Receives messages reliably over the link, handling reordering and reassembly.
 /// Sends ACKs to the remote sender.
-pub struct SrsppReceiver<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: ReceiverBackend, const MTU: usize> {
+pub struct SrsppReceiver<
+    L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>,
+    R: ReceiverBackend,
+    const MTU: usize,
+> {
     /// Network link for receiving data and sending ACKs.
     link: L,
     /// Local address used as the source in outgoing ACKs.
@@ -46,7 +49,12 @@ pub struct SrsppReceiver<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrit
     ack_buffer: [u8; 32],
 }
 
-impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: ReceiverBackend, const MTU: usize> SrsppReceiver<L, R, MTU> {
+impl<
+    L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>,
+    R: ReceiverBackend,
+    const MTU: usize,
+> SrsppReceiver<L, R, MTU>
+{
     /// Create a new receiver for a specific remote sender.
     pub fn new(
         config: ReceiverConfig,
@@ -104,9 +112,7 @@ impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: Recei
     /// preventing further receives while the token is held.
     /// Call [`DeliveryToken::consume`] with a synchronous closure
     /// to read the message data without an intermediate copy.
-    pub async fn wait_for_message(
-        &mut self,
-    ) -> Result<DeliveryToken<'_, L, R, MTU>, SrsppError> {
+    pub async fn wait_for_message(&mut self) -> Result<DeliveryToken<'_, L, R, MTU>, SrsppError> {
         loop {
             if let Some(len) = self.machine.message_len() {
                 return Ok(DeliveryToken {
@@ -155,21 +161,21 @@ impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: Recei
 
     /// Parses an incoming packet and processes it if it is a data packet.
     async fn handle_incoming(&mut self, packet: &[u8]) -> Result<(), SrsppError> {
-        let parsed = SrsppPacket::parse(packet)
-            .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
-        let srspp_type = parsed.srspp_type()
+        let parsed =
+            SrsppPacket::parse(packet).map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
+        let srspp_type = parsed
+            .srspp_type()
             .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
         if srspp_type == SrsppType::Data {
             let data = SrsppDataPacket::parse(packet)
                 .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
-            self.machine.handle(
-                ReceiverEvent::DataReceived {
-                    seq: data.primary.sequence_count(),
-                    flags: data.primary.sequence_flag(),
-                    payload: &data.payload,
-                },
+            self.actions.clear();
+            self.machine.handle_data(
+                data.primary.sequence_count(),
+                data.primary.sequence_flag(),
+                &data.payload,
                 &mut self.actions,
             )?;
 
@@ -182,8 +188,8 @@ impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: Recei
     /// Fires when the delayed ACK timer expires and sends an ACK.
     async fn handle_ack_timeout(&mut self) -> Result<(), SrsppError> {
         self.ack_timer = None;
-        self.machine
-            .handle(ReceiverEvent::AckTimeout, &mut self.actions)?;
+        self.actions.clear();
+        self.machine.handle_ack(&mut self.actions);
         self.process_actions().await?;
         Ok(())
     }
@@ -191,8 +197,8 @@ impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: Recei
     /// Fires when the progress timer expires due to sender inactivity.
     async fn handle_progress_timeout(&mut self) -> Result<(), SrsppError> {
         self.progress_timer = None;
-        self.machine
-            .handle(ReceiverEvent::ProgressTimeout, &mut self.actions)?;
+        self.actions.clear();
+        self.machine.handle_timeout(&mut self.actions)?;
         self.process_actions().await?;
         Ok(())
     }
@@ -230,8 +236,7 @@ impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: Recei
                 ReceiverAction::StopAckTimer => {
                     self.ack_timer = None;
                 }
-                ReceiverAction::MessageReady => {
-                }
+                ReceiverAction::MessageReady => {}
                 ReceiverAction::StartProgressTimer { ticks } => {
                     self.progress_timer =
                         Some(Instant::now() + ticks_to_duration(*ticks, self.ticks_per_sec));
@@ -252,13 +257,22 @@ impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: Recei
 /// token is alive.  Call [`consume`](Self::consume) with a
 /// synchronous closure to read the message and release the
 /// token in one step.
-pub struct DeliveryToken<'a, L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: ReceiverBackend, const MTU: usize> {
+pub struct DeliveryToken<
+    'a,
+    L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>,
+    R: ReceiverBackend,
+    const MTU: usize,
+> {
     rx: &'a mut SrsppReceiver<L, R, MTU>,
     msg_len: usize,
 }
 
-impl<'a, L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, R: ReceiverBackend, const MTU: usize>
-    DeliveryToken<'a, L, R, MTU>
+impl<
+    'a,
+    L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>,
+    R: ReceiverBackend,
+    const MTU: usize,
+> DeliveryToken<'a, L, R, MTU>
 {
     /// Byte length of the pending message.
     pub fn len(&self) -> usize {

@@ -18,24 +18,6 @@ use heapless::Vec;
 /// Maximum number of actions that can be emitted per event.
 const MAX_ACTIONS: usize = 32;
 
-/// Events that drive the receiver state machine.
-#[derive(Debug)]
-pub enum ReceiverEvent<'a> {
-    /// A data packet was received.
-    DataReceived {
-        /// Sequence number of the received packet.
-        seq: SequenceCount,
-        /// Segmentation flags of the received packet.
-        flags: SequenceFlag,
-        /// Payload data of the received packet.
-        payload: &'a [u8],
-    },
-    /// ACK delay timer expired.
-    AckTimeout,
-    /// Progress timer expired — `expected_seq` hasn't advanced.
-    ProgressTimeout,
-}
-
 /// Actions the receiver machine wants the driver to perform.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ReceiverAction {
@@ -164,12 +146,18 @@ pub trait ReceiverBackend: Sized {
     fn new(config: ReceiverConfig, remote_address: Address) -> Self;
     /// Get the remote address.
     fn remote_address(&self) -> Address;
-    /// Process an event and produce actions.
-    fn handle(
+    /// Process a received data packet.
+    fn handle_data(
         &mut self,
-        event: ReceiverEvent<'_>,
+        seq: SequenceCount,
+        flags: SequenceFlag,
+        payload: &[u8],
         actions: &mut ReceiverActions,
     ) -> Result<(), ReceiverError>;
+    /// Handle ACK delay timer expiry.
+    fn handle_ack(&mut self, actions: &mut ReceiverActions);
+    /// Handle progress timer expiry.
+    fn handle_timeout(&mut self, actions: &mut ReceiverActions) -> Result<(), ReceiverError>;
     /// Take the complete message.
     fn take_message(&mut self) -> Option<&[u8]>;
     /// Returns a slice of the reassembly buffer.
@@ -179,128 +167,9 @@ pub trait ReceiverBackend: Sized {
     /// Returns the length of the pending message, if any.
     fn message_len(&self) -> Option<usize>;
     /// Pass the pending message to `f` and mark it consumed.
-    fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
-    where
-        F: FnOnce(&[u8]) -> Ret;
+    fn consume_message<Ret>(&mut self, f: impl FnOnce(&[u8]) -> Ret) -> Option<Ret>;
     /// Get the current expected sequence number.
     fn expected_seq(&self) -> SequenceCount;
-}
-
-impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize> ReceiverBackend
-    for FastReceiver<WIN, MTU, REASM, TOTAL>
-{
-    fn new(config: ReceiverConfig, remote_address: Address) -> Self {
-        Self::new(config, remote_address)
-    }
-    fn remote_address(&self) -> Address {
-        self.remote_address()
-    }
-    fn handle(
-        &mut self,
-        event: ReceiverEvent<'_>,
-        actions: &mut ReceiverActions,
-    ) -> Result<(), ReceiverError> {
-        self.handle(event, actions)
-    }
-    fn take_message(&mut self) -> Option<&[u8]> {
-        self.take_message()
-    }
-    fn reassembly_data(&self, len: usize) -> &[u8] {
-        self.reassembly_data(len)
-    }
-    fn has_message(&self) -> bool {
-        self.has_message()
-    }
-    fn message_len(&self) -> Option<usize> {
-        self.message_len()
-    }
-    fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
-    where
-        F: FnOnce(&[u8]) -> Ret,
-    {
-        self.consume_message(f)
-    }
-    fn expected_seq(&self) -> SequenceCount {
-        self.expected_seq()
-    }
-}
-
-impl<const REASM: usize, const WIN: usize, const MTU: usize> ReceiverBackend
-    for LiteReceiver<REASM, WIN, MTU>
-{
-    fn new(config: ReceiverConfig, remote_address: Address) -> Self {
-        Self::new(config, remote_address)
-    }
-    fn remote_address(&self) -> Address {
-        self.remote_address()
-    }
-    fn handle(
-        &mut self,
-        event: ReceiverEvent<'_>,
-        actions: &mut ReceiverActions,
-    ) -> Result<(), ReceiverError> {
-        self.handle(event, actions)
-    }
-    fn take_message(&mut self) -> Option<&[u8]> {
-        self.take_message()
-    }
-    fn reassembly_data(&self, len: usize) -> &[u8] {
-        self.reassembly_data(len)
-    }
-    fn has_message(&self) -> bool {
-        self.has_message()
-    }
-    fn message_len(&self) -> Option<usize> {
-        self.message_len()
-    }
-    fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
-    where
-        F: FnOnce(&[u8]) -> Ret,
-    {
-        self.consume_message(f)
-    }
-    fn expected_seq(&self) -> SequenceCount {
-        self.expected_seq()
-    }
-}
-
-impl<const WIN: usize, const BUF: usize, const REASM: usize> ReceiverBackend
-    for PackedReceiver<WIN, BUF, REASM>
-{
-    fn new(config: ReceiverConfig, remote_address: Address) -> Self {
-        Self::new(config, remote_address)
-    }
-    fn remote_address(&self) -> Address {
-        self.remote_address()
-    }
-    fn handle(
-        &mut self,
-        event: ReceiverEvent<'_>,
-        actions: &mut ReceiverActions,
-    ) -> Result<(), ReceiverError> {
-        self.handle(event, actions)
-    }
-    fn take_message(&mut self) -> Option<&[u8]> {
-        self.take_message()
-    }
-    fn reassembly_data(&self, len: usize) -> &[u8] {
-        self.reassembly_data(len)
-    }
-    fn has_message(&self) -> bool {
-        self.has_message()
-    }
-    fn message_len(&self) -> Option<usize> {
-        self.message_len()
-    }
-    fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
-    where
-        F: FnOnce(&[u8]) -> Ret,
-    {
-        self.consume_message(f)
-    }
-    fn expected_seq(&self) -> SequenceCount {
-        self.expected_seq()
-    }
 }
 
 #[cfg(test)]
@@ -348,362 +217,361 @@ mod tests {
         }
     }
 
-    macro_rules! receiver_tests {
-        ($mod_name:ident, $ty:ty, $new:expr) => {
+    // ── Generic test functions (all backends) ──
+
+    fn test_immediate_ack<R: ReceiverBackend>() {
+        let mut rx = R::new(make_config(), test_remote_address());
+        let mut a = ReceiverActions::new();
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[1, 2, 3],
+            &mut a,
+        )
+        .unwrap();
+        assert!(
+            a.iter()
+                .any(|a| matches!(a, ReceiverAction::SendAck { .. }))
+        );
+    }
+
+    fn test_delayed_ack_starts_timer<R: ReceiverBackend>() {
+        let mut rx = R::new(make_delayed_config(), test_remote_address());
+        let mut a = ReceiverActions::new();
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[1, 2, 3],
+            &mut a,
+        )
+        .unwrap();
+        assert!(
+            a.iter()
+                .any(|a| matches!(a, ReceiverAction::StartAckTimer { ticks: 20 }))
+        );
+        assert!(
+            !a.iter()
+                .any(|a| matches!(a, ReceiverAction::SendAck { .. }))
+        );
+    }
+
+    fn test_ack_timeout_sends_ack<R: ReceiverBackend>() {
+        let mut rx = R::new(make_delayed_config(), test_remote_address());
+        let mut a = ReceiverActions::new();
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[1, 2, 3],
+            &mut a,
+        )
+        .unwrap();
+        rx.handle_ack(&mut a);
+        assert!(
+            a.iter()
+                .any(|a| matches!(a, ReceiverAction::SendAck { .. }))
+        );
+    }
+
+    fn test_receive_single_packet<R: ReceiverBackend>() {
+        let mut rx = R::new(make_config(), test_remote_address());
+        let mut a = ReceiverActions::new();
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[1, 2, 3, 4, 5],
+            &mut a,
+        )
+        .unwrap();
+        assert!(a.iter().any(|a| matches!(a, ReceiverAction::MessageReady)));
+        assert_eq!(rx.take_message().unwrap(), &[1, 2, 3, 4, 5]);
+    }
+
+    fn test_out_of_order_delivery<R: ReceiverBackend>() {
+        let mut rx = R::new(make_config(), test_remote_address());
+        let mut a = ReceiverActions::new();
+
+        rx.handle_data(
+            SequenceCount::from(1),
+            SequenceFlag::Unsegmented,
+            &[2],
+            &mut a,
+        )
+        .unwrap();
+        assert!(!rx.has_message());
+
+        let bmp = a.iter().find_map(|a| {
+            if let ReceiverAction::SendAck {
+                selective_bitmap, ..
+            } = a
+            {
+                Some(*selective_bitmap)
+            } else {
+                None
+            }
+        });
+        assert_eq!(bmp, Some(0b0001));
+
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[1],
+            &mut a,
+        )
+        .unwrap();
+
+        let cnt = a
+            .iter()
+            .filter(|a| matches!(a, ReceiverAction::MessageReady))
+            .count();
+        assert_eq!(cnt, 2);
+        assert!(rx.has_message());
+    }
+
+    fn test_duplicate_ignored<R: ReceiverBackend>() {
+        let mut rx = R::new(make_config(), test_remote_address());
+        let mut a = ReceiverActions::new();
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[1],
+            &mut a,
+        )
+        .unwrap();
+        rx.take_message();
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[99],
+            &mut a,
+        )
+        .unwrap();
+        assert!(!rx.has_message());
+    }
+
+    fn test_progress_timeout_skips_gap<R: ReceiverBackend>() {
+        let mut rx = R::new(make_progress_config(50), test_remote_address());
+        let mut a = ReceiverActions::new();
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[1],
+            &mut a,
+        )
+        .unwrap();
+        rx.take_message();
+        rx.handle_data(
+            SequenceCount::from(2),
+            SequenceFlag::Unsegmented,
+            &[3],
+            &mut a,
+        )
+        .unwrap();
+        assert!(!rx.has_message());
+        rx.handle_timeout(&mut a).unwrap();
+        assert_eq!(rx.expected_seq().value(), 3);
+        assert!(rx.has_message());
+        assert_eq!(rx.take_message().unwrap(), &[3]);
+    }
+
+    fn test_no_progress_timeout_in_reliable_mode<R: ReceiverBackend>() {
+        let mut rx = R::new(make_config(), test_remote_address());
+        let mut a = ReceiverActions::new();
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[1],
+            &mut a,
+        )
+        .unwrap();
+        rx.take_message();
+        rx.handle_data(
+            SequenceCount::from(2),
+            SequenceFlag::Unsegmented,
+            &[3],
+            &mut a,
+        )
+        .unwrap();
+        assert!(
+            !a.iter()
+                .any(|a| matches!(a, ReceiverAction::StartProgressTimer { .. }))
+        );
+    }
+
+    fn test_progress_timer_resets_on_progress<R: ReceiverBackend>() {
+        let mut rx = R::new(make_progress_config(50), test_remote_address());
+        let mut a = ReceiverActions::new();
+        rx.handle_data(
+            SequenceCount::from(1),
+            SequenceFlag::Unsegmented,
+            &[2],
+            &mut a,
+        )
+        .unwrap();
+        assert!(
+            a.iter()
+                .any(|a| matches!(a, ReceiverAction::StartProgressTimer { ticks: 50 }))
+        );
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[1],
+            &mut a,
+        )
+        .unwrap();
+        assert!(
+            a.iter()
+                .any(|a| matches!(a, ReceiverAction::StopProgressTimer))
+        );
+    }
+
+    // ── Segmented tests (Packed + Fast only — Lite tiles at MTU boundaries) ──
+
+    fn test_segmented_message<R: ReceiverBackend>() {
+        let mut rx = R::new(make_config(), test_remote_address());
+        let mut a = ReceiverActions::new();
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::First,
+            &[1, 2, 3],
+            &mut a,
+        )
+        .unwrap();
+        assert!(!rx.has_message());
+        rx.handle_data(
+            SequenceCount::from(1),
+            SequenceFlag::Continuation,
+            &[4, 5, 6],
+            &mut a,
+        )
+        .unwrap();
+        assert!(!rx.has_message());
+        rx.handle_data(SequenceCount::from(2), SequenceFlag::Last, &[7, 8], &mut a)
+            .unwrap();
+        assert!(rx.has_message());
+        assert_eq!(rx.take_message().unwrap(), &[1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    fn test_progress_timeout_discards_partial<R: ReceiverBackend>() {
+        let mut rx = R::new(make_progress_config(50), test_remote_address());
+        let mut a = ReceiverActions::new();
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::First,
+            &[1, 2, 3],
+            &mut a,
+        )
+        .unwrap();
+        rx.handle_data(
+            SequenceCount::from(3),
+            SequenceFlag::Unsegmented,
+            &[10, 11],
+            &mut a,
+        )
+        .unwrap();
+        assert!(!rx.has_message());
+        rx.handle_timeout(&mut a).unwrap();
+        assert!(!rx.has_message());
+        rx.handle_timeout(&mut a).unwrap();
+        assert!(rx.has_message());
+        assert_eq!(rx.take_message().unwrap(), &[10, 11]);
+        rx.handle_data(
+            SequenceCount::from(4),
+            SequenceFlag::Unsegmented,
+            &[20, 21],
+            &mut a,
+        )
+        .unwrap();
+        assert!(rx.has_message());
+        assert_eq!(rx.take_message().unwrap(), &[20, 21]);
+    }
+
+    // ── Test instantiation ──
+
+    macro_rules! backend_tests {
+        ($mod_name:ident, $ty:ty) => {
             mod $mod_name {
                 use super::*;
-
-                fn make(cfg: ReceiverConfig) -> $ty {
-                    $new(cfg, test_remote_address())
-                }
-
                 #[test]
                 fn immediate_ack() {
-                    let mut rx = make(make_config());
-                    let mut a = ReceiverActions::new();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[1, 2, 3],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(
-                        a.iter()
-                            .any(|a| matches!(a, ReceiverAction::SendAck { .. }))
-                    );
+                    test_immediate_ack::<$ty>()
                 }
-
                 #[test]
                 fn delayed_ack_starts_timer() {
-                    let mut rx = make(make_delayed_config());
-                    let mut a = ReceiverActions::new();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[1, 2, 3],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(
-                        a.iter()
-                            .any(|a| matches!(a, ReceiverAction::StartAckTimer { ticks: 20 }))
-                    );
-                    assert!(
-                        !a.iter()
-                            .any(|a| matches!(a, ReceiverAction::SendAck { .. }))
-                    );
+                    test_delayed_ack_starts_timer::<$ty>()
                 }
-
                 #[test]
                 fn ack_timeout_sends_ack() {
-                    let mut rx = make(make_delayed_config());
-                    let mut a = ReceiverActions::new();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[1, 2, 3],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    rx.handle(ReceiverEvent::AckTimeout, &mut a).unwrap();
-                    assert!(
-                        a.iter()
-                            .any(|a| matches!(a, ReceiverAction::SendAck { .. }))
-                    );
+                    test_ack_timeout_sends_ack::<$ty>()
                 }
-
                 #[test]
                 fn receive_single_packet() {
-                    let mut rx = make(make_config());
-                    let mut a = ReceiverActions::new();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[1, 2, 3, 4, 5],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(a.iter().any(|a| matches!(a, ReceiverAction::MessageReady)));
-                    assert_eq!(rx.take_message().unwrap(), &[1, 2, 3, 4, 5]);
+                    test_receive_single_packet::<$ty>()
                 }
-
                 #[test]
                 fn out_of_order_delivery() {
-                    let mut rx = make(make_config());
-                    let mut a = ReceiverActions::new();
-
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(1),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[2],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(!rx.has_message());
-
-                    let bmp = a.iter().find_map(|a| {
-                        if let ReceiverAction::SendAck {
-                            selective_bitmap, ..
-                        } = a
-                        {
-                            Some(*selective_bitmap)
-                        } else {
-                            None
-                        }
-                    });
-                    assert_eq!(bmp, Some(0b0001));
-
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[1],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-
-                    let cnt = a
-                        .iter()
-                        .filter(|a| matches!(a, ReceiverAction::MessageReady))
-                        .count();
-                    assert_eq!(cnt, 2);
-                    assert!(rx.has_message());
+                    test_out_of_order_delivery::<$ty>()
                 }
-
-                #[test]
-                fn segmented_message() {
-                    let mut rx = make(make_config());
-                    let mut a = ReceiverActions::new();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::First,
-                            payload: &[1, 2, 3],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(!rx.has_message());
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(1),
-                            flags: SequenceFlag::Continuation,
-                            payload: &[4, 5, 6],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(!rx.has_message());
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(2),
-                            flags: SequenceFlag::Last,
-                            payload: &[7, 8],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(rx.has_message());
-                    assert_eq!(rx.take_message().unwrap(), &[1, 2, 3, 4, 5, 6, 7, 8]);
-                }
-
                 #[test]
                 fn duplicate_ignored() {
-                    let mut rx = make(make_config());
-                    let mut a = ReceiverActions::new();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[1],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    rx.take_message();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[99],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(!rx.has_message());
+                    test_duplicate_ignored::<$ty>()
                 }
-
                 #[test]
                 fn progress_timeout_skips_gap() {
-                    let mut rx = make(make_progress_config(50));
-                    let mut a = ReceiverActions::new();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[1],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    rx.take_message();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(2),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[3],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(!rx.has_message());
-                    rx.handle(ReceiverEvent::ProgressTimeout, &mut a).unwrap();
-                    assert_eq!(rx.expected_seq().value(), 3);
-                    assert!(rx.has_message());
-                    assert_eq!(rx.take_message().unwrap(), &[3]);
+                    test_progress_timeout_skips_gap::<$ty>()
                 }
-
-                #[test]
-                fn progress_timeout_discards_partial() {
-                    let mut rx = make(make_progress_config(50));
-                    let mut a = ReceiverActions::new();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::First,
-                            payload: &[1, 2, 3],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(3),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[10, 11],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(!rx.has_message());
-                    rx.handle(ReceiverEvent::ProgressTimeout, &mut a).unwrap();
-                    assert!(!rx.has_message());
-                    rx.handle(ReceiverEvent::ProgressTimeout, &mut a).unwrap();
-                    assert!(rx.has_message());
-                    assert_eq!(rx.take_message().unwrap(), &[10, 11]);
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(4),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[20, 21],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(rx.has_message());
-                    assert_eq!(rx.take_message().unwrap(), &[20, 21]);
-                }
-
                 #[test]
                 fn no_progress_timeout_in_reliable_mode() {
-                    let mut rx = make(make_config());
-                    let mut a = ReceiverActions::new();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[1],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    rx.take_message();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(2),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[3],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(
-                        !a.iter()
-                            .any(|a| matches!(a, ReceiverAction::StartProgressTimer { .. }))
-                    );
+                    test_no_progress_timeout_in_reliable_mode::<$ty>()
                 }
-
                 #[test]
                 fn progress_timer_resets_on_progress() {
-                    let mut rx = make(make_progress_config(50));
-                    let mut a = ReceiverActions::new();
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(1),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[2],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(
-                        a.iter()
-                            .any(|a| matches!(a, ReceiverAction::StartProgressTimer { ticks: 50 }))
-                    );
-                    rx.handle(
-                        ReceiverEvent::DataReceived {
-                            seq: SequenceCount::from(0),
-                            flags: SequenceFlag::Unsegmented,
-                            payload: &[1],
-                        },
-                        &mut a,
-                    )
-                    .unwrap();
-                    assert!(
-                        a.iter()
-                            .any(|a| matches!(a, ReceiverAction::StopProgressTimer))
-                    );
+                    test_progress_timer_resets_on_progress::<$ty>()
                 }
             }
         };
     }
 
-    receiver_tests!(
-        packed_receiver_tests,
-        PackedReceiver<8, 4096, 8192>,
-        PackedReceiver::new
-    );
+    backend_tests!(packed, PackedReceiver<8, 4096, 8192>);
+    backend_tests!(fast, FastReceiver<8, 512, 8192, 4096>);
+    backend_tests!(lite, LiteReceiver<4096, 8, 512>);
 
-    receiver_tests!(
-        fast_receiver_tests,
-        FastReceiver<8, 512, 8192, 4096>,
-        FastReceiver::new
-    );
+    // Segmented reassembly tests — not applicable to LiteReceiver
+    // (Lite tiles segments at MTU boundaries, so sub-MTU payloads
+    // produce a different reassembled layout).
+    mod packed_segmented {
+        use super::*;
+        #[test]
+        fn segmented_message() {
+            test_segmented_message::<PackedReceiver<8, 4096, 8192>>()
+        }
+        #[test]
+        fn progress_timeout_discards_partial() {
+            test_progress_timeout_discards_partial::<PackedReceiver<8, 4096, 8192>>()
+        }
+    }
+    mod fast_segmented {
+        use super::*;
+        #[test]
+        fn segmented_message() {
+            test_segmented_message::<FastReceiver<8, 512, 8192, 4096>>()
+        }
+        #[test]
+        fn progress_timeout_discards_partial() {
+            test_progress_timeout_discards_partial::<FastReceiver<8, 512, 8192, 4096>>()
+        }
+    }
 
-    // Legacy alias tests
+    // ── Backend-specific standalone tests ──
+
     #[test]
     fn test_receiver_machine_alias() {
         let mut rx: ReceiverMachine<8, 4096, 8192> =
             ReceiverMachine::new(make_config(), test_remote_address());
         let mut a = ReceiverActions::new();
-        rx.handle(
-            ReceiverEvent::DataReceived {
-                seq: SequenceCount::from(0),
-                flags: SequenceFlag::Unsegmented,
-                payload: &[42],
-            },
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[42],
             &mut a,
         )
         .unwrap();
@@ -717,35 +585,29 @@ mod tests {
         let mut a = ReceiverActions::new();
 
         for i in 0..SequenceCount::MAX {
-            rx.handle(
-                ReceiverEvent::DataReceived {
-                    seq: SequenceCount::from(i),
-                    flags: SequenceFlag::Unsegmented,
-                    payload: &[i as u8],
-                },
+            rx.handle_data(
+                SequenceCount::from(i),
+                SequenceFlag::Unsegmented,
+                &[i as u8],
                 &mut a,
             )
             .unwrap();
             rx.take_message();
         }
 
-        rx.handle(
-            ReceiverEvent::DataReceived {
-                seq: SequenceCount::from(SequenceCount::MAX),
-                flags: SequenceFlag::Unsegmented,
-                payload: &[0xFF],
-            },
+        rx.handle_data(
+            SequenceCount::from(SequenceCount::MAX),
+            SequenceFlag::Unsegmented,
+            &[0xFF],
             &mut a,
         )
         .unwrap();
         assert_eq!(rx.take_message().unwrap(), &[0xFF]);
 
-        rx.handle(
-            ReceiverEvent::DataReceived {
-                seq: SequenceCount::from(0),
-                flags: SequenceFlag::Unsegmented,
-                payload: &[0x00],
-            },
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &[0x00],
             &mut a,
         )
         .unwrap();
@@ -760,42 +622,34 @@ mod tests {
         let mut a = ReceiverActions::new();
 
         let big = [0xAA; 60];
-        rx.handle(
-            ReceiverEvent::DataReceived {
-                seq: SequenceCount::from(1),
-                flags: SequenceFlag::Unsegmented,
-                payload: &big,
-            },
+        rx.handle_data(
+            SequenceCount::from(1),
+            SequenceFlag::Unsegmented,
+            &big,
             &mut a,
         )
         .unwrap();
-        rx.handle(
-            ReceiverEvent::DataReceived {
-                seq: SequenceCount::from(0),
-                flags: SequenceFlag::Unsegmented,
-                payload: &big,
-            },
+        rx.handle_data(
+            SequenceCount::from(0),
+            SequenceFlag::Unsegmented,
+            &big,
             &mut a,
         )
         .unwrap();
         rx.take_message();
         rx.take_message();
 
-        rx.handle(
-            ReceiverEvent::DataReceived {
-                seq: SequenceCount::from(3),
-                flags: SequenceFlag::Unsegmented,
-                payload: &big,
-            },
+        rx.handle_data(
+            SequenceCount::from(3),
+            SequenceFlag::Unsegmented,
+            &big,
             &mut a,
         )
         .unwrap();
-        rx.handle(
-            ReceiverEvent::DataReceived {
-                seq: SequenceCount::from(2),
-                flags: SequenceFlag::Unsegmented,
-                payload: &big,
-            },
+        rx.handle_data(
+            SequenceCount::from(2),
+            SequenceFlag::Unsegmented,
+            &big,
             &mut a,
         )
         .unwrap();

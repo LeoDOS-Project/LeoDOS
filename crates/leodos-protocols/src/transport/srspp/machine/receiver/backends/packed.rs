@@ -3,7 +3,9 @@ use crate::network::spp::{SequenceCount, SequenceFlag};
 
 use super::super::base::ReceiverBase;
 use super::super::utils::{Bitset, BumpSlab};
-use super::super::{ReceiverAction, ReceiverActions, ReceiverConfig, ReceiverError, ReceiverEvent};
+use super::super::{
+    ReceiverAction, ReceiverActions, ReceiverBackend, ReceiverConfig, ReceiverError,
+};
 
 /// Metadata for a single buffered out-of-order segment.
 #[derive(Clone, Copy, Default)]
@@ -49,12 +51,10 @@ pub struct PackedReceiver<const WIN: usize, const BUF: usize, const REASM: usize
     complete_message_len: Option<usize>,
 }
 
-impl<const WIN: usize, const BUF: usize, const REASM: usize> PackedReceiver<WIN, BUF, REASM> {
-    /// Maximum forward distance accepted for out-of-order packets.
-    const MAX_AHEAD: u16 = WIN as u16;
-
-    /// Create a new receiver for a specific remote sender.
-    pub fn new(config: ReceiverConfig, remote_address: Address) -> Self {
+impl<const WIN: usize, const BUF: usize, const REASM: usize> ReceiverBackend
+    for PackedReceiver<WIN, BUF, REASM>
+{
+    fn new(config: ReceiverConfig, remote_address: Address) -> Self {
         Self {
             base: ReceiverBase::new(config, remote_address),
             occupied: Bitset::new(),
@@ -67,74 +67,10 @@ impl<const WIN: usize, const BUF: usize, const REASM: usize> PackedReceiver<WIN,
         }
     }
 
-    /// Get the remote address.
-    pub fn remote_address(&self) -> Address {
+    fn remote_address(&self) -> Address {
         self.base.remote_address()
     }
 
-    /// Process an event and produce actions.
-    pub fn handle(
-        &mut self,
-        event: ReceiverEvent<'_>,
-        actions: &mut ReceiverActions,
-    ) -> Result<(), ReceiverError> {
-        actions.clear();
-        match event {
-            ReceiverEvent::DataReceived {
-                seq,
-                flags,
-                payload,
-            } => self.handle_data(seq, flags, payload, actions),
-            ReceiverEvent::AckTimeout => {
-                self.base.handle_ack_timeout(actions);
-                Ok(())
-            }
-            ReceiverEvent::ProgressTimeout => self.handle_progress_timeout(actions),
-        }
-    }
-
-    /// Take the complete message.
-    pub fn take_message(&mut self) -> Option<&[u8]> {
-        self.complete_message_len
-            .take()
-            .map(|len| &self.reassembly[..len])
-    }
-
-    /// Returns a slice of the reassembly buffer.
-    pub fn reassembly_data(&self, len: usize) -> &[u8] {
-        &self.reassembly[..len]
-    }
-
-    /// Check if there's a complete message ready.
-    pub fn has_message(&self) -> bool {
-        self.complete_message_len.is_some()
-    }
-
-    /// Returns the length of the pending message, if any.
-    pub fn message_len(&self) -> Option<usize> {
-        self.complete_message_len
-    }
-
-    /// Pass the pending message to `f` and mark it consumed.
-    pub fn consume_message<F, Ret>(&mut self, f: F) -> Option<Ret>
-    where
-        F: FnOnce(&[u8]) -> Ret,
-    {
-        let len = self.complete_message_len.take()?;
-        Some(f(&self.reassembly[..len]))
-    }
-
-    /// Get the current expected sequence number.
-    pub fn expected_seq(&self) -> SequenceCount {
-        self.base.expected_seq()
-    }
-
-    /// Map a raw sequence number to a window slot index.
-    fn slot_idx(seq: u16) -> usize {
-        seq as usize % WIN
-    }
-
-    /// Process an incoming data segment, buffering or delivering it.
     fn handle_data(
         &mut self,
         seq: SequenceCount,
@@ -142,6 +78,7 @@ impl<const WIN: usize, const BUF: usize, const REASM: usize> PackedReceiver<WIN,
         payload: &[u8],
         actions: &mut ReceiverActions,
     ) -> Result<(), ReceiverError> {
+
         let distance = self.base.distance(seq);
         let seq_before = self.base.expected_seq_raw();
 
@@ -166,11 +103,14 @@ impl<const WIN: usize, const BUF: usize, const REASM: usize> PackedReceiver<WIN,
         Ok(())
     }
 
-    /// Handle a progress timeout by discarding partial reassembly and advancing.
-    fn handle_progress_timeout(
-        &mut self,
-        actions: &mut ReceiverActions,
-    ) -> Result<(), ReceiverError> {
+    fn handle_ack(&mut self, actions: &mut ReceiverActions) {
+
+        self.base.handle_ack_timeout(actions);
+    }
+
+    fn handle_timeout(&mut self, actions: &mut ReceiverActions) -> Result<(), ReceiverError> {
+
+
         if self.reassembly_in_progress {
             self.reassembly_len = 0;
             self.reassembly_in_progress = false;
@@ -186,6 +126,43 @@ impl<const WIN: usize, const BUF: usize, const REASM: usize> PackedReceiver<WIN,
         let has_gap = self.occupied.any();
         self.base.apply_post_progress_logic(actions, has_gap);
         Ok(())
+    }
+
+    fn take_message(&mut self) -> Option<&[u8]> {
+        self.complete_message_len
+            .take()
+            .map(|len| &self.reassembly[..len])
+    }
+
+    fn reassembly_data(&self, len: usize) -> &[u8] {
+        &self.reassembly[..len]
+    }
+
+    fn has_message(&self) -> bool {
+        self.complete_message_len.is_some()
+    }
+
+    fn message_len(&self) -> Option<usize> {
+        self.complete_message_len
+    }
+
+    fn consume_message<Ret>(&mut self, f: impl FnOnce(&[u8]) -> Ret) -> Option<Ret> {
+        let len = self.complete_message_len.take()?;
+        Some(f(&self.reassembly[..len]))
+    }
+
+    fn expected_seq(&self) -> SequenceCount {
+        self.base.expected_seq()
+    }
+}
+
+impl<const WIN: usize, const BUF: usize, const REASM: usize> PackedReceiver<WIN, BUF, REASM> {
+    /// Maximum forward distance accepted for out-of-order packets.
+    const MAX_AHEAD: u16 = WIN as u16;
+
+    /// Map a raw sequence number to a window slot index.
+    fn slot_idx(seq: u16) -> usize {
+        seq as usize % WIN
     }
 
     /// Store an out-of-order segment in the slab and record its metadata.
