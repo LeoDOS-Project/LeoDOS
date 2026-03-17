@@ -12,12 +12,20 @@ use leodos_protocols::network::NetworkLayer;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::api::cfs::SrsppReceiver;
+use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
 use leodos_protocols::transport::srspp::api::cfs::SrsppSender;
+use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
+use leodos_protocols::transport::srspp::api::cfs::TransportError;
+use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
+use leodos_protocols::transport::srspp::dtn::NoStore;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
+use leodos_protocols::transport::srspp::machine::receiver::ReceiverMachine;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
 use leodos_protocols::transport::srspp::rto::FixedRto;
 
-type SrsppError = leodos_protocols::transport::srspp::api::cfs::Error<Error>;
+type SrsppError = TransportError<Error>;
+type RxHandle<'a> = SrsppRxHandle<'a, Error, ReceiverMachine<WIN, BUF, REASM>, MAX_STREAMS>;
+type TxHandle<'a> = SrsppTxHandle<'a, Error, NoStore, AlwaysReachable, WIN, BUF, MTU>;
 
 const RX_APID: u16 = 0x42;
 const TX_APID: u16 = 0x43;
@@ -112,21 +120,8 @@ fn tx_config() -> SenderConfig {
 }
 
 async fn echo_loop<'a>(
-    rx_handle: &mut leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle<
-        'a,
-        Error,
-        WIN,
-        BUF,
-        REASM,
-        MAX_STREAMS,
-    >,
-    tx_handle: &mut leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle<
-        'a,
-        Error,
-        WIN,
-        BUF,
-        MTU,
-    >,
+    rx_handle: &mut RxHandle<'a>,
+    tx_handle: &mut TxHandle<'a>,
 ) -> core::result::Result<(), SrsppError> {
     let mut recv_buf = [0u8; REASM];
     loop {
@@ -142,20 +137,19 @@ pub extern "C" fn CFE_ES_Main() {
         event::register(&[])?;
         event::info(0, "SRSPP Echo starting")?;
 
-        let rx_link = SbRxLink::new(RX_TOPIC_ID)?;
-        let tx_link = SbTxLink::new(TX_TOPIC_ID);
+        let mut rx_link = SbRxLink::new(RX_TOPIC_ID)?;
+        let mut tx_link = SbTxLink::new(TX_TOPIC_ID);
 
-        let receiver: SrsppReceiver<Error, WIN, BUF, REASM, MAX_STREAMS> =
+        let receiver: SrsppReceiver<Error, ReceiverMachine<WIN, BUF, REASM>, MAX_STREAMS> =
             SrsppReceiver::new(rx_config());
-        let sender: SrsppSender<Error, WIN, BUF, MTU> =
-            SrsppSender::new(tx_config());
+        let sender = SrsppSender::new(tx_config(), Address::ground(1), NoStore, AlwaysReachable);
 
-        let (mut rx_handle, mut rx_driver) = receiver.split::<_, MTU>(rx_link);
-        let (mut tx_handle, mut tx_driver) = sender.split(tx_link, FixedRto::new(RTO_MS));
+        let (mut rx_handle, mut rx_driver) = receiver.split();
+        let (mut tx_handle, mut tx_driver) = sender.split(FixedRto::new(RTO_MS));
 
         let echo_task = echo_loop(&mut rx_handle, &mut tx_handle);
-        let rx_task = rx_driver.run();
-        let tx_task = tx_driver.run();
+        let rx_task = rx_driver.run::<MTU>(&mut rx_link);
+        let tx_task = tx_driver.run(&mut tx_link);
 
         let _ = join(echo_task, join(rx_task, tx_task)).await;
 

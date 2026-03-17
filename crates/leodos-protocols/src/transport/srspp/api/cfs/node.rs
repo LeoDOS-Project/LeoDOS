@@ -1,6 +1,6 @@
+use futures::FutureExt;
+
 use leodos_libcfs::cfe::duration::Duration;
-use leodos_libcfs::runtime::select_either::Either;
-use leodos_libcfs::runtime::select_either::select_either;
 use leodos_libcfs::runtime::time::sleep;
 
 use crate::network::NetworkRead;
@@ -22,18 +22,13 @@ use heapless::index_map::FnvIndexMap;
 
 use super::TimerSet;
 use super::receiver::MultiReceiverState;
+use super::receiver::SrsppReceiverDriver;
 use super::receiver::SrsppRxHandle;
-use super::receiver::drive_data;
-use super::receiver::drive_receiver_timeouts;
-use super::receiver::receiver_next_deadline;
 use super::sender::DtnContext;
 use super::sender::SenderState;
+use super::sender::SrsppSenderDriver;
 use super::sender::SrsppTxHandle;
-use super::sender::drive_ack;
-use super::sender::drive_sender_timeouts;
-use super::sender::drive_transmits;
 use super::sender::duration_until;
-use super::sender::sender_next_deadline;
 use crate::transport::srspp::dtn::AlwaysReachable;
 use crate::transport::srspp::dtn::NoStore;
 
@@ -110,11 +105,14 @@ impl<
             },
             SrsppNodeDriver {
                 link,
-                rto_policy,
-                node: self,
+                sender: SrsppSenderDriver::new(
+                    rto_policy,
+                    &self.sender,
+                    &self.noop_dtn,
+                    Address::ground(0),
+                ),
+                receiver: SrsppReceiverDriver::new(&self.receiver),
                 recv_buffer: [0u8; MTU],
-                tx_buffer: [0u8; MTU],
-                ack_buffer: [0u8; 32],
             },
         )
     }
@@ -123,7 +121,7 @@ impl<
 /// I/O driver for a combined SRSPP sender/receiver node.
 pub struct SrsppNodeDriver<
     'a,
-    L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>,
+    L,
     P: RtoPolicy,
     E,
     R: ReceiverBackend,
@@ -134,81 +132,66 @@ pub struct SrsppNodeDriver<
 > {
     /// Network link for bidirectional packet I/O.
     link: L,
-    /// Policy for computing retransmission timeouts.
-    rto_policy: P,
-    /// Reference to the owning node.
-    node: &'a SrsppNode<E, R, WIN, BUF, MTU, MAX_STREAMS>,
+    /// Sender driver (handles transmit, ACK, retransmit, DTN drain).
+    sender: SrsppSenderDriver<'a, P, E, NoStore, AlwaysReachable, WIN, BUF, MTU>,
+    /// Receiver driver (handles data, ACK sending, timeouts).
+    receiver: SrsppReceiverDriver<'a, E, R, MAX_STREAMS>,
     /// Buffer for receiving packets from the link.
     recv_buffer: [u8; MTU],
-    /// Buffer for building outgoing data packets.
-    tx_buffer: [u8; MTU],
-    /// Buffer for building outgoing ACK packets.
-    ack_buffer: [u8; 32],
 }
 
 impl<
     'a,
-    L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>,
+    L: NetworkWrite<Error = E> + NetworkRead<Error = E>,
     P: RtoPolicy,
+    E: Clone,
     R: ReceiverBackend,
     const WIN: usize,
     const BUF: usize,
     const MTU: usize,
     const MAX_STREAMS: usize,
-> SrsppNodeDriver<'a, L, P, <L as NetworkWrite>::Error, R, WIN, BUF, MTU, MAX_STREAMS>
-where
-    <L as NetworkWrite>::Error: Clone,
+> SrsppNodeDriver<'a, L, P, E, R, WIN, BUF, MTU, MAX_STREAMS>
 {
     /// Runs the combined send/receive I/O loop.
-    pub async fn run(&mut self) -> Result<(), TransportError<<L as NetworkWrite>::Error>> {
+    pub async fn run(&mut self) -> Result<(), TransportError<E>> {
         loop {
-            if let Err(e) = drive_transmits(
-                &self.node.sender,
-                &mut self.tx_buffer,
-                &mut self.link,
-                &self.rto_policy,
-            )
-            .await
-            {
+            self.sender.drain_stored(&mut self.link).await?;
+
+            if let Err(e) = self.sender.transmit(&mut self.link).await {
                 self.set_both_errors(e.clone());
                 return Err(e);
             }
 
             let timeout = self.next_timeout();
 
-            match select_either(self.link.read(&mut self.recv_buffer), sleep(timeout)).await {
-                Either::Left(result) => match result {
-                    Ok(len) => {
-                        if let Err(e) = self.handle_incoming(len).await {
-                            self.set_both_errors(e.clone());
-                            return Err(e);
-                        }
-                    }
-                    Err(e) => {
-                        let err = TransportError::Network(e);
-                        self.set_both_errors(err.clone());
-                        return Err(err);
-                    }
-                },
-                Either::Right(()) => {
-                    if let Err(e) = drive_sender_timeouts(
-                        &self.node.sender,
-                        &mut self.tx_buffer,
-                        &mut self.link,
-                        &self.rto_policy,
-                    )
-                    .await
-                    {
+            let event = {
+                let read_fut = self.link.read(&mut self.recv_buffer).fuse();
+                let sleep_fut = sleep(timeout).fuse();
+                pin_utils::pin_mut!(read_fut, sleep_fut);
+                futures::select_biased! {
+                    r = read_fut => Some(r),
+                    _ = sleep_fut => None,
+                }
+            };
+
+            match event {
+                Some(Ok(len)) => {
+                    if let Err(e) = self.handle_incoming(len).await {
                         self.set_both_errors(e.clone());
                         return Err(e);
                     }
-                    if let Err(e) = drive_receiver_timeouts(
-                        &self.node.receiver,
-                        &mut self.ack_buffer,
-                        &mut self.link,
-                    )
-                    .await
-                    {
+                }
+                Some(Err(e)) => {
+                    let err = TransportError::Network(e);
+                    self.set_both_errors(err.clone());
+                    return Err(err);
+                }
+                None => {
+                    if let Err(e) = self.sender.handle_timeouts(&mut self.link).await {
+                        self.set_both_errors(e.clone());
+                        return Err(e);
+                    }
+                    if let Err(e) = self.receiver.handle_timeouts(&mut self.link).await {
                         self.set_both_errors(e.clone());
                         return Err(e);
                     }
@@ -218,32 +201,21 @@ where
     }
 
     /// Dispatches an incoming packet to the ACK or data handler.
-    async fn handle_incoming(
-        &mut self,
-        len: usize,
-    ) -> Result<(), TransportError<<L as NetworkWrite>::Error>> {
+    async fn handle_incoming(&mut self, len: usize) -> Result<(), TransportError<E>> {
         let packet = &self.recv_buffer[..len];
         let Ok(parsed) = SrsppPacket::parse(packet) else {
             return Ok(());
         };
         match parsed.srspp_type() {
-            Ok(SrsppType::Data) => {
-                drive_data(
-                    &self.node.receiver,
-                    packet,
-                    &mut self.ack_buffer,
-                    &mut self.link,
-                )
-                .await
-            }
-            Ok(SrsppType::Ack) => drive_ack(&self.node.sender, packet),
+            Ok(SrsppType::Data) => self.receiver.process_data(packet, &mut self.link).await,
+            Ok(SrsppType::Ack) => self.sender.process_ack(packet),
             Err(_) => Ok(()),
         }
     }
 
     fn next_timeout(&self) -> Duration {
-        let s = sender_next_deadline(&self.node.sender);
-        let r = receiver_next_deadline(&self.node.receiver);
+        let s = self.sender.next_deadline();
+        let r = self.receiver.next_deadline();
         let deadline = match (s, r) {
             (Some(a), Some(b)) => Some(if a < b { a } else { b }),
             (a, b) => a.or(b),
@@ -251,8 +223,8 @@ where
         duration_until(deadline)
     }
 
-    fn set_both_errors(&self, err: TransportError<<L as NetworkWrite>::Error>) {
-        self.node.sender.with_mut(|s| s.error = Some(err.clone()));
-        self.node.receiver.with_mut(|s| s.error = Some(err));
+    fn set_both_errors(&self, err: TransportError<E>) {
+        self.sender.sender.with_mut(|s| s.error = Some(err.clone()));
+        self.receiver.state.with_mut(|s| s.error = Some(err));
     }
 }

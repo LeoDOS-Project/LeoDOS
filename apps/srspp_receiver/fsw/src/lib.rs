@@ -34,7 +34,7 @@ pub extern "C" fn SRSPP_RECEIVER_AppMain() {
         let local_addr = SocketAddr::new_ipv4(LOCAL_IP, LOCAL_PORT)?;
         let remote_addr = SocketAddr::new_ipv4(REMOTE_IP, REMOTE_PORT)?;
         let datalink = UdpDatalink::bind(local_addr, remote_addr)?;
-        let network = PointToPoint::new(datalink);
+        let mut network = PointToPoint::new(datalink);
 
         let config = ReceiverConfig {
             local_address: Address::satellite(0, 2),
@@ -46,7 +46,7 @@ pub extern "C" fn SRSPP_RECEIVER_AppMain() {
         };
 
         let receiver: SrsppReceiver<Error> = SrsppReceiver::new(config);
-        let (mut handle, mut driver) = receiver.split::<_, 512>(network);
+        let (mut handle, mut driver) = receiver.split();
 
         let recv_task = async {
             let mut buf = [0u8; 8192];
@@ -63,7 +63,7 @@ pub extern "C" fn SRSPP_RECEIVER_AppMain() {
             }
         };
 
-        let _ = join(recv_task, driver.run()).await;
+        let _ = join(recv_task, driver.run::<512>(&mut network)).await;
 
         Ok(())
     });

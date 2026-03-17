@@ -4,10 +4,10 @@ use core::task::Poll;
 use zerocopy::Immutable;
 use zerocopy::IntoBytes;
 
+use futures::FutureExt;
+
 use leodos_libcfs::cfe::duration::Duration;
 use leodos_libcfs::cfe::time::SysTime;
-use leodos_libcfs::runtime::select_either::Either;
-use leodos_libcfs::runtime::select_either::select_either;
 use leodos_libcfs::runtime::time::sleep;
 
 use crate::application::spacecomp::io::writer::MessageSender;
@@ -46,152 +46,6 @@ pub(super) struct SenderState<E, const WIN: usize, const BUF: usize, const MTU: 
     pub(crate) closed: bool,
     /// First error encountered, propagated to the handle.
     pub(crate) error: Option<TransportError<E>>,
-}
-
-// ── Shared free functions used by both SrsppSenderDriver and SrsppNodeDriver ──
-
-/// Sends all pending transmit actions over the link.
-pub(super) async fn drive_transmits<
-    E: Clone,
-    L: NetworkWrite<Error = E> + NetworkRead<Error = E>,
-    P: RtoPolicy,
-    const WIN: usize,
-    const BUF: usize,
-    const MTU: usize,
->(
-    state: &SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
-    tx_buf: &mut [u8],
-    link: &mut L,
-    rto: &P,
-) -> Result<(), TransportError<E>> {
-    let now = SysTime::now();
-
-    let (transmits, cfg_clone): (heapless::Vec<SequenceCount, WIN>, SenderConfig) =
-        state.with(|s| {
-            let t = s
-                .actions
-                .iter()
-                .filter_map(|a| match a {
-                    SenderAction::Transmit { seq, .. } => Some(*seq),
-                    _ => None,
-                })
-                .collect();
-            (t, s.machine.config().clone())
-        });
-
-    for seq in transmits {
-        let packet_len = state.with(|s| {
-            if let Some(info) = s.machine.get_payload(seq) {
-                let pkt = SrsppDataPacket::builder()
-                    .buffer(tx_buf)
-                    .source_address(cfg_clone.source_address)
-                    .target(info.target)
-                    .apid(cfg_clone.apid)
-                    .function_code(cfg_clone.function_code)
-                    .sequence_count(seq)
-                    .sequence_flag(info.flags)
-                    .payload_len(info.payload.len())
-                    .build()
-                    .map_err(TransportError::Packet)?;
-                pkt.payload.copy_from_slice(info.payload);
-                Ok::<_, TransportError<E>>(Some(SrsppDataPacket::HEADER_SIZE + info.payload.len()))
-            } else {
-                Ok::<_, TransportError<E>>(None)
-            }
-        })?;
-
-        if let Some(packet_len) = packet_len {
-            link.write(&tx_buf[..packet_len])
-                .await
-                .map_err(TransportError::Network)?;
-
-            let rto_dur = Duration::from_millis(rto.rto_ticks(now.seconds()));
-
-            state.with_mut(|s| {
-                s.machine.mark_transmitted(seq);
-                s.timers.start(seq, now + SysTime::from(rto_dur));
-            });
-        }
-    }
-
-    state.with_mut(|s| {
-        for action in s.actions.iter() {
-            let &SenderAction::StopTimer { seq } = action else {
-                continue;
-            };
-            s.timers.stop(seq);
-        }
-    });
-
-    Ok(())
-}
-
-/// Processes a received ACK packet and updates sender state.
-pub(super) fn drive_ack<E: Clone, const WIN: usize, const BUF: usize, const MTU: usize>(
-    state: &SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
-    packet: &[u8],
-) -> Result<(), TransportError<E>> {
-    if let Ok(SrsppType::Ack) = SrsppPacket::parse(packet).and_then(|p| p.srspp_type()) {
-        if let Ok(ack) = SrsppAckPacket::parse(packet) {
-            state.with_mut(|s| {
-                s.machine.handle(
-                    SenderEvent::AckReceived {
-                        cumulative_ack: ack.ack_payload.cumulative_ack(),
-                        selective_bitmap: ack.ack_payload.selective_ack_bitmap(),
-                    },
-                    &mut s.actions,
-                )?;
-
-                for action in s.actions.iter() {
-                    let &SenderAction::StopTimer { seq } = action else {
-                        continue;
-                    };
-                    s.timers.stop(seq);
-                }
-                Ok::<(), TransportError<E>>(())
-            })?;
-        }
-    }
-    Ok(())
-}
-
-/// Processes expired retransmission timers and retransmits.
-pub(super) async fn drive_sender_timeouts<
-    E: Clone,
-    L: NetworkWrite<Error = E> + NetworkRead<Error = E>,
-    P: RtoPolicy,
-    const WIN: usize,
-    const BUF: usize,
-    const MTU: usize,
->(
-    state: &SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
-    tx_buf: &mut [u8],
-    link: &mut L,
-    rto: &P,
-) -> Result<(), TransportError<E>> {
-    let now = SysTime::now();
-
-    for seq in state.with_mut(|s| s.timers.expired(now).collect::<heapless::Vec<_, WIN>>()) {
-        state.with_mut(|s| {
-            s.machine.handle(
-                SenderEvent::RetransmitTimeout {
-                    seq: SequenceCount::from(seq),
-                },
-                &mut s.actions,
-            )
-        })?;
-
-        drive_transmits(state, tx_buf, link, rto).await?;
-    }
-
-    Ok(())
-}
-
-/// Returns the earliest sender retransmission deadline.
-pub(super) fn sender_next_deadline<E, const WIN: usize, const BUF: usize, const MTU: usize>(
-    state: &SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
-) -> Option<SysTime> {
-    state.with(|s| s.timers.next_deadline())
 }
 
 // ── Channel and driver ──
@@ -241,13 +95,12 @@ impl<E: Clone, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize
     }
 
     /// Splits into a handle for sending and a driver for I/O.
-    pub fn split<L: NetworkWrite<Error = E> + NetworkRead<Error = E>, P: RtoPolicy>(
+    pub fn split<P: RtoPolicy>(
         &self,
-        link: L,
         rto_policy: P,
     ) -> (
         SrsppTxHandle<'_, E, S, R, WIN, BUF, MTU>,
-        SrsppSenderDriver<'_, L, P, E, S, R, WIN, BUF, MTU>,
+        SrsppSenderDriver<'_, P, E, S, R, WIN, BUF, MTU>,
     ) {
         (
             SrsppTxHandle {
@@ -255,15 +108,7 @@ impl<E: Clone, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize
                 dtn: &self.dtn,
                 origin: self.origin,
             },
-            SrsppSenderDriver {
-                link,
-                rto_policy,
-                sender: &self.state,
-                dtn: &self.dtn,
-                origin: self.origin,
-                recv_buffer: [0u8; MTU],
-                tx_buffer: [0u8; MTU],
-            },
+            SrsppSenderDriver::new(rto_policy, &self.state, &self.dtn, self.origin),
         )
     }
 }
@@ -271,7 +116,6 @@ impl<E: Clone, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize
 /// Driver that handles I/O and DTN drain. Runs as a concurrent task.
 pub struct SrsppSenderDriver<
     'a,
-    L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>,
     P: RtoPolicy,
     E,
     S: MessageStore,
@@ -280,86 +124,181 @@ pub struct SrsppSenderDriver<
     const BUF: usize,
     const MTU: usize,
 > {
-    link: L,
     rto_policy: P,
-    sender: &'a SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
+    pub(super) sender: &'a SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
     dtn: &'a SyncRefCell<DtnContext<S, R>>,
     origin: Address,
-    recv_buffer: [u8; MTU],
     tx_buffer: [u8; MTU],
 }
 
 impl<
     'a,
-    L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>,
     P: RtoPolicy,
+    E,
     S: MessageStore,
     R: Reachable,
     const WIN: usize,
     const BUF: usize,
     const MTU: usize,
-> SrsppSenderDriver<'a, L, P, <L as NetworkWrite>::Error, S, R, WIN, BUF, MTU>
-where
-    <L as NetworkWrite>::Error: Clone,
+> SrsppSenderDriver<'a, P, E, S, R, WIN, BUF, MTU>
 {
-    /// Run the driver loop.
-    pub async fn run(&mut self) -> Result<(), TransportError<<L as NetworkWrite>::Error>> {
-        let state = self.sender;
-        loop {
-            let pending = self.dtn.with(|d| d.store.pending_targets() != 0);
-            if state.with(|s| s.closed && s.machine.is_idle()) && !pending {
-                return Ok(());
-            }
+    pub(super) fn new(
+        rto_policy: P,
+        sender: &'a SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
+        dtn: &'a SyncRefCell<DtnContext<S, R>>,
+        origin: Address,
+    ) -> Self {
+        Self {
+            rto_policy,
+            sender,
+            dtn,
+            origin,
+            tx_buffer: [0u8; MTU],
+        }
+    }
+}
 
-            // Drain stored messages for reachable targets
-            self.drain_stored(state).await?;
+impl<
+    'a,
+    P: RtoPolicy,
+    E: Clone,
+    S: MessageStore,
+    R: Reachable,
+    const WIN: usize,
+    const BUF: usize,
+    const MTU: usize,
+> SrsppSenderDriver<'a, P, E, S, R, WIN, BUF, MTU>
+{
+    /// Sends all pending transmit actions over the link.
+    pub(super) async fn transmit(
+        &mut self,
+        link: &mut impl NetworkWrite<Error = E>,
+    ) -> Result<(), TransportError<E>> {
+        let now = SysTime::now();
 
-            if let Err(e) =
-                drive_transmits(state, &mut self.tx_buffer, &mut self.link, &self.rto_policy).await
-            {
-                state.with_mut(|s| s.error = Some(e.clone()));
-                return Err(e);
-            }
+        let (transmits, cfg_clone) = self.sender.with(|s| {
+            let t = s
+                .actions
+                .iter()
+                .filter_map(|a| match a {
+                    SenderAction::Transmit { seq, .. } => Some(*seq),
+                    _ => None,
+                })
+                .collect::<heapless::Vec<_, WIN>>();
+            (t, s.machine.config().clone())
+        });
 
-            let timeout = duration_until(sender_next_deadline(state));
-
-            match select_either(self.link.read(&mut self.recv_buffer), sleep(timeout)).await {
-                Either::Left(result) => match result {
-                    Ok(len) => {
-                        let packet = &self.recv_buffer[..len];
-                        if let Err(e) = drive_ack(state, packet) {
-                            state.with_mut(|s| s.error = Some(e.clone()));
-                            return Err(e);
-                        }
-                    }
-                    Err(e) => {
-                        let err = TransportError::Network(e);
-                        state.with_mut(|s| s.error = Some(err.clone()));
-                        return Err(err);
-                    }
-                },
-                Either::Right(()) => {
-                    if let Err(e) = drive_sender_timeouts(
-                        state,
-                        &mut self.tx_buffer,
-                        &mut self.link,
-                        &self.rto_policy,
-                    )
-                    .await
-                    {
-                        state.with_mut(|s| s.error = Some(e.clone()));
-                        return Err(e);
-                    }
+        for seq in transmits {
+            let packet_len = self.sender.with(|s| {
+                if let Some(info) = s.machine.get_payload(seq) {
+                    let pkt = SrsppDataPacket::builder()
+                        .buffer(&mut self.tx_buffer)
+                        .source_address(cfg_clone.source_address)
+                        .target(info.target)
+                        .apid(cfg_clone.apid)
+                        .function_code(cfg_clone.function_code)
+                        .sequence_count(seq)
+                        .sequence_flag(info.flags)
+                        .payload_len(info.payload.len())
+                        .build()
+                        .map_err(TransportError::Packet)?;
+                    pkt.payload.copy_from_slice(info.payload);
+                    Ok::<_, TransportError<E>>(Some(
+                        SrsppDataPacket::HEADER_SIZE + info.payload.len(),
+                    ))
+                } else {
+                    Ok::<_, TransportError<E>>(None)
                 }
+            })?;
+
+            if let Some(packet_len) = packet_len {
+                link.write(&self.tx_buffer[..packet_len])
+                    .await
+                    .map_err(TransportError::Network)?;
+
+                let rto_dur = Duration::from_millis(self.rto_policy.rto_ticks(now.seconds()));
+
+                self.sender.with_mut(|s| {
+                    s.machine.mark_transmitted(seq);
+                    s.timers.start(seq, now + SysTime::from(rto_dur));
+                });
             }
         }
+
+        self.sender.with_mut(|s| {
+            for action in s.actions.iter() {
+                let &SenderAction::StopTimer { seq } = action else {
+                    continue;
+                };
+                s.timers.stop(seq);
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Processes a received ACK packet and updates sender state.
+    pub(super) fn process_ack(&mut self, packet: &[u8]) -> Result<(), TransportError<E>> {
+        if let Ok(SrsppType::Ack) = SrsppPacket::parse(packet).and_then(|p| p.srspp_type()) {
+            if let Ok(ack) = SrsppAckPacket::parse(packet) {
+                self.sender.with_mut(|s| {
+                    s.machine.handle(
+                        SenderEvent::AckReceived {
+                            cumulative_ack: ack.ack_payload.cumulative_ack(),
+                            selective_bitmap: ack.ack_payload.selective_ack_bitmap(),
+                        },
+                        &mut s.actions,
+                    )?;
+
+                    for action in s.actions.iter() {
+                        let &SenderAction::StopTimer { seq } = action else {
+                            continue;
+                        };
+                        s.timers.stop(seq);
+                    }
+                    Ok::<(), TransportError<E>>(())
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Processes expired retransmission timers and retransmits.
+    pub(super) async fn handle_timeouts(
+        &mut self,
+        link: &mut impl NetworkWrite<Error = E>,
+    ) -> Result<(), TransportError<E>> {
+        let now = SysTime::now();
+
+        for seq in self
+            .sender
+            .with_mut(|s| s.timers.expired(now).collect::<heapless::Vec<_, WIN>>())
+        {
+            self.sender.with_mut(|s| {
+                s.machine.handle(
+                    SenderEvent::RetransmitTimeout {
+                        seq: SequenceCount::from(seq),
+                    },
+                    &mut s.actions,
+                )
+            })?;
+
+            self.transmit(link).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Returns the earliest sender retransmission deadline.
+    pub(super) fn next_deadline(&self) -> Option<SysTime> {
+        self.sender.with(|s| s.timers.next_deadline())
     }
 
     /// Drain stored messages into the SRSPP state machine.
-    async fn drain_stored(
+    pub(super) async fn drain_stored(
         &mut self,
-        state: &SyncRefCell<SenderState<<L as NetworkWrite>::Error, WIN, BUF, MTU>>,
-    ) -> Result<(), TransportError<<L as NetworkWrite>::Error>> {
+        link: &mut impl NetworkWrite<Error = E>,
+    ) -> Result<(), TransportError<E>> {
         self.dtn
             .with_mut(|d| d.store.expire(SysTime::now().seconds()));
 
@@ -381,8 +320,9 @@ where
             }
 
             loop {
-                let (bytes, window) =
-                    state.with(|s| (s.machine.available_bytes(), s.machine.available_window()));
+                let (bytes, window) = self
+                    .sender
+                    .with(|s| (s.machine.available_bytes(), s.machine.available_window()));
                 if window == 0 {
                     break;
                 }
@@ -398,7 +338,7 @@ where
                 else {
                     break;
                 };
-                state.with_mut(|s| {
+                self.sender.with_mut(|s| {
                     s.machine.handle(
                         SenderEvent::SendRequest {
                             target,
@@ -409,10 +349,63 @@ where
                 })?;
             }
 
-            drive_transmits(state, &mut self.tx_buffer, &mut self.link, &self.rto_policy).await?;
+            self.transmit(link).await?;
         }
 
         Ok(())
+    }
+
+    /// Run the driver loop.
+    pub async fn run(
+        &mut self,
+        link: &mut (impl NetworkWrite<Error = E> + NetworkRead<Error = E>),
+    ) -> Result<(), TransportError<E>> {
+        let mut recv_buffer = [0u8; MTU];
+        loop {
+            let pending = self.dtn.with(|d| d.store.pending_targets() != 0);
+            if self.sender.with(|s| s.closed && s.machine.is_idle()) && !pending {
+                return Ok(());
+            }
+
+            self.drain_stored(link).await?;
+
+            if let Err(e) = self.transmit(link).await {
+                self.sender.with_mut(|s| s.error = Some(e.clone()));
+                return Err(e);
+            }
+
+            let timeout = duration_until(self.next_deadline());
+
+            let event = {
+                let read_fut = link.read(&mut recv_buffer).fuse();
+                let sleep_fut = sleep(timeout).fuse();
+                pin_utils::pin_mut!(read_fut, sleep_fut);
+                futures::select_biased! {
+                    r = read_fut => Some(r),
+                    _ = sleep_fut => None,
+                }
+            };
+
+            match event {
+                Some(Ok(len)) => {
+                    if let Err(e) = self.process_ack(&recv_buffer[..len]) {
+                        self.sender.with_mut(|s| s.error = Some(e.clone()));
+                        return Err(e);
+                    }
+                }
+                Some(Err(e)) => {
+                    let err = TransportError::Network(e);
+                    self.sender.with_mut(|s| s.error = Some(err.clone()));
+                    return Err(err);
+                }
+                None => {
+                    if let Err(e) = self.handle_timeouts(link).await {
+                        self.sender.with_mut(|s| s.error = Some(e.clone()));
+                        return Err(e);
+                    }
+                }
+            }
+        }
     }
 }
 

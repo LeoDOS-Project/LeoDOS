@@ -33,6 +33,8 @@ use leodos_protocols::transport::srspp::api::cfs::TransportError;
 use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
 use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
 use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
+use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
+use leodos_protocols::transport::srspp::dtn::NoStore;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverMachine;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
@@ -53,7 +55,7 @@ mod roles;
 pub type RouterError = routing::RouterError<CfsError>;
 
 pub type RxHandle<'a> = SrsppRxHandle<'a, RouterError, ReceiverMachine<8, 4096, 8192>, 4>;
-pub type TxHandle<'a> = SrsppTxHandle<'a, RouterError, 8, 4096, 512>;
+pub type TxHandle<'a> = SrsppTxHandle<'a, RouterError, NoStore, AlwaysReachable, 8, 4096, 512>;
 
 pub struct Buffers {
     pub recv: [u8; 8192],

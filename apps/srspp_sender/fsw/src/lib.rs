@@ -13,6 +13,8 @@ use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::api::cfs::SrsppSender;
+use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
+use leodos_protocols::transport::srspp::dtn::NoStore;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
 use leodos_protocols::transport::srspp::rto::FixedRto;
 
@@ -52,11 +54,12 @@ pub extern "C" fn SRSPP_SENDER_AppMain() {
         let local_addr = SocketAddr::new_ipv4(LOCAL_IP, LOCAL_PORT)?;
         let remote_addr = SocketAddr::new_ipv4(REMOTE_IP, REMOTE_PORT)?;
         let datalink = UdpDatalink::bind(local_addr, remote_addr)?;
-        let network = PointToPoint::new(datalink);
+        let mut network = PointToPoint::new(datalink);
 
         let target = Address::satellite(0, 2);
+        let origin = Address::satellite(0, 1);
         let config = SenderConfig {
-            source_address: Address::satellite(0, 1),
+            source_address: origin,
             apid: Apid::new(0x50).unwrap(),
             function_code: 0,
             rto_ticks: 1000,
@@ -64,8 +67,8 @@ pub extern "C" fn SRSPP_SENDER_AppMain() {
             header_overhead: leodos_protocols::transport::srspp::packet::SrsppDataPacket::HEADER_SIZE,
         };
 
-        let sender: SrsppSender<Error> = SrsppSender::new(config);
-        let (mut handle, mut driver) = sender.split(network, FixedRto::new(1000));
+        let sender = SrsppSender::new(config, origin, NoStore, AlwaysReachable);
+        let (mut handle, mut driver) = sender.split(FixedRto::new(1000));
 
         let send_task = async {
             let mut counter: u32 = 0;
@@ -87,7 +90,7 @@ pub extern "C" fn SRSPP_SENDER_AppMain() {
             }
         };
 
-        let _ = join(send_task, driver.run()).await;
+        let _ = join(send_task, driver.run(&mut network)).await;
 
         Ok(())
     });

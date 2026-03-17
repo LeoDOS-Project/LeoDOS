@@ -22,6 +22,8 @@ use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::api::cfs::SrsppSender;
+use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
+use leodos_protocols::transport::srspp::dtn::NoStore;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
 use leodos_protocols::transport::srspp::packet::SrsppDataPacket;
 use leodos_protocols::transport::srspp::rto::FixedRto;
@@ -228,7 +230,7 @@ pub extern "C" fn WILDFIRE_AppMain() {
         let router_send = MsgId::from_local_cmd(bindings::WILDFIRE_CMD_TOPICID as u16);
         let router_recv = MsgId::from_local_tlm(bindings::WILDFIRE_HK_TLM_TOPICID as u16);
         let sb = SbDatalink::new("WF_SB", 8, router_recv, router_send)?;
-        let network = PointToPoint::new(sb);
+        let mut network = PointToPoint::new(sb);
 
         let apid = Apid::new(bindings::WILDFIRE_APID as u16).unwrap();
         let sender_config = SenderConfig::builder()
@@ -239,8 +241,9 @@ pub extern "C" fn WILDFIRE_AppMain() {
             .max_retransmits(3)
             .header_overhead(SrsppDataPacket::HEADER_SIZE)
             .build();
-        let sender: SrsppSender<CfsError> = SrsppSender::new(sender_config);
-        let (mut tx, mut driver) = sender.split(network, FixedRto::new(RTO_MS));
+        let origin = Address::satellite(0, 1);
+        let sender = SrsppSender::new(sender_config, origin, NoStore, AlwaysReachable);
+        let (mut tx, mut driver) = sender.split(FixedRto::new(RTO_MS));
 
         // Hardware
         let mut camera: Option<SpiCamera> = Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8)
@@ -340,7 +343,7 @@ pub extern "C" fn WILDFIRE_AppMain() {
             }
         };
 
-        let _ = join(workflow, driver.run()).await;
+        let _ = join(workflow, driver.run(&mut network)).await;
 
         Ok(())
     });
