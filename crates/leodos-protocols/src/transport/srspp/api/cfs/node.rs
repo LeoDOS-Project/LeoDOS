@@ -3,7 +3,9 @@ use leodos_libcfs::runtime::select_either::Either;
 use leodos_libcfs::runtime::select_either::select_either;
 use leodos_libcfs::runtime::time::sleep;
 
-use crate::network::{NetworkRead, NetworkWrite};
+use crate::network::NetworkRead;
+use crate::network::NetworkWrite;
+use crate::network::isl::address::Address;
 use crate::transport::srspp::api::cfs::TransportError;
 use crate::transport::srspp::machine::receiver::ReceiverActions;
 use crate::transport::srspp::machine::receiver::ReceiverBackend;
@@ -20,11 +22,20 @@ use heapless::index_map::FnvIndexMap;
 
 use super::TimerSet;
 use super::receiver::MultiReceiverState;
-use super::receiver::{SrsppRxHandle, drive_data, drive_receiver_timeouts, receiver_next_deadline};
-use super::sender::{
-    SenderState, SrsppTxHandle, drive_ack, drive_sender_timeouts, drive_transmits, duration_until,
-    sender_next_deadline,
-};
+use super::receiver::SrsppRxHandle;
+use super::receiver::drive_data;
+use super::receiver::drive_receiver_timeouts;
+use super::receiver::receiver_next_deadline;
+use super::sender::DtnContext;
+use super::sender::SenderState;
+use super::sender::SrsppTxHandle;
+use super::sender::drive_ack;
+use super::sender::drive_sender_timeouts;
+use super::sender::drive_transmits;
+use super::sender::duration_until;
+use super::sender::sender_next_deadline;
+use crate::transport::srspp::dtn::AlwaysReachable;
+use crate::transport::srspp::dtn::NoStore;
 
 /// Combined SRSPP sender and receiver over a single link.
 pub struct SrsppNode<
@@ -39,6 +50,8 @@ pub struct SrsppNode<
     pub(super) sender: SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
     /// Interior-mutable multi-stream receiver state.
     pub(super) receiver: SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    /// No-op DTN context (node doesn't use DTN).
+    noop_dtn: SyncRefCell<DtnContext<NoStore, AlwaysReachable>>,
 }
 
 impl<
@@ -69,6 +82,10 @@ impl<
                 closed: false,
                 error: None,
             }),
+            noop_dtn: SyncRefCell::new(DtnContext {
+                store: NoStore,
+                reachable: AlwaysReachable,
+            }),
         }
     }
 
@@ -79,7 +96,7 @@ impl<
         rto_policy: P,
     ) -> (
         SrsppRxHandle<'_, E, R, MAX_STREAMS>,
-        SrsppTxHandle<'_, E, WIN, BUF, MTU>,
+        SrsppTxHandle<'_, E, NoStore, AlwaysReachable, WIN, BUF, MTU>,
         SrsppNodeDriver<'_, L, P, E, R, WIN, BUF, MTU, MAX_STREAMS>,
     ) {
         (
@@ -88,6 +105,8 @@ impl<
             },
             SrsppTxHandle {
                 sender: &self.sender,
+                dtn: &self.noop_dtn,
+                origin: Address::ground(0),
             },
             SrsppNodeDriver {
                 link,
@@ -203,20 +222,21 @@ where
         &mut self,
         len: usize,
     ) -> Result<(), TransportError<<L as NetworkWrite>::Error>> {
-        let Self {
-            recv_buffer,
-            ack_buffer,
-            link,
-            node,
-            ..
-        } = self;
-        let packet = &recv_buffer[..len];
+        let packet = &self.recv_buffer[..len];
         let Ok(parsed) = SrsppPacket::parse(packet) else {
             return Ok(());
         };
         match parsed.srspp_type() {
-            Ok(SrsppType::Data) => drive_data(&node.receiver, packet, ack_buffer, link).await,
-            Ok(SrsppType::Ack) => drive_ack(&node.sender, packet),
+            Ok(SrsppType::Data) => {
+                drive_data(
+                    &self.node.receiver,
+                    packet,
+                    &mut self.ack_buffer,
+                    &mut self.link,
+                )
+                .await
+            }
+            Ok(SrsppType::Ack) => drive_ack(&self.node.sender, packet),
             Err(_) => Ok(()),
         }
     }

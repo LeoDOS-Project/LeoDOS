@@ -25,9 +25,9 @@ use zerocopy::byteorder::network_endian;
 #[repr(u8)]
 pub enum SrsppType {
     /// Data packet carrying application payload.
-    Data = 0x00,
+    Data = 0b0,
     /// Acknowledgment packet.
-    Ack = 0x01,
+    Ack = 0b1,
 }
 
 impl TryFrom<u8> for SrsppType {
@@ -111,10 +111,6 @@ impl AckPayload {
 }
 
 /// An SRSPP packet of unknown type (data or ack).
-///
-/// Parse with [`SrsppPacket::parse`] to inspect the type via
-/// [`srspp_type`](SrsppPacket::srspp_type), then downcast to
-/// [`SrsppDataPacket`] or [`SrsppAckPacket`].
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable)]
 pub struct SrsppPacket {

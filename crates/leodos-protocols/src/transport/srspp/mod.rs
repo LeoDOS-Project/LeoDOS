@@ -15,3 +15,5 @@ pub mod api;
 pub mod packet;
 /// Retransmission timeout policies.
 pub mod rto;
+/// Delay-tolerant delivery traits.
+pub mod dtn;

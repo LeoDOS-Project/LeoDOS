@@ -7,7 +7,9 @@ mod sender;
 
 pub use node::{SrsppNode, SrsppNodeDriver};
 pub use receiver::{DeliveryToken, SrsppReceiver, SrsppReceiverDriver, SrsppRxHandle};
-pub use sender::{SrsppSender, SrsppSenderDriver, SrsppTxHandle};
+pub use sender::{
+    SimpleSender, SrsppSender, SrsppSenderDriver, SrsppTxHandle,
+};
 
 use leodos_libcfs::cfe::time::SysTime;
 

@@ -74,30 +74,23 @@ pub(super) async fn drive_data<
             let flags = data.primary.sequence_flag();
 
             state.with_mut(|s| {
-                let MultiReceiverState {
-                    config,
-                    streams,
-                    actions,
-                    ..
-                } = s;
-
-                if !streams.contains_key(&source_address) {
+                if !s.streams.contains_key(&source_address) {
                     let stream_state = StreamState {
-                        machine: R::new(config.clone(), source_address),
+                        machine: R::new(s.config.clone(), source_address),
                         ack_deadline: None,
                         progress_deadline: None,
                     };
-                    let _ = streams.insert(source_address, stream_state);
+                    let _ = s.streams.insert(source_address, stream_state);
                 }
 
-                if let Some(stream) = streams.get_mut(&source_address) {
+                if let Some(stream) = s.streams.get_mut(&source_address) {
                     stream.machine.handle(
                         ReceiverEvent::DataReceived {
                             seq,
                             flags,
                             payload: &data.payload,
                         },
-                        actions,
+                        &mut s.actions,
                     )?;
                 }
                 Ok::<(), TransportError<E>>(())
@@ -134,12 +127,9 @@ pub(super) async fn drive_receiver_timeouts<
 
     for source in ack_expired {
         state.with_mut(|s| {
-            let MultiReceiverState {
-                streams, actions, ..
-            } = s;
-            if let Some(stream) = streams.get_mut(&source) {
+            if let Some(stream) = s.streams.get_mut(&source) {
                 stream.ack_deadline = None;
-                stream.machine.handle(ReceiverEvent::AckTimeout, actions)?;
+                stream.machine.handle(ReceiverEvent::AckTimeout, &mut s.actions)?;
             }
             Ok::<(), TransportError<E>>(())
         })?;
@@ -160,14 +150,9 @@ pub(super) async fn drive_receiver_timeouts<
 
     for source in progress_expired {
         state.with_mut(|s| {
-            let MultiReceiverState {
-                streams, actions, ..
-            } = s;
-            if let Some(stream) = streams.get_mut(&source) {
+            if let Some(stream) = s.streams.get_mut(&source) {
                 stream.progress_deadline = None;
-                stream
-                    .machine
-                    .handle(ReceiverEvent::ProgressTimeout, actions)?;
+                stream.machine.handle(ReceiverEvent::ProgressTimeout, &mut s.actions)?;
             }
             Ok::<(), TransportError<E>>(())
         })?;
