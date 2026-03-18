@@ -245,7 +245,12 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Simulation',
-      items: ['simulation/simulator'],
+      items: [
+        'simulation/overview',
+        'simulation/architecture',
+        'simulation/tiered-fidelity',
+        'simulation/sensor-simulation',
+      ],
     },
     {
       type: 'category',
