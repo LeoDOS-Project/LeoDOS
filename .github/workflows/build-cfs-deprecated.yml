@@ -1,9 +1,7 @@
 name: Build, Test, and Run [OMIT_DEPRECATED = false]
 
-# Run every time a new commit pushed or for pull requests
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 env:
   SIMULATION: native

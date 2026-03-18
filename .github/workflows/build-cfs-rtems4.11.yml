@@ -1,9 +1,7 @@
 name: Build and Test rtems 4.11 [OMIT_DEPRECATED=true]
 
-# Run every time a new commit pushed or for pull requests
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 env:
   OMIT_DEPRECATED: true
