@@ -18,7 +18,7 @@ The simulation models the onboard buses that connect the flight computer to its 
 The radio transceiver is connected to the flight computer over UART. The simulation replaces the RF side of the radio with UDP sockets:
 
 - **Ground link** — a satellite communicates with a ground station when it has line of sight. The simulation models both uplink (commands from ground) and downlink (telemetry to ground) as separate UDP socket pairs.
-- **Inter-satellite link** — each satellite has a proximity radio for communication with its neighbors. In the real system, these would be optical or RF links between adjacent satellites. The simulation models them as UDP connections between satellite instances.
+- **Inter-satellite link** — communication between neighboring satellites in the constellation. In the real system, these would be optical or RF links. The simulation models them as UDP connections between satellite instances.
 
 ## Not Yet Supported
 
