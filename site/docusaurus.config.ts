@@ -25,8 +25,8 @@ const config: Config = {
     }],
   ],
 
-  url: 'https://your-docusaurus-site.example.com',
-  baseUrl: '/',
+  url: 'https://leodos-project.github.io',
+  baseUrl: '/LeoDOS/',
 
   onBrokenLinks: 'warn',
 
