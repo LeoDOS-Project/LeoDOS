@@ -251,9 +251,11 @@ const sidebars: SidebarsConfig = {
       label: 'Simulation',
       items: [
         'simulation/overview',
-        'simulation/architecture',
-        'simulation/tiered-fidelity',
-        'simulation/sensor-simulation',
+        'simulation/orbital-mechanics',
+        'simulation/sensors',
+        'simulation/communication',
+        'simulation/earth-observation',
+        'simulation/infrastructure',
       ],
     },
     {

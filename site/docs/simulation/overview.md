@@ -1,9 +1,11 @@
 # Overview
 
-The LeoDOS simulator runs a full constellation — flight software, communication stack, and sensor payloads — on a development machine using NASA's NOS3 (NASA Operational Simulator for Small Satellites) framework. Each simulated satellite runs real cFS apps inside a Docker container, connected to hardware simulators through the NOS Engine transport layer. The same Rust binary that runs in simulation also runs on the flight processor — only the [PSP](/cfs/psp) changes.
+LeoDOS uses NASA's NOS3 (NASA Operational Simulator for Small Satellites) to simulate a full satellite constellation on a development machine. The same cFS flight software that runs in simulation also runs on the flight processor — only the hardware abstraction layer changes.
 
-Simulating a 100-satellite constellation at full fidelity would require 100 instances of cFS, each with its own sensor suite. This is impractical on a single machine. LeoDOS uses a tiered fidelity model that runs full simulation on a handful of satellites and lightweight proxies for the rest, keeping resource usage manageable while preserving realistic network behavior.
+The simulation environment models five categories of spacecraft behavior:
 
-- [Architecture](architecture) — NOS3 components, how cFS apps connect to simulated hardware
-- [Tiered Fidelity](tiered-fidelity) — Full, Lite, and Ghost node tiers for scalable constellation simulation
-- [Sensor Simulation](sensor-simulation) — synthetic sensor data generation and injection for workflow testing
+- [Orbital Mechanics](orbital-mechanics) — orbit propagation, attitude dynamics, and the space environment
+- [Sensors and Actuators](sensors) — attitude determination, navigation, power, propulsion, and imaging
+- [Communication](communication) — ground links, inter-satellite links, and hardware bus emulation
+- [Earth Observation](earth-observation) — synthetic sensor data for workflow testing
+- [Infrastructure](infrastructure) — Docker setup, NOS Engine transport, and build workflow
