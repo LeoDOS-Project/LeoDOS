@@ -486,3 +486,9 @@ packet. The cumulative ACK can only reach the EOS sequence number after all prio
 data is received. When the sender sees `cum=3`, it knows all data packets (0, 1, 2)
 and the EOS were received - the transfer is complete. This requires no special
 logic; the existing ACK mechanism handles it naturally.
+
+<!-- TODO: Document SRSPP behavior during network partitions (e.g., solar flare
+     knocks out a segment of the torus). Does OrbitAwareRto back off until the
+     next contact window, or does the sender eventually drop the stream after
+     max retransmits? Document the interaction between partition duration and
+     max_retransmits × RTO. -->
