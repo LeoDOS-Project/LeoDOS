@@ -1,34 +1,25 @@
 # DWT
 
-Wavelet-based image data compression (CCSDS 122.0-B-2) for onboard image compression. The algorithm decomposes an image into frequency subbands using a discrete wavelet transform, then encodes the coefficients progressively from the most significant bits to the least significant. This progressive encoding means that truncating the bitstream at any point produces a lower-quality but valid image — the more bits transmitted, the higher the quality.
+Wavelet-based image compression (CCSDS 122.0-B-2) for onboard use. DWT compresses images by separating them into coarse structure and fine detail, then encoding the most important information first. This means the compressed bitstream can be truncated at any point to produce a lower-quality but valid image — transmit more bits for higher quality, fewer bits when bandwidth is scarce.
 
-## Integer 5/3 Wavelet Transform
+## Why It Works
 
-LeoDOS implements the integer (5,3) lifting wavelet, which is lossless — the transform is perfectly invertible with no rounding error. The transform is applied in two dimensions (rows then columns) and repeated three times, producing a 3-level decomposition. Each level splits the image into four subbands:
+Images have structure at different scales. A photograph of a forest has large-scale features (the treeline against the sky) and fine-scale features (individual leaves). The large-scale features carry most of the visual information, while the fine details are often small values that compress well. DWT separates these scales, concentrating most of the image's information into a small number of important coefficients.
 
-- **LL** — low-frequency approximation (a smaller version of the original image)
-- **HL** — horizontal detail (vertical edges)
-- **LH** — vertical detail (horizontal edges)
-- **HH** — diagonal detail
+## How It Works
 
-After three levels, the image is represented as 10 subbands: LL3, HL3, LH3, HH3, HL2, LH2, HH2, HL1, LH1, HH1. Most of the image energy is concentrated in the LL3 subband; the detail subbands are sparse, which is what makes compression effective.
+The compressor processes an image in three steps:
 
-## Bit-Plane Encoder
+1. **Wavelet decomposition** — the image is split into four parts: a smaller, blurry version of the original (the approximation) and three detail images capturing horizontal edges, vertical edges, and diagonal texture. This splitting is repeated three times on the approximation, producing a hierarchy of 10 subbands. After decomposition, most of the image's energy is concentrated in the tiny top-level approximation — the detail subbands are mostly near-zero values.
 
-The wavelet coefficients are encoded using a bit-plane encoder (BPE) that processes coefficients from the most significant bit to the least. The image is divided into segments (strips of 8 rows), and each segment is encoded independently. For each coefficient, the sign and magnitude bits are written progressively.
+2. **Bit-plane encoding** — the coefficients are encoded starting from the most significant bits. The first few bits transmitted reconstruct the overall structure of the image; subsequent bits refine the details. This progressive ordering is what makes truncation work — every prefix of the bitstream is a valid, lower-quality image.
 
-This segment-based approach is important for onboard processing: each segment can be compressed independently within a fixed memory budget, fitting within the [bounded memory model](/cfs/mission/memory).
+3. **Segment processing** — the image is divided into strips of 8 rows, each compressed independently. This keeps the memory footprint fixed: each strip fits in a bounded working buffer on the flight [processor](/cfs/mission/processor), and a corrupted segment does not destroy the rest of the image.
 
-## Configuration
+## Lossless and Lossy
 
-| Parameter | Range | Description |
-|---|---|---|
-| Bits per sample | 2–16 | Dynamic range of the input image |
-| Segment size | 8-row strips | Independent compression units |
-| Signed samples | bool | Whether input values are signed |
+LeoDOS uses the integer (5,3) wavelet, which is perfectly invertible — no information is lost in the transform. The compressed output is lossless by default. For lossy compression at a target bit rate, the bitstream can simply be cut short: the progressive encoding ensures the image degrades gracefully rather than breaking.
 
-Image width and height must be multiples of 8.
+## Use in LeoDOS
 
-## Limitations
-
-The LeoDOS implementation is lossless only. The CCSDS 122.0-B-2 standard also defines a lossy mode using the (9,7) CDF wavelet with floating-point coefficients, which is not implemented. For lossy compression at a target bit rate, the lossless bitstream can be truncated — the progressive encoding ensures graceful degradation.
+DWT is used for compressing onboard camera imagery before downlink. A raw image might be megabytes; the wavelet-compressed version is significantly smaller with no visible quality loss in lossless mode, or controlled quality loss if truncated to fit a bandwidth budget.

@@ -1,45 +1,32 @@
 # Hyperspectral
 
-Lossless compression for multispectral and hyperspectral image cubes (CCSDS 123.0-B-2). Unlike [DWT](dwt) which compresses a single 2D image, this algorithm operates on 3D data — a stack of spectral bands where each band is a 2D image of the same scene at a different wavelength. It exploits both spatial correlation (neighboring pixels in the same band look similar) and spectral correlation (the same pixel across bands is highly correlated) to achieve compression ratios that single-band algorithms cannot match.
+Lossless compression for multispectral and hyperspectral image cubes (CCSDS 123.0-B-2). A hyperspectral image is not a single photograph — it is a stack of images of the same scene, each captured at a different wavelength. A sensor might produce 200 bands ranging from visible light through shortwave infrared. This is a huge amount of data, but it is highly redundant: the same pixel across different bands is strongly correlated, and neighboring pixels within a band look similar.
 
-## Prediction
+This compressor exploits both types of redundancy to achieve compression ratios that algorithms designed for single images (like [DWT](dwt) or [Rice](rice)) cannot match on this type of data.
 
-The compressor predicts each sample from its spatial and spectral neighbors, then encodes the prediction error (residual). Small residuals mean high compression.
+## Why It Works
 
-Two prediction modes are available:
+Consider a pixel in a vegetation scene. Its reflectance in band 100 is almost entirely predictable from its reflectance in bands 99, 98, and 97 — the spectral signature changes smoothly across wavelengths. Similarly, a pixel's value is predictable from its spatial neighbors in the same band — adjacent ground pixels tend to have similar reflectance.
 
-- **Full** — uses both directional weights (3 spatial neighbors: north, west, northwest) and spectral weights (up to 15 previous bands). This is the most effective mode when spatial structure varies across bands.
-- **Reduced** — uses spectral weights only (previous bands, no spatial neighbors). Simpler and faster, suitable when spatial correlation is weak or when minimizing computation.
+After predicting each pixel from its spectral and spatial neighbors, the prediction errors are small numbers near zero. Small numbers compress efficiently with the same Golomb-Rice coding used in [Rice](rice) compression.
 
-The predictor maintains a weight vector per band that is refined with each sample — the weights adapt to the local statistics of the image as compression proceeds.
+## How It Works
 
-## Local Sum Types
+The compressor processes the image cube one sample at a time, band by band:
 
-The predictor computes a local sum (a reference value) from neighboring samples. Four variants control which neighbors are used:
+1. **Predict** — for each pixel, compute a predicted value from its neighbors. The predictor uses a weighted combination of previous bands (spectral neighbors) and optionally surrounding pixels in the current band (spatial neighbors). The weights are not fixed — they adapt continuously as the compressor moves through the image, tracking changes in the local statistics.
 
-- **Wide neighbor** — uses horizontal neighbors on both sides
-- **Narrow neighbor** — uses only the left neighbor
-- **Wide column** — uses spectral neighbors on both sides
-- **Narrow column** — uses only the previous band
+2. **Compute residual** — subtract the prediction from the actual value. If the prediction is good, the residual is a small number near zero.
 
-The choice depends on the image structure and the encoding order.
+3. **Encode** — write the residual using an adaptive Golomb-Rice code. Each band maintains its own statistics, so the coder automatically adjusts to bands with different noise levels or dynamic ranges.
 
-## Entropy Coding
+## Prediction Modes
 
-Prediction residuals are encoded using a sample-adaptive Golomb–Rice coder. Each spectral band maintains its own accumulator and counter that track the statistics of recent residuals. The coder adapts its parameter (the number of bits used for the remainder) on every sample, so it tracks changes in image statistics without needing a separate training pass.
+Two modes control how much context the predictor uses:
 
-## Configuration
+- **Full** — uses both spatial neighbors (the pixels above, to the left, and diagonally above-left in the current band) and spectral neighbors (the same pixel in up to 15 previous bands). Most effective when the scene has spatial structure that varies across bands.
+- **Reduced** — uses only spectral neighbors, ignoring spatial context. Faster and simpler, suitable for sensors where the spatial resolution is low or the scene is relatively uniform.
 
-| Parameter | Range | Description |
-|---|---|---|
-| nx, ny, nz | — | Image dimensions (width, height, spectral bands) |
-| Dynamic range | 2–16 bits | Bits per sample |
-| Prediction bands (p) | 0–15 | Number of previous bands used for spectral prediction |
-| Prediction mode | Full / Reduced | Spatial + spectral or spectral only |
-| Local sum type | Wide/Narrow Neighbor/Column | Which neighbors contribute to the reference value |
-| Weight resolution (omega) | 4–19 | Precision of predictor weights |
-| Weight update interval | 2⁴–2¹¹ | How often weights are rescaled |
+## Use in LeoDOS
 
-## Limitations
-
-The LeoDOS implementation supports lossless compression only (no near-lossless quantization). Encoding order is band-sequential (BSQ) — each band is fully processed before the next. Band-interleaved orders (BIL, BIP) are not supported.
+Hyperspectral compression is used when a satellite carries a spectral imager — a sensor that captures tens to hundreds of wavelength bands. Without compression, a single hyperspectral scene can be gigabytes. The compressor reduces this to a fraction of the size with no information lost, making it feasible to store onboard and downlink during ground passes. The algorithm runs within the [bounded memory model](/cfs/mission/memory) — each band is processed sequentially with fixed working buffers.
