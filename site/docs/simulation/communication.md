@@ -1,14 +1,12 @@
 # Communication
 
-The simulation models communication between satellites and between satellites and ground stations.
+The simulation replaces the physical RF transceiver with UDP sockets, allowing multiple satellites to communicate on a single machine. The entire [communication stack](/protocols/overview) — framing, encryption, routing, reliable transport — runs unmodified on top of these simulated links.
 
 ## Supported
 
-- **Ground-to-satellite links** — uplink (commands) and downlink (telemetry) between satellites and ground stations
-- **Inter-satellite links** — point-to-point links between neighboring satellites in the [2D torus](/spacecomp/constellation), with multi-hop routing across the mesh
-- **Line-of-sight visibility** — ground links are only available when a satellite is above the horizon relative to a ground station. Satellites below the minimum elevation angle cannot communicate with ground.
-- **Link congestion** — when a link cannot drain fast enough, packets are dropped, triggering retransmission at the transport layer
-- **Full protocol stack** — [transfer frames](/protocols/datalink/transfer-frame/overview), [COP-1](/protocols/datalink/reliability/cop1) reliability, [SDLS](/protocols/datalink/security/sdls) encryption, [coding](/protocols/coding/overview) (randomization, Reed-Solomon, framing), and [SRSPP](/protocols/transport/srspp) reliable transport
+- **Ground-to-satellite links** — uplink and downlink between satellites and ground stations
+- **Inter-satellite links** — links between neighboring satellites in the [2D torus](/spacecomp/constellation), with multi-hop routing across the mesh
+- **Multiple simultaneous satellites** — each satellite has its own radio simulator, so the full constellation mesh can operate concurrently
 
 ## Not Yet Supported
 
