@@ -20,17 +20,22 @@ export const Group = ({name, children}) => (
   </div>
 );
 
-export const Proto = ({name, unused}) => (
-  <div style={{
-    border: unused ? '1px solid #ccc' : '1px solid #888',
-    borderRadius: 4,
-    padding: '3px 8px',
-    fontSize: '0.85em',
-    fontWeight: 'bold',
-    background: unused ? '#f0f0f0' : '#d4e8d4',
-    color: unused ? '#aaa' : '#333',
-  }}>{name}</div>
-);
+export const Proto = ({name, unused, href}) => {
+  const content = href && !unused
+    ? <a href={href} style={{color: '#333', textDecoration: 'none'}}>{name}</a>
+    : name;
+  return (
+    <div style={{
+      border: unused ? '1px solid #ccc' : '1px solid #888',
+      borderRadius: 4,
+      padding: '3px 8px',
+      fontSize: '0.85em',
+      fontWeight: 'bold',
+      background: unused ? '#f0f0f0' : '#d4e8d4',
+      color: unused ? '#aaa' : '#333',
+    }}>{content}</div>
+  );
+};
 
 ## Protocol Stack
 
@@ -38,51 +43,51 @@ SpaceCoMP uses the following subset of the [LeoDOS communication stack](../proto
 
 <Layer name="Transport">
   <div style={{display: 'flex', gap: 4}}>
-    <Proto name="SRSPP" /><Proto name="CFDP" unused />
+    <Proto name="SRSPP" href="/protocols/transport/srspp" /><Proto name="CFDP" href="/protocols/transport/cfdp" unused />
   </div>
 </Layer>
 <Layer name="Network">
   <div style={{display: 'flex', gap: 4}}>
-    <Proto name="Routing" /><Proto name="Point to Point" /><Proto name="Gossip" unused />
+    <Proto name="Routing" href="/protocols/network/routing" /><Proto name="Point to Point" href="/protocols/network/point-to-point" /><Proto name="Gossip" href="/protocols/network/gossip" unused />
   </div>
 </Layer>
 <Layer name="Data Link">
   <Group name="cFE Headers">
-    <Proto name="TM" /><Proto name="TC" />
+    <Proto name="TM" href="/protocols/datalink/cfe-headers/tm" /><Proto name="TC" href="/protocols/datalink/cfe-headers/tc" />
   </Group>
   <Group name="Packet Protocol">
-    <Proto name="SPP" />
+    <Proto name="SPP" href="/protocols/datalink/packet/spp" />
   </Group>
   <Group name="Transfer Frame">
-    <Proto name="TM" /><Proto name="TC" /><Proto name="AOS" unused /><Proto name="Proximity-1" unused /><Proto name="USLP" unused />
+    <Proto name="TM" href="/protocols/datalink/transfer-frame/tm" /><Proto name="TC" href="/protocols/datalink/transfer-frame/tc" /><Proto name="AOS" href="/protocols/datalink/transfer-frame/aos" unused /><Proto name="Proximity-1" href="/protocols/datalink/transfer-frame/proximity1" unused /><Proto name="USLP" href="/protocols/datalink/transfer-frame/uslp" unused />
   </Group>
   <Group name="Security">
-    <Proto name="SDLS" />
+    <Proto name="SDLS" href="/protocols/datalink/security/sdls" />
   </Group>
   <Group name="Reliability">
-    <Proto name="COP-1" />
+    <Proto name="COP-1" href="/protocols/datalink/reliability/cop1" />
   </Group>
 </Layer>
 <Layer name="Coding">
   <Group name="Randomization">
-    <Proto name="Randomization" />
+    <Proto name="Randomization" href="/protocols/coding/randomization/pseudo-random" />
   </Group>
   <Group name="Forward Error Correction">
-    <Proto name="RS(255,223)" /><Proto name="LDPC (AR4JA)" unused /><Proto name="Convolutional" unused />
+    <Proto name="RS(255,223)" href="/protocols/coding/fec/reed-solomon" /><Proto name="LDPC (AR4JA)" href="/protocols/coding/fec/ldpc" unused /><Proto name="Convolutional" href="/protocols/coding/fec/convolutional" unused />
   </Group>
   <Group name="Framing">
-    <Proto name="ASM / CADU" /><Proto name="CLTU" />
+    <Proto name="ASM / CADU" href="/protocols/coding/framing/asm-cadu" /><Proto name="CLTU" href="/protocols/coding/framing/cltu" />
   </Group>
   <Group name="Data Compression">
-    <Proto name="Rice" /><Proto name="DWT" /><Proto name="Hyperspectral" />
+    <Proto name="Rice" href="/protocols/coding/compression/rice" /><Proto name="DWT" href="/protocols/coding/compression/dwt" /><Proto name="Hyperspectral" href="/protocols/coding/compression/hyperspectral" />
   </Group>
 </Layer>
 <Layer name="Physical">
   <Group name="Modulation">
-    <Proto name="BPSK" /><Proto name="QPSK" unused /><Proto name="OQPSK" unused /><Proto name="8PSK" unused /><Proto name="GMSK" unused />
+    <Proto name="BPSK" href="/protocols/physical/modulation/bpsk" /><Proto name="QPSK" href="/protocols/physical/modulation/qpsk" unused /><Proto name="OQPSK" href="/protocols/physical/modulation/oqpsk" unused /><Proto name="8PSK" href="/protocols/physical/modulation/8psk" unused /><Proto name="GMSK" href="/protocols/physical/modulation/gmsk" unused />
   </Group>
   <Group name="Hardware">
-    <Proto name="UART" /><Proto name="SPI" unused /><Proto name="I2C" unused /><Proto name="CAN" unused /><Proto name="GPIO" unused /><Proto name="UDP" unused /><Proto name="TCP" unused />
+    <Proto name="UART" href="/protocols/physical/hardware/uart" /><Proto name="SPI" href="/protocols/physical/hardware/spi" unused /><Proto name="I2C" href="/protocols/physical/hardware/i2c" unused /><Proto name="CAN" href="/protocols/physical/hardware/can" unused /><Proto name="GPIO" unused /><Proto name="UDP" href="/protocols/physical/hardware/udp-tcp" unused /><Proto name="TCP" href="/protocols/physical/hardware/udp-tcp" unused />
   </Group>
 </Layer>
 

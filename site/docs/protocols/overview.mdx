@@ -14,9 +14,12 @@ export const Group = ({name, children}) => (
   </div>
 );
 
-export const Proto = ({name, origin}) => {
+export const Proto = ({name, origin, href}) => {
   const bg = origin === 'leodos' ? '#c8daf8' : origin === 'cfs' ? '#f5e0b0' : '#d4e8d4';
   const bd = origin === 'leodos' ? '#6688bb' : origin === 'cfs' ? '#bba050' : '#88aa88';
+  const content = href
+    ? <a href={href} style={{color: '#333', textDecoration: 'none'}}>{name}</a>
+    : name;
   return (
     <div style={{
       border: '1px solid ' + bd,
@@ -26,7 +29,7 @@ export const Proto = ({name, origin}) => {
       fontWeight: 'bold',
       background: bg,
       color: '#333',
-    }}>{name}</div>
+    }}>{content}</div>
   );
 };
 
@@ -34,51 +37,51 @@ export const Proto = ({name, origin}) => {
 
 <Layer name="Transport">
   <div style={{display: 'flex', gap: 4}}>
-    <Proto name="SRSPP" origin="leodos" /><Proto name="CFDP" />
+    <Proto name="SRSPP" origin="leodos" href="/protocols/transport/srspp" /><Proto name="CFDP" href="/protocols/transport/cfdp" />
   </div>
 </Layer>
 <Layer name="Network">
   <div style={{display: 'flex', gap: 4}}>
-    <Proto name="Routing" origin="leodos" /><Proto name="Point to Point" origin="leodos" /><Proto name="Gossip" origin="leodos" />
+    <Proto name="Routing" origin="leodos" href="/protocols/network/routing" /><Proto name="Point to Point" origin="leodos" href="/protocols/network/point-to-point" /><Proto name="Gossip" origin="leodos" href="/protocols/network/gossip" />
   </div>
 </Layer>
 <Layer name="Data Link">
   <Group name="cFE Headers">
-    <Proto name="TM" /><Proto name="TC" />
+    <Proto name="TM" href="/protocols/datalink/cfe-headers/tm" /><Proto name="TC" href="/protocols/datalink/cfe-headers/tc" />
   </Group>
   <Group name="Packet Protocol">
-    <Proto name="SPP" />
+    <Proto name="SPP" href="/protocols/datalink/packet/spp" />
   </Group>
   <Group name="Transfer Frame">
-    <Proto name="TM" /><Proto name="TC" /><Proto name="AOS" /><Proto name="Proximity-1" /><Proto name="USLP" />
+    <Proto name="TM" href="/protocols/datalink/transfer-frame/tm" /><Proto name="TC" href="/protocols/datalink/transfer-frame/tc" /><Proto name="AOS" href="/protocols/datalink/transfer-frame/aos" /><Proto name="Proximity-1" href="/protocols/datalink/transfer-frame/proximity1" /><Proto name="USLP" href="/protocols/datalink/transfer-frame/uslp" />
   </Group>
   <Group name="Security">
-    <Proto name="SDLS" />
+    <Proto name="SDLS" href="/protocols/datalink/security/sdls" />
   </Group>
   <Group name="Reliability">
-    <Proto name="COP-1" />
+    <Proto name="COP-1" href="/protocols/datalink/reliability/cop1" />
   </Group>
 </Layer>
 <Layer name="Coding">
   <Group name="Randomization">
-    <Proto name="Randomization" />
+    <Proto name="Randomization" href="/protocols/coding/randomization/pseudo-random" />
   </Group>
   <Group name="Forward Error Correction">
-    <Proto name="RS(255,223)" /><Proto name="LDPC (AR4JA)" /><Proto name="Convolutional" />
+    <Proto name="RS(255,223)" href="/protocols/coding/fec/reed-solomon" /><Proto name="LDPC (AR4JA)" href="/protocols/coding/fec/ldpc" /><Proto name="Convolutional" href="/protocols/coding/fec/convolutional" />
   </Group>
   <Group name="Framing">
-    <Proto name="ASM / CADU" /><Proto name="CLTU" />
+    <Proto name="ASM / CADU" href="/protocols/coding/framing/asm-cadu" /><Proto name="CLTU" href="/protocols/coding/framing/cltu" />
   </Group>
   <Group name="Data Compression">
-    <Proto name="Rice" /><Proto name="DWT" /><Proto name="Hyperspectral" />
+    <Proto name="Rice" href="/protocols/coding/compression/rice" /><Proto name="DWT" href="/protocols/coding/compression/dwt" /><Proto name="Hyperspectral" href="/protocols/coding/compression/hyperspectral" />
   </Group>
 </Layer>
 <Layer name="Physical">
   <Group name="Modulation">
-    <Proto name="BPSK" /><Proto name="QPSK" /><Proto name="OQPSK" /><Proto name="8PSK" /><Proto name="GMSK" />
+    <Proto name="BPSK" href="/protocols/physical/modulation/bpsk" /><Proto name="QPSK" href="/protocols/physical/modulation/qpsk" /><Proto name="OQPSK" href="/protocols/physical/modulation/oqpsk" /><Proto name="8PSK" href="/protocols/physical/modulation/8psk" /><Proto name="GMSK" href="/protocols/physical/modulation/gmsk" />
   </Group>
   <Group name="Hardware">
-    <Proto name="UART" origin="cfs" /><Proto name="SPI" origin="cfs" /><Proto name="I2C" origin="cfs" /><Proto name="CAN" origin="cfs" /><Proto name="GPIO" origin="cfs" /><Proto name="UDP" origin="cfs" /><Proto name="TCP" origin="cfs" />
+    <Proto name="UART" origin="cfs" href="/protocols/physical/hardware/uart" /><Proto name="SPI" origin="cfs" href="/protocols/physical/hardware/spi" /><Proto name="I2C" origin="cfs" href="/protocols/physical/hardware/i2c" /><Proto name="CAN" origin="cfs" href="/protocols/physical/hardware/can" /><Proto name="GPIO" origin="cfs" /><Proto name="UDP" origin="cfs" href="/protocols/physical/hardware/udp-tcp" /><Proto name="TCP" origin="cfs" href="/protocols/physical/hardware/udp-tcp" />
   </Group>
 </Layer>
 
