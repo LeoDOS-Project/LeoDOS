@@ -2,7 +2,7 @@
 
 Communications Operation Procedure-1 (CCSDS 232.1-B-2) provides
 reliable frame delivery on a single hop. It is an ARQ (Automatic
-Repeat reQuest) protocol --- a scheme where the receiver
+Repeat reQuest) protocol — a scheme where the receiver
 acknowledges each successfully received frame, and the sender
 retransmits anything that is not acknowledged within a timeout. ARQ
 uses a _sliding window_: the sender can have multiple frames

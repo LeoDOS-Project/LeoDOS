@@ -8,16 +8,6 @@ fixed-format packets with routing information.
 
 All space packets begin with a 6-byte primary header:
 
-```text
-+------------------+------------------+------------------+
-|      Byte 0-1    |      Byte 2-3    |      Byte 4-5    |
-+------------------+------------------+------------------+
-| Version | Type |S|     APID        | Seq Flags | Seq  |  Packet Data   |
-|  (3b)   | (1b) |H|    (11 bits)    |   (2b)    | Count|    Length      |
-|         |      |F|                 |           |(14b) |   (16 bits)    |
-+------------------+------------------+------------------+
-```
-
 | Field               | Bits  | Description                              |
 |---------------------|-------|------------------------------------------|
 | Packet Version      | 3     | Always 0 (Version 1)                     |
@@ -44,22 +34,6 @@ The Application Process Identifier routes packets to specific applications:
 - Range: 0-2047 (11 bits)
 - APID 2047 (0x7FF) is reserved for idle packets
 - APIDs are mission-specific
-
-## Packet Structure
-
-```rust
-#[repr(C, packed)]
-pub struct PrimaryHeader {
-    packet_version_and_id: U16,      // Version(3) + Type(1) + SHF(1) + APID(11)
-    packet_sequence_control: U16,    // SeqFlags(2) + SeqCount(14)
-    packet_data_length: U16,         // Length of data field - 1
-}
-
-pub struct SpacePacket {
-    primary_header: PrimaryHeader,   // 6 bytes
-    data_field: [u8],                // 1-65536 bytes
-}
-```
 
 ## Data Field
 

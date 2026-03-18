@@ -24,4 +24,4 @@ ratio, heading, wind speed context, timestamp).
 - False positive discrimination (oil vs lookalikes like algae, low-wind
   zones) is the hard part; simple shape heuristics help, ML-based
   classifiers need more compute.
-- No baseline needed --- each image is self-contained.
+- No baseline needed — each image is self-contained.

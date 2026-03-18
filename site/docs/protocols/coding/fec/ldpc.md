@@ -3,7 +3,7 @@
 ## The Problem
 
 A satellite sends 1024 bits of telemetry to Earth. The channel is
-noisy --- individual bits can flip with some probability. We want
+noisy — individual bits can flip with some probability. We want
 the receiver to correct as many flipped bits as possible, without
 retransmission.
 
@@ -11,7 +11,7 @@ Reed-Solomon (covered in [Reed-Solomon](reed-solomon)) corrects _byte_ errors an
 works best against short bursts. LDPC codes work at the _bit_ level
 and are designed for channels where errors are spread randomly
 across the frame. They get closer to the theoretical Shannon limit
---- meaning they can correct more errors for the same amount of
+— meaning they can correct more errors for the same amount of
 redundancy.
 
 ## The Idea
@@ -23,7 +23,7 @@ codeword bits must equal zero. If the codeword is valid, every
 equation is satisfied. If bits are flipped, some equations fail, and
 the pattern of failures reveals which bits are wrong.
 
-"Low-density" means most entries in $H$ are zero --- each check
+"Low-density" means most entries in $H$ are zero — each check
 involves only a few bits, and each bit participates in only a few
 checks. This sparsity is what makes decoding tractable: instead of
 solving a huge linear system, the decoder passes messages between
@@ -37,7 +37,7 @@ $$H \cdot \mathbf{c}^T = \mathbf{0} \pmod{2}$$
 
 For a code with $k$ information bits and $n$ transmitted bits, $H$
 has $(n - k)$ rows and $n$ columns (plus some extra columns for
-punctured bits --- more on that later). Each row is one check
+punctured bits — more on that later). Each row is one check
 equation. Each column corresponds to one bit.
 
 ### Example: A Tiny Code
@@ -74,12 +74,12 @@ _submatrix size_ (e.g. 512 for rate 1/2 with $k = 1024$).
 For rate 1/2, the base matrix has 3 block-rows and 5 block-columns.
 Each block is one of three types:
 
-- **Zero block** ($H_Z$): an $M \times M$ all-zeros matrix --- this
+- **Zero block** ($H_Z$): an $M \times M$ all-zeros matrix — this
   check doesn't connect to any bit in this column.
-- **Identity block** ($H_I$): the $M \times M$ identity matrix ---
+- **Identity block** ($H_I$): the $M \times M$ identity matrix —
   check $i$ connects to bit $i$ in this column.
 - **Permutation block** ($H_{P_k}$): an $M \times M$ matrix defined by
-  the $\pi_k$ permutation --- check $i$ connects to bit $\pi_k(i)$.
+  the $\pi_k$ permutation — check $i$ connects to bit $\pi_k(i)$.
 
 The base matrices for the three rates are:
 
@@ -141,7 +141,7 @@ directly would require $1024 \times 1024 = 131072$ bits for
 rate 1/2. Instead, $P$ is decomposed into _circulant blocks_ of
 size $b \times b$, where $b$ is the circulant size ($b = M/4$).
 
-A circulant block is fully defined by its first row --- every
+A circulant block is fully defined by its first row — every
 subsequent row is the previous row rotated right by one position.
 So we only store one row per block:
 
@@ -194,7 +194,7 @@ transmitted columns) and all connected punctured bits (from the
 recovered column). If every check evaluates to zero, the codeword is
 valid.
 
-Row 2 is not checked separately --- it was used to _define_ the
+Row 2 is not checked separately — it was used to _define_ the
 punctured bits, so it passes by construction. Row 3 of the base
 matrix is all zeros and contributes no checks.
 
@@ -215,17 +215,17 @@ iteratively passes messages between check nodes and variable nodes:
 
 After enough iterations (typically 20--50), the bits converge to
 their corrected values. The min-sum variant approximates the optimal
-sum-product algorithm using only additions and comparisons ---
-no multiplications or transcendental functions --- making it
+sum-product algorithm using only additions and comparisons —
+no multiplications or transcendental functions — making it
 suitable for embedded and FPGA implementations.
 
 ## Why These Numbers
 
 **Why three rates?** Different missions have different channel
 conditions. A deep-space probe with a weak signal uses rate 1/2
-(sends 2 bits for every 1 bit of data --- maximum protection). A
+(sends 2 bits for every 1 bit of data — maximum protection). A
 low-Earth-orbit satellite with a strong link uses rate 4/5 (sends
-only 1.25 bits per data bit --- maximum throughput).
+only 1.25 bits per data bit — maximum throughput).
 
 **Why is a column punctured?** The AR4JA code's internal structure
 needs an extra set of $M$ "accumulator seed" bits to make the
@@ -279,7 +279,7 @@ Parity (128 bytes):
   [ 0xEE, 0xA9, 0xAA, 0xAF, 0x98, 0xD9, 0x16, 0xCE, ... ]
 ```
 
-The codeword is systematic --- info followed by parity:
+The codeword is systematic — info followed by parity:
 
 ```
 Codeword (256 bytes = 2048 bits):
@@ -309,7 +309,7 @@ Received:
 
 The recovered punctured bits are now different (because the
 transmitted bits changed), and at least one check in rows 0 or 1
-evaluates to 1. The syndrome check returns false --- the codeword
+evaluates to 1. The syndrome check returns false — the codeword
 is corrupted.
 
 ### 5. Correction (Future)

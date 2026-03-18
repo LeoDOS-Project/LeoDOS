@@ -18,32 +18,26 @@ This forms a 2D torus with four neighbors per satellite:
 
 ## Packet Structure
 
-```text
-+----------------------------+-----------+
-| Field Name                 | Size      |
-+----------------------------+-----------+
-| Primary Header (SPP)       | 6 bytes   |
-| Secondary Header (cFE)     | 2 bytes   |
-+----------------------------+-----------+
-| Target Address             | 2 bytes   |
-| Message ID                 | 1 byte    |
-| Action Code                | 1 byte    |
-+----------------------------+-----------+
-| Payload                    | variable  |
-+----------------------------+-----------+
-```
+| Field | Size |
+|-------|------|
+| Primary Header (SPP) | 6 bytes |
+| Secondary Header (cFE) | 2 bytes |
+| Target Address | 2 bytes |
+| Message ID | 1 byte |
+| Action Code | 1 byte |
+| Payload | variable |
 
 ### Header Fields
 
-| Field        | Type       | Description                                    |
-|--------------|------------|------------------------------------------------|
-| target       | RawAddress | Destination address (ground, satellite, or service area) |
-| message_id   | u8         | Request/response correlation ID (0 for async)  |
-| action_code  | u8         | Application-specific action identifier         |
+| Field        | Size    | Description                                    |
+|--------------|---------|------------------------------------------------|
+| target       | 2 bytes | Destination address (ground, satellite, or service area) |
+| message_id   | 1 byte  | Request/response correlation ID (0 for async)  |
+| action_code  | 1 byte  | Application-specific action identifier         |
 
 ## Address Encoding
 
-The `RawAddress` wire format (2 bytes):
+The address wire format (2 bytes):
 
 | ground_or_orbit | station_or_sat | Meaning                          |
 |-----------------|----------------|----------------------------------|
@@ -73,7 +67,7 @@ else:
 
 ## Router Operation
 
-The `Router` struct manages six interfaces:
+The router manages six interfaces:
 - **north, south, east, west**: Inter-satellite links
 - **ground**: Earth communication link
 - **local**: Application interface

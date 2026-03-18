@@ -7,7 +7,7 @@ By processing data on-orbit and only downlinking results, SpaceCoMP
 reduces the communication bottleneck.
 
 export const Layer = ({name, children}) => (
-  <div style={{border: '2px solid #333', borderRadius: 6, padding: 6, marginBottom: -2, maxWidth: 520}}>
+  <div style={{border: '2px solid #333', borderRadius: 6, padding: 6, marginBottom: -2, width: 520}}>
     <div style={{fontWeight: 'bold', fontSize: '0.9em', marginBottom: 4}}>{name}</div>
     {children}
   </div>
@@ -41,6 +41,7 @@ export const Proto = ({name, unused, href}) => {
 
 SpaceCoMP uses the following subset of the [LeoDOS communication stack](../protocols/overview):
 
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
 <Layer name="Transport">
   <div style={{display: 'flex', gap: 4}}>
     <Proto name="SRSPP" href="/protocols/transport/srspp" /><Proto name="CFDP" href="/protocols/transport/cfdp" unused />
@@ -95,6 +96,7 @@ SpaceCoMP uses the following subset of the [LeoDOS communication stack](../proto
   <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '1px solid #888', borderRadius: 3}} /> Used by SpaceCoMP</div>
   <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f0f0f0', border: '1px solid #ccc', borderRadius: 3}} /> Not used</div>
 </div>
+</div>
 
 SRSPP handles reliable message delivery between satellites.
 CFDP is used for larger file transfers to ground. The Routing layer
@@ -128,13 +130,13 @@ descending (toward south pole), creating a geographic split:
 
 ### Link Constraints
 
-**Intra-plane links (same orbit):** always work --- satellites
+**Intra-plane links (same orbit):** always work — satellites
 maintain formation.
 
 **Inter-plane links (between orbits):**
 - Same phase (both ascending or descending): work normally
 - Across the boundary (ascending -- descending): dynamic,
-  constantly changing --- a "sliding seam"
+  constantly changing — a "sliding seam"
 
 ## Computation Model
 

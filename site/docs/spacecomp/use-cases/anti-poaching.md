@@ -3,7 +3,7 @@
 Detecting unauthorized vehicle activity in protected wildlife reserves,
 especially at night when poaching typically occurs.
 
-**Sensor:** SAR (works through clouds and at night --- critical for
+**Sensor:** SAR (works through clouds and at night — critical for
 nocturnal poaching activity).
 
 **Pipeline:**
@@ -21,7 +21,7 @@ nocturnal poaching activity).
 vehicles, heading estimate, confidence score).
 
 **Feasibility:**
-- Vehicle detection in SAR is well-established --- vehicles are
+- Vehicle detection in SAR is well-established — vehicles are
   bright point targets against natural backgrounds.
 - Person-scale detection is not feasible from LEO (requires
   < 5 m GSD; typical SAR is 10--20 m). The approach detects

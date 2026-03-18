@@ -30,4 +30,4 @@ reader, which parses the data field using the First Header Pointer
 and packet length fields to find packet boundaries even when
 packets span multiple frames.
 
-- [SPP](spp) --- detailed Space Packet header format and Rust structures
+- [SPP](spp) — Space Packet header format

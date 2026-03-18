@@ -1,7 +1,5 @@
 While the Hungarian algorithm is based on **Set Logic** (find zeros, if no zeros, adjust sets), LAPJV is based on **Pathfinding Logic** (find the shortest path to a free node).
 
----
-
 # Jonker-Volgenant (LAPJV) Algorithm
 
 **Problem:** Same as Hungarian. Minimize total assignment cost.
@@ -13,8 +11,6 @@ T0 [       1     4     4 ]
 T1 [       1     3     4 ]
 T2 [       4     2     1 ]
 ```
-
----
 
 ## Key Insight: The "Shortest Path"
 
@@ -30,8 +26,6 @@ If Task 1 cannot take its favorite node, it calculates:
 
 It calculates the **Shortest Path** (minimum total added cost) to find an empty slot. This is effectively **Dijkstra's Algorithm** running inside the matrix.
 
----
-
 ## Step 1: Initialization (Node Prices)
 
 We maintain **Node Prices** (`v`). We ignore row potentials (`u`) for now and handle them implicitly during the search.
@@ -43,8 +37,6 @@ v[0] = 1  (Min of col 0)
 v[1] = 2  (Min of col 1)
 v[2] = 1  (Min of col 2)
 ```
-
----
 
 ## Step 2: Assign Task 0 (Standard)
 
@@ -62,8 +54,6 @@ T0->N2: 4 - 1 = 3
 **Shortest distance:** 0 (at N0).
 **Is N0 free?** Yes.
 **Assign T0 -> N0.**
-
----
 
 ## Step 3: Assign Task 1 (The Dijkstra Search)
 
@@ -108,8 +98,6 @@ The shortest distance is **0** (at N0).
 We update `v` to reflect that N1 was "further away" than N0. This prevents future conflicts.
 `v[N1]` decreases or stays relative to the path taken. (The code logic `v + dist - min_dist` ensures non-negative invariants).
 
----
-
 ## Step 4: Assign Task 2
 
 We calculate distances from **T2**.
@@ -136,8 +124,6 @@ T2->N2: 1 - 1 = 0
 Both paths cost 0. The algorithm picks the free one (N2).
 
 **Assign T2 -> N2.**
-
----
 
 ### Note: What happens if we "Steal"? (Updating Prices)
 
@@ -174,8 +160,6 @@ If `v` drops to -1, the expression `- v` becomes `+ 1`.
 This **increases the reduced cost** for anyone else trying to use N0 in the future.
 
 By lowering the price (`v`), the algorithm effectively puts a "High Traffic" surcharge on N0, discouraging T2 from trying to steal it again in the next step.
-
----
 
 # Why is this Optimal?
 

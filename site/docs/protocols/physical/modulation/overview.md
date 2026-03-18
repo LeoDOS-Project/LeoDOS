@@ -1,6 +1,6 @@
 # Overview
 
-Modulation converts bits into _symbols_ --- discrete waveform
+Modulation converts bits into _symbols_ — discrete waveform
 states that can be transmitted over the radio channel. Each symbol
 represents one or more bits. The modulator maps groups of bits to
 symbols for transmission; the demodulator on the receiving end
@@ -26,8 +26,8 @@ and Viterbi decoders, which use it to make better correction
 decisions than they could from just the raw bit values (hard
 decisions).
 
-- [BPSK](bpsk) --- 1 bit/symbol, most robust
-- [QPSK](qpsk) --- 2 bits/symbol, doubles throughput
-- [OQPSK](oqpsk) --- offset QPSK for non-linear amplifiers
-- [8PSK](8psk) --- 3 bits/symbol, high throughput
-- [GMSK](gmsk) --- constant envelope for power efficiency
+- [BPSK](bpsk) — 1 bit/symbol, most robust
+- [QPSK](qpsk) — 2 bits/symbol, doubles throughput
+- [OQPSK](oqpsk) — offset QPSK for non-linear amplifiers
+- [8PSK](8psk) — 3 bits/symbol, high throughput
+- [GMSK](gmsk) — constant envelope for power efficiency

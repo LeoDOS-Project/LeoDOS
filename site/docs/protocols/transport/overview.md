@@ -15,7 +15,7 @@ request-response patterns typical of command/telemetry and
 distributed computing (SpaceCoMP).
 
 On the send side, SRSPP segments a message into Space Packets that
-fit within the MTU (Maximum Transfer Unit --- the largest packet
+fit within the MTU (Maximum Transfer Unit — the largest packet
 the network layer can carry in one piece), assigns each a sequence
 number, and transmits them through the network layer. It maintains
 a retransmission buffer and a timer for each outstanding packet.

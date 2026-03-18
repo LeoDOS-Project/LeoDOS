@@ -12,34 +12,28 @@ specified service area while preventing duplicate delivery.
 
 ## Packet Structure
 
-```text
-+---------------------------------+-----------+
-| Field Name                      | Size      |
-+---------------------------------+-----------+
-| Primary Header (SPP)            | 6 bytes   |
-| Secondary Header (cFE)          | 2 bytes   |
-+---------------------------------+-----------+
-| Originator Address              | 2 bytes   |
-| From Address                    | 2 bytes   |
-| Service Area Min                | 1 byte    |
-| Service Area Max                | 1 byte    |
-| Epoch                           | 2 bytes   |
-| Action Code                     | 1 byte    |
-+---------------------------------+-----------+
-| Payload                         | variable  |
-+---------------------------------+-----------+
-```
+| Field | Size |
+|-------|------|
+| Primary Header (SPP) | 6 bytes |
+| Secondary Header (cFE) | 2 bytes |
+| Originator Address | 2 bytes |
+| From Address | 2 bytes |
+| Service Area Min | 1 byte |
+| Service Area Max | 1 byte |
+| Epoch | 2 bytes |
+| Action Code | 1 byte |
+| Payload | variable |
 
 ### Header Fields
 
-| Field            | Type       | Description                                 |
-|------------------|------------|---------------------------------------------|
-| originator       | RawAddress | Address of the node that created this gossip |
-| from_address     | RawAddress | Address of the immediate sender (for routing) |
-| service_area_min | u8         | Minimum satellite_id in target service area |
-| service_area_max | u8         | Maximum satellite_id in target service area |
-| epoch            | U16        | Unique sequence number for duplicate detection |
-| action_code      | u8         | Application-specific action identifier      |
+| Field            | Size    | Description                                 |
+|------------------|---------|---------------------------------------------|
+| originator       | 2 bytes | Address of the node that created this gossip |
+| from_address     | 2 bytes | Address of the immediate sender (for routing) |
+| service_area_min | 1 byte  | Minimum satellite_id in target service area |
+| service_area_max | 1 byte  | Maximum satellite_id in target service area |
+| epoch            | 2 bytes | Unique sequence number for duplicate detection |
+| action_code      | 1 byte  | Application-specific action identifier      |
 
 ## Address Fields
 
@@ -82,19 +76,6 @@ This handles the case where the ground-visible region crosses the orbit boundary
 Each gossip has a unique `epoch` identifier. The receiver maintains a cache of
 recently seen epochs:
 
-```rust
-const EPOCH_CACHE_SIZE: usize = 128;
-
-fn is_duplicate(&mut self, epoch: Epoch) -> bool {
-    if self.epoch_cache.contains(&epoch) {
-        return true;
-    }
-    self.epoch_cache[self.cache_index] = epoch;
-    self.cache_index = (self.cache_index + 1) % EPOCH_CACHE_SIZE;
-    false
-}
-```
-
 The cache uses a circular buffer - old entries are overwritten when the cache
 is full.
 
@@ -115,29 +96,9 @@ A neighbor receives the forwarded gossip if:
 1. It's not the sender (`to_address != from_address`)
 2. It's within the service area (`satellite_id` in `[min, max]`)
 
-```rust
-for direction in [North, South, East, West] {
-    let neighbor = torus.neighbor(my_position, direction);
-    if neighbor != from_address
-       && neighbor.is_in_service_area(min, max) {
-        forward(direction, packet);
-    }
-}
-```
-
 ## Gossip Handler
 
-The `GossipHandler` processes incoming gossip packets:
-
-```rust
-pub struct GossipHandler<F> {
-    epoch_cache: [Epoch; EPOCH_CACHE_SIZE],
-    epoch_cache_index: u8,
-    torus: Torus,
-    my_address: Address,
-    app_logic: F,  // Application callback
-}
-```
+The gossip handler processes incoming packets by checking the epoch cache, delivering new messages to the application callback, and forwarding to eligible neighbors.
 
 ### Processing Flow
 

@@ -5,7 +5,7 @@ every input bit, doubling the data rate) and constraint length 7
 (each output bit depends on the current input bit and the previous
 6). Decoding uses the Viterbi algorithm, which finds the most
 probable transmitted sequence. It works by maintaining $2^6 = 64$
-possible encoder states (a _trellis_ --- a graph of states over
+possible encoder states (a _trellis_ — a graph of states over
 time) and pruning unlikely paths as each new bit arrives, keeping
 only the best path into each state.
 

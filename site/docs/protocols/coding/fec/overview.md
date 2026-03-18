@@ -12,14 +12,14 @@ latency. Only one is used per link.
 ## Reed-Solomon RS(255,223) (131.0-B-5)
 
 The CCSDS standard Reed-Solomon code operates over a Galois field
---- a finite set of 256 values ($2^8$, one per byte) with specially
+— a finite set of 256 values ($2^8$, one per byte) with specially
 defined addition and multiplication that ensure every non-zero
 value has an inverse. This algebraic structure is what makes the
 error correction mathematics work. The code appends 32 parity
 bytes to 223 data bytes, producing a 255-byte codeword. It can
 correct up to 16 corrupted bytes per codeword. In Reed-Solomon
 terminology, each byte is called a "symbol", and the key property
-is that it does not matter how badly a byte is damaged --- whether
+is that it does not matter how badly a byte is damaged — whether
 one bit is flipped or all eight, it counts as a single symbol
 error.
 
@@ -51,13 +51,13 @@ symbol-level errors that occur after demodulation.
 See the [detailed Reed-Solomon page](reed-solomon) for the full
 mathematical treatment and end-to-end example.
 
-## LDPC --- AR4JA (131.0-B-5)
+## LDPC — AR4JA (131.0-B-5)
 
 CCSDS specifies a family of Accumulate Repeat-by-4 Jagged
 Accumulate (AR4JA) LDPC codes at six code rates: 1/2, 2/3, 4/5,
 and 7/8 at three information block sizes (1024, 4096, 16384 bits).
 LDPC codes achieve error correction performance close to the
-Shannon limit --- the theoretical maximum rate at which information
+Shannon limit — the theoretical maximum rate at which information
 can be transmitted over a noisy channel with arbitrarily low error
 rate. In practice, this means LDPC can operate at lower
 signal-to-noise ratios than RS for the same error rate.
@@ -68,12 +68,12 @@ parity-check matrix: each bit node and check node exchange
 messages about the likelihood of each bit being 0 or 1, refining
 the estimates over multiple iterations until convergence. The
 decoder accepts soft-decision input (LLRs from the demodulator),
-which provides several dB (decibels --- a logarithmic measure of
+which provides several dB (decibels — a logarithmic measure of
 signal power ratio) of additional gain compared to hard-decision
 decoding where each bit is simply 0 or 1 with no confidence
 information.
 
-LDPC is preferred when the link budget is tight --- for example,
+LDPC is preferred when the link budget is tight — for example,
 on long-range ISL links or during periods of high atmospheric
 attenuation. The trade-off is higher computational cost and
 variable decoding latency.

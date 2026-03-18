@@ -6,11 +6,11 @@ seven bus types, all of which are link-time substituted in
 simulation: the same FSW binary runs on real hardware or in NOS3,
 with only the linked driver library changing.
 
-- [UART](uart) --- serial interface to the radio
-- [SPI](spi) --- synchronous full-duplex bus for sensors
-- [I2C](i2c) --- two-wire bus for low-rate sensors
-- [CAN](can) --- differential bus for subsystem communication
-- [UDP/TCP](udp-tcp) --- network sockets for simulation and ground links
+- [UART](uart) — serial interface to the radio
+- [SPI](spi) — synchronous full-duplex bus for sensors
+- [I2C](i2c) — two-wire bus for low-rate sensors
+- [CAN](can) — differential bus for subsystem communication
+- [UDP/TCP](udp-tcp) — network sockets for simulation and ground links
 
 ## GPIO
 

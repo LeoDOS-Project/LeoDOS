@@ -18,5 +18,5 @@ The cFE Software Bus routes packets using a composite Message ID
 derived from the SPP APID and packet type fields. This allows TM
 and TC packets to share the APID space without ambiguity.
 
-- [TM](tm) --- telemetry secondary header with timestamp
-- [TC](tc) --- telecommand secondary header with function code and checksum
+- [TM](tm) — telemetry secondary header with timestamp
+- [TC](tc) — telecommand secondary header with function code and checksum

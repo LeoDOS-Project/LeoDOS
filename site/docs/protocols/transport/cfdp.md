@@ -8,7 +8,7 @@ CFDP Class 2 (acknowledged mode) uses a state machine with the
 following phases:
 
 1. **Metadata**: The sender transmits a Metadata PDU (Protocol Data
-   Unit --- the CFDP term for a single message exchanged between
+   Unit — the CFDP term for a single message exchanged between
    sender and receiver) containing the file name, size, and options.
 2. **File Data**: The sender transmits File Data PDUs containing
    successive chunks of the file.
@@ -26,5 +26,5 @@ transfers can proceed in parallel over the same link.
 
 The file I/O is abstracted behind a platform-independent filestore
 trait, allowing CFDP to work on any system that can read and write
-files --- whether that is a Linux filesystem on the ground or a
+files — whether that is a Linux filesystem on the ground or a
 flash-based filesystem on a satellite.

@@ -21,7 +21,7 @@ displacement mm, pixel count, confidence score).
 **Feasibility:**
 - Differential InSAR phase subtraction is computationally simple
   (complex multiply + angle extraction per pixel).
-- The master image (~2 GB compressed SLC) must be stored onboard ---
+- The master image (~2 GB compressed SLC) must be stored onboard —
   feasible with modern flash storage.
 - Atmospheric phase screen correction is the hard part; a simplified
   threshold-based approach (flag only large displacements) avoids

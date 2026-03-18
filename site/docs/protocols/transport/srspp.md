@@ -52,48 +52,30 @@ SRSPP defines three packet types.
 
 ### DATA Packet (Type=0)
 
-```
-+------------------------------------+---------+
-| Space Packet Primary Header        | 6 bytes |
-|   - APID: Destination application            |
-|   - Sequence Count: Reliability seq number   |
-|   - Sequence Flags: Segmentation info        |
-+------------------------------------+---------+
-| SRSPP Header                       | 3 bytes |
-|   - Source Address (2 bytes)                 |
-|   - Type/Version/Spare (1 byte)              |
-+------------------------------------+---------+
-| Payload                            | N bytes |
-+------------------------------------+---------+
-```
+| Section | Size |
+|---------|------|
+| Space Packet Primary Header | 6 bytes |
+| SRSPP Header | 3 bytes |
+| Payload | N bytes |
 
 ### ACK Packet (Type=1)
 
-```
-+------------------------------------+---------+
-| Space Packet Primary Header        | 6 bytes |
-+------------------------------------+---------+
-| SRSPP Header                       | 3 bytes |
-|   - Source Address (2 bytes)                 |
-|   - Type/Version/Spare (1 byte)              |
-+------------------------------------+---------+
-| ACK Payload                        | 4 bytes |
-|   - Cumulative ACK (u16)                     |
-|   - Selective ACK Bitmap (u16)               |
-+------------------------------------+---------+
-```
+| Section | Size |
+|---------|------|
+| Space Packet Primary Header | 6 bytes |
+| SRSPP Header | 3 bytes |
+| ACK Payload | 4 bytes |
+
+The ACK Payload contains:
+- Cumulative ACK (2 bytes)
+- Selective ACK Bitmap (2 bytes)
 
 ### EOS Packet (Type=2)
 
-```
-+------------------------------------+---------+
-| Space Packet Primary Header        | 6 bytes |
-+------------------------------------+---------+
-| SRSPP Header                       | 3 bytes |
-|   - Source Address (2 bytes)                 |
-|   - Type/Version/Spare (1 byte)              |
-+------------------------------------+---------+
-```
+| Section | Size |
+|---------|------|
+| Space Packet Primary Header | 6 bytes |
+| SRSPP Header | 3 bytes |
 
 The EOS packet signals that the sender has no more data to transmit. It has its
 own sequence number and is acknowledged like a DATA packet. The transfer is
@@ -177,8 +159,8 @@ The sender blocks when either the window is full or the buffer is exhausted.
 
 ### RTO Policy
 
-The retransmission timeout is governed by a pluggable `RtoPolicy` trait.
-The driver queries the policy each time it starts a retransmission timer,
+The retransmission timeout is governed by a pluggable RTO policy.
+The sender queries the policy each time it starts a retransmission timer,
 passing the current time so the policy can adapt dynamically.
 
 Two built-in policies are provided:
@@ -195,11 +177,9 @@ with stable, predictable latency.
   packets lost during normal orbital gaps.
 - If no future windows exist in the schedule: fall back to the ISL RTO.
 
-The contact schedule is stored in a `ContactSchedule<N>` backed by a
-`heapless::Vec`, keeping it `no_std` compatible. Each window records
-a station ID and start/end time in seconds.
+The contact schedule is stored in a fixed-size buffer, suitable for embedded systems. Each window records a station ID and start/end time in seconds.
 
-Custom policies can be implemented by implementing `RtoPolicy::rto_ticks`.
+Custom policies can be implemented by providing a different RTO computation.
 
 **Note:** SRSPP does not negotiate parameters at runtime. Both endpoints
 must be configured with compatible values. The simplest approach is to

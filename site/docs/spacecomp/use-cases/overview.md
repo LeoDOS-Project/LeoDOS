@@ -1,8 +1,12 @@
 # Overview
 
-Extension of the SpaceCoMP Collect-Map-Reduce model from one-shot
-queries to continuous, orbit-recurring workflows with onboard change
-detection and autonomous alerting.
+Downlink bandwidth is the bottleneck in Earth observation: satellites
+generate terabytes of raw imagery per day but can only transmit a
+fraction during brief ground passes. These use cases show how
+onboard processing reduces gigabytes of sensor data to kilobyte-sized
+alert packets, extending the SpaceCoMP Collect-Map-Reduce model from
+one-shot queries to continuous, orbit-recurring workflows with
+autonomous change detection and alerting.
 
 **Use cases:**
 
@@ -20,7 +24,7 @@ detection and autonomous alerting.
 SpaceCoMP today processes a single ground-initiated request: the ground
 station submits a job, satellites collect/map/reduce, and the result is
 downlinked on the next pass. This is sufficient for on-demand queries
-but cannot handle scenarios that require _continuous monitoring_ ---
+but cannot handle scenarios that require _continuous monitoring_ —
 detecting a wildfire ignition, tracking ground displacement over weeks,
 or spotting an oil spill before it reaches shore.
 
@@ -37,7 +41,7 @@ time-critical detection:
 - Satellite sensors generate TB/day; RF downlink is < 1 Gbps during
   5--15 min ground passes.
 - A raw SAR strip over a tailings dam is ~2 GB; an alert packet saying
-  "displacement exceeds 5 mm at these pixels" is ~2 KB --- a $10^6$
+  "displacement exceeds 5 mm at these pixels" is ~2 KB — a $10^6$
   reduction.
 - For wildfire ignition, hours of latency (waiting for the next ground
   pass to downlink raw data) can mean the difference between a
@@ -151,8 +155,6 @@ workflow system would:
 3. Tag alerts with priority to enable preemptive scheduling over routine
    telemetry.
 
----
-
 ## Simulation
 
 The LeoDOS simulator provides the infrastructure needed to develop and
@@ -195,7 +197,7 @@ phase:
   anomaly model at the current simulation time and produces a
   synthetic anomaly mask (pixel coordinates + values exceeding
   threshold).
-- The workflow's reduce phase runs on real data --- it receives the
+- The workflow's reduce phase runs on real data — it receives the
   mask and produces an alert packet as normal.
 
 This tests the _workflow logic_ (state management, threshold

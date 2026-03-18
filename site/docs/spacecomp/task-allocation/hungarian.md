@@ -12,8 +12,6 @@ Task 2  [    18       7        2   ]
 
 **Optimal:** Task 0→Node 1 (cost 5), Task 1→Node 0 (cost 3), Task 2→Node 2 (cost 2) = **Total: 10**
 
----
-
 # Hungarian Algorithm
 
 ## Key Insight
@@ -97,8 +95,6 @@ T2 -> N2 (original cost: 2)
             Total: 10
 ```
 
----
-
 # Example Where No Matching Exists Through Zeros
 
 **Original cost matrix:**
@@ -149,8 +145,6 @@ We process tasks one at a time. If a task wants a node that is taken, we perform
 **Definitions:**
 - **Visited Tasks:** Tasks we have asked to move.
 - **Visited Nodes:** Nodes involved in the conflict.
-
----
 
 **Match T0:**
 ```
@@ -256,8 +250,6 @@ Assign T2 -> N2
 **Final Assignment:** T0->N0, T1->N1, T2->N2
 
 Here is the text to add at the very end. It connects the "potentials" logic back to your original question about why valid equals optimal.
-
----
 
 # Why is this Optimal?
 

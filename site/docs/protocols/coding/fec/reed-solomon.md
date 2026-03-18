@@ -38,7 +38,7 @@ More errors need more equations, which means more parity bytes.
 Correcting up to 16 errors requires 32 parity bytes (2 per error:
 one for position, one for magnitude).
 
-This is why arithmetic --- multiplication and addition --- is
+This is why arithmetic — multiplication and addition — is
 unavoidable.
 
 ## A Special Number System
@@ -50,8 +50,8 @@ results grow beyond one byte, the parity symbols become a different
 size than the data symbols, and the fixed-size structure (255
 symbols $\times$ 1 byte each) falls apart.
 
-So we use a number system called GF($2^8$) --- a _Galois field_
-with 256 elements (0--255) --- where every operation on two bytes
+So we use a number system called GF($2^8$) — a _Galois field_
+with 256 elements (0--255) — where every operation on two bytes
 always produces exactly one byte:
 
 - **Addition** is XOR: $200 + 200 = 0$ (everything cancels itself)
@@ -69,7 +69,7 @@ exponents: $\alpha^a \times \alpha^b = \alpha^{a+b}$.
 
 We store these powers in a lookup table called EXP (and the reverse
 mapping in LOG), so a multiplication becomes two table lookups and
-one addition --- effectively free on any CPU.
+one addition — effectively free on any CPU.
 
 ## Bytes as a Polynomial
 
@@ -85,7 +85,7 @@ coefficient; its position in the array determines the power of $x$.
 ## The Generator Polynomial
 
 We want a polynomial $g(x)$ that is zero at 32 specific points.
-Start with the simplest polynomial that is zero at one point ---
+Start with the simplest polynomial that is zero at one point —
 $\alpha^{112} = 2^{112}$:
 
 $$(x - 2^{112})$$
@@ -102,7 +102,7 @@ $$g(x) = (x - 2^{112})(x - 2^{113}) \cdots (x - 2^{143})$$
 Multiplying these 32 factors out (in GF($2^8$) arithmetic, where
 subtraction is the same as addition/XOR) gives a degree-32
 polynomial with 33 concrete byte-valued coefficients. It is fixed
---- the same for every message, computed once.
+— the same for every message, computed once.
 
 The key property: $g(2^{112}) = 0$, $g(2^{113}) = 0$, ...,
 $g(2^{143}) = 0$, by construction.
@@ -128,12 +128,12 @@ The codeword is:
 $$C(x) = D(x) \cdot x^{32} + R(x)$$
 
 In GF($2^8$), addition is XOR, so adding $R(x)$ replaces those 32
-trailing zeros with the parity bytes. Now check --- is $C(x)$
+trailing zeros with the parity bytes. Now check — is $C(x)$
 divisible by $g(x)$?
 
 $$C(x) = D(x) \cdot x^{32} + R(x) = Q(x) \cdot g(x) + R(x) + R(x) = Q(x) \cdot g(x)$$
 
-Yes --- because $R(x) + R(x) = 0$ (XOR with itself). So $C(x)$
+Yes — because $R(x) + R(x) = 0$ (XOR with itself). So $C(x)$
 is exactly divisible by $g(x)$, which means evaluating $C(x)$
 at any root of $g(x)$ gives zero:
 
@@ -151,7 +151,7 @@ The receiver evaluates the received 255-byte polynomial at the same
 zero (because a valid codeword is divisible by $g(x)$).
 
 If any byte was corrupted, at least some results will be non-zero.
-These 32 numbers are the _syndromes_ --- a fingerprint of the
+These 32 numbers are the _syndromes_ — a fingerprint of the
 damage.
 
 ### Finding Error Positions: Berlekamp-Massey
@@ -179,7 +179,7 @@ syndromes. It works iteratively, processing one syndrome at a time:
    $$\Delta_n = S_n + \sigma_1 \cdot S_{n-1} + \sigma_2 \cdot S_{n-2} + \cdots + \sigma_l \cdot S_{n-l}$$
    where $l$ is the current number of estimated errors.
 3. If $\Delta_n = 0$, the current $\sigma$ already predicts $S_n$
-   correctly --- no update needed.
+   correctly — no update needed.
 4. If $\Delta_n \neq 0$, the current $\sigma$ is wrong. Update it
    using a correction term scaled by $\Delta_n$. If this increases
    the estimated error count ($2l \leq n$), also update $l$.
@@ -240,7 +240,7 @@ consecutive root being $\alpha^{112}$ instead of $\alpha^0$.
 
 XOR each corrupted byte with its computed error magnitude. The
 original data is restored. As a final check, recompute the 32
-syndromes --- if they are all zero, the correction succeeded.
+syndromes — if they are all zero, the correction succeeded.
 
 ### When Correction Fails
 
@@ -281,7 +281,7 @@ independent codewords together so that consecutive bytes belong to
 _different_ codewords.
 
 A burst of $16 \cdot I$ corrupted bytes gets spread across $I$
-codewords, each seeing at most 16 errors --- exactly within the
+codewords, each seeing at most 16 errors — exactly within the
 correction capability. CCSDS supports $I = 1$ through $5$.
 
 ## CCSDS Parameters
@@ -331,7 +331,7 @@ The generator $g(x) = (x - 2^{112})(x - 2^{113}) \cdots (x - 2^{143})$
 is a fixed degree-32 polynomial.
 
 Divide $D(x) \cdot x^{32}$ by $g(x)$. The remainder $R(x)$ has 32
-coefficients --- these become the parity bytes
+coefficients — these become the parity bytes
 `[243, 147, 197, 58, ...]`. XOR them into the trailing zeros:
 
 ```
@@ -344,7 +344,7 @@ The data is unchanged at the front. Only parity was added.
 
 ### 2. Corruption
 
-During transmission, byte 2 gets corrupted --- the `L` (76)
+During transmission, byte 2 gets corrupted — the `L` (76)
 becomes 255:
 
 ```
@@ -384,7 +384,7 @@ In general, each syndrome $S_j$ uses a different power of 2:
 $$S_j = r_0 \cdot 2^{(112+j) \cdot 254 \bmod 255} + r_1 \cdot 2^{(112+j) \cdot 253 \bmod 255} + \cdots + r_{254}$$
 
 for $j = 0, 1, \ldots, 31$. The same bytes, but different
-coefficients each time --- that's what gives the receiver 32
+coefficients each time — that's what gives the receiver 32
 independent equations to work with.
 
 For the original (uncorrupted) codeword, every syndrome is zero.
@@ -436,7 +436,7 @@ Non-zero, so update $\sigma$. Since $l$ doesn't increase ($2 \cdot 1 > 1$),
 only the coefficients change: $\sigma(x) \leftarrow 1 + 81 x$.
 
 **Iteration $n = 2$:** $\Delta_2 = S_2 \oplus \sigma_1 \cdot S_1 = 29 \oplus \text{mul}(81, 232) = 29 \oplus 29 = 0$.
-Zero --- $\sigma$ already predicts $S_2$ correctly. No update.
+Zero — $\sigma$ already predicts $S_2$ correctly. No update.
 
 **Iterations $n = 3$ through $31$:** All discrepancies are zero.
 The polynomial has converged.
@@ -459,7 +459,7 @@ $$\sigma(\alpha^2) = 1 \oplus \text{mul}(81, 4) = 1 \oplus 195 = 194$$
 $$\sigma(\alpha^3) = 1 \oplus \text{mul}(81, 8) = 1 \oplus 1 = 0 \quad \leftarrow \text{root!}$$
 
 $\sigma(\alpha^3) = 0$, so $\alpha^3$ is a root. The error position is
-$(3 + 254) \bmod 255 = 2$. That is byte 2 --- exactly where the `L`
+$(3 + 254) \bmod 255 = 2$. That is byte 2 — exactly where the `L`
 was corrupted.
 
 ### 5. Error Magnitude (Forney)
