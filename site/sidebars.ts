@@ -8,6 +8,18 @@ const sidebars: SidebarsConfig = {
       label: 'SpaceCoMP',
       items: [
         'spacecomp/overview',
+        'spacecomp/constellation',
+        'spacecomp/roles',
+        'spacecomp/job-lifecycle',
+        'spacecomp/routing',
+        {
+          type: 'category',
+          label: 'Task Allocation',
+          items: [
+            'spacecomp/task-allocation/hungarian',
+            'spacecomp/task-allocation/lapjv',
+          ],
+        },
         {
           type: 'category',
           label: 'Use Cases',
@@ -23,19 +35,11 @@ const sidebars: SidebarsConfig = {
             'spacecomp/use-cases/anti-poaching',
           ],
         },
-        {
-          type: 'category',
-          label: 'Task Allocation',
-          items: [
-            'spacecomp/task-allocation/hungarian',
-            'spacecomp/task-allocation/lapjv',
-          ],
-        },
       ],
     },
     {
       type: 'category',
-      label: 'Protocols',
+      label: 'Communication Protocols',
       items: [
         'protocols/overview',
         {

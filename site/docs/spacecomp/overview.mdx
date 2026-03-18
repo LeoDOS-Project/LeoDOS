@@ -1,10 +1,8 @@
 # Overview
 
-SpaceCoMP (Space Computing Platform) enables distributed
-computation across a LEO satellite constellation. LEO satellites
-collect large volumes of data but have limited downlink bandwidth.
-By processing data on-orbit and only downlinking results, SpaceCoMP
-reduces the communication bottleneck.
+SpaceCoMP (Space Computing Platform) enables distributed computation across a LEO satellite constellation. Satellites collect large volumes of sensor data but have limited downlink bandwidth — a few minutes of ground contact per orbit. By processing data onboard and only downlinking results, SpaceCoMP reduces gigabytes of raw imagery to kilobyte-sized alert packets.
+
+The system implements a distributed MapReduce model adapted for the constraints of space: intermittent connectivity, limited compute, bounded memory, and a network topology that changes with orbital mechanics.
 
 export const Layer = ({name, children}) => (
   <div style={{border: '2px solid #333', borderRadius: 6, padding: 6, marginBottom: -2, width: 520}}>
@@ -39,7 +37,7 @@ export const Proto = ({name, unused, href}) => {
 
 ## Protocol Stack
 
-SpaceCoMP uses the following subset of the [LeoDOS communication stack](../protocols/overview):
+SpaceCoMP uses the following subset of the [LeoDOS communication stack](/protocols/overview):
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
 <Layer name="Transport">
@@ -98,77 +96,11 @@ SpaceCoMP uses the following subset of the [LeoDOS communication stack](../proto
 </div>
 </div>
 
-SRSPP handles reliable message delivery between satellites.
-CFDP is used for larger file transfers to ground. The Routing layer
-provides multi-hop mesh routing; Point to Point is for direct links.
+## Sections
 
-## Constellation Model
-
-Walker Delta constellation:
-
-- N orbital planes, M satellites per plane
-- All planes at same inclination (e.g. 87 degrees)
-- Planes separated by $360/N$ degrees around Earth
-- Forms a **2D torus** network topology
-
-### Labeling Convention
-
-- **Numbers (1, 2, 3, 4)** = different orbital planes
-- **Letters (A, B, C, D, E, F)** = positions along each orbit
-
-Example: A4, B4, C4, D4, E4, F4 are 6 satellites evenly spaced
-around orbit 4.
-
-## Ascending vs Descending
-
-Each satellite is either ascending (toward north pole) or
-descending (toward south pole), creating a geographic split:
-
-- One hemisphere contains all ascending satellites
-- Other hemisphere contains all descending satellites
-- The boundary passes through both poles
-
-### Link Constraints
-
-**Intra-plane links (same orbit):** always work — satellites
-maintain formation.
-
-**Inter-plane links (between orbits):**
-- Same phase (both ascending or descending): work normally
-- Across the boundary (ascending -- descending): dynamic,
-  constantly changing — a "sliding seam"
-
-## Computation Model
-
-SpaceCoMP implements a map-reduce model:
-
-1. A ground station submits a **job** with a geographic area of interest
-2. The **coordinator** plans the job: identifies satellites over the area, estimates cost (link quality, battery, position), solves assignment using [Hungarian](task-allocation/hungarian) or [LAPJV](task-allocation/lapjv)
-3. **Collectors** gather raw input data from on-board instruments
-4. **Mappers** process their assigned data partitions
-5. **Reducers** aggregate partial results
-6. Final result is downlinked to ground
-
-Communication between roles uses the transport layer (SRSPP or
-CFDP depending on data size).
-
-## Open Issues
-
-### Cross-Boundary Routing
-
-The original paper restricts computations to one hemisphere:
-only ascending or only descending satellites, never a mix. This
-works for localized computations but doesn't solve global routing.
-
-### Scheduling Time Constraints
-
-If a satellite crosses the ascending/descending boundary
-mid-computation, it loses inter-plane links. Computations must
-complete before boundary crossing, or implement checkpoint/migration.
-
-## Possible Improvements
-
-- **Counter-rotating orbits**: some planes retrograde, placing both phases on each side
-- **Multiple shells**: different groups at different inclinations
-- **Equatorial orbits**: 0 degree inclination to bridge hemispheres
-- **Ground relay**: downlink, route on ground, uplink to other hemisphere
+- [Constellation](constellation) — Walker Delta topology, orbital geometry, and link constraints
+- [Roles](roles) — coordinator, collector, mapper, reducer and their interactions
+- [Job Lifecycle](job-lifecycle) — from ground submission to result downlink
+- [Routing](routing) — distance-minimizing shortest path on the torus
+- [Task Allocation](task-allocation/hungarian) — Hungarian and LAPJV assignment algorithms
+- [Use Cases](use-cases/overview) — continuous monitoring workflows (wildfire, tailings dam, oil spill, etc.)
