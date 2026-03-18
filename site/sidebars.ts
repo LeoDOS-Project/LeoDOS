@@ -45,7 +45,7 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Communication Protocols',
+      label: 'LEO Communication Protocols',
       items: [
         'protocols/overview',
         {
