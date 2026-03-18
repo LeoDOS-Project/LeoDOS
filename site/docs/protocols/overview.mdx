@@ -18,11 +18,13 @@ export const Group = ({name, children}) => (
   </div>
 );
 
+import Link from '@docusaurus/Link';
+
 export const Proto = ({name, origin, href}) => {
   const bg = origin === 'leodos' ? '#c8daf8' : origin === 'cfs' ? '#f5e0b0' : '#d4e8d4';
   const bd = origin === 'leodos' ? '#6688bb' : origin === 'cfs' ? '#bba050' : '#88aa88';
   const content = href
-    ? <a href={href} style={{color: '#333', textDecoration: 'none'}}>{name}</a>
+    ? <Link to={href} style={{color: '#333', textDecoration: 'none'}}>{name}</Link>
     : name;
   return (
     <div style={{

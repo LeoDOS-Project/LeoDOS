@@ -15,9 +15,11 @@ export const Layer = ({name, children}) => (
   </div>
 );
 
+import Link from '@docusaurus/Link';
+
 export const Chip = ({name, href}) => {
   const content = href
-    ? <a href={href} style={{color: '#333', textDecoration: 'none'}}>{name}</a>
+    ? <Link to={href} style={{color: '#333', textDecoration: 'none'}}>{name}</Link>
     : name;
   return (
     <div style={{
