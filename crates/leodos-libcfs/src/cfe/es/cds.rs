@@ -3,10 +3,10 @@
 //! This module provides a generic, type-safe `CdsBlock<T>` for persisting
 //! application data across resets.
 
-use crate::error::{CfsError, EsError, OsalError};
-use crate::error::Result;
-use crate::ffi;
 use crate::cstring;
+use crate::error::Result;
+use crate::error::{CfsError, EsError, OsalError};
+use crate::ffi;
 use crate::status;
 use crate::status::check;
 use core::marker::PhantomData;
@@ -31,7 +31,8 @@ impl CdsHandle {
             )
         })?;
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
-        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let vec = heapless::Vec::from_slice(&buffer[..len])
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         let str = String::from_utf8(vec).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         Ok(str)
     }

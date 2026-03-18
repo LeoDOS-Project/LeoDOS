@@ -11,11 +11,11 @@ use core::str;
 use heapless::CString;
 use heapless::String;
 
-use crate::error::{CfsError, OsalError};
+use crate::cstring;
 use crate::error::Result;
+use crate::error::{CfsError, OsalError};
 use crate::ffi;
 use crate::log;
-use crate::cstring;
 use crate::status::check;
 
 /// Represents the possible run statuses returned by `CFE_ES_RunLoop`.
@@ -69,8 +69,7 @@ impl From<u32> for RunStatus {
 /// the app to stop.
 pub fn run_loop() -> core::result::Result<(), RunStatus> {
     let mut status = RunStatus::Run as u32;
-    let should_run =
-        unsafe { ffi::CFE_ES_RunLoop(&mut status) };
+    let should_run = unsafe { ffi::CFE_ES_RunLoop(&mut status) };
     let status = RunStatus::from(status);
     if should_run && status == RunStatus::Run {
         Ok(())
@@ -126,7 +125,8 @@ impl AppId {
         };
         check(status)?;
         let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
-        let vec = heapless::Vec::from_slice(&buffer[..len]).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let vec = heapless::Vec::from_slice(&buffer[..len])
+            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         String::from_utf8(vec).map_err(|_| CfsError::InvalidString)
     }
 

@@ -75,24 +75,16 @@ impl Runtime {
     /// or shutdown. Returns the exit status to pass to
     /// `exit_app`. The future and all its owned resources
     /// are dropped when this function returns.
-    fn poll_until_done(
-        self,
-        main_future: impl Future<Output = Result<()>>,
-    ) -> app::RunStatus {
+    fn poll_until_done(self, main_future: impl Future<Output = Result<()>>) -> app::RunStatus {
         pin_mut!(main_future);
 
         let waker = noop_waker();
-        let mut context =
-            core::task::Context::from_waker(&waker);
+        let mut context = core::task::Context::from_waker(&waker);
 
         loop {
             match app::run_loop() {
                 Ok(()) => {
-                    if main_future
-                        .as_mut()
-                        .poll(&mut context)
-                        .is_ready()
-                    {
+                    if main_future.as_mut().poll(&mut context).is_ready() {
                         log!("Async task finished.").ok();
                         return app::RunStatus::Exit;
                     }

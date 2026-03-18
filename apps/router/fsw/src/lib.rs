@@ -78,17 +78,11 @@ fn build_routing_table() -> (heapless::Vec<Route, MAX_ROUTES>, usize) {
     (table, len)
 }
 
-fn lookup_topic(
-    table: &[Route],
-    apid: u16,
-) -> Option<MsgId> {
+fn lookup_topic(table: &[Route], apid: u16) -> Option<MsgId> {
     table.iter().find(|r| r.apid == apid).map(|r| r.topic)
 }
 
-fn publish_to_sb(
-    mid: MsgId,
-    data: &[u8],
-) -> Result<(), CfsError> {
+fn publish_to_sb(mid: MsgId, data: &[u8]) -> Result<(), CfsError> {
     let total_size = SB_HEADER_SIZE + data.len();
     let mut buf = SendBuffer::new(total_size)?;
     {
@@ -112,9 +106,7 @@ fn isl_port_offset(dir: Direction) -> u16 {
 
 /// Returns (send_port, recv_port) for an ISL direction.
 fn isl_ports(point: Point, dir: Direction) -> (u16, u16) {
-    let base = PORT_BASE
-        + point.sat as u16 * PORTS_PER_SAT
-        + isl_port_offset(dir);
+    let base = PORT_BASE + point.sat as u16 * PORTS_PER_SAT + isl_port_offset(dir);
     (base, base + 1)
 }
 
@@ -122,37 +114,24 @@ const GROUND_OFFSET: u16 = 8;
 
 /// Returns (send_port, recv_port) for the ground link.
 fn ground_ports(point: Point) -> (u16, u16) {
-    let base = PORT_BASE
-        + point.sat as u16 * PORTS_PER_SAT
-        + GROUND_OFFSET;
+    let base = PORT_BASE + point.sat as u16 * PORTS_PER_SAT + GROUND_OFFSET;
     (base, base + 1)
 }
 
-fn orb_ip(
-    orb: u8,
-    out: &mut [u8; 16],
-) -> Result<&str, CfsError> {
+fn orb_ip(orb: u8, out: &mut [u8; 16]) -> Result<&str, CfsError> {
     leodos_protocols::fmt!(out, "172.20.{orb}.10")
         .ok()
         .and_then(|len| core::str::from_utf8(&out[..len]).ok())
         .ok_or_else(|| CfsError::ValidationFailure)
 }
 
-fn local_link(
-    local_port: u16,
-    remote_port: u16,
-) -> Result<UdpDatalink, CfsError> {
+fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> {
     let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
-    let remote =
-        SocketAddr::new_ipv4(LOCALHOST, remote_port)?;
+    let remote = SocketAddr::new_ipv4(LOCALHOST, remote_port)?;
     UdpDatalink::bind(local, remote)
 }
 
-fn remote_link(
-    local_port: u16,
-    remote_orb: u8,
-    remote_port: u16,
-) -> Result<UdpDatalink, CfsError> {
+fn remote_link(local_port: u16, remote_orb: u8, remote_port: u16) -> Result<UdpDatalink, CfsError> {
     let mut buf = [0u8; 16];
     let ip = orb_ip(remote_orb, &mut buf)?;
     let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
@@ -160,10 +139,7 @@ fn remote_link(
     UdpDatalink::bind(local, remote)
 }
 
-fn isl_link(
-    point: Point,
-    dir: Direction,
-) -> Result<UdpDatalink, CfsError> {
+fn isl_link(point: Point, dir: Direction) -> Result<UdpDatalink, CfsError> {
     let neighbor = TORUS.neighbor(point, dir);
     let (send, _) = isl_ports(point, dir);
     let (_, recv) = isl_ports(neighbor, dir.opposite());
@@ -174,9 +150,7 @@ fn isl_link(
     }
 }
 
-fn ground_link(
-    point: Point,
-) -> Result<UdpDatalink, CfsError> {
+fn ground_link(point: Point) -> Result<UdpDatalink, CfsError> {
     let (send, recv) = ground_ports(point);
     local_link(send, recv)
 }
@@ -195,34 +169,25 @@ pub extern "C" fn ROUTER_AppMain() {
         };
 
         let mut gateway_table = GatewayTable::<4>::new(5.0);
-        gateway_table
-            .add_station(0, LatLon::new(67.86, 20.22));
-        gateway_table
-            .add_station(1, LatLon::new(78.23, 15.39));
-        gateway_table
-            .add_station(2, LatLon::new(64.86, -147.72));
+        gateway_table.add_station(0, LatLon::new(67.86, 20.22));
+        gateway_table.add_station(1, LatLon::new(78.23, 15.39));
+        gateway_table.add_station(2, LatLon::new(64.86, -147.72));
 
-        let mut router: Router<_, _, _, _, MTU, 2048> =
-            Router::builder()
-                .north(isl_link(point, Direction::North)?)
-                .south(isl_link(point, Direction::South)?)
-                .east(isl_link(point, Direction::East)?)
-                .west(isl_link(point, Direction::West)?)
-                .ground(ground_link(point)?)
-                .address(address)
-                .algorithm(DistanceMinimizing::new(
-                    SHELL,
-                    gateway_table,
-                ))
-                .clock(MetClock::new())
-                .build();
+        let mut router: Router<_, _, _, _, MTU, 2048> = Router::builder()
+            .north(isl_link(point, Direction::North)?)
+            .south(isl_link(point, Direction::South)?)
+            .east(isl_link(point, Direction::East)?)
+            .west(isl_link(point, Direction::West)?)
+            .ground(ground_link(point)?)
+            .address(address)
+            .algorithm(DistanceMinimizing::new(SHELL, gateway_table))
+            .clock(MetClock::new())
+            .build();
 
         let (routes, route_count) = build_routing_table();
         info!("Loaded {route_count} APID routes")?;
 
-        let send_mid = MsgId::from_local_cmd(
-            bindings::ROUTER_SEND_TOPICID as u16,
-        );
+        let send_mid = MsgId::from_local_cmd(bindings::ROUTER_SEND_TOPICID as u16);
 
         let mut pipe = Pipe::new("ROUTER_SB", 32)?;
         pipe.subscribe(send_mid)?;
@@ -240,10 +205,8 @@ pub extern "C" fn ROUTER_AppMain() {
 
         loop {
             let event = {
-                let net_read =
-                    router.read(&mut from_net).fuse();
-                let sb_read =
-                    pipe.recv(&mut from_sb).fuse();
+                let net_read = router.read(&mut from_net).fuse();
+                let sb_read = pipe.recv(&mut from_sb).fuse();
                 pin_utils::pin_mut!(net_read, sb_read);
 
                 futures::select_biased! {
@@ -264,12 +227,8 @@ pub extern "C" fn ROUTER_AppMain() {
                         continue;
                     }
                     let data = &from_net[..len];
-                    let apid = u16::from_be_bytes(
-                        [data[0], data[1]],
-                    ) & 0x07FF;
-                    if let Some(mid) =
-                        lookup_topic(&routes, apid)
-                    {
+                    let apid = u16::from_be_bytes([data[0], data[1]]) & 0x07FF;
+                    if let Some(mid) = lookup_topic(&routes, apid) {
                         let _ = publish_to_sb(mid, data);
                     }
                 }
@@ -277,10 +236,8 @@ pub extern "C" fn ROUTER_AppMain() {
                     if len <= SB_HEADER_SIZE {
                         continue;
                     }
-                    let payload =
-                        &from_sb[SB_HEADER_SIZE..len];
-                    let _ =
-                        router.write(payload).await;
+                    let payload = &from_sb[SB_HEADER_SIZE..len];
+                    let _ = router.write(payload).await;
                 }
                 Event::Err => {}
             }
