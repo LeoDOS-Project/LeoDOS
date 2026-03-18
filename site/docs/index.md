@@ -15,5 +15,6 @@ The system is designed around a single premise: satellites in a LEO constellatio
 - **[Protocols](/protocols/overview)** — CCSDS communication stack from physical modulation to reliable transport
 - **[SpaceCoMP](/spacecomp/overview)** — distributed computation across the constellation: task allocation, workflows, and use cases
 - **[Research](/research/overview)** — open problems in data stream processing and security for space systems
-- **[Simulation](/simulation/overview)** — NOS3-based constellation simulator with tiered fidelity and sensor data injection
+- **[Simulation](/simulation/overview)** — NOS3-based constellation simulator: orbits, sensors, communication, Earth observation
+- **[Building and Running](/building/overview)** — how to build, test, and run the simulation
 - **[ColonyOS](/colonyos/integration)** — external job orchestration for ground-initiated workflows

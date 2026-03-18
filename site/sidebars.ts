@@ -251,7 +251,17 @@ const sidebars: SidebarsConfig = {
       label: 'Simulation',
       items: [
         'simulation/overview',
-        'simulation/infrastructure',
+        'simulation/orbital-mechanics',
+        'simulation/sensors',
+        'simulation/communication',
+        'simulation/earth-observation',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Building and Running',
+      items: [
+        'building/overview',
       ],
     },
     {
