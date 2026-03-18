@@ -1,11 +1,12 @@
+use crate::network::NetworkRead;
+use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
 use crate::network::spp::Apid;
 use crate::network::spp::SequenceCount;
-use crate::network::{NetworkRead, NetworkWrite};
-use crate::transport::srspp::machine::receiver::ReceiverAction;
-use crate::transport::srspp::machine::receiver::ReceiverActions;
+use crate::transport::srspp::machine::receiver::HandleResult;
 use crate::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
+use crate::transport::srspp::machine::receiver::TimerAction;
 use crate::transport::srspp::packet::SrsppAckPacket;
 use crate::transport::srspp::packet::SrsppDataPacket;
 use crate::transport::srspp::packet::SrsppPacket;
@@ -35,8 +36,6 @@ pub struct SrsppReceiver<
     function_code: u8,
     /// Receiver state machine handling reordering and reassembly.
     machine: R,
-    /// Pending actions from the state machine.
-    actions: ReceiverActions,
     /// Deadline for the delayed ACK timer.
     ack_timer: Option<Instant>,
     /// Deadline for the progress (inactivity) timer.
@@ -71,7 +70,6 @@ impl<
             apid,
             function_code,
             machine: R::new(config, remote_address),
-            actions: ReceiverActions::new(),
             ack_timer: None,
             progress_timer: None,
             ticks_per_sec,
@@ -171,15 +169,13 @@ impl<
             let data = SrsppDataPacket::parse(packet)
                 .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
-            self.actions.clear();
-            self.machine.handle_data(
+            let result = self.machine.handle_data(
                 data.primary.sequence_count(),
                 data.primary.sequence_flag(),
                 &data.payload,
-                &mut self.actions,
             )?;
 
-            self.process_actions().await?;
+            self.apply_result(result).await?;
         }
 
         Ok(())
@@ -188,64 +184,56 @@ impl<
     /// Fires when the delayed ACK timer expires and sends an ACK.
     async fn handle_ack_timeout(&mut self) -> Result<(), SrsppError> {
         self.ack_timer = None;
-        self.actions.clear();
-        self.machine.handle_ack(&mut self.actions);
-        self.process_actions().await?;
-        Ok(())
+        let result = self.machine.handle_ack();
+        self.apply_result(result).await
     }
 
     /// Fires when the progress timer expires due to sender inactivity.
     async fn handle_progress_timeout(&mut self) -> Result<(), SrsppError> {
         self.progress_timer = None;
-        self.actions.clear();
-        self.machine.handle_timeout(&mut self.actions)?;
-        self.process_actions().await?;
-        Ok(())
+        let result = self.machine.handle_timeout()?;
+        self.apply_result(result).await
     }
 
-    /// Executes pending actions: sends ACKs and manages timers.
-    async fn process_actions(&mut self) -> Result<(), SrsppError> {
-        for action in self.actions.iter() {
-            match action {
-                ReceiverAction::SendAck {
-                    destination,
-                    cumulative_ack,
-                    selective_bitmap,
-                } => {
-                    let ack = SrsppAckPacket::builder()
-                        .buffer(&mut self.ack_buffer)
-                        .source_address(self.local_address)
-                        .target(*destination)
-                        .apid(self.apid)
-                        .function_code(self.function_code)
-                        .cumulative_ack(*cumulative_ack)
-                        .sequence_count(SequenceCount::new())
-                        .selective_bitmap(*selective_bitmap)
-                        .build()
-                        .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
+    /// Sends ACK and updates timers based on a state machine result.
+    async fn apply_result(&mut self, result: HandleResult) -> Result<(), SrsppError> {
+        if let Some(ack) = result.ack {
+            let ack = SrsppAckPacket::builder()
+                .buffer(&mut self.ack_buffer)
+                .source_address(self.local_address)
+                .target(ack.destination)
+                .apid(self.apid)
+                .function_code(self.function_code)
+                .cumulative_ack(ack.cumulative_ack)
+                .sequence_count(SequenceCount::new())
+                .selective_bitmap(ack.selective_bitmap)
+                .build()
+                .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
-                    self.link
-                        .write(zerocopy::IntoBytes::as_bytes(ack))
-                        .await
-                        .map_err(|e| SrsppError::Network(e.to_string()))?;
-                }
-                ReceiverAction::StartAckTimer { ticks } => {
-                    self.ack_timer =
-                        Some(Instant::now() + ticks_to_duration(*ticks, self.ticks_per_sec));
-                }
-                ReceiverAction::StopAckTimer => {
-                    self.ack_timer = None;
-                }
-                ReceiverAction::MessageReady => {}
-                ReceiverAction::StartProgressTimer { ticks } => {
-                    self.progress_timer =
-                        Some(Instant::now() + ticks_to_duration(*ticks, self.ticks_per_sec));
-                }
-                ReceiverAction::StopProgressTimer => {
-                    self.progress_timer = None;
-                }
-            }
+            self.link
+                .write(zerocopy::IntoBytes::as_bytes(ack))
+                .await
+                .map_err(|e| SrsppError::Network(e.to_string()))?;
         }
+
+        if let Some(action) = result.ack_timer {
+            self.ack_timer = match action {
+                TimerAction::Start { ticks } => {
+                    Some(Instant::now() + ticks_to_duration(ticks, self.ticks_per_sec))
+                }
+                TimerAction::Stop => None,
+            };
+        }
+
+        if let Some(action) = result.progress_timer {
+            self.progress_timer = match action {
+                TimerAction::Start { ticks } => {
+                    Some(Instant::now() + ticks_to_duration(ticks, self.ticks_per_sec))
+                }
+                TimerAction::Stop => None,
+            };
+        }
+
         Ok(())
     }
 }

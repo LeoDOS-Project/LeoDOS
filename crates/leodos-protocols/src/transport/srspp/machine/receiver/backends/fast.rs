@@ -1,11 +1,14 @@
 use crate::network::isl::address::Address;
-use crate::network::spp::{SequenceCount, SequenceFlag};
+use crate::network::spp::SequenceCount;
+use crate::network::spp::SequenceFlag;
 
+use super::super::HandleResult;
+use super::super::ReceiverBackend;
+use super::super::ReceiverConfig;
+use super::super::ReceiverError;
 use super::super::base::ReceiverBase;
-use super::super::utils::{Bitset, SlotMap};
-use super::super::{
-    ReceiverAction, ReceiverActions, ReceiverBackend, ReceiverConfig, ReceiverError,
-};
+use super::super::utils::Bitset;
+use super::super::utils::SlotMap;
 
 /// Fastest backend — O(1) insert and O(1) delivery.
 ///
@@ -68,19 +71,14 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
         seq: SequenceCount,
         flags: SequenceFlag,
         payload: &[u8],
-        actions: &mut ReceiverActions,
-    ) -> Result<(), ReceiverError> {
-
+    ) -> Result<HandleResult, ReceiverError> {
         let distance = self.base.distance(seq);
         let seq_before = self.base.expected_seq_raw();
 
         if distance == 0 {
             self.deliver_packet(flags, payload)?;
             self.base.advance();
-            self.deliver_buffered(actions)?;
-            if self.complete_message_len.is_some() {
-                actions.push(ReceiverAction::MessageReady);
-            }
+            self.deliver_buffered()?;
         } else if distance < Self::MAX_AHEAD {
             if !self.base.is_ooo_duplicate(distance) {
                 self.store_ooo(seq.value(), flags, payload);
@@ -90,34 +88,24 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
 
         let progressed = self.base.expected_seq_raw() != seq_before;
         let has_gap = self.occupied.any();
-        self.base
-            .apply_post_data_logic(actions, progressed, has_gap);
-        Ok(())
+        Ok(self.base.apply_post_data_logic(progressed, has_gap))
     }
 
-    fn handle_ack(&mut self, actions: &mut ReceiverActions) {
-
-        self.base.handle_ack_timeout(actions);
+    fn handle_ack(&mut self) -> HandleResult {
+        self.base.handle_ack_timeout()
     }
 
-    fn handle_timeout(&mut self, actions: &mut ReceiverActions) -> Result<(), ReceiverError> {
-
-
+    fn handle_timeout(&mut self) -> Result<HandleResult, ReceiverError> {
         if self.reassembly_in_progress {
             self.reassembly_len = 0;
             self.reassembly_in_progress = false;
         }
 
         self.base.advance();
-        self.deliver_buffered(actions)?;
-
-        if self.complete_message_len.is_some() {
-            actions.push(ReceiverAction::MessageReady);
-        }
+        self.deliver_buffered()?;
 
         let has_gap = self.occupied.any();
-        self.base.apply_post_progress_logic(actions, has_gap);
-        Ok(())
+        Ok(self.base.apply_post_progress_logic(has_gap))
     }
 
     fn take_message(&mut self) -> Option<&[u8]> {
@@ -171,7 +159,7 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
     }
 
     /// Deliver consecutive buffered segments starting from the expected sequence.
-    fn deliver_buffered(&mut self, actions: &mut ReceiverActions) -> Result<(), ReceiverError> {
+    fn deliver_buffered(&mut self) -> Result<(), ReceiverError> {
         let mut temp = [0u8; MTU];
         loop {
             let seq = self.base.expected_seq_raw();
@@ -186,10 +174,6 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
             let len = self.slots.read(idx, &mut temp);
             self.deliver_packet(flags, &temp[..len])?;
             self.base.advance();
-
-            if self.complete_message_len.is_some() {
-                actions.push(ReceiverAction::MessageReady);
-            }
         }
         Ok(())
     }

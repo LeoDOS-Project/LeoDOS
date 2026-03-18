@@ -7,7 +7,6 @@ use crate::network::NetworkRead;
 use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
 use crate::transport::srspp::api::cfs::TransportError;
-use crate::transport::srspp::machine::receiver::ReceiverActions;
 use crate::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
 use crate::transport::srspp::machine::receiver::ReceiverMachine;
@@ -72,7 +71,6 @@ impl<
             receiver: SyncRefCell::new(MultiReceiverState {
                 config: receiver_config,
                 streams: FnvIndexMap::new(),
-                actions: ReceiverActions::new(),
                 ack_delay,
                 closed: false,
                 error: None,

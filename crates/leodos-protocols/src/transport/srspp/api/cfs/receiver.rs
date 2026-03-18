@@ -11,8 +11,9 @@ use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
 use crate::network::{NetworkRead, NetworkWrite};
 use crate::transport::TransportRead;
-use crate::transport::srspp::machine::receiver::ReceiverAction;
-use crate::transport::srspp::machine::receiver::ReceiverActions;
+use crate::transport::srspp::machine::receiver::AckInfo;
+use crate::transport::srspp::machine::receiver::HandleResult;
+use crate::transport::srspp::machine::receiver::TimerAction;
 use crate::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
 use crate::transport::srspp::machine::receiver::ReceiverMachine;
@@ -42,8 +43,6 @@ pub(super) struct MultiReceiverState<E, R: ReceiverBackend, const MAX_STREAMS: u
     pub(super) config: ReceiverConfig,
     /// Per-sender stream states keyed by source address.
     pub(super) streams: FnvIndexMap<Address, StreamState<R>, MAX_STREAMS>,
-    /// Pending actions produced by stream state machines.
-    pub(super) actions: ReceiverActions,
     /// Delayed ACK duration.
     pub(super) ack_delay: Duration,
     /// Whether the handle has signaled no more receives.
@@ -72,7 +71,6 @@ impl<E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize> SrsppReceiver<E, R,
             state: SyncRefCell::new(MultiReceiverState {
                 config,
                 streams: FnvIndexMap::new(),
-                actions: ReceiverActions::new(),
                 ack_delay,
                 closed: false,
                 error: None,
@@ -128,26 +126,26 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
                 let seq = data.primary.sequence_count();
                 let flags = data.primary.sequence_flag();
 
-                self.state.with_mut(|s| {
-                    if !s.streams.contains_key(&source_address) {
-                        let stream_state = StreamState {
-                            machine: R::new(s.config.clone(), source_address),
-                            ack_deadline: None,
-                            progress_deadline: None,
-                        };
-                        let _ = s.streams.insert(source_address, stream_state);
-                    }
+                let result =
+                    self.state.with_mut(|s| -> Result<HandleResult, TransportError<E>> {
+                        if !s.streams.contains_key(&source_address) {
+                            let _ = s.streams.insert(source_address, StreamState {
+                                machine: R::new(s.config.clone(), source_address),
+                                ack_deadline: None,
+                                progress_deadline: None,
+                            });
+                        }
+                        if let Some(stream) = s.streams.get_mut(&source_address) {
+                            stream
+                                .machine
+                                .handle_data(seq, flags, &data.payload)
+                                .map_err(Into::into)
+                        } else {
+                            Ok(HandleResult::default())
+                        }
+                    })?;
 
-                    if let Some(stream) = s.streams.get_mut(&source_address) {
-                        s.actions.clear();
-                        stream
-                            .machine
-                            .handle_data(seq, flags, &data.payload, &mut s.actions)?;
-                    }
-                    Ok::<(), TransportError<E>>(())
-                })?;
-
-                self.drive_actions(source_address, link).await?;
+                self.drive_actions(source_address, result, link).await?;
             }
         }
 
@@ -171,15 +169,15 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
         });
 
         for source in ack_expired {
-            self.state.with_mut(|s| {
+            let result = self.state.with_mut(|s| {
                 if let Some(stream) = s.streams.get_mut(&source) {
                     stream.ack_deadline = None;
-                    s.actions.clear();
-                    stream.machine.handle_ack(&mut s.actions);
+                    stream.machine.handle_ack()
+                } else {
+                    HandleResult::default()
                 }
-                Ok::<(), TransportError<E>>(())
-            })?;
-            self.drive_actions(source, link).await?;
+            });
+            self.drive_actions(source, result, link).await?;
         }
 
         let progress_expired = self.state.with(|s| {
@@ -195,15 +193,16 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
         });
 
         for source in progress_expired {
-            self.state.with_mut(|s| {
-                if let Some(stream) = s.streams.get_mut(&source) {
-                    stream.progress_deadline = None;
-                    s.actions.clear();
-                    stream.machine.handle_timeout(&mut s.actions)?;
-                }
-                Ok::<(), TransportError<E>>(())
-            })?;
-            self.drive_actions(source, link).await?;
+            let result =
+                self.state.with_mut(|s| -> Result<HandleResult, TransportError<E>> {
+                    if let Some(stream) = s.streams.get_mut(&source) {
+                        stream.progress_deadline = None;
+                        stream.machine.handle_timeout().map_err(Into::into)
+                    } else {
+                        Ok(HandleResult::default())
+                    }
+                })?;
+            self.drive_actions(source, result, link).await?;
         }
 
         Ok(())
@@ -220,56 +219,17 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
         })
     }
 
-    /// Sends ACKs and updates timers for a stream's pending actions.
+    /// Sends ACK and updates timers based on a state machine result.
     async fn drive_actions(
         &mut self,
         source: Address,
+        result: HandleResult,
         link: &mut impl NetworkWrite<Error = E>,
     ) -> Result<(), TransportError<E>> {
-        let (ack_to_send, timer_actions, ack_delay) = self.state.with(|s| {
-            let ack = s.actions.iter().find_map(|a| match a {
-                ReceiverAction::SendAck {
-                    destination,
-                    cumulative_ack,
-                    selective_bitmap,
-                } => Some((
-                    s.config.local_address,
-                    s.config.apid,
-                    s.config.function_code,
-                    *destination,
-                    *cumulative_ack,
-                    *selective_bitmap,
-                )),
-                _ => None,
+        if let Some(AckInfo { destination, cumulative_ack, selective_bitmap }) = result.ack {
+            let (local_address, apid, function_code) = self.state.with(|s| {
+                (s.config.local_address, s.config.apid, s.config.function_code)
             });
-
-            let timer = s
-                .actions
-                .iter()
-                .filter(|a| {
-                    matches!(
-                        a,
-                        ReceiverAction::StartAckTimer { .. }
-                            | ReceiverAction::StopAckTimer
-                            | ReceiverAction::StartProgressTimer { .. }
-                            | ReceiverAction::StopProgressTimer
-                    )
-                })
-                .copied()
-                .collect::<heapless::Vec<_, 8>>();
-
-            (ack, timer, s.ack_delay)
-        });
-
-        if let Some((
-            local_address,
-            apid,
-            function_code,
-            destination,
-            cumulative_ack,
-            selective_bitmap,
-        )) = ack_to_send
-        {
             let ack = SrsppAckPacket::builder()
                 .buffer(&mut self.ack_buffer)
                 .source_address(local_address)
@@ -280,37 +240,32 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
                 .selective_bitmap(selective_bitmap)
                 .sequence_count(SequenceCount::from(0))
                 .build()?;
-
             link.write(zerocopy::IntoBytes::as_bytes(ack))
                 .await
                 .map_err(TransportError::Network)?;
         }
 
+        let ack_delay = self.state.with(|s| s.ack_delay);
         self.state.with_mut(|s| {
-            for action in timer_actions {
-                match action {
-                    ReceiverAction::StartAckTimer { .. } => {
-                        if let Some(entry) = s.streams.get_mut(&source) {
-                            entry.ack_deadline = Some(SysTime::now() + SysTime::from(ack_delay));
+            if let Some(action) = result.ack_timer {
+                if let Some(entry) = s.streams.get_mut(&source) {
+                    entry.ack_deadline = match action {
+                        TimerAction::Start { .. } => {
+                            Some(SysTime::now() + SysTime::from(ack_delay))
                         }
-                    }
-                    ReceiverAction::StopAckTimer => {
-                        if let Some(entry) = s.streams.get_mut(&source) {
-                            entry.ack_deadline = None;
-                        }
-                    }
-                    ReceiverAction::StartProgressTimer { ticks } => {
-                        if let Some(entry) = s.streams.get_mut(&source) {
+                        TimerAction::Stop => None,
+                    };
+                }
+            }
+            if let Some(action) = result.progress_timer {
+                if let Some(entry) = s.streams.get_mut(&source) {
+                    entry.progress_deadline = match action {
+                        TimerAction::Start { ticks } => {
                             let delay = Duration::from_millis(ticks);
-                            entry.progress_deadline = Some(SysTime::now() + SysTime::from(delay));
+                            Some(SysTime::now() + SysTime::from(delay))
                         }
-                    }
-                    ReceiverAction::StopProgressTimer => {
-                        if let Some(entry) = s.streams.get_mut(&source) {
-                            entry.progress_deadline = None;
-                        }
-                    }
-                    _ => {}
+                        TimerAction::Stop => None,
+                    };
                 }
             }
         });

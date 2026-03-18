@@ -4,9 +4,7 @@ use heapless::Vec;
 
 use super::super::base::ReceiverBase;
 use super::super::utils::GapTracker;
-use super::super::{
-    ReceiverAction, ReceiverActions, ReceiverBackend, ReceiverConfig, ReceiverError,
-};
+use super::super::{HandleResult, ReceiverBackend, ReceiverConfig, ReceiverError};
 
 /// Half-memory backend — reorder and reassembly share one buffer.
 ///
@@ -69,8 +67,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize> ReceiverBackend
         seq: SequenceCount,
         flags: SequenceFlag,
         payload: &[u8],
-        actions: &mut ReceiverActions,
-    ) -> Result<(), ReceiverError> {
+    ) -> Result<HandleResult, ReceiverError> {
         if self.complete_message_len.is_none() {
             self.apply_pending_shift();
         }
@@ -84,21 +81,19 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize> ReceiverBackend
                 self.base.record_ooo(distance);
             }
             self.place_segment(seq, flags, payload)?;
-            self.try_deliver(actions)?;
+            self.try_deliver()?;
         }
 
         let progressed = self.base.expected_seq_raw() != seq_before;
         let has_gap = self.gaps.has_gaps() || !self.message_ends.is_empty();
-        self.base
-            .apply_post_data_logic(actions, progressed, has_gap);
-        Ok(())
+        Ok(self.base.apply_post_data_logic(progressed, has_gap))
     }
 
-    fn handle_ack(&mut self, actions: &mut ReceiverActions) {
-        self.base.handle_ack_timeout(actions);
+    fn handle_ack(&mut self) -> HandleResult {
+        self.base.handle_ack_timeout()
     }
 
-    fn handle_timeout(&mut self, actions: &mut ReceiverActions) -> Result<(), ReceiverError> {
+    fn handle_timeout(&mut self) -> Result<HandleResult, ReceiverError> {
         if self.complete_message_len.is_none() {
             self.apply_pending_shift();
         }
@@ -122,11 +117,10 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize> ReceiverBackend
         self.base.advance();
         self.base_seq = self.base_seq.wrapping_add(1) & SequenceCount::MAX as u16;
 
-        self.try_deliver(actions)?;
+        self.try_deliver()?;
 
         let has_gap = self.gaps.has_gaps() || !self.message_ends.is_empty();
-        self.base.apply_post_progress_logic(actions, has_gap);
-        Ok(())
+        Ok(self.base.apply_post_progress_logic(has_gap))
     }
 
     fn take_message(&mut self) -> Option<&[u8]> {
@@ -225,7 +219,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize> LiteReceiver<REASM,
     }
 
     /// Deliver complete messages whose gaps have all been filled.
-    fn try_deliver(&mut self, actions: &mut ReceiverActions) -> Result<(), ReceiverError> {
+    fn try_deliver(&mut self) -> Result<(), ReceiverError> {
         loop {
             let msg_end;
 
@@ -251,7 +245,6 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize> LiteReceiver<REASM,
             self.message_ends.remove(0);
             self.complete_message_len = Some(msg_end);
             self.reassembly_in_progress = false;
-            actions.push(ReceiverAction::MessageReady);
 
             let segs = (msg_end + MTU - 1) / MTU;
             for _ in 0..segs {
@@ -294,26 +287,20 @@ mod tests {
     #[test]
     fn segmented_mtu_aligned() {
         let mut rx = make(cfg_immediate());
-        let mut a = ReceiverActions::new();
 
         let first = [1u8; MTU];
         let cont = [2u8; MTU];
         let last = [3u8; 10];
 
-        rx.handle_data(SequenceCount::from(0), SequenceFlag::First, &first, &mut a)
+        rx.handle_data(SequenceCount::from(0), SequenceFlag::First, &first)
             .unwrap();
         assert!(!rx.has_message());
 
-        rx.handle_data(
-            SequenceCount::from(1),
-            SequenceFlag::Continuation,
-            &cont,
-            &mut a,
-        )
-        .unwrap();
+        rx.handle_data(SequenceCount::from(1), SequenceFlag::Continuation, &cont)
+            .unwrap();
         assert!(!rx.has_message());
 
-        rx.handle_data(SequenceCount::from(2), SequenceFlag::Last, &last, &mut a)
+        rx.handle_data(SequenceCount::from(2), SequenceFlag::Last, &last)
             .unwrap();
         assert!(rx.has_message());
         let msg = rx.take_message().unwrap();
@@ -325,53 +312,24 @@ mod tests {
     #[test]
     fn gap_merge_split() {
         let mut rx = make(cfg_immediate());
-        let mut a = ReceiverActions::new();
-
         let p = [0u8; 10];
 
-        a.clear();
-        rx.handle_data(
-            SequenceCount::from(0),
-            SequenceFlag::Unsegmented,
-            &p,
-            &mut a,
-        )
-        .unwrap();
+        rx.handle_data(SequenceCount::from(0), SequenceFlag::Unsegmented, &p)
+            .unwrap();
         rx.take_message();
 
-        a.clear();
-        rx.handle_data(
-            SequenceCount::from(3),
-            SequenceFlag::Unsegmented,
-            &p,
-            &mut a,
-        )
-        .unwrap();
+        rx.handle_data(SequenceCount::from(3), SequenceFlag::Unsegmented, &p)
+            .unwrap();
 
-        a.clear();
-        rx.handle_data(
-            SequenceCount::from(1),
-            SequenceFlag::Unsegmented,
-            &p,
-            &mut a,
-        )
-        .unwrap();
+        rx.handle_data(SequenceCount::from(1), SequenceFlag::Unsegmented, &p)
+            .unwrap();
         assert!(rx.has_message());
         rx.take_message();
 
-        a.clear();
-        rx.handle_data(
-            SequenceCount::from(2),
-            SequenceFlag::Unsegmented,
-            &p,
-            &mut a,
-        )
-        .unwrap();
-
-        let cnt = a
-            .iter()
-            .filter(|a| matches!(a, ReceiverAction::MessageReady))
-            .count();
-        assert_eq!(cnt, 2);
+        rx.handle_data(SequenceCount::from(2), SequenceFlag::Unsegmented, &p)
+            .unwrap();
+        // seq=2 fills the gap; both seq=2 and seq=3 pass through try_deliver,
+        // with seq=3 landing in complete_message_len last.
+        assert!(rx.has_message());
     }
 }
