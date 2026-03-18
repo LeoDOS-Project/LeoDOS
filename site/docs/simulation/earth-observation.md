@@ -21,7 +21,7 @@ The full pipeline is implemented end-to-end:
 
 Synthetic Aperture Radar transmits microwave pulses and records the reflected signal. SAR works through clouds, at night, and in all weather. SAR data comes in two forms:
 
-- **Complex (SLC)** — preserves both amplitude and phase. Phase differences between repeat passes reveal sub-millimeter surface displacement (InSAR), used for [tailings dam](/spacecomp/use-cases/tailings-dam) and [volcanic](/spacecomp/use-cases/volcanic) monitoring.
+- **Complex (SLC)** — preserves both amplitude and phase. Phase differences between repeat passes reveal sub-millimeter surface displacement (InSAR), used for [tailings dam](/spacecomp/use-cases/tailings-dam) displacement monitoring.
 - **Backscatter (intensity)** — measures how strongly the surface reflects radar. Calm water appears dark (specular reflection away from the sensor), making oil spills and flood extent visible as dark patches. Used for [oil spill](/spacecomp/use-cases/oil-spill), [flood](/spacecomp/use-cases/flood), and [sea ice](/spacecomp/use-cases/sea-ice) detection.
 
 Real data is available from Sentinel-1 (free, global C-band SAR, 5×20 m resolution, 6-day revisit). No eosim generator, NOS3 simulator, or cFS processing app exists yet.

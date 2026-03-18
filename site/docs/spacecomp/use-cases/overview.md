@@ -15,7 +15,6 @@ autonomous change detection and alerting.
 - [Deforestation](deforestation.md)
 - [Oil Spill](oil-spill.md)
 - [Flood](flood.md)
-- [Volcanic](volcanic.md)
 - [Sea Ice](sea-ice.md)
 - [Anti-Poaching](anti-poaching.md)
 

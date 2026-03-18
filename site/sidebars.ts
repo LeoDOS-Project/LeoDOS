@@ -37,7 +37,6 @@ const sidebars: SidebarsConfig = {
             'spacecomp/use-cases/deforestation',
             'spacecomp/use-cases/oil-spill',
             'spacecomp/use-cases/flood',
-            'spacecomp/use-cases/volcanic',
             'spacecomp/use-cases/sea-ice',
             'spacecomp/use-cases/anti-poaching',
           ],

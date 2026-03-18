@@ -28,3 +28,4 @@ displacement mm, pixel count, confidence score).
   needing full atmospheric modeling.
 - Repeat-pass interval depends on orbit: ~daily for a large
   constellation, weekly for smaller ones.
+
