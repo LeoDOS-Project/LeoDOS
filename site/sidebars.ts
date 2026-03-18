@@ -5,6 +5,13 @@ const sidebars: SidebarsConfig = {
     'index',
     {
       type: 'category',
+      label: 'Building and Running',
+      items: [
+        'building/overview',
+      ],
+    },
+    {
+      type: 'category',
       label: 'SpaceCoMP',
       items: [
         'spacecomp/overview',
@@ -255,13 +262,6 @@ const sidebars: SidebarsConfig = {
         'simulation/sensors',
         'simulation/communication',
         'simulation/earth-observation',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Building and Running',
-      items: [
-        'building/overview',
       ],
     },
     {
