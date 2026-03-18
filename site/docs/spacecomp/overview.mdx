@@ -1,0 +1,169 @@
+# SpaceCoMP Overview
+
+SpaceCoMP (Space Computing Platform) enables distributed
+computation across a LEO satellite constellation. LEO satellites
+collect large volumes of data but have limited downlink bandwidth.
+By processing data on-orbit and only downlinking results, SpaceCoMP
+reduces the communication bottleneck.
+
+export const Layer = ({name, children}) => (
+  <div style={{border: '2px solid #333', borderRadius: 6, padding: 6, marginBottom: -2, maxWidth: 520}}>
+    <div style={{fontWeight: 'bold', fontSize: '0.9em', marginBottom: 4}}>{name}</div>
+    {children}
+  </div>
+);
+
+export const Group = ({name, children}) => (
+  <div style={{border: '1px solid #999', borderRadius: 4, padding: 5, margin: '3px 0', background: '#fafafa'}}>
+    <div style={{fontSize: '0.8em', fontStyle: 'italic', color: '#666', marginBottom: 3}}>{name}</div>
+    <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>{children}</div>
+  </div>
+);
+
+export const Proto = ({name, unused}) => (
+  <div style={{
+    border: unused ? '1px solid #ccc' : '1px solid #888',
+    borderRadius: 4,
+    padding: '3px 8px',
+    fontSize: '0.85em',
+    fontWeight: 'bold',
+    background: unused ? '#f0f0f0' : '#d4e8d4',
+    color: unused ? '#aaa' : '#333',
+  }}>{name}</div>
+);
+
+## Protocol Stack
+
+SpaceCoMP uses the following subset of the [LeoDOS communication stack](../protocols/stack):
+
+<Layer name="Application">
+  <div style={{display: 'flex', gap: 4}}>
+    <Proto name="SpaceCoMP" /><Proto name="ColonyOS" unused />
+  </div>
+</Layer>
+<Layer name="Transport">
+  <div style={{display: 'flex', gap: 4}}>
+    <Proto name="SRSPP" /><Proto name="CFDP" />
+  </div>
+</Layer>
+<Layer name="Network">
+  <Group name="cFE Headers">
+    <Proto name="TM" /><Proto name="TC" />
+  </Group>
+  <Group name="Routing">
+    <Proto name="ISL Router" /><Proto name="PassThrough" /><Proto name="Gossip" unused />
+  </Group>
+</Layer>
+<Layer name="Data Link">
+  <Group name="Packet Protocol">
+    <Proto name="SPP" />
+  </Group>
+  <Group name="Transfer Frame">
+    <Proto name="TM" /><Proto name="TC" /><Proto name="AOS" unused /><Proto name="Proximity-1" unused /><Proto name="USLP" unused />
+  </Group>
+  <Group name="Security">
+    <Proto name="SDLS" unused />
+  </Group>
+  <Group name="Reliability">
+    <Proto name="COP-1" />
+  </Group>
+</Layer>
+<Layer name="Coding">
+  <Group name="Forward Error Correction">
+    <Proto name="RS(255,223)" /><Proto name="LDPC (AR4JA)" /><Proto name="Convolutional" unused />
+  </Group>
+  <Group name="Framing">
+    <Proto name="ASM / CADU" /><Proto name="CLTU" />
+  </Group>
+  <Group name="Data Compression">
+    <Proto name="Rice" unused /><Proto name="DWT" unused /><Proto name="Hyperspectral" unused />
+  </Group>
+</Layer>
+<Layer name="Physical">
+  <Group name="Modulation">
+    <Proto name="BPSK" /><Proto name="QPSK" /><Proto name="OQPSK" unused /><Proto name="8PSK" unused /><Proto name="GMSK" unused />
+  </Group>
+  <Group name="Hardware">
+    <Proto name="UART" /><Proto name="SPI" /><Proto name="I2C" /><Proto name="CAN" /><Proto name="UDP" /><Proto name="TCP" />
+  </Group>
+</Layer>
+
+<div style={{display: 'flex', gap: 16, marginTop: 10, fontSize: '0.85em', alignItems: 'center'}}>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '1px solid #888', borderRadius: 3}} /> Used by SpaceCoMP</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f0f0f0', border: '1px solid #ccc', borderRadius: 3}} /> Not used</div>
+</div>
+
+SRSPP handles reliable message delivery between satellites.
+CFDP is used for larger file transfers to ground. The ISL Router
+provides multi-hop mesh routing; PassThrough is for direct links.
+
+## Constellation Model
+
+Walker Delta constellation:
+
+- N orbital planes, M satellites per plane
+- All planes at same inclination (e.g. 87 degrees)
+- Planes separated by $360/N$ degrees around Earth
+- Forms a **2D torus** network topology
+
+### Labeling Convention
+
+- **Numbers (1, 2, 3, 4)** = different orbital planes
+- **Letters (A, B, C, D, E, F)** = positions along each orbit
+
+Example: A4, B4, C4, D4, E4, F4 are 6 satellites evenly spaced
+around orbit 4.
+
+## Ascending vs Descending
+
+Each satellite is either ascending (toward north pole) or
+descending (toward south pole), creating a geographic split:
+
+- One hemisphere contains all ascending satellites
+- Other hemisphere contains all descending satellites
+- The boundary passes through both poles
+
+### Link Constraints
+
+**Intra-plane links (same orbit):** always work --- satellites
+maintain formation.
+
+**Inter-plane links (between orbits):**
+- Same phase (both ascending or descending): work normally
+- Across the boundary (ascending -- descending): dynamic,
+  constantly changing --- a "sliding seam"
+
+## Computation Model
+
+SpaceCoMP implements a map-reduce model:
+
+1. A ground station submits a **job** with a geographic area of interest
+2. The **coordinator** plans the job: identifies satellites over the area, estimates cost (link quality, battery, position), solves assignment using [Hungarian](task-allocation/hungarian) or [LAPJV](task-allocation/lapjv)
+3. **Collectors** gather raw input data from on-board instruments
+4. **Mappers** process their assigned data partitions
+5. **Reducers** aggregate partial results
+6. Final result is downlinked to ground
+
+Communication between roles uses the transport layer (SRSPP or
+CFDP depending on data size).
+
+## Open Issues
+
+### Cross-Boundary Routing
+
+The original paper restricts computations to one hemisphere:
+only ascending or only descending satellites, never a mix. This
+works for localized computations but doesn't solve global routing.
+
+### Scheduling Time Constraints
+
+If a satellite crosses the ascending/descending boundary
+mid-computation, it loses inter-plane links. Computations must
+complete before boundary crossing, or implement checkpoint/migration.
+
+## Possible Improvements
+
+- **Counter-rotating orbits**: some planes retrograde, placing both phases on each side
+- **Multiple shells**: different groups at different inclinations
+- **Equatorial orbits**: 0 degree inclination to bridge hemispheres
+- **Ground relay**: downlink, route on ground, uplink to other hemisphere

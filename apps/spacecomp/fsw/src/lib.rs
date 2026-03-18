@@ -2,7 +2,7 @@
 
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
-use leodos_libcfs::error::Error as CfsError;
+use leodos_libcfs::error::CfsError;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::Runtime;
@@ -122,8 +122,8 @@ fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError
 
 fn remote_link(local_port: u16, remote_orbit: u8, remote_port: u16) -> Result<UdpDatalink, CfsError> {
     let mut ip_buf = [0u8; 16];
-    let len = orbit_ip(remote_orbit, &mut ip_buf).map_err(|_| CfsError::CfeStatusValidationFailure)?;
-    let ip = core::str::from_utf8(&ip_buf[..len]).map_err(|_| CfsError::CfeStatusValidationFailure)?;
+    let len = orbit_ip(remote_orbit, &mut ip_buf).map_err(|_| CfsError::ValidationFailure)?;
+    let ip = core::str::from_utf8(&ip_buf[..len]).map_err(|_| CfsError::ValidationFailure)?;
     let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
     let remote = SocketAddr::new_ipv4(ip, remote_port)?;
     UdpDatalink::bind(local, remote)
@@ -181,7 +181,7 @@ pub extern "C" fn SPACECOMP_AppMain() {
         gateway_table.add_station(1, LatLon::new(78.23, 15.39));  // Svalbard
         gateway_table.add_station(2, LatLon::new(64.86, -147.72)); // Fairbanks
         let algorithm = DistanceMinimizing::new(SHELL, gateway_table);
-        let router = Router::builder()
+        let router: Router<_, _, _, _, 1024, 2048> = Router::builder()
             .north(north_link)
             .south(south_link)
             .east(east_link)

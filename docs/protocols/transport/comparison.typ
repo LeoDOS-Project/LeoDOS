@@ -794,7 +794,7 @@
         #v(4pt)
         - *Handle/Driver split:* app API and I/O loop run as independent tasks
         #v(4pt)
-        - *Event/Action model:* machines consume events, emit actions; driver executes them
+        - *Return-value model:* receiver backend returns outcomes; driver interprets them via ACK state
         #v(4pt)
         - *`no_std` compatible:* zero heap, runs on bare-metal flight hardware
         #v(4pt)
