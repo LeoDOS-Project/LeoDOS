@@ -27,6 +27,21 @@ Two modes control how much context the predictor uses:
 - **Full** — uses both spatial neighbors (the pixels above, to the left, and diagonally above-left in the current band) and spectral neighbors (the same pixel in up to 15 previous bands). Most effective when the scene has spatial structure that varies across bands.
 - **Reduced** — uses only spectral neighbors, ignoring spatial context. Faster and simpler, suitable for sensors where the spatial resolution is low or the scene is relatively uniform.
 
+## Configuration
+
+| Parameter | Range | Description |
+|---|---|---|
+| nx, ny, nz | — | Image dimensions (width, height, spectral bands) |
+| Dynamic range | 2–16 bits | Bits per sample |
+| Prediction bands | 0–15 | Number of previous bands used for spectral prediction |
+| Prediction mode | Full / Reduced | Spatial + spectral or spectral only |
+| Weight resolution | 4–19 | Precision of predictor weights |
+| Weight update interval | 2⁴–2¹¹ | How often weights are rescaled |
+
+## Limitations
+
+Lossless compression only (no near-lossless quantization). Encoding order is band-sequential — each band is fully processed before the next. Band-interleaved orders (BIL, BIP) are not supported.
+
 ## Use in LeoDOS
 
 Hyperspectral compression is used when a satellite carries a spectral imager — a sensor that captures tens to hundreds of wavelength bands. Without compression, a single hyperspectral scene can be gigabytes. The compressor reduces this to a fraction of the size with no information lost, making it feasible to store onboard and downlink during ground passes. The algorithm runs within the [bounded memory model](/cfs/mission/memory) — each band is processed sequentially with fixed working buffers.

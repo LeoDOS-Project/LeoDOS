@@ -20,6 +20,20 @@ The compressor processes an image in three steps:
 
 LeoDOS uses the integer (5,3) wavelet, which is perfectly invertible — no information is lost in the transform. The compressed output is lossless by default. For lossy compression at a target bit rate, the bitstream can simply be cut short: the progressive encoding ensures the image degrades gracefully rather than breaking.
 
+## Configuration
+
+| Parameter | Range | Description |
+|---|---|---|
+| Bits per sample | 2–16 | Dynamic range of the input image |
+| Segment size | 8-row strips | Independent compression units |
+| Signed samples | bool | Whether input values are signed |
+
+Image width and height must be multiples of 8.
+
+## Limitations
+
+The LeoDOS implementation is lossless only (integer 5/3 wavelet). The CCSDS 122.0-B-2 standard also defines a lossy mode using the (9,7) CDF wavelet with floating-point coefficients, which is not implemented.
+
 ## Use in LeoDOS
 
 DWT is used for compressing onboard camera imagery before downlink. A raw image might be megabytes; the wavelet-compressed version is significantly smaller with no visible quality loss in lossless mode, or controlled quality loss if truncated to fit a bandwidth budget.
