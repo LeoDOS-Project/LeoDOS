@@ -23,20 +23,23 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Protocols',
       items: [
-        'protocols/stack',
+        'protocols/overview',
         {
           type: 'category',
           label: 'Transport',
           items: [
+            'protocols/transport/overview',
             'protocols/transport/srspp',
-            'protocols/transport/comparison',
+            'protocols/transport/cfdp',
           ],
         },
         {
           type: 'category',
           label: 'Network',
           items: [
+            'protocols/network/overview',
             'protocols/network/routing',
+            'protocols/network/point-to-point',
             'protocols/network/gossip',
           ],
         },
@@ -44,17 +47,127 @@ const sidebars: SidebarsConfig = {
           type: 'category',
           label: 'Data Link',
           items: [
-            'protocols/datalink/spp',
-            'protocols/datalink/telecommand',
-            'protocols/datalink/telemetry',
+            'protocols/datalink/overview',
+            {
+              type: 'category',
+              label: 'cFE Headers',
+              items: [
+                'protocols/datalink/cfe-headers/overview',
+                'protocols/datalink/cfe-headers/tm',
+                'protocols/datalink/cfe-headers/tc',
+              ],
+            },
+            {
+              type: 'category',
+              label: 'Packet Protocol',
+              items: [
+                'protocols/datalink/packet/overview',
+                'protocols/datalink/packet/spp',
+              ],
+            },
+            {
+              type: 'category',
+              label: 'Transfer Frame',
+              items: [
+                'protocols/datalink/transfer-frame/overview',
+                'protocols/datalink/transfer-frame/tm',
+                'protocols/datalink/transfer-frame/tc',
+                'protocols/datalink/transfer-frame/aos',
+                'protocols/datalink/transfer-frame/proximity1',
+                'protocols/datalink/transfer-frame/uslp',
+              ],
+            },
+            {
+              type: 'category',
+              label: 'Security',
+              items: [
+                'protocols/datalink/security/overview',
+                'protocols/datalink/security/sdls',
+              ],
+            },
+            {
+              type: 'category',
+              label: 'Reliability',
+              items: [
+                'protocols/datalink/reliability/overview',
+                'protocols/datalink/reliability/cop1',
+              ],
+            },
           ],
         },
         {
           type: 'category',
           label: 'Coding',
           items: [
-            'protocols/coding/coding',
-            'protocols/coding/ldpc',
+            'protocols/coding/overview',
+            {
+              type: 'category',
+              label: 'Randomization',
+              items: [
+                'protocols/coding/randomization/overview',
+                'protocols/coding/randomization/pseudo-random',
+              ],
+            },
+            {
+              type: 'category',
+              label: 'Forward Error Correction',
+              items: [
+                'protocols/coding/fec/overview',
+                'protocols/coding/fec/reed-solomon',
+                'protocols/coding/fec/ldpc',
+                'protocols/coding/fec/convolutional',
+              ],
+            },
+            {
+              type: 'category',
+              label: 'Framing',
+              items: [
+                'protocols/coding/framing/overview',
+                'protocols/coding/framing/asm-cadu',
+                'protocols/coding/framing/cltu',
+              ],
+            },
+            {
+              type: 'category',
+              label: 'Data Compression',
+              items: [
+                'protocols/coding/compression/overview',
+                'protocols/coding/compression/rice',
+                'protocols/coding/compression/dwt',
+                'protocols/coding/compression/hyperspectral',
+              ],
+            },
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Physical',
+          items: [
+            'protocols/physical/overview',
+            {
+              type: 'category',
+              label: 'Modulation',
+              items: [
+                'protocols/physical/modulation/overview',
+                'protocols/physical/modulation/bpsk',
+                'protocols/physical/modulation/qpsk',
+                'protocols/physical/modulation/oqpsk',
+                'protocols/physical/modulation/8psk',
+                'protocols/physical/modulation/gmsk',
+              ],
+            },
+            {
+              type: 'category',
+              label: 'Hardware',
+              items: [
+                'protocols/physical/hardware/overview',
+                'protocols/physical/hardware/uart',
+                'protocols/physical/hardware/spi',
+                'protocols/physical/hardware/i2c',
+                'protocols/physical/hardware/can',
+                'protocols/physical/hardware/udp-tcp',
+              ],
+            },
           ],
         },
       ],

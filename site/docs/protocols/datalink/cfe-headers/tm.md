@@ -1,4 +1,4 @@
-# Telemetry Packets (cFE TM)
+# TM
 
 cFE Telemetry packets carry data from spacecraft to ground. They extend the
 SPP primary header with a secondary header containing timestamp information.

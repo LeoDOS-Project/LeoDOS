@@ -1,4 +1,4 @@
-# Space Packet Protocol (SPP)
+# SPP
 
 Implementation of CCSDS 133.0-B-2 Space Packet Protocol. SPP provides the
 network layer for space communications, encapsulating application data in

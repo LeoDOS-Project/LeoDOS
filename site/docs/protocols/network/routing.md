@@ -1,4 +1,4 @@
-# ISL Routing Protocol
+# Routing
 
 The ISL (Inter-Satellite Link) Routing Protocol provides point-to-point message
 delivery across a satellite constellation organized as a 2D torus topology.

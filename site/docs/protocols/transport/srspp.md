@@ -1,4 +1,4 @@
-# SRSPP: Simple Reliable Space Packet Protocol
+# SRSPP
 
 SRSPP is a lightweight reliable transport protocol built on top of CCSDS Space Packets.
 It provides reliable, ordered delivery of messages over unreliable links with minimal

@@ -1,4 +1,4 @@
-# LDPC Error Correction
+# LDPC
 
 ## The Problem
 
@@ -7,7 +7,7 @@ noisy --- individual bits can flip with some probability. We want
 the receiver to correct as many flipped bits as possible, without
 retransmission.
 
-Reed-Solomon (covered in [coding](coding)) corrects _byte_ errors and
+Reed-Solomon (covered in [Reed-Solomon](reed-solomon)) corrects _byte_ errors and
 works best against short bursts. LDPC codes work at the _bit_ level
 and are designed for channels where errors are spread randomly
 across the frame. They get closer to the theoretical Shannon limit

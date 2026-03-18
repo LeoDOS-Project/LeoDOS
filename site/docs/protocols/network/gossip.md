@@ -1,4 +1,4 @@
-# ISL Gossip Protocol
+# Gossip
 
 The ISL Gossip Protocol provides broadcast message dissemination across a
 satellite constellation. It floods messages to all satellites within a

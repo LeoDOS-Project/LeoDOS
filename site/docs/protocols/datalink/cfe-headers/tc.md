@@ -1,4 +1,4 @@
-# Telecommand Packets (cFE TC)
+# TC
 
 cFE Telecommand packets carry commands from ground to spacecraft. They extend
 the SPP primary header with a secondary header containing command identification

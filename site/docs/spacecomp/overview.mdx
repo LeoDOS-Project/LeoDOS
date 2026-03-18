@@ -1,4 +1,4 @@
-# SpaceCoMP Overview
+# Overview
 
 SpaceCoMP (Space Computing Platform) enables distributed
 computation across a LEO satellite constellation. LEO satellites
@@ -34,27 +34,22 @@ export const Proto = ({name, unused}) => (
 
 ## Protocol Stack
 
-SpaceCoMP uses the following subset of the [LeoDOS communication stack](../protocols/stack):
+SpaceCoMP uses the following subset of the [LeoDOS communication stack](../protocols/overview):
 
-<Layer name="Application">
-  <div style={{display: 'flex', gap: 4}}>
-    <Proto name="SpaceCoMP" /><Proto name="ColonyOS" unused />
-  </div>
-</Layer>
 <Layer name="Transport">
   <div style={{display: 'flex', gap: 4}}>
-    <Proto name="SRSPP" /><Proto name="CFDP" />
+    <Proto name="SRSPP" /><Proto name="CFDP" unused />
   </div>
 </Layer>
 <Layer name="Network">
+  <div style={{display: 'flex', gap: 4}}>
+    <Proto name="Routing" /><Proto name="Point to Point" /><Proto name="Gossip" unused />
+  </div>
+</Layer>
+<Layer name="Data Link">
   <Group name="cFE Headers">
     <Proto name="TM" /><Proto name="TC" />
   </Group>
-  <Group name="Routing">
-    <Proto name="ISL Router" /><Proto name="PassThrough" /><Proto name="Gossip" unused />
-  </Group>
-</Layer>
-<Layer name="Data Link">
   <Group name="Packet Protocol">
     <Proto name="SPP" />
   </Group>
@@ -62,29 +57,32 @@ SpaceCoMP uses the following subset of the [LeoDOS communication stack](../proto
     <Proto name="TM" /><Proto name="TC" /><Proto name="AOS" unused /><Proto name="Proximity-1" unused /><Proto name="USLP" unused />
   </Group>
   <Group name="Security">
-    <Proto name="SDLS" unused />
+    <Proto name="SDLS" />
   </Group>
   <Group name="Reliability">
     <Proto name="COP-1" />
   </Group>
 </Layer>
 <Layer name="Coding">
+  <Group name="Randomization">
+    <Proto name="Randomization" />
+  </Group>
   <Group name="Forward Error Correction">
-    <Proto name="RS(255,223)" /><Proto name="LDPC (AR4JA)" /><Proto name="Convolutional" unused />
+    <Proto name="RS(255,223)" /><Proto name="LDPC (AR4JA)" unused /><Proto name="Convolutional" unused />
   </Group>
   <Group name="Framing">
     <Proto name="ASM / CADU" /><Proto name="CLTU" />
   </Group>
   <Group name="Data Compression">
-    <Proto name="Rice" unused /><Proto name="DWT" unused /><Proto name="Hyperspectral" unused />
+    <Proto name="Rice" /><Proto name="DWT" /><Proto name="Hyperspectral" />
   </Group>
 </Layer>
 <Layer name="Physical">
   <Group name="Modulation">
-    <Proto name="BPSK" /><Proto name="QPSK" /><Proto name="OQPSK" unused /><Proto name="8PSK" unused /><Proto name="GMSK" unused />
+    <Proto name="BPSK" /><Proto name="QPSK" unused /><Proto name="OQPSK" unused /><Proto name="8PSK" unused /><Proto name="GMSK" unused />
   </Group>
   <Group name="Hardware">
-    <Proto name="UART" /><Proto name="SPI" /><Proto name="I2C" /><Proto name="CAN" /><Proto name="UDP" /><Proto name="TCP" />
+    <Proto name="UART" /><Proto name="SPI" unused /><Proto name="I2C" unused /><Proto name="CAN" unused /><Proto name="GPIO" unused /><Proto name="UDP" unused /><Proto name="TCP" unused />
   </Group>
 </Layer>
 
@@ -94,8 +92,8 @@ SpaceCoMP uses the following subset of the [LeoDOS communication stack](../proto
 </div>
 
 SRSPP handles reliable message delivery between satellites.
-CFDP is used for larger file transfers to ground. The ISL Router
-provides multi-hop mesh routing; PassThrough is for direct links.
+CFDP is used for larger file transfers to ground. The Routing layer
+provides multi-hop mesh routing; Point to Point is for direct links.
 
 ## Constellation Model
 

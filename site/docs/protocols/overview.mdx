@@ -1,0 +1,661 @@
+# Overview
+
+export const Layer = ({name, children}) => (
+  <div style={{border: '2px solid #333', borderRadius: 6, padding: 6, marginBottom: -2, maxWidth: 520}}>
+    <div style={{fontWeight: 'bold', fontSize: '0.9em', marginBottom: 4}}>{name}</div>
+    {children}
+  </div>
+);
+
+export const Group = ({name, children}) => (
+  <div style={{border: '1px solid #999', borderRadius: 4, padding: 5, margin: '3px 0', background: '#fafafa'}}>
+    <div style={{fontSize: '0.8em', fontStyle: 'italic', color: '#666', marginBottom: 3}}>{name}</div>
+    <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>{children}</div>
+  </div>
+);
+
+export const Proto = ({name, origin}) => {
+  const bg = origin === 'leodos' ? '#c8daf8' : origin === 'cfs' ? '#f5e0b0' : '#d4e8d4';
+  const bd = origin === 'leodos' ? '#6688bb' : origin === 'cfs' ? '#bba050' : '#88aa88';
+  return (
+    <div style={{
+      border: '1px solid ' + bd,
+      borderRadius: 4,
+      padding: '3px 8px',
+      fontSize: '0.85em',
+      fontWeight: 'bold',
+      background: bg,
+      color: '#333',
+    }}>{name}</div>
+  );
+};
+
+## Stack Overview
+
+<Layer name="Transport">
+  <div style={{display: 'flex', gap: 4}}>
+    <Proto name="SRSPP" origin="leodos" /><Proto name="CFDP" />
+  </div>
+</Layer>
+<Layer name="Network">
+  <div style={{display: 'flex', gap: 4}}>
+    <Proto name="Routing" origin="leodos" /><Proto name="Point to Point" origin="leodos" /><Proto name="Gossip" origin="leodos" />
+  </div>
+</Layer>
+<Layer name="Data Link">
+  <Group name="cFE Headers">
+    <Proto name="TM" /><Proto name="TC" />
+  </Group>
+  <Group name="Packet Protocol">
+    <Proto name="SPP" />
+  </Group>
+  <Group name="Transfer Frame">
+    <Proto name="TM" /><Proto name="TC" /><Proto name="AOS" /><Proto name="Proximity-1" /><Proto name="USLP" />
+  </Group>
+  <Group name="Security">
+    <Proto name="SDLS" />
+  </Group>
+  <Group name="Reliability">
+    <Proto name="COP-1" />
+  </Group>
+</Layer>
+<Layer name="Coding">
+  <Group name="Randomization">
+    <Proto name="Randomization" />
+  </Group>
+  <Group name="Forward Error Correction">
+    <Proto name="RS(255,223)" /><Proto name="LDPC (AR4JA)" /><Proto name="Convolutional" />
+  </Group>
+  <Group name="Framing">
+    <Proto name="ASM / CADU" /><Proto name="CLTU" />
+  </Group>
+  <Group name="Data Compression">
+    <Proto name="Rice" /><Proto name="DWT" /><Proto name="Hyperspectral" />
+  </Group>
+</Layer>
+<Layer name="Physical">
+  <Group name="Modulation">
+    <Proto name="BPSK" /><Proto name="QPSK" /><Proto name="OQPSK" /><Proto name="8PSK" /><Proto name="GMSK" />
+  </Group>
+  <Group name="Hardware">
+    <Proto name="UART" origin="cfs" /><Proto name="SPI" origin="cfs" /><Proto name="I2C" origin="cfs" /><Proto name="CAN" origin="cfs" /><Proto name="GPIO" origin="cfs" /><Proto name="UDP" origin="cfs" /><Proto name="TCP" origin="cfs" />
+  </Group>
+</Layer>
+
+<div style={{display: 'flex', gap: 16, marginTop: 10, fontSize: '0.85em', alignItems: 'center', flexWrap: 'wrap'}}>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#c8daf8', border: '1px solid #6688bb', borderRadius: 3}} /> LeoDOS</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '1px solid #88aa88', borderRadius: 3}} /> CCSDS</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f5e0b0', border: '1px solid #bba050', borderRadius: 3}} /> cFS / hwlib</div>
+</div>
+
+---
+
+# Layered Recovery
+
+The reliability mechanisms at different layers are complementary,
+not redundant. Each layer handles a class of failure that the
+layers below cannot see.
+
+## Why COP-1 alone is not sufficient
+
+COP-1 runs independently on each hop. Consider a three-hop path:
+
+```
+Sat A → Sat B → Sat C → Sat D
+```
+
+COP-1 on the A--B link confirms that Sat B received the frame. But
+Sat B's router may drop the packet before forwarding it to Sat C
+--- due to queue overflow, a software fault, or a route change.
+COP-1 on A--B has already reported success. Neither the sender (A)
+nor the final receiver (D) knows the packet was lost.
+
+Only an end-to-end protocol (SRSPP) between A and D can detect and
+recover from this. SRSPP's sequence numbers span the entire path,
+so D knows exactly which packets it has received and can request
+retransmission from A.
+
+## Why SRSPP alone is not sufficient
+
+Without per-hop reliability, SRSPP must retransmit every packet
+lost to bit errors. On a lossy RF link this means:
+
+- Each retransmission traverses the full multi-hop path, consuming
+  bandwidth on every intermediate link.
+- Each retransmission is itself subject to the same per-hop loss
+  rate.
+- Throughput degrades geometrically with hop count: a 1% frame
+  loss rate per hop becomes $(1 - 0.99^n)$ end-to-end loss for an
+  $n$-hop path.
+
+With COP-1 on each hop, frame losses are recovered locally in one
+link round-trip time. SRSPP only needs to retransmit when an
+intermediate router drops a packet --- a much rarer event than a
+bit error.
+
+## Recovery summary
+
+1. A bit error on the RF link is corrected by the coding layer's
+   FEC. No retransmission occurs.
+2. If FEC cannot correct the damage, the corrupted frame is
+   discarded. COP-1 detects the gap in the frame sequence and
+   retransmits the frame on the same hop.
+3. If a packet survives all hops but is dropped at an intermediate
+   router, SRSPP detects the missing sequence number and
+   retransmits end-to-end.
+
+Each layer handles only the residual failures of the layer below.
+The result is that SRSPP retransmissions are rare, but they remain
+necessary for correctness in a multi-hop network.
+
+---
+
+# Time Codes (301.0-B-4)
+
+CCSDS 301.0-B-4 defines standard time formats for space missions.
+Time stamps appear in cFE telemetry secondary headers (6 bytes),
+in protocol metadata, and in science data annotations. Two formats
+are used in LeoDOS: CUC and CDS.
+
+Both formats use a two-part encoding. The _P-field_ (preamble) is a
+1-byte descriptor that identifies the time format, epoch, and field
+sizes. The _T-field_ contains the actual time value. When sender and
+receiver agree on the format in advance, the P-field can be omitted
+and the T-field is interpreted using the implicit configuration.
+
+Both formats reference the CCSDS epoch: **1958-01-01T00:00:00 TAI**.
+TAI (International Atomic Time) is a monotonic time scale that does
+not include leap seconds, which is important for spacecraft where
+a discontinuity in the time reference could cause control loops to
+misbehave.
+
+## CUC --- Unsegmented Code
+
+CUC encodes time as a binary count of whole seconds (the _coarse_
+field) and fractional seconds (the _fine_ field) since the epoch.
+The number of bytes for each is configurable: 1--4 bytes for coarse
+and 0--3 bytes for fine. This flexibility allows trading off range
+against resolution and encoded size.
+
+The P-field encodes:
+
+- **Time code ID** (3 bits): `001` for agency-defined epoch, `010`
+  for the CCSDS epoch.
+- **Coarse octets** (2 bits): the number of coarse bytes minus one
+  (0--3, meaning 1--4 bytes).
+- **Fine octets** (2 bits): the number of fine bytes (0--3).
+
+Common configurations:
+
+- **4+2** (standard): 4 coarse bytes give a range of ~136 years from
+  epoch. 2 fine bytes give ~15 us resolution
+  ($1 / 2^{16} \approx 15.3 \mu s$). Total T-field: 6 bytes.
+- **4+0**: 4 coarse bytes, no fractional part. 1-second resolution.
+  Total T-field: 4 bytes.
+
+CUC is used in the cFE telemetry secondary header (6-byte
+timestamp). It is the natural choice when the on-board clock
+provides a seconds-and-ticks counter.
+
+## CDS --- Day Segmented
+
+CDS encodes time as a day count since the epoch plus milliseconds
+within the day. It optionally includes a sub-millisecond field for
+higher resolution.
+
+The P-field encodes:
+
+- **Time code ID** (3 bits): `100` for CDS.
+- **Epoch ID** (1 bit): 0 = CCSDS epoch, 1 = agency-defined.
+- **Day segment length** (1 bit): 0 = 16-bit day count (range
+  ~179 years), 1 = 24-bit day count (range ~45,000 years).
+- **Sub-millisecond resolution** (2 bits): `00` = none, `01` = 16-bit
+  microseconds (0--999 us), `10` = 32-bit picoseconds
+  (0--999,999,999 ps).
+
+Common configurations:
+
+- **16-bit day, no sub-ms**: 2 day + 4 ms = 6-byte T-field.
+  Millisecond resolution, ~179 year range.
+- **16-bit day, us**: 2 day + 4 ms + 2 us = 8-byte T-field.
+  Microsecond resolution.
+- **24-bit day, ps**: 3 day + 4 ms + 4 ps = 11-byte T-field.
+  Picosecond resolution, extended range.
+
+CDS is suited for ground systems and science data where wall-clock
+time (day + time-of-day) is more natural than a raw second count.
+
+## Choosing Between CUC and CDS
+
+CUC is compact and maps directly to hardware tick counters. CDS is
+human-readable (day + milliseconds) and convenient for correlating
+events with calendar dates. In practice, flight software uses CUC
+for telemetry timestamps and CDS for ground-originated time
+references and science data annotations.
+
+---
+
+# Type System Composition
+
+The communication stack is implemented as a set of Rust traits and
+generic types. Each layer defines a trait boundary, and concrete
+types compose by holding an inner type that implements the trait of
+the layer below. This section describes every trait, every type
+that implements it, and how they nest.
+
+## Physical Layer
+
+### Traits
+
+```rust
+trait AsyncPhysicalWriter {
+    type Error;
+    async fn write(&mut self, data: &[u8])
+        -> Result<(), Self::Error>;
+}
+
+trait AsyncPhysicalReader {
+    type Error;
+    async fn read(&mut self, buffer: &mut [u8])
+        -> Result<usize, Self::Error>;
+}
+```
+
+Raw byte I/O with hardware.
+
+### Implementations
+
+```rust
+impl AsyncPhysicalWriter for UartChannel { .. }
+impl AsyncPhysicalReader for UartChannel { .. }
+```
+
+`UartChannel` (behind the `cfs` feature) wraps the hwlib UART
+driver. In simulation, the UART is routed through NOS Engine to
+the radio simulator; on real hardware, the same code talks to the
+physical radio.
+
+## Coding Layer
+
+### Traits
+
+The coding layer currently has no trait boundary of its own. It
+needs two: one facing the data link layer above (accepting transfer
+frames) and one facing the physical layer below (writing/reading
+coded bytes). These traits do not exist yet.
+
+```rust
+// Needed: accepts a transfer frame, applies the full
+// coding chain (randomize -> FEC -> framing), and writes
+// the result to the physical layer.
+trait CodedFrameSender {
+    type Error;
+    async fn send(&mut self, frame: &[u8])
+        -> Result<(), Self::Error>;
+}
+
+// Needed: reads coded bytes from the physical layer,
+// applies the inverse chain (sync -> FEC decode ->
+// derandomize), and returns the transfer frame.
+trait CodedFrameReceiver {
+    type Error;
+    async fn recv(&mut self, buffer: &mut [u8])
+        -> Result<usize, Self::Error>;
+}
+```
+
+Additionally, the `Randomizer` trait exists for the randomization
+step:
+
+```rust
+trait Randomizer {
+    fn apply(&self, data: &mut [u8]);
+    fn table(&self) -> &[u8];
+}
+```
+
+### Implementations
+
+Randomizer implementors:
+
+```rust
+impl Randomizer for TcRandomizer { .. }
+impl Randomizer for Tm255Randomizer { .. }
+impl Randomizer for Tm131071Randomizer { .. }
+```
+
+Standalone coding functions (no trait, called directly):
+
+```rust
+fn reed_solomon::encode(..);
+fn reed_solomon::decode(..);
+fn cadu::encode_cadu(..);
+fn cadu::decode_cadu(..);
+fn cltu::encode_cltu(..);
+fn ldpc::encode(..);
+fn ldpc::decode(..);
+fn convolutional::encode(..);
+fn convolutional::viterbi_decode(..);
+fn rice::compress(..);
+fn rice::decompress(..);
+fn ccsds122::compress(..);
+fn ccsds122::decompress(..);
+fn ccsds123::compress(..);
+fn ccsds123::decompress(..);
+```
+
+No types implement `CodedFrameSender` or `CodedFrameReceiver` yet.
+The TM sender driver calls `Randomizer::apply` directly; the other
+coding functions are not called anywhere in the pipeline.
+
+## Data Link Layer
+
+### Traits
+
+```rust
+trait FrameSender {
+    type Error: core::error::Error;
+    async fn send(&mut self, data: &[u8])
+        -> Result<(), Self::Error>;
+}
+
+trait FrameReceiver {
+    type Error: core::error::Error;
+    async fn recv(&mut self, buffer: &mut [u8])
+        -> Result<usize, Self::Error>;
+}
+```
+
+`FrameSender` and `FrameReceiver` are the lower boundary of the
+data link layer --- the interface through which frame drivers write
+to and read from the link.
+
+```rust
+trait DataLink {
+    type Error: core::error::Error;
+    async fn send(&mut self, data: &[u8])
+        -> Result<(), Self::Error>;
+    async fn recv(&mut self, buffer: &mut [u8])
+        -> Result<usize, Self::Error>;
+}
+```
+
+`DataLink` combines both directions into what the network layer
+holds per link.
+
+### Implementations
+
+`FrameSender` implementors:
+
+```rust
+impl FrameSender for UdpFrameSender { .. }
+impl FrameSender for PipeFrameSender { .. }
+impl FrameSender for TmSenderHandle { .. }
+impl FrameSender for TcSenderHandle { .. }
+```
+
+`UdpFrameSender` sends one UDP datagram per frame.
+`PipeFrameSender` publishes to a cFS Software Bus message ID.
+`TmSenderHandle` and `TcSenderHandle` enqueue into a shared
+channel (see drivers below).
+
+`FrameReceiver` implementors:
+
+```rust
+impl FrameReceiver for UdpFrameReceiver { .. }
+impl FrameReceiver for PipeFrameReceiver { .. }
+impl FrameReceiver for TmReceiverHandle { .. }
+impl FrameReceiver for TcReceiverHandle { .. }
+```
+
+`DataLink` implementors:
+
+```rust
+impl DataLink for UdpDataLink { .. }
+impl DataLink for AsymmetricLink { .. }
+impl DataLink for LocalRouterHandle { .. }
+```
+
+`UdpDataLink` wraps a single bidirectional UDP socket.
+`AsymmetricLink` holds separate sender and receiver halves.
+`LocalRouterHandle` is the router-side of an in-process channel.
+
+Background drivers (no trait --- run via `run()` method):
+
+```rust
+TmSenderDriver<W: FrameSender>
+TcSenderDriver<W: FrameSender>
+TmReceiverDriver<R: FrameReceiver>
+TcReceiverDriver<R: FrameReceiver>
+```
+
+The TM/TC channels use a handle/driver split to allow send and
+receive loops to run concurrently on a single-threaded async
+executor (as required by cFS). The handle is held by the
+application task; the driver runs as a separate task. They share
+state through a `RefCell`-guarded queue. The TM driver builds a
+`TelemetryTransferFrame`, applies `Randomizer::apply`, and calls
+`FrameSender::send`. The TC driver builds a
+`TelecommandTransferFrame` and calls `FrameSender::send`.
+
+## Network Layer
+
+### Traits
+
+```rust
+trait NetworkLayer {
+    type Error: core::error::Error;
+    async fn send(&mut self, data: &[u8])
+        -> Result<(), Self::Error>;
+    async fn recv(&mut self, buffer: &mut [u8])
+        -> Result<usize, Self::Error>;
+}
+```
+
+### Implementations
+
+```rust
+impl<L: DataLink> NetworkLayer for PassThrough<L> { .. }
+impl NetworkLayer for LocalAppHandle { .. }
+```
+
+`PassThrough` forwards directly to one `DataLink` without routing.
+`LocalAppHandle` is the app-side of an in-process channel to the
+router.
+
+The `Router` does not implement `NetworkLayer` itself. It holds
+six `DataLink` instances and a routing algorithm, and runs as a
+background task that polls all links and forwards packets. The
+application communicates with the router through a `LocalChannel`,
+whose `LocalAppHandle` implements `NetworkLayer`.
+
+```rust
+Router<N, S, E, W, G, L, R>
+// N, S, E, W, G, L: DataLink; R: RoutingAlgorithm
+```
+
+## Transport Layer
+
+### Traits
+
+```rust
+trait TransportSender {
+    type Error;
+    async fn send(&mut self, data: &[u8])
+        -> Result<(), Self::Error>;
+}
+
+trait TransportReceiver {
+    type Error;
+    async fn recv(&mut self, buf: &mut [u8])
+        -> Result<usize, Self::Error>;
+}
+```
+
+These traits are defined but have no implementors today.
+
+### Implementations
+
+The SRSPP and CFDP types provide their own `send`/`recv` methods
+without going through the transport traits.
+
+```rust
+SrsppSender<L: NetworkLayer, P: RtoPolicy>
+SrsppReceiver<L: NetworkLayer, R: ReceiverBackend>
+```
+
+Both have `pub async fn send()`/`recv()` but do not implement
+`TransportSender`/`TransportReceiver`.
+
+On cFS, SRSPP uses the same handle/driver split as the data link
+layer:
+
+```rust
+SrsppTxHandle
+SrsppSenderDriver<L: NetworkLayer>
+SrsppRxHandle
+SrsppReceiverDriver<L: NetworkLayer>
+```
+
+CFDP operates as independent state machines:
+
+```rust
+SendingMachine
+ReceivingMachine
+```
+
+## Concrete Composition
+
+The TM (downlink) send path illustrates how the types nest:
+
+```
+SrsppSender<LocalAppHandle, ..>
+     |
+     +- holds LocalAppHandle (impl NetworkLayer)
+     |       |
+     |       +- communicates with Router via LocalChannel
+     |
+     +- Router runs in background
+             |
+             +- holds AsymmetricLink per direction
+             |       (impl DataLink)
+             |       |
+             |       +- holds TmSenderHandle (FrameSender)
+             |               |
+             |               +- enqueues into TmSenderChannel
+             |
+             +- TmSenderDriver runs in background
+                     |
+                     +- dequeues from TmSenderChannel
+                     +- builds TelemetryTransferFrame
+                     +- applies Randomizer::apply
+                     +- calls FrameSender::send
+                             |
+                             +- UdpFrameSender (today)
+```
+
+## What Does Not Compose Yet
+
+Three gaps prevent a complete end-to-end pipeline:
+
+### FrameSender to physical layer
+
+The `TmSenderDriver` and `TcSenderDriver` hold a generic
+`W: FrameSender`. At the bottom of the stack, something must
+implement `FrameSender` by writing bytes to the physical channel.
+Today this role is filled by `UdpFrameSender` and `UdpDataLink`
+(which send UDP datagrams). There is no adapter that implements
+`FrameSender` by calling `AsyncPhysicalWriter::write`, so the
+UART-based physical channel cannot be used as a frame sender
+without manual glue.
+
+### Coding in the pipeline
+
+The coding functions (Reed-Solomon, CADU framing, CLTU encoding)
+exist as standalone `encode`/`decode` calls. The TM driver calls
+the randomizer directly, but Reed-Solomon encoding, ASM framing,
+and CLTU encoding are not called anywhere in the send/receive path.
+To fully encode a downlink frame, the driver would need to:
+
+1. Randomize the frame (already done).
+2. Reed-Solomon encode the randomized frame.
+3. Prepend the ASM to form a CADU.
+4. Write the CADU to the physical channel.
+
+A symmetric decode path is needed on the receive side.
+
+### COP-1 and SDLS integration
+
+The COP-1 state machines (FOP-1 sender, FARM-1 receiver) and the
+SDLS `apply_security`/`process_security` functions are fully
+implemented but are not called from the TC/TM drivers. The frame
+drivers currently send frames directly without sequence checking,
+retransmission, or encryption. Integrating these requires inserting
+COP-1 and SDLS as stages in the driver's send/receive path, between
+frame construction and the call to `FrameSender::send`.
+
+---
+
+# Wanted Design
+
+The current design has traits only at layer boundaries and uses
+inconsistent names (`NetworkLayer`, `DataLink`, `FrameSender`,
+`AsyncPhysicalWriter`). The wanted design uses a uniform naming
+convention and adds traits for each _group_ within the physical,
+coding, and data link layers, matching the groups in the stack
+diagram.
+
+Every layer boundary uses the same pattern: the layer name with a
+`Writer`/`Reader` suffix for the send/receive directions. The
+combined traits (`NetworkLayer`, `DataLink`) are dropped --- only
+the directional variants exist. The `TransportSender`/
+`TransportReceiver` traits are removed since they have no
+implementors.
+
+```
+Transport  holds  W: NetworkWriter,  R: NetworkReader
+Network    holds  W: DataLinkWriter, R: DataLinkReader
+DataLink   holds  W: CodingWriter,   R: CodingReader
+Coding     holds  W: PhysicalWriter, R: PhysicalReader
+```
+
+All four trait pairs have the same shape:
+
+```rust
+trait <Layer>Writer {
+    type Error;
+    async fn write(&mut self, data: &[u8])
+        -> Result<(), Self::Error>;
+}
+
+trait <Layer>Reader {
+    type Error;
+    async fn read(&mut self, buffer: &mut [u8])
+        -> Result<usize, Self::Error>;
+}
+```
+
+## Full Pipeline
+
+With all group traits in place, the complete TM downlink path
+from application to hardware:
+
+```
+Application (SpaceCoMP)
+  -> SrsppSender            (transport)
+  ======= NetworkWriter =======
+    -> Router              (network: background task)
+    ===== DataLinkWriter ======
+      -> FrameBuilder      (datalink: TM frame)
+      -> SecurityProcessor (datalink: SDLS)
+      -> ReliabilitySender (datalink: COP-1)
+      ===== CodingWriter ======
+        -> Randomizer         (coding)
+        -> FecEncoder         (coding: RS)
+        -> Framer             (coding: ASM)
+        === PhysicalWriter ====
+          -> UartChannel        (physical: UART)
+```
+
+Each `->` is a trait boundary. Any component can be swapped by
+providing a different implementor of the same trait.

@@ -1,4 +1,4 @@
-# Reed-Solomon Error Correction
+# Reed-Solomon
 
 ## The Problem
 
