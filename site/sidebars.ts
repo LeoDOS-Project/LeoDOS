@@ -40,6 +40,16 @@ const sidebars: SidebarsConfig = {
         'protocols/overview',
         {
           type: 'category',
+          label: 'Composition',
+          items: [
+            'protocols/composition/overview',
+            'protocols/composition/reliability',
+            'protocols/composition/security',
+            'protocols/composition/time-codes',
+          ],
+        },
+        {
+          type: 'category',
           label: 'Transport',
           items: [
             'protocols/transport/overview',
@@ -184,6 +194,52 @@ const sidebars: SidebarsConfig = {
             },
           ],
         },
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Core Flight System',
+      items: [
+        'cfs/overview',
+        {
+          type: 'category',
+          label: 'Mission',
+          items: [
+            'cfs/mission/overview',
+            'cfs/mission/structure',
+            'cfs/mission/deployment',
+            'cfs/mission/scheduling',
+            'cfs/mission/communication',
+            'cfs/mission/identification',
+            'cfs/mission/time',
+            'cfs/mission/processor',
+            'cfs/mission/fault-tolerance',
+            'cfs/mission/memory',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'cFE',
+          items: [
+            'cfs/cfe/overview',
+            'cfs/cfe/es',
+            'cfs/cfe/sb',
+            'cfs/cfe/evs',
+            'cfs/cfe/tbl',
+            'cfs/cfe/time',
+          ],
+        },
+        'cfs/osal',
+        'cfs/psp',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Research',
+      items: [
+        'research/overview',
+        'research/data-stream-processing',
+        'research/security',
       ],
     },
     {

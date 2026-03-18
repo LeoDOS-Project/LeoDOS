@@ -1,0 +1,87 @@
+# Overview
+
+The Core Flight System (cFS) is NASA's open-source flight software framework, used on over 50 missions. It provides a portable, layered architecture that separates hardware-specific code from application logic, so the same flight apps run on different processors and operating systems without modification.
+
+cFS exists because spacecraft flight software faces a recurring problem: every new mission re-implements the same services — task scheduling, message routing, configuration management, time synchronization — on top of whatever hardware and RTOS the mission selects. cFS solves this by defining three abstraction layers that isolate applications from the platform beneath them.
+
+## Architecture
+
+The stack has three layers. The Platform Support Package (PSP) abstracts the physical board. The Operating System Abstraction Layer (OSAL) abstracts the real-time operating system. The core Flight Executive (cFE) provides five services that every application can use: task management, message passing, event logging, table-based configuration, and time synchronization.
+
+export const Layer = ({name, children}) => (
+  <div style={{border: '2px solid #333', borderRadius: 6, padding: 6, marginBottom: -2, width: 520}}>
+    <div style={{fontWeight: 'bold', fontSize: '0.9em', marginBottom: 4}}>{name}</div>
+    {children}
+  </div>
+);
+
+export const Chip = ({name, href}) => {
+  const content = href
+    ? <a href={href} style={{color: '#333', textDecoration: 'none'}}>{name}</a>
+    : name;
+  return (
+    <div style={{
+      border: '1px solid #bba050',
+      borderRadius: 4,
+      padding: '3px 8px',
+      fontSize: '0.85em',
+      fontWeight: 'bold',
+      background: '#f5e0b0',
+      color: '#333',
+    }}>{content}</div>
+  );
+};
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+<Layer name="cFE (Core Flight Executive)">
+  <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
+    <Chip name="ES" href="/cfs/cfe/es" />
+    <Chip name="SB" href="/cfs/cfe/sb" />
+    <Chip name="EVS" href="/cfs/cfe/evs" />
+    <Chip name="TBL" href="/cfs/cfe/tbl" />
+    <Chip name="TIME" href="/cfs/cfe/time" />
+  </div>
+</Layer>
+<Layer name="OSAL (OS Abstraction Layer)">
+  <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
+    <Chip name="Tasks" href="/cfs/osal" />
+    <Chip name="Queues" href="/cfs/osal" />
+    <Chip name="Sync" href="/cfs/osal" />
+    <Chip name="Timers" href="/cfs/osal" />
+    <Chip name="FS" href="/cfs/osal" />
+  </div>
+</Layer>
+<Layer name="PSP (Platform Support Package)">
+  <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
+    <Chip name="Memory" href="/cfs/psp" />
+    <Chip name="Watchdog" href="/cfs/psp" />
+    <Chip name="Timer" href="/cfs/psp" />
+    <Chip name="CDS" href="/cfs/psp" />
+  </div>
+</Layer>
+<Layer name="Hardware / RTOS">
+  <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
+    <Chip name="VxWorks" />
+    <Chip name="RTEMS" />
+    <Chip name="Linux" />
+  </div>
+</Layer>
+</div>
+
+## Mission
+
+A mission is a collection of apps running on the framework above. The [Mission](mission/overview) section covers how a mission is organized and how it addresses the concerns that every spacecraft faces:
+
+- [Structure](mission/structure) — apps, libraries, tables, configuration, and the build process
+- [Deployment](mission/deployment) — updating apps and configuration on a running spacecraft
+- [Scheduling](mission/scheduling) — time-driven execution and deterministic CPU allocation
+- [Communication](mission/communication) — how apps exchange data through the bus
+- [Identification](mission/identification) — spacecraft IDs, APIDs, and message routing
+- [Time](mission/time) — how the spacecraft knows what time it is and stays synchronized
+- [Processor](mission/processor) — hardware assumptions: word size, endianness, radiation, no MMU
+- [Fault Tolerance](mission/fault-tolerance) — error detection and recovery, from bit flips to app crashes
+- [Memory](mission/memory) — bounded, pre-allocated memory without a general-purpose heap
+
+## How LeoDOS Uses cFS
+
+All LeoDOS flight applications are cFS apps. The communication stack — framing, routing, reliable transport — runs as cFS tasks that communicate through the Software Bus. This means the protocol stack benefits from cFS's built-in services: configuration tables can be updated from the ground without restarting an app, events from any layer are captured and downlinked as telemetry, and the entire stack shares a single synchronized time reference.
