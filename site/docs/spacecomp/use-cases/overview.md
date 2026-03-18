@@ -1,8 +1,19 @@
-# Critical Workflows & Anomaly Detection
+# Overview
 
 Extension of the SpaceCoMP Collect-Map-Reduce model from one-shot
 queries to continuous, orbit-recurring workflows with onboard change
 detection and autonomous alerting.
+
+**Use cases:**
+
+- [Tailings Dam](tailings-dam.md)
+- [Wildfire](wildfire.md)
+- [Deforestation](deforestation.md)
+- [Oil Spill](oil-spill.md)
+- [Flood](flood.md)
+- [Volcanic](volcanic.md)
+- [Sea Ice](sea-ice.md)
+- [Anti-Poaching](anti-poaching.md)
 
 ## Motivation
 
@@ -75,204 +86,6 @@ Workflow state must survive across orbits (~90 min period). Options:
 - **Distributed state:** for workflows spanning multiple satellites, the
   baseline could be partitioned across the AOI's collector nodes (each
   stores its own tile).
-
-## Use Cases
-
-### Tailings Dam Displacement Monitoring
-
-Tailings dams at mining sites can fail catastrophically if ground
-displacement exceeds safe limits. Traditional InSAR monitoring requires
-ground processing with days of latency.
-
-**Sensor:** SAR (Synthetic Aperture Radar).
-
-**Pipeline:**
-- _Collect:_ SAR strip over the dam AOI.
-- _Map:_ interferometric phase subtraction against a stored master
-  image (differential InSAR). For each pixel, compute displacement:
-  $$\Delta d = \frac{\Delta \phi \cdot \lambda}{4 \pi}$$
-- _Reduce:_ count pixels where $|\Delta d| >$ threshold (e.g. 5 mm). If
-  count exceeds minimum cluster size, generate alert with centroid
-  coordinates, max displacement, and affected area.
-
-**Alert payload:** ~2 KB (AOI ID, timestamp, centroid lat/lon, max
-displacement mm, pixel count, confidence score).
-
-**Feasibility:**
-- Differential InSAR phase subtraction is computationally simple
-  (complex multiply + angle extraction per pixel).
-- The master image (~2 GB compressed SLC) must be stored onboard ---
-  feasible with modern flash storage.
-- Atmospheric phase screen correction is the hard part; a simplified
-  threshold-based approach (flag only large displacements) avoids
-  needing full atmospheric modeling.
-- Repeat-pass interval depends on orbit: ~daily for a large
-  constellation, weekly for smaller ones.
-
-### Wildfire Ignition Detection
-
-Early wildfire detection (minutes vs hours) saves lives and reduces
-suppression costs by orders of magnitude.
-
-**Sensor:** thermal IR (MWIR/LWIR bands).
-
-**Pipeline:**
-- _Collect:_ thermal imagery over monitored fire-risk zones.
-- _Map:_ for each pixel, compute brightness temperature. Flag pixels
-  where $T >$ contextual threshold (accounting for solar heating, land
-  cover). Compare against a running background model.
-- _Reduce:_ cluster adjacent hot pixels. Filter false positives (sun
-  glint, industrial heat). Generate alert if cluster exceeds minimum
-  size and persistence (confirmed on 2+ consecutive frames if
-  available).
-
-**Alert payload:** ~1 KB (coordinates, temperature, cluster size,
-confidence, timestamp).
-
-**Feasibility:**
-- Thermal anomaly detection is well-understood (MODIS, VIIRS algorithms
-  exist).
-- Computational cost is low (thresholding + clustering).
-- Time-critical: minutes matter. Onboard processing eliminates the
-  ground-processing delay entirely.
-- False positive rate is the main challenge; contextual algorithms help
-  but are more compute-intensive.
-
-### Illegal Deforestation Detection
-
-Monitoring protected forest areas for unauthorized clearing, especially
-in remote regions where ground patrols are infeasible.
-
-**Sensor:** multispectral (visible + NIR).
-
-**Pipeline:**
-- _Collect:_ multispectral image over protected forest AOI.
-- _Map:_ compute NDVI per pixel:
-  $$\text{NDVI} = \frac{\text{NIR} - \text{Red}}{\text{NIR} + \text{Red}}$$
-  Compare against baseline NDVI map. Flag pixels where $\Delta$NDVI
-  exceeds deforestation threshold (e.g. drop of > 0.3).
-- _Reduce:_ cluster changed pixels, compute area in hectares. Filter
-  out seasonal variation using baseline update schedule. Generate alert
-  if cleared area exceeds minimum (e.g. > 1 ha).
-
-**Alert payload:** ~3 KB (polygon outline of cleared area, area in
-hectares, NDVI delta, timestamp).
-
-**Feasibility:**
-- NDVI computation is trivial (2 bands, 1 division per pixel).
-- Cloud cover is the main limitation; SAR-based alternatives
-  (backscatter change detection) work through clouds but require more
-  complex processing.
-- Baseline must be updated seasonally to avoid false alerts from
-  natural phenology changes.
-
-### Oil Spill Detection
-
-Early detection of oil spills at sea enables faster response and
-reduces environmental damage.
-
-**Sensor:** SAR (C-band or X-band).
-
-**Pipeline:**
-- _Collect:_ SAR image over monitored shipping lanes or offshore
-  platforms.
-- _Map:_ detect dark spots on ocean surface (oil dampens capillary
-  waves, reducing SAR backscatter). Apply adaptive threshold relative
-  to surrounding sea state.
-- _Reduce:_ classify dark spots by shape (elongated = likely spill,
-  circular = natural slick/low-wind zone). Filter by area (> minimum
-  spill size). Generate alert with spill extent estimate.
-
-**Alert payload:** ~2 KB (centroid, estimated area km^2, elongation
-ratio, heading, wind speed context, timestamp).
-
-**Feasibility:**
-- Dark-spot detection in SAR is computationally cheap (thresholding +
-  connected components).
-- False positive discrimination (oil vs lookalikes like algae, low-wind
-  zones) is the hard part; simple shape heuristics help, ML-based
-  classifiers need more compute.
-- No baseline needed --- each image is self-contained.
-
-### Flood Extent Monitoring
-
-During flood events, rapid mapping of inundated areas guides evacuation
-and relief efforts.
-
-**Sensor:** SAR (works through clouds and at night).
-
-**Pipeline:**
-- _Collect:_ SAR image over flood-risk AOI.
-- _Map:_ classify pixels as water/non-water using backscatter threshold
-  (water is specularly reflective -> dark in SAR). Compare
-  against pre-flood baseline to identify newly inundated areas.
-- _Reduce:_ compute total flooded area, identify affected
-  infrastructure (by overlaying with a stored vector map of
-  roads/buildings). Generate alert.
-
-**Alert payload:** ~5 KB (flood extent polygon, area km^2, list of
-affected infrastructure IDs, timestamp).
-
-**Feasibility:**
-- Water/non-water classification in SAR is robust and simple (bimodal
-  histogram thresholding).
-- Infrastructure overlay requires storing a lightweight vector map
-  onboard (feasible for a bounded AOI).
-- Time-critical during active flood events.
-
-### Volcanic Ground Deformation
-
-Same InSAR technique as tailings dams, different AOI and threshold
-parameters. Active volcanoes show cm-scale inflation in the months
-before eruption. Operationally identical pipeline.
-
-### Sea Ice Breakup Alerts
-
-Arctic shipping lanes need advance warning of ice breakup events.
-
-**Sensor:** SAR.
-
-**Pipeline:**
-- _Collect:_ SAR strip over monitored Arctic corridor.
-- _Map:_ edge detection on ice boundaries. Compare against previous
-  pass to detect fracture propagation.
-- _Reduce:_ if fracture rate exceeds threshold or new leads (open water
-  channels) appear in shipping lanes, generate navigation alert.
-
-### Anti-Poaching Vehicle Detection
-
-Detecting unauthorized vehicle activity in protected wildlife reserves,
-especially at night when poaching typically occurs.
-
-**Sensor:** SAR (works through clouds and at night --- critical for
-nocturnal poaching activity).
-
-**Pipeline:**
-- _Collect:_ SAR strip over reserve boundary and access roads.
-- _Map:_ change detection against a baseline backscatter image. Flag
-  new high-reflectivity points on known access routes and within the
-  reserve perimeter (vehicles are strong SAR reflectors due to corner
-  reflector geometry).
-- _Reduce:_ filter detections by time of day (nighttime = elevated
-  suspicion), location (inside reserve boundary or on unauthorized
-  access routes), and cluster size. Generate alert with coordinates,
-  estimated vehicle count, and heading from track direction.
-
-**Alert payload:** ~2 KB (detection coordinates, time, number of
-vehicles, heading estimate, confidence score).
-
-**Feasibility:**
-- Vehicle detection in SAR is well-established --- vehicles are
-  bright point targets against natural backgrounds.
-- Person-scale detection is not feasible from LEO (requires
-  < 5 m GSD; typical SAR is 10--20 m). The approach detects
-  _vehicles_, not individuals.
-- Nighttime filtering significantly reduces false positives from
-  legitimate daytime traffic (rangers, tourists).
-- Repeat-pass change detection catches new tracks in soft terrain
-  (sand, mud) even after vehicles have left.
-- Revisit frequency (90 min orbit period) limits real-time tracking
-  but suffices for alerting rangers to investigate.
 
 ## Common Pattern
 

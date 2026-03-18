@@ -8,7 +8,21 @@ const sidebars: SidebarsConfig = {
       label: 'SpaceCoMP',
       items: [
         'spacecomp/overview',
-        'spacecomp/use-cases',
+        {
+          type: 'category',
+          label: 'Use Cases',
+          items: [
+            'spacecomp/use-cases/overview',
+            'spacecomp/use-cases/tailings-dam',
+            'spacecomp/use-cases/wildfire',
+            'spacecomp/use-cases/deforestation',
+            'spacecomp/use-cases/oil-spill',
+            'spacecomp/use-cases/flood',
+            'spacecomp/use-cases/volcanic',
+            'spacecomp/use-cases/sea-ice',
+            'spacecomp/use-cases/anti-poaching',
+          ],
+        },
         {
           type: 'category',
           label: 'Task Allocation',
