@@ -7,16 +7,18 @@ use leodos_libcfs::cfe::duration::Duration;
 use leodos_libcfs::cfe::time::SysTime;
 use leodos_libcfs::runtime::time::sleep;
 
+use crate::network::NetworkRead;
+use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
-use crate::network::{NetworkRead, NetworkWrite};
 use crate::transport::TransportRead;
 use crate::transport::srspp::machine::receiver::AckInfo;
+use crate::transport::srspp::machine::receiver::AckState;
 use crate::transport::srspp::machine::receiver::HandleResult;
-use crate::transport::srspp::machine::receiver::TimerAction;
 use crate::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
 use crate::transport::srspp::machine::receiver::ReceiverMachine;
+use crate::transport::srspp::machine::receiver::TimerAction;
 use crate::transport::srspp::packet::SrsppAckPacket;
 use crate::transport::srspp::packet::SrsppDataPacket;
 use crate::transport::srspp::packet::SrsppPacket;
@@ -29,8 +31,10 @@ use super::sender::duration_until;
 
 /// Per-stream receiver state for a single remote sender.
 pub(super) struct StreamState<R: ReceiverBackend> {
-    /// Receiver state machine for this stream.
+    /// Receiver backend for this stream.
     pub(super) machine: R,
+    /// ACK and timer state for this stream.
+    pub(super) ack_state: AckState,
     /// Deadline for the delayed ACK timer.
     pub(super) ack_deadline: Option<SysTime>,
     /// Deadline for the progress (inactivity) timer.
@@ -127,23 +131,31 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
                 let flags = data.primary.sequence_flag();
 
                 let result =
-                    self.state.with_mut(|s| -> Result<HandleResult, TransportError<E>> {
-                        if !s.streams.contains_key(&source_address) {
-                            let _ = s.streams.insert(source_address, StreamState {
-                                machine: R::new(s.config.clone(), source_address),
-                                ack_deadline: None,
-                                progress_deadline: None,
-                            });
-                        }
-                        if let Some(stream) = s.streams.get_mut(&source_address) {
-                            stream
-                                .machine
-                                .handle_data(seq, flags, &data.payload)
-                                .map_err(Into::into)
-                        } else {
-                            Ok(HandleResult::default())
-                        }
-                    })?;
+                    self.state
+                        .with_mut(|s| -> Result<HandleResult, TransportError<E>> {
+                            if !s.streams.contains_key(&source_address) {
+                                let _ = s.streams.insert(
+                                    source_address,
+                                    StreamState {
+                                        machine: R::new(),
+                                        ack_state: AckState::new(&s.config, source_address),
+                                        ack_deadline: None,
+                                        progress_deadline: None,
+                                    },
+                                );
+                            }
+                            if let Some(stream) = s.streams.get_mut(&source_address) {
+                                let outcome =
+                                    stream.machine.handle_data(seq, flags, &data.payload)?;
+                                Ok(stream.ack_state.on_data(
+                                    outcome,
+                                    stream.machine.expected_seq(),
+                                    stream.machine.recv_bitmap(),
+                                ))
+                            } else {
+                                Ok(HandleResult::default())
+                            }
+                        })?;
 
                 self.drive_actions(source_address, result, link).await?;
             }
@@ -172,7 +184,9 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
             let result = self.state.with_mut(|s| {
                 if let Some(stream) = s.streams.get_mut(&source) {
                     stream.ack_deadline = None;
-                    stream.machine.handle_ack()
+                    stream
+                        .ack_state
+                        .on_ack_timeout(stream.machine.expected_seq(), stream.machine.recv_bitmap())
                 } else {
                     HandleResult::default()
                 }
@@ -193,11 +207,13 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
         });
 
         for source in progress_expired {
-            let result =
-                self.state.with_mut(|s| -> Result<HandleResult, TransportError<E>> {
+            let result = self
+                .state
+                .with_mut(|s| -> Result<HandleResult, TransportError<E>> {
                     if let Some(stream) = s.streams.get_mut(&source) {
                         stream.progress_deadline = None;
-                        stream.machine.handle_timeout().map_err(Into::into)
+                        let outcome = stream.machine.skip_gap()?;
+                        Ok(stream.ack_state.on_gap_skip(outcome))
                     } else {
                         Ok(HandleResult::default())
                     }
@@ -226,9 +242,18 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
         result: HandleResult,
         link: &mut impl NetworkWrite<Error = E>,
     ) -> Result<(), TransportError<E>> {
-        if let Some(AckInfo { destination, cumulative_ack, selective_bitmap }) = result.ack {
+        if let Some(AckInfo {
+            destination,
+            cumulative_ack,
+            selective_bitmap,
+        }) = result.ack
+        {
             let (local_address, apid, function_code) = self.state.with(|s| {
-                (s.config.local_address, s.config.apid, s.config.function_code)
+                (
+                    s.config.local_address,
+                    s.config.apid,
+                    s.config.function_code,
+                )
             });
             let ack = SrsppAckPacket::builder()
                 .buffer(&mut self.ack_buffer)

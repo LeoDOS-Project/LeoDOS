@@ -1,10 +1,13 @@
-use crate::network::isl::address::Address;
-use crate::network::spp::{SequenceCount, SequenceFlag};
+use crate::network::spp::SequenceCount;
+use crate::network::spp::SequenceFlag;
 use heapless::Vec;
 
+use super::super::DataOutcome;
+use super::super::GapOutcome;
+use super::super::ReceiverBackend;
+use super::super::ReceiverError;
 use super::super::base::ReceiverBase;
 use super::super::utils::GapTracker;
-use super::super::{HandleResult, ReceiverBackend, ReceiverConfig, ReceiverError};
 
 /// Half-memory backend — reorder and reassembly share one buffer.
 ///
@@ -21,7 +24,7 @@ use super::super::{HandleResult, ReceiverBackend, ReceiverConfig, ReceiverError}
 /// * `WIN` — maximum gap tracker intervals
 /// * `MTU` — maximum segment payload size
 pub struct LiteReceiver<const REASM: usize, const WIN: usize, const MTU: usize> {
-    /// Shared receiver state (sequence tracking, timers, ACK logic).
+    /// Sequence tracking state.
     base: ReceiverBase,
     /// Contiguous buffer where segments are placed at computed offsets.
     message_buf: [u8; REASM],
@@ -44,9 +47,9 @@ pub struct LiteReceiver<const REASM: usize, const WIN: usize, const MTU: usize> 
 impl<const REASM: usize, const WIN: usize, const MTU: usize> ReceiverBackend
     for LiteReceiver<REASM, WIN, MTU>
 {
-    fn new(config: ReceiverConfig, remote_address: Address) -> Self {
+    fn new() -> Self {
         Self {
-            base: ReceiverBase::new(config, remote_address),
+            base: ReceiverBase::new(),
             message_buf: [0u8; REASM],
             gaps: GapTracker::new(),
             message_ends: Vec::new(),
@@ -58,16 +61,12 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize> ReceiverBackend
         }
     }
 
-    fn remote_address(&self) -> Address {
-        self.base.remote_address()
-    }
-
     fn handle_data(
         &mut self,
         seq: SequenceCount,
         flags: SequenceFlag,
         payload: &[u8],
-    ) -> Result<HandleResult, ReceiverError> {
+    ) -> Result<DataOutcome, ReceiverError> {
         if self.complete_message_len.is_none() {
             self.apply_pending_shift();
         }
@@ -86,14 +85,10 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize> ReceiverBackend
 
         let progressed = self.base.expected_seq_raw() != seq_before;
         let has_gap = self.gaps.has_gaps() || !self.message_ends.is_empty();
-        Ok(self.base.apply_post_data_logic(progressed, has_gap))
+        Ok(DataOutcome { progressed, has_gap })
     }
 
-    fn handle_ack(&mut self) -> HandleResult {
-        self.base.handle_ack_timeout()
-    }
-
-    fn handle_timeout(&mut self) -> Result<HandleResult, ReceiverError> {
+    fn skip_gap(&mut self) -> Result<GapOutcome, ReceiverError> {
         if self.complete_message_len.is_none() {
             self.apply_pending_shift();
         }
@@ -120,7 +115,7 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize> ReceiverBackend
         self.try_deliver()?;
 
         let has_gap = self.gaps.has_gaps() || !self.message_ends.is_empty();
-        Ok(self.base.apply_post_progress_logic(has_gap))
+        Ok(GapOutcome { has_gap })
     }
 
     fn take_message(&mut self) -> Option<&[u8]> {
@@ -148,6 +143,10 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize> ReceiverBackend
 
     fn expected_seq(&self) -> SequenceCount {
         self.base.expected_seq()
+    }
+
+    fn recv_bitmap(&self) -> u16 {
+        self.base.recv_bitmap()
     }
 }
 
@@ -261,13 +260,9 @@ impl<const REASM: usize, const WIN: usize, const MTU: usize> LiteReceiver<REASM,
 mod tests {
     use super::*;
 
-    fn test_remote() -> Address {
-        Address::satellite(1, 2)
-    }
-
-    fn cfg_immediate() -> ReceiverConfig {
-        ReceiverConfig {
-            local_address: Address::satellite(1, 1),
+    fn cfg_immediate() -> super::super::super::ReceiverConfig {
+        super::super::super::ReceiverConfig {
+            local_address: crate::network::isl::address::Address::satellite(1, 1),
             apid: crate::network::spp::Apid::new(0x42).unwrap(),
             function_code: 0,
             immediate_ack: true,
@@ -280,13 +275,13 @@ mod tests {
 
     type Rx = LiteReceiver<{ 8 * MTU }, 8, MTU>;
 
-    fn make(cfg: ReceiverConfig) -> Rx {
-        Rx::new(cfg, test_remote())
+    fn make() -> Rx {
+        Rx::new()
     }
 
     #[test]
     fn segmented_mtu_aligned() {
-        let mut rx = make(cfg_immediate());
+        let mut rx = make();
 
         let first = [1u8; MTU];
         let cont = [2u8; MTU];
@@ -311,7 +306,7 @@ mod tests {
 
     #[test]
     fn gap_merge_split() {
-        let mut rx = make(cfg_immediate());
+        let mut rx = make();
         let p = [0u8; 10];
 
         rx.handle_data(SequenceCount::from(0), SequenceFlag::Unsegmented, &p)

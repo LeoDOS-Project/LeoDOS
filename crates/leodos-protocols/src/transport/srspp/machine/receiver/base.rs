@@ -1,43 +1,20 @@
-use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
 
-use super::AckInfo;
-use super::HandleResult;
-use super::ReceiverConfig;
-use super::TimerAction;
-
-/// Shared receiver logic for ACK generation, sequencing, and timers.
+/// Sequence tracking state shared by all receiver backends.
 pub struct ReceiverBase {
-    /// Receiver configuration parameters.
-    config: ReceiverConfig,
-    /// Address of the remote sender.
-    remote_address: Address,
     /// Next expected sequence number.
     expected_seq: u16,
     /// Bitmap of received out-of-order packets relative to `expected_seq`.
     recv_bitmap: u16,
-    /// Whether an ACK needs to be sent.
-    ack_pending: bool,
-    /// Whether the delayed ACK timer is currently running.
-    ack_timer_running: bool,
 }
 
 impl ReceiverBase {
-    /// Create a new receiver core for the given remote sender.
-    pub fn new(config: ReceiverConfig, remote_address: Address) -> Self {
+    /// Create a new sequence tracker starting at sequence 0.
+    pub fn new() -> Self {
         Self {
-            config,
-            remote_address,
             expected_seq: 0,
             recv_bitmap: 0,
-            ack_pending: false,
-            ack_timer_running: false,
         }
-    }
-
-    /// Returns the remote sender address.
-    pub fn remote_address(&self) -> Address {
-        self.remote_address
     }
 
     /// Returns the next expected sequence number.
@@ -50,10 +27,9 @@ impl ReceiverBase {
         self.expected_seq
     }
 
-    /// Returns a reference to the receiver configuration.
-    #[allow(dead_code)]
-    pub fn config(&self) -> &ReceiverConfig {
-        &self.config
+    /// Returns the selective ACK bitmap.
+    pub fn recv_bitmap(&self) -> u16 {
+        self.recv_bitmap
     }
 
     /// Compute the forward distance from `expected_seq` to `seq`.
@@ -80,79 +56,5 @@ impl ReceiverBase {
     pub fn advance(&mut self) {
         self.expected_seq = (self.expected_seq + 1) & SequenceCount::MAX;
         self.recv_bitmap >>= 1;
-    }
-
-    /// Emit a SendAck result with the current cumulative ACK and bitmap.
-    pub fn emit_ack(&mut self) -> HandleResult {
-        let cumulative = self.expected_seq.wrapping_sub(1) & SequenceCount::MAX;
-        let ack_timer = if self.ack_timer_running {
-            self.ack_timer_running = false;
-            Some(TimerAction::Stop)
-        } else {
-            None
-        };
-        self.ack_pending = false;
-        HandleResult {
-            ack: Some(AckInfo {
-                destination: self.remote_address,
-                cumulative_ack: SequenceCount::from(cumulative),
-                selective_bitmap: self.recv_bitmap,
-            }),
-            ack_timer,
-            progress_timer: None,
-        }
-    }
-
-    /// Handle expiry of the delayed ACK timer.
-    pub fn handle_ack_timeout(&mut self) -> HandleResult {
-        self.ack_timer_running = false;
-        if self.ack_pending {
-            self.emit_ack()
-        } else {
-            HandleResult::default()
-        }
-    }
-
-    /// Emit ACK/timer result after processing a data packet.
-    pub fn apply_post_data_logic(&mut self, progressed: bool, has_gap: bool) -> HandleResult {
-        let progress_timer = if let Some(ticks) = self.config.progress_timeout_ticks {
-            if progressed {
-                if has_gap {
-                    Some(TimerAction::Start { ticks })
-                } else {
-                    Some(TimerAction::Stop)
-                }
-            } else if has_gap {
-                Some(TimerAction::Start { ticks })
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        self.ack_pending = true;
-
-        let (ack, ack_timer) = if self.config.immediate_ack {
-            let r = self.emit_ack();
-            (r.ack, r.ack_timer)
-        } else if !self.ack_timer_running {
-            self.ack_timer_running = true;
-            (None, Some(TimerAction::Start { ticks: self.config.ack_delay_ticks }))
-        } else {
-            (None, None)
-        };
-
-        HandleResult { ack, ack_timer, progress_timer }
-    }
-
-    /// Emit timer result after processing a progress timeout.
-    pub fn apply_post_progress_logic(&mut self, has_gap: bool) -> HandleResult {
-        let progress_timer = if has_gap {
-            self.config.progress_timeout_ticks.map(|ticks| TimerAction::Start { ticks })
-        } else {
-            Some(TimerAction::Stop)
-        };
-        HandleResult { ack: None, ack_timer: None, progress_timer }
     }
 }

@@ -1,10 +1,9 @@
-use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
 use crate::network::spp::SequenceFlag;
 
-use super::super::HandleResult;
+use super::super::DataOutcome;
+use super::super::GapOutcome;
 use super::super::ReceiverBackend;
-use super::super::ReceiverConfig;
 use super::super::ReceiverError;
 use super::super::base::ReceiverBase;
 use super::super::utils::Bitset;
@@ -28,7 +27,7 @@ use super::super::utils::SlotMap;
 /// * `TOTAL` — total slot storage (`WIN * MTU`)
 pub struct FastReceiver<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
 {
-    /// Shared receiver state (sequence tracking, timers, ACK logic).
+    /// Sequence tracking state.
     base: ReceiverBase,
     /// Bitset tracking which window slots hold buffered segments.
     occupied: Bitset<WIN>,
@@ -49,9 +48,9 @@ pub struct FastReceiver<const WIN: usize, const MTU: usize, const REASM: usize, 
 impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize> ReceiverBackend
     for FastReceiver<WIN, MTU, REASM, TOTAL>
 {
-    fn new(config: ReceiverConfig, remote_address: Address) -> Self {
+    fn new() -> Self {
         Self {
-            base: ReceiverBase::new(config, remote_address),
+            base: ReceiverBase::new(),
             occupied: Bitset::new(),
             slots: SlotMap::new(),
             flags: [SequenceFlag::default(); WIN],
@@ -62,16 +61,12 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
         }
     }
 
-    fn remote_address(&self) -> Address {
-        self.base.remote_address()
-    }
-
     fn handle_data(
         &mut self,
         seq: SequenceCount,
         flags: SequenceFlag,
         payload: &[u8],
-    ) -> Result<HandleResult, ReceiverError> {
+    ) -> Result<DataOutcome, ReceiverError> {
         let distance = self.base.distance(seq);
         let seq_before = self.base.expected_seq_raw();
 
@@ -88,14 +83,10 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
 
         let progressed = self.base.expected_seq_raw() != seq_before;
         let has_gap = self.occupied.any();
-        Ok(self.base.apply_post_data_logic(progressed, has_gap))
+        Ok(DataOutcome { progressed, has_gap })
     }
 
-    fn handle_ack(&mut self) -> HandleResult {
-        self.base.handle_ack_timeout()
-    }
-
-    fn handle_timeout(&mut self) -> Result<HandleResult, ReceiverError> {
+    fn skip_gap(&mut self) -> Result<GapOutcome, ReceiverError> {
         if self.reassembly_in_progress {
             self.reassembly_len = 0;
             self.reassembly_in_progress = false;
@@ -105,7 +96,7 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
         self.deliver_buffered()?;
 
         let has_gap = self.occupied.any();
-        Ok(self.base.apply_post_progress_logic(has_gap))
+        Ok(GapOutcome { has_gap })
     }
 
     fn take_message(&mut self) -> Option<&[u8]> {
@@ -133,6 +124,10 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
 
     fn expected_seq(&self) -> SequenceCount {
         self.base.expected_seq()
+    }
+
+    fn recv_bitmap(&self) -> u16 {
+        self.base.recv_bitmap()
     }
 }
 

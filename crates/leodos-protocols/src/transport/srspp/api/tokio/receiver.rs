@@ -3,6 +3,7 @@ use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
 use crate::network::spp::Apid;
 use crate::network::spp::SequenceCount;
+use crate::transport::srspp::machine::receiver::AckState;
 use crate::transport::srspp::machine::receiver::HandleResult;
 use crate::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
@@ -34,8 +35,10 @@ pub struct SrsppReceiver<
     apid: Apid,
     /// Function code used in outgoing ACK packets.
     function_code: u8,
-    /// Receiver state machine handling reordering and reassembly.
+    /// Receiver backend handling reordering and reassembly.
     machine: R,
+    /// ACK and timer state.
+    ack_state: AckState,
     /// Deadline for the delayed ACK timer.
     ack_timer: Option<Instant>,
     /// Deadline for the progress (inactivity) timer.
@@ -64,12 +67,14 @@ impl<
         let local_address = config.local_address;
         let apid = config.apid;
         let function_code = config.function_code;
+        let ack_state = AckState::new(&config, remote_address);
         Self {
             link,
             local_address,
             apid,
             function_code,
-            machine: R::new(config, remote_address),
+            machine: R::new(),
+            ack_state,
             ack_timer: None,
             progress_timer: None,
             ticks_per_sec,
@@ -169,12 +174,17 @@ impl<
             let data = SrsppDataPacket::parse(packet)
                 .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
-            let result = self.machine.handle_data(
+            let outcome = self.machine.handle_data(
                 data.primary.sequence_count(),
                 data.primary.sequence_flag(),
                 &data.payload,
             )?;
 
+            let result = self.ack_state.on_data(
+                outcome,
+                self.machine.expected_seq(),
+                self.machine.recv_bitmap(),
+            );
             self.apply_result(result).await?;
         }
 
@@ -184,14 +194,18 @@ impl<
     /// Fires when the delayed ACK timer expires and sends an ACK.
     async fn handle_ack_timeout(&mut self) -> Result<(), SrsppError> {
         self.ack_timer = None;
-        let result = self.machine.handle_ack();
+        let result = self.ack_state.on_ack_timeout(
+            self.machine.expected_seq(),
+            self.machine.recv_bitmap(),
+        );
         self.apply_result(result).await
     }
 
     /// Fires when the progress timer expires due to sender inactivity.
     async fn handle_progress_timeout(&mut self) -> Result<(), SrsppError> {
         self.progress_timer = None;
-        let result = self.machine.handle_timeout()?;
+        let outcome = self.machine.skip_gap()?;
+        let result = self.ack_state.on_gap_skip(outcome);
         self.apply_result(result).await
     }
 
