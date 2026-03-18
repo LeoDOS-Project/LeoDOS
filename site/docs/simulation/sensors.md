@@ -8,32 +8,32 @@ NOS3 provides hardware simulators for each onboard device. Each simulator reads 
 
 ### Sensors
 
-- **Coarse sun sensors (CSS)** — sun vector for coarse attitude estimation
-- **Fine sun sensors (FSS)** — high-resolution sun vector
-- **Inertial measurement unit (IMU)** — angular rate and acceleration
-- **Star tracker** — attitude from star catalog matching (most accurate)
-- **Magnetometer** — Earth's magnetic field vector
-
-## Navigation
-
-- **GPS receiver (NovAtel OEM615)** — position and velocity. Used by [SpaceCoMP workflows](/spacecomp/use-cases/overview) to detect when the satellite is over an area of interest.
-
-## Power
-
-- **Electrical power system (EPS)** — battery state (voltage, temperature, charge), solar array output driven by sun vector and eclipse status
+- **Coarse sun sensors (CSS)** — photodiodes mounted on different faces of the spacecraft that measure the intensity of sunlight. By comparing readings across multiple sensors, the flight software estimates the direction of the sun relative to the spacecraft body. Accuracy is typically a few degrees — sufficient for safe-mode pointing but not for precise operations.
+- **Fine sun sensors (FSS)** — higher-resolution sun vector measurement using a position-sensitive detector behind a slit or pinhole. Provides sub-degree accuracy when the sun is within the sensor's field of view.
+- **Inertial measurement unit (IMU)** — three-axis gyroscope (measures angular rate) and three-axis accelerometer (measures linear acceleration). The gyroscope is the primary sensor for attitude propagation between star tracker updates. Gyro drift accumulates over time and must be corrected by absolute sensors.
+- **Star tracker** — a camera that photographs the star field, identifies star patterns against a catalog, and computes the spacecraft's orientation in inertial space. Provides the most accurate attitude measurement (arcsecond-level) but requires a clear field of view and time to process an image.
+- **Magnetometer** — measures the three-axis magnetic field vector at the spacecraft's location. By comparing the measured field against the IGRF model (given the known position from GPS), the flight software can estimate attitude. Less accurate than the star tracker but works in all lighting conditions and has no moving parts.
 
 ### Actuators
 
-- **Reaction wheels** (3 units) — momentum storage, torques fed back to 42
-- **Magnetorquers** — desaturation torques against the magnetic field
-- **Thrusters** — orbit and attitude maneuvers
+- **Reaction wheels** (3 units) — spinning flywheels that store angular momentum. Commanding a wheel to spin faster or slower transfers momentum between the wheel and the spacecraft, causing the spacecraft to rotate. Three wheels (one per axis) provide full three-axis attitude control. Over time, external torques (atmospheric drag, gravity gradient) cause the wheels to accumulate momentum and approach saturation, requiring desaturation by magnetorquers or thrusters.
+- **Magnetorquers** — electromagnetic coils that generate a magnetic dipole. The dipole interacts with Earth's magnetic field to produce a torque on the spacecraft. Used primarily to desaturate reaction wheels — they bleed off accumulated momentum without using propellant. The available torque depends on the local magnetic field strength, which varies with orbital position.
+- **Thrusters** — produce thrust by expelling propellant. Used for orbit maneuvers (raising/lowering altitude, plane changes) and for large attitude corrections that exceed reaction wheel authority. Propellant is a finite resource.
+
+## Navigation
+
+- **GPS receiver (NovAtel OEM615)** — provides the spacecraft's position and velocity in Earth-centered coordinates by processing signals from the GPS constellation. In simulation, the GPS simulator translates 42's orbital state into the NMEA/binary messages that the real NovAtel receiver would produce. The GPS position is how [SpaceCoMP workflows](/spacecomp/use-cases/overview) determine whether the satellite is over an area of interest.
+
+## Power
+
+- **Electrical power system (EPS)** — monitors and manages the spacecraft's power budget. The simulator models battery state (voltage, temperature, charge level), solar array output (driven by 42's sun vector and eclipse status — power drops to zero during eclipse), and power bus distribution. The flight software uses EPS telemetry to manage power modes and schedule power-intensive operations (like imaging or ISL transmissions) around eclipse periods.
 
 ## Imaging
 
-- **Arducam (OV5640)** — visible-light camera
-- **Thermal camera** — custom component for thermal IR Earth observation, serves synthetic frames from [eosim](earth-observation)
+- **Arducam (OV5640)** — a visible-light camera with 5 megapixel resolution, connected over I2C (control) and SPI (data). The simulator responds to the same register commands as the real camera module.
+- **Thermal camera** — a custom NOS3 component that simulates a thermal infrared imager for Earth observation. It serves synthetic brightness temperature frames generated by [eosim](earth-observation) over a virtual SPI bus. The simulator monitors the satellite's position from 42, detects when it enters a configured area of interest, and loads the corresponding pre-generated frame for that orbital pass.
 
 ## Not Modeled
 
-- Radiation effects (SEUs, total ionizing dose, latchups)
-- Dynamic spacecraft thermal model (EPS uses fixed temperatures)
+- **Radiation effects** — single-event upsets, total ionizing dose, and latchups are not injected. The [fault tolerance](/cfs/mission/fault-tolerance) mechanisms that handle these in flight are not exercised in simulation.
+- **Dynamic thermal model** — the EPS reports fixed temperature values rather than modeling heat flow across the spacecraft structure. Real thermal behavior depends on sun exposure, eclipse timing, internal power dissipation, and radiator geometry.
