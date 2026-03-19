@@ -11,6 +11,7 @@ The system is designed around a single premise: satellites in a LEO constellatio
 
 ## Documentation
 
+- **[Background](/background)** — orbits, the downlink wall, inter-satellite links, cross-orbit communication
 - **[Building and Running](/building/overview)** — how to build, test, and run LeoDOS
 - **[SpaceCoMP](/spacecomp/overview)** — distributed computation across the constellation: task allocation, workflows, and use cases
 - **[LEO Communication Protocols](/protocols/overview)** — CCSDS communication stack from physical modulation to reliable transport
