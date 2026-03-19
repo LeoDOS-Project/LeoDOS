@@ -2,6 +2,27 @@
 
 A satellite's orbit is defined by a set of parameters that determine its path around a body. Understanding these parameters explains why constellations are shaped the way they are and why certain orbits are chosen for specific missions.
 
+## Coordinate Systems
+
+### Geographic Coordinates
+
+Positions on or near Earth are described by three values:
+
+- **Latitude** — the angle north or south of the equator, from −90° (south pole) to +90° (north pole). The equator is 0°.
+- **Longitude** — the angle east or west of the Prime Meridian (which passes through Greenwich, England), from −180° to +180°.
+- **Altitude** — the height above sea level (or more precisely, above a reference ellipsoid that approximates Earth's shape). A satellite at 550 km altitude is 550 km above the surface.
+
+The point on the Earth's surface directly below a satellite is called the **sub-satellite point** or **nadir**. Its latitude and longitude define the satellite's **ground track** — the path traced on the surface as the satellite moves along its orbit.
+
+### Reference Frames
+
+Orbital mechanics uses two main reference frames:
+
+- **ECI (Earth-Centered Inertial)** — the origin is Earth's center, the axes are fixed relative to the stars (they do not rotate with Earth). The X-axis points toward the vernal equinox, the Z-axis points along Earth's rotation axis. Orbital elements and satellite positions are naturally expressed in ECI.
+- **ECEF (Earth-Centered Earth-Fixed)** — the origin is Earth's center, but the axes rotate with Earth. The X-axis points through the intersection of the equator and the Prime Meridian. Geographic coordinates (latitude, longitude, altitude) are directly related to ECEF. Converting from ECI to ECEF requires knowing the current Earth rotation angle (sidereal time).
+
+When the [SpaceCoMP planner](/spacecomp/job-lifecycle) converts geographic areas of interest to satellite grid positions, it computes each satellite's ECEF position and derives the nadir latitude and longitude. When the [ISL router](/spacecomp/routing) computes inter-satellite distances, it works in ECI where positions change smoothly without Earth's rotation complicating the geometry.
+
 ## Altitude Classes
 
 | Orbit | Altitude | Orbital period | Latency (one-way) | Example |
