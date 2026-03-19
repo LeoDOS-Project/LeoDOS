@@ -34,6 +34,69 @@ Real orbits are not perfect Keplerian ellipses. Forces other than the central bo
 - **Third-body gravity** — gravitational pull from the Moon and Sun causes small periodic perturbations. More significant at higher altitudes.
 - **Solar radiation pressure** — photons from the Sun exert a small force on the satellite's surface. Relevant for large, lightweight structures (solar panels).
 
+## Propagation Methods
+
+Given the orbital parameters at one point in time, how do you compute where the satellite will be at a future time? Different methods trade off fidelity for complexity.
+
+### Keplerian (Two-Body)
+
+The simplest model. Assumes the satellite orbits a perfect point mass with no other forces. The orbit is a fixed ellipse that never changes — the satellite traces the same path forever.
+
+Given a time, you can compute the satellite's position directly using Kepler's equation. This is an analytical solution: plug in a time, get a position. No stepping required. The computation is essentially free.
+
+**What it captures:** orbital period, altitude, ground track geometry.
+
+**What it misses:** everything else. The orbital plane does not drift, the orbit does not decay, and neighboring effects (gravity field shape, drag, third-body) are ignored. Over hours, the position error grows to hundreds of kilometers compared to reality.
+
+**When to use:** quick visualization, initial constellation layout, rough ground track estimation.
+
+### J2 (Analytical Perturbation)
+
+Adds the dominant perturbation — Earth's equatorial bulge (the J2 term of the gravity field) — as an analytical correction on top of the Keplerian solution. J2 causes two effects: the orbital plane rotates around the polar axis (RAAN drift), and the argument of periapsis precesses within the plane.
+
+Still an analytical formula — plug in a time, get a position. No numerical integration. The correction terms are simple trigonometric functions of the orbital elements.
+
+**What it captures:** RAAN drift (critical for constellation maintenance — planes slowly spread apart or converge), sun-synchronous behavior (SSO works because J2 drift matches Earth's solar orbit rate), argument of periapsis precession.
+
+**What it misses:** atmospheric drag, higher-order gravity harmonics, third-body effects, solar radiation pressure. Position error grows to tens of kilometers over days.
+
+**When to use:** constellation design, ISL geometry analysis, ground pass prediction, [SpaceCoMP routing cost estimation](/spacecomp/routing). This is the propagator LeoDOS uses for orbital-aware routing decisions.
+
+### SGP4 / TLE
+
+SGP4 (Simplified General Perturbations 4) is the standard propagator used with Two-Line Element sets (TLEs) — the format in which NORAD publishes orbital data for all tracked objects. TLEs encode a satellite's orbital state at a specific epoch along with drag and perturbation terms fitted to observed tracking data.
+
+SGP4 is an analytical propagator — plug in a time offset from the TLE epoch, get a position. It includes J2, J3, J4, atmospheric drag (using a simplified density model), and lunar/solar perturbations, all baked into a fixed set of formulas.
+
+**What it captures:** real-world orbital behavior as observed by ground tracking networks. TLEs are updated daily or more frequently, so the propagator tracks reality closely near the epoch.
+
+**What it misses:** accuracy degrades away from the epoch. After a few days, position errors grow to kilometers. TLEs also cannot represent maneuvers — after a thruster burn, a new TLE must be published.
+
+**When to use:** tracking real satellites (Starlink, ISS, Iridium), collision conjunction assessment, comparing a simulated constellation against real-world positions.
+
+### Numerical Integration
+
+Solves the full equations of motion by stepping forward in time, computing all forces at each step and updating position and velocity. Can include any combination of forces: high-order gravity field (EGM96, up to 18th degree), atmospheric drag with detailed density models (MSIS, Jacchia-Roberts), third-body gravity (Moon, Sun, planets), solar radiation pressure, and thruster maneuvers.
+
+This is not an analytical formula — you cannot jump to an arbitrary time. You must integrate step by step from the initial state, typically using a Runge-Kutta or similar method. The step size depends on the desired accuracy and the forces involved. Smaller steps give higher accuracy but require more computation.
+
+**What it captures:** all modeled forces to arbitrary precision. Position accuracy can be meters over days with a good force model and initial state.
+
+**What it misses:** only forces that are not included in the model. Practical limitations: initial state must be very accurate, atmospheric density models have uncertainty (especially during solar storms), and unmodeled maneuvers cause rapid divergence.
+
+**When to use:** precise orbit determination, maneuver planning, high-fidelity simulation. The [42 simulator](/simulation/orbital-mechanics) uses numerical integration with the full force model.
+
+### Comparison
+
+| Method | Type | Accuracy (1 day) | Forces modeled |
+|---|---|---|---|
+| **Keplerian** | Analytical (closed-form) | ~100 km | Point-mass gravity only |
+| **J2** | Analytical (closed-form) | ~10 km | Gravity + equatorial bulge |
+| **SGP4/TLE** | Analytical (fitted) | ~1 km (near epoch) | Gravity + drag + lunar/solar (fitted to observations) |
+| **Numerical** | Step-by-step integration | ~meters | All forces (configurable) |
+
+Each level adds fidelity. For constellation design and routing, J2 is sufficient — it captures the orbital plane geometry that determines ISL distances and ground contact windows. For simulation with hardware-in-the-loop, numerical integration (via 42) provides the ground truth.
+
 ## Sun-Synchronous Orbits
 
 A sun-synchronous orbit (SSO) is a special inclination (typically 97–98° for LEO altitudes) where the J2 precession rate exactly matches Earth's orbital motion around the Sun. The result: the orbital plane maintains a constant angle relative to the Sun throughout the year.
