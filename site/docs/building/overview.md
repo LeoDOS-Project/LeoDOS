@@ -83,10 +83,17 @@ The site source is in `site/docs/`. It deploys automatically to GitHub Pages on 
 
 ## Rust API Documentation
 
-Generated Rust API docs for `leodos-protocols` are hosted at [`/LeoDOS/rustdoc/leodos_protocols/`](/rustdoc/leodos_protocols/). They are built and deployed automatically alongside the documentation site.
+Generated Rust API docs are hosted alongside the documentation site:
 
-To build locally:
+- [`leodos-protocols`](/rustdoc/leodos_protocols/) — the communication stack and SpaceCoMP implementation (built with `cfs` and `tokio` features)
+- [`leodos-libcfs`](/rustdoc/leodos_libcfs/) — safe Rust wrappers for the cFE, OSAL, and PSP APIs
+
+To build locally (requires Docker for cFS headers):
 
 ```
-cargo doc --manifest-path crates/leodos-protocols/Cargo.toml --no-deps --open
+make docker-build                  # build Docker image (once)
+make docker-prep                   # prep cFS headers (once)
+docker compose run --rm cfs-build \
+  cargo doc --manifest-path crates/leodos-protocols/Cargo.toml \
+  --features=cfs,tokio --no-deps --open
 ```

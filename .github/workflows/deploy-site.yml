@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'site/**'
-      - 'crates/leodos-protocols/**'
+      - 'crates/**'
   workflow_dispatch:
 
 permissions:
@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -30,9 +32,6 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: site/package-lock.json
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
         working-directory: site
@@ -42,13 +41,29 @@ jobs:
         working-directory: site
         run: npm run build
 
-      - name: Build rustdoc
-        run: cargo doc --manifest-path crates/leodos-protocols/Cargo.toml --no-deps
+      - name: Build Docker image
+        run: docker compose build cfs-build
+
+      - name: Prep cFS headers
+        run: docker compose run --rm cfs-build bash -c "make SIMULATION=native prep"
+
+      - name: Build rustdoc (leodos-protocols with all features)
+        run: |
+          docker compose run --rm cfs-build \
+            cargo doc --manifest-path crates/leodos-protocols/Cargo.toml \
+            --features=cfs,tokio --no-deps
+
+      - name: Build rustdoc (leodos-libcfs)
+        run: |
+          docker compose run --rm cfs-build \
+            cargo doc --manifest-path crates/leodos-libcfs/Cargo.toml \
+            --no-deps --all-features
 
       - name: Copy rustdoc into site build
         run: |
           mkdir -p site/build/rustdoc
           cp -r crates/leodos-protocols/target/doc/* site/build/rustdoc/
+          cp -r crates/leodos-libcfs/target/doc/* site/build/rustdoc/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
