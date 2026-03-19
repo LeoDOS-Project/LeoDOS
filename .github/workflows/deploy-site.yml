@@ -23,8 +23,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: true
+
+      - name: Init cFS submodules
+        run: git submodule update --init --depth=1 cfe osal psp tools/elf2cfetbl
 
       - name: Setup Node
         uses: actions/setup-node@v4
