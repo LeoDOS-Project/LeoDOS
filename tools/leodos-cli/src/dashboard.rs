@@ -705,7 +705,11 @@ fn trigger_btn(state: &mut AppState, cmd: &str) -> String {
 fn spawn_action(cmd: String, state: Arc<Mutex<AppState>>) {
     tokio::spawn(async move {
         let output = match cmd.as_str() {
-            "build" => run_shell("make nos3-build && make nos3-config && make nos3-build-sim && make nos3-build-fsw").await,
+            "build" => run_shell_env_streamed(
+                "make nos3-build && make nos3-config && make nos3-build-sim && make nos3-build-fsw",
+                &[],
+                Some(state.clone()),
+            ).await,
             "sim-start" => {
                 let (orbits, sats) = {
                     let s = state.lock().unwrap();
@@ -715,9 +719,10 @@ fn spawn_action(cmd: String, state: Arc<Mutex<AppState>>) {
                     ("MAX_ORB", orbits.to_string()),
                     ("MAX_SAT", sats.to_string()),
                 ];
-                let res = run_shell_env(
+                let res = run_shell_env_streamed(
                     "make constellation-build && make constellation-gen && docker compose -f docker-compose.constellation.yml up -d",
                     &envs,
+                    Some(state.clone()),
                 ).await;
                 if res.is_ok() {
                     // Wait for cFS to initialize, then enable TO_LAB on all orbits
@@ -787,24 +792,68 @@ async fn run_shell(cmd: &str) -> Result<String> {
 }
 
 async fn run_shell_env(cmd: &str, envs: &[(&str, String)]) -> Result<String> {
+    run_shell_env_streamed(cmd, envs, None).await
+}
+
+async fn run_shell_env_streamed(
+    cmd: &str,
+    envs: &[(&str, String)],
+    log: Option<Arc<Mutex<AppState>>>,
+) -> Result<String> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
     let mut command = tokio::process::Command::new("sh");
-    command.arg("-c").arg(cmd);
+    command
+        .arg("-c")
+        .arg(cmd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     for (k, v) in envs {
         command.env(k, v);
     }
-    let output = command.output().await?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() {
-        let msg = stderr.trim().is_empty()
-            .then(|| stdout.trim().to_string())
-            .unwrap_or_else(|| stderr.trim().to_string());
-        anyhow::bail!("{msg}");
+    let mut child = command.spawn()?;
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let last_line = String::new();
+
+    if let Some(ref log) = log {
+        let log2 = log.clone();
+        if let Some(out) = stdout {
+            let log_out = log2.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(out).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    if let Ok(mut s) = log_out.lock() {
+                        s.action_log.push_back(format!("  {line}"));
+                        if s.action_log.len() > 50 {
+                            s.action_log.pop_front();
+                        }
+                    }
+                }
+            });
+        }
+        if let Some(err) = stderr {
+            let log_err = log2;
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(err).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    if let Ok(mut s) = log_err.lock() {
+                        s.action_log.push_back(format!("  {line}"));
+                        if s.action_log.len() > 50 {
+                            s.action_log.pop_front();
+                        }
+                    }
+                }
+            });
+        }
     }
-    let combined = stdout.trim().is_empty()
-        .then(|| stderr.trim().to_string())
-        .unwrap_or_else(|| stdout.trim().to_string());
-    Ok(combined)
+
+    let status = child.wait().await?;
+    if !status.success() {
+        anyhow::bail!("command exited with {status}");
+    }
+    Ok(last_line)
 }
 
 pub async fn run(
