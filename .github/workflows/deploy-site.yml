@@ -26,8 +26,10 @@ jobs:
 
       - name: Init submodules
         run: |
-          git submodule update --init --depth=1 || true
-          # Verify critical submodules
+          git submodule init
+          for mod in $(git submodule foreach --quiet 'echo $sm_path'); do
+            git submodule update --depth=1 -- "$mod" || echo "SKIP: $mod"
+          done
           test -f cfe/CMakeLists.txt && echo "cfe OK" || exit 1
           test -f osal/CMakeLists.txt && echo "osal OK" || exit 1
           test -f psp/CMakeLists.txt && echo "psp OK" || exit 1
