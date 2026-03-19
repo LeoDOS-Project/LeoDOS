@@ -82,7 +82,7 @@ For time-critical cases, a satellite could coordinate directly in orbit — plan
 
 ### Direct Communication
 
-Every satellite is a ColonyOS executor, each holding a blocking `assign()` connection routed through the LOS gateway. This is a poor fit: hundreds of connections through one gateway, every phase transition bounces through the ground, and satellites are constantly considered dead due to LOS cycling.
+Every satellite is a ColonyOS executor, each holding a blocking `assign()` connection routed through the LOS gateway. This does not work well with the current version of ColonyOS: hundreds of connections through one gateway, every phase transition bounces through the ground, and satellites are constantly considered dead due to LOS cycling.
 
 <Diagram>
   <Row gap={12}>
@@ -138,4 +138,4 @@ ColonyOS server running on a satellite. Executors (other satellites) communicate
 | Ground round-trips | Every phase | Job in/out | Job in/out | None |
 | ISL data flow | No | Yes | Yes | Yes |
 | ColonyOS changes | None | None | **None** | Reimplementation |
-| Practical today | No | No | **Yes** | No |
+| Works with current ColonyOS | No | No | **Yes** | No |
