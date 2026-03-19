@@ -65,6 +65,7 @@ const sidebars: SidebarsConfig = {
             'protocols/transport/overview',
             'protocols/transport/srspp',
             'protocols/transport/cfdp',
+            'protocols/transport/bp',
           ],
         },
         {
