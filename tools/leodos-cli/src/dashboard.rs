@@ -10,7 +10,7 @@ use crossterm::terminal::{
 use crossterm::ExecutableCommand;
 use leodos_protocols::network::spp::{PacketType, SpacePacket};
 use ratatui::prelude::*;
-use ratatui::widgets::*;
+use ratatui::widgets::{*, Clear};
 use std::collections::VecDeque;
 use std::io::stdout;
 use std::sync::{Arc, Mutex};
@@ -39,9 +39,12 @@ struct AppState {
     sats: u8,
     packet_count: u64,
     action_log: VecDeque<String>,
-    btns: Vec<(String, String)>,
+    btns: Vec<Btn>,
     selected_btn: usize,
     hover_btn: Option<usize>,
+    deploy_popup: bool,
+    deploy_apps: Vec<String>,
+    deploy_selected: usize,
 }
 
 impl AppState {
@@ -61,6 +64,7 @@ impl AppState {
                 });
             }
         }
+        let (btns, deploy_apps) = discover_buttons();
         Self {
             tab: 0,
             logs: VecDeque::new(),
@@ -69,9 +73,12 @@ impl AppState {
             sats,
             packet_count: 0,
             action_log: VecDeque::new(),
-            btns: discover_buttons(),
+            btns,
             selected_btn: 0,
             hover_btn: None,
+            deploy_popup: false,
+            deploy_apps,
+            deploy_selected: 0,
         }
     }
 
@@ -192,6 +199,57 @@ fn draw(frame: &mut Frame, state: &AppState) {
         2 => draw_satellites(frame, state, chunks[1]),
         3 => draw_control(frame, state, chunks[1]),
         _ => {}
+    }
+
+    if state.deploy_popup {
+        draw_deploy_popup(frame, state);
+    }
+}
+
+fn draw_deploy_popup(frame: &mut Frame, state: &AppState) {
+    let area = frame.area();
+    let popup_height = (state.deploy_apps.len() as u16 + 4).min(area.height.saturating_sub(4));
+    let popup_width = 30u16.min(area.width.saturating_sub(4));
+    let popup = Rect::new(
+        (area.width.saturating_sub(popup_width)) / 2,
+        (area.height.saturating_sub(popup_height)) / 2,
+        popup_width,
+        popup_height,
+    );
+
+    frame.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Deploy App ")
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    if state.deploy_apps.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No apps found"),
+            inner,
+        );
+        return;
+    }
+
+    for (i, app) in state.deploy_apps.iter().enumerate() {
+        let y = inner.y + i as u16;
+        if y >= inner.y + inner.height {
+            break;
+        }
+        let style = (i == state.deploy_selected)
+            .then(|| {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            })
+            .unwrap_or(Style::default().fg(Color::White));
+        let r = Rect::new(inner.x + 1, y, inner.width.saturating_sub(2), 1);
+        frame.render_widget(Span::styled(format!(" {app}"), style), r);
     }
 }
 
@@ -406,43 +464,38 @@ fn draw_satellites(
     frame.render_widget(table, area);
 }
 
-fn discover_buttons() -> Vec<(String, String)> {
-    let mut btns = vec![
-        (" Build ".into(), "build".into()),
-        (" Start Sim ".into(), "sim-start".into()),
-        (" Stop Sim ".into(), "sim-stop".into()),
-        (" Shell ".into(), "shell".into()),
-        (String::new(), String::new()),
+/// (label, command, tooltip)
+type Btn = (String, String, String);
+
+fn discover_buttons() -> (Vec<Btn>, Vec<String>) {
+    let btns: Vec<Btn> = vec![
+        (" Build ".into(), "build".into(), "Build NOS3 image, configure, compile sims and FSW".into()),
+        (" Start Sim ".into(), "sim-start".into(), "Start the constellation simulation".into()),
+        (" Stop Sim ".into(), "sim-stop".into(), "Stop all simulation containers".into()),
+        (" Shell ".into(), "shell".into(), "Open an interactive shell in the FSW container".into()),
+        (String::new(), String::new(), String::new()),
+        (" Deploy... ".into(), "deploy-popup".into(), "Upload and reload a cFS app".into()),
+        (" Datagen ".into(), "datagen".into(), "Generate synthetic thermal sensor data".into()),
+        (" Enable TO_LAB ".into(), "enable-tolab".into(), "Enable telemetry output via TO_LAB".into()),
+        (" Status ".into(), "status".into(), "Query system status".into()),
     ];
 
-    // Discover apps with fsw/Cargo.toml
+    let mut apps = Vec::new();
     if let Ok(entries) = std::fs::read_dir("apps") {
-        let mut apps: Vec<String> = entries
+        apps = entries
             .filter_map(|e| e.ok())
             .filter(|e| e.path().join("fsw/Cargo.toml").exists())
-            .map(|e| {
-                e.file_name().to_string_lossy().to_string()
-            })
+            .map(|e| e.file_name().to_string_lossy().to_string())
             .collect();
         apps.sort();
-        for app in apps {
-            btns.push((
-                format!(" Deploy {app} "),
-                format!("deploy {app}"),
-            ));
-        }
     }
 
-    btns.push((String::new(), String::new()));
-    btns.push((" Datagen ".into(), "datagen".into()));
-    btns.push((" Enable TO_LAB ".into(), "enable-tolab".into()));
-    btns.push((" Status ".into(), "status".into()));
-    btns
+    (btns, apps)
 }
 
-fn btn_index_to_real(btns: &[(String, String)], idx: usize) -> usize {
+fn btn_index_to_real(btns: &[Btn], idx: usize) -> usize {
     let mut real = 0;
-    for (i, (label, _)) in btns.iter().enumerate() {
+    for (i, (label, _, _)) in btns.iter().enumerate() {
         if label.is_empty() { continue; }
         if real == idx { return i; }
         real += 1;
@@ -450,9 +503,9 @@ fn btn_index_to_real(btns: &[(String, String)], idx: usize) -> usize {
     0
 }
 
-fn real_to_btn_index(btns: &[(String, String)], real: usize) -> usize {
+fn real_to_btn_index(btns: &[Btn], real: usize) -> usize {
     let mut idx = 0;
-    for (i, (label, _)) in btns.iter().enumerate() {
+    for (i, (label, _, _)) in btns.iter().enumerate() {
         if label.is_empty() { continue; }
         if i == real { return idx; }
         idx += 1;
@@ -460,8 +513,8 @@ fn real_to_btn_index(btns: &[(String, String)], real: usize) -> usize {
     0
 }
 
-fn btn_count(btns: &[(String, String)]) -> usize {
-    btns.iter().filter(|(l, _)| !l.is_empty()).count()
+fn btn_count(btns: &[Btn]) -> usize {
+    btns.iter().filter(|(l, _, _)| !l.is_empty()).count()
 }
 
 fn draw_control(
@@ -497,8 +550,13 @@ fn draw_control(
 
     let selected_real = btn_index_to_real(&state.btns, state.selected_btn);
 
-    for (i, (label, _)) in state.btns.iter().enumerate() {
-        if label.is_empty() || i as u16 >= inner.height {
+    let mut y_offset = 0u16;
+    for (i, (label, _, _)) in state.btns.iter().enumerate() {
+        if i as u16 + y_offset >= inner.height {
+            break;
+        }
+        if label.is_empty() {
+            y_offset += 1;
             continue;
         }
         let style = if i == selected_real {
@@ -518,6 +576,39 @@ fn draw_control(
             frame.render_widget(
                 Span::styled(label.as_str(), style),
                 r,
+            );
+        }
+    }
+
+    // Separator + tooltip + key hints below buttons
+    let btns_end = state.btns.len() as u16 + 1;
+    if btns_end < inner.height {
+        let sep_y = inner.y + btns_end;
+        let sep = "─".repeat(inner.width.saturating_sub(2) as usize);
+        frame.render_widget(
+            Span::styled(&sep, Style::default().fg(Color::DarkGray)),
+            Rect::new(inner.x + 1, sep_y, inner.width.saturating_sub(2), 1),
+        );
+
+        // Tooltip for selected button
+        let (_, _, tooltip) = &state.btns[selected_real];
+        if !tooltip.is_empty() && sep_y + 1 < inner.y + inner.height {
+            frame.render_widget(
+                Span::styled(
+                    tooltip.as_str(),
+                    Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC),
+                ),
+                Rect::new(inner.x + 1, sep_y + 1, inner.width.saturating_sub(2), 1),
+            );
+        }
+
+        // Key hints
+        let hints = "j/k: navigate  Enter: select  q: quit";
+        let hints_y = inner.y + inner.height - 1;
+        if hints_y > sep_y + 1 {
+            frame.render_widget(
+                Span::styled(hints, Style::default().fg(Color::DarkGray)),
+                Rect::new(inner.x + 1, hints_y, inner.width.saturating_sub(2), 1),
             );
         }
     }
@@ -552,7 +643,7 @@ fn handle_click(
     let base_row = 4; // tab(3) + border(1)
     let base_col = 2;
 
-    for (i, (label, cmd)) in state.btns.clone().iter().enumerate() {
+    for (i, (label, cmd, _)) in state.btns.clone().iter().enumerate() {
         if label.is_empty() {
             continue;
         }
@@ -570,7 +661,7 @@ fn handle_click(
 fn handle_hover(state: &mut AppState, _col: u16, row: u16) {
     let base_row = 4;
     state.hover_btn = None;
-    for (i, (label, _)) in state.btns.iter().enumerate() {
+    for (i, (label, _, _)) in state.btns.iter().enumerate() {
         if label.is_empty() {
             continue;
         }
@@ -591,6 +682,11 @@ fn activate_selected(state: &mut AppState) -> Option<String> {
 }
 
 fn trigger_btn(state: &mut AppState, cmd: &str) -> String {
+    if cmd == "deploy-popup" {
+        state.deploy_popup = true;
+        state.deploy_selected = 0;
+        return String::new();
+    }
     state.action_log.push_back(format!("> {cmd}"));
     if state.action_log.len() > 50 {
         state.action_log.pop_front();
@@ -681,6 +777,41 @@ pub async fn run(
                         continue;
                     }
                     let mut s = state.lock().unwrap();
+                    if s.deploy_popup {
+                        match key.code {
+                            KeyCode::Esc => {
+                                s.deploy_popup = false;
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                let count = s.deploy_apps.len();
+                                if count > 0 {
+                                    s.deploy_selected =
+                                        (s.deploy_selected + count - 1) % count;
+                                }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                let count = s.deploy_apps.len();
+                                if count > 0 {
+                                    s.deploy_selected =
+                                        (s.deploy_selected + 1) % count;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if let Some(app) =
+                                    s.deploy_apps.get(s.deploy_selected).cloned()
+                                {
+                                    s.deploy_popup = false;
+                                    let cmd = format!("deploy {app}");
+                                    s.action_log.push_back(format!("> {cmd}"));
+                                    drop(s);
+                                    spawn_action(cmd, state.clone());
+                                    continue;
+                                }
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => {
                             drop(s);
@@ -709,6 +840,7 @@ pub async fn run(
                             if let Some(cmd) =
                                 activate_selected(&mut s)
                             {
+                                if cmd.is_empty() { continue; }
                                 drop(s);
                                 spawn_action(
                                     cmd,
