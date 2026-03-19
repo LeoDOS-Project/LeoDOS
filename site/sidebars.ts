@@ -3,7 +3,17 @@ import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 const sidebars: SidebarsConfig = {
   docs: [
     'index',
-    'background',
+    {
+      type: 'category',
+      label: 'Background',
+      items: [
+        'background/overview',
+        'background/orbits',
+        'background/constellations',
+        'background/links',
+        'background/environment',
+      ],
+    },
     {
       type: 'category',
       label: 'Building and Running',
