@@ -1037,6 +1037,15 @@ pub async fn run(
                                     mouse.row,
                                 );
                             }
+                            MouseEventKind::ScrollUp => {
+                                s.output_focus = true;
+                                s.output_scroll = s.output_scroll.saturating_sub(3);
+                            }
+                            MouseEventKind::ScrollDown => {
+                                s.output_focus = true;
+                                let max = s.action_log.len().saturating_sub(1) as u16;
+                                s.output_scroll = (s.output_scroll + 3).min(max);
+                            }
                             _ => {}
                         }
                     }
