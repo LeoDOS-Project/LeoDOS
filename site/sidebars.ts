@@ -252,6 +252,7 @@ const sidebars: SidebarsConfig = {
         'research/overview',
         'research/data-stream-processing',
         'research/security',
+        'research/local-first',
       ],
     },
     {
