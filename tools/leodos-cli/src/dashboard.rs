@@ -45,6 +45,8 @@ struct AppState {
     deploy_popup: bool,
     deploy_apps: Vec<String>,
     deploy_selected: usize,
+    output_focus: bool,
+    output_scroll: u16,
 }
 
 impl AppState {
@@ -79,6 +81,8 @@ impl AppState {
             deploy_popup: false,
             deploy_apps,
             deploy_selected: 0,
+            output_focus: false,
+            output_scroll: 0,
         }
     }
 
@@ -628,18 +632,25 @@ fn draw_control(
         .map(|l| Line::styled(l.as_str(), Style::default().fg(Color::Cyan)))
         .collect();
 
+    let auto_scroll = state.action_log.len().saturating_sub(
+        log_area.height.saturating_sub(2) as usize,
+    ) as u16;
+    let scroll_pos = state.output_focus
+        .then_some(state.output_scroll)
+        .unwrap_or(auto_scroll);
+
+    let border_style = state.output_focus
+        .then(|| Style::default().fg(Color::Cyan))
+        .unwrap_or_default();
+
     let paragraph = Paragraph::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Output "),
+                .title(" Output ")
+                .border_style(border_style),
         )
-        .scroll((
-            state.action_log.len().saturating_sub(
-                log_area.height.saturating_sub(2) as usize,
-            ) as u16,
-            0,
-        ));
+        .scroll((scroll_pos, 0));
     frame.render_widget(paragraph, log_area);
 }
 
@@ -942,11 +953,31 @@ pub async fn run(
                             drop(s);
                             break;
                         }
+                        KeyCode::Tab if s.tab == 3 => {
+                            s.output_focus = !s.output_focus;
+                            if s.output_focus {
+                                // Start at bottom
+                                s.output_scroll = s.action_log.len().saturating_sub(1) as u16;
+                            }
+                        }
                         KeyCode::Tab => {
                             s.tab = (s.tab + 1) % 4;
+                            s.output_focus = false;
                         }
                         KeyCode::BackTab => {
                             s.tab = (s.tab + 3) % 4;
+                            s.output_focus = false;
+                        }
+                        KeyCode::Up | KeyCode::Char('k')
+                            if s.tab == 3 && s.output_focus =>
+                        {
+                            s.output_scroll = s.output_scroll.saturating_sub(1);
+                        }
+                        KeyCode::Down | KeyCode::Char('j')
+                            if s.tab == 3 && s.output_focus =>
+                        {
+                            let max = s.action_log.len().saturating_sub(1) as u16;
+                            s.output_scroll = (s.output_scroll + 1).min(max);
                         }
                         KeyCode::Up | KeyCode::Char('k')
                             if s.tab == 3 =>
