@@ -6,12 +6,26 @@ SpaceCoMP uses a distance-minimizing shortest-path algorithm that exploits the p
 
 The baseline routing algorithm on a 2D torus computes the shortest path in grid hops — the Manhattan distance between source and destination, accounting for wraparound on both axes. Each hop moves one step in either the orbital-plane axis (east/west) or the satellite axis (north/south). This minimizes hop count but ignores the fact that ISL distances vary with orbital position.
 
+## Why Distance Matters
+
+Minimizing distance is not just about reducing propagation delay (which is small — light crosses 5,000 km in 17 ms). The bigger effect is on **throughput**. ISL channel capacity depends on signal-to-noise ratio (SNR), which depends on distance through free-space path loss:
+
+$$\text{FSPL}(d) = \left(\frac{4\pi d}{\lambda}\right)^2$$
+
+Path loss grows with the **square** of distance. A cross-plane link that is 40% longer has nearly double the path loss, which lowers SNR and reduces the channel capacity available for data transfer. The transmission time for $V$ bytes over a link of distance $d$ is:
+
+$$S(d, V) = \frac{d}{c} + \frac{V}{B \cdot \log_2(1 + \text{SNR}(d))}$$
+
+The first term is propagation delay (small). The second term is transfer time — and it grows as SNR drops. On a long equatorial cross-plane link, the same data takes measurably longer to transfer than on a short polar cross-plane link, even though both are a single hop.
+
+This is why distance-minimizing routing improves performance beyond what hop-count minimization achieves.
+
 ## Distance-Minimizing Routing
 
 The distance-minimizing algorithm produces the same hop count as Manhattan routing but chooses the *order* of hops to minimize the total physical distance traversed. The key insight: cross-plane ISL distances vary by ~40% depending on the satellite's position along its orbit.
 
-- Near the **equator**, orbital planes are far apart — cross-plane hops are expensive.
-- Near the **poles**, orbital planes converge — cross-plane hops are cheap.
+- Near the **equator**, orbital planes are far apart — cross-plane hops are expensive (long distance, high path loss, low throughput).
+- Near the **poles**, orbital planes converge — cross-plane hops are cheap (short distance, low path loss, high throughput).
 - Intra-plane distances are constant regardless of position.
 
 The algorithm computes a **cross-plane factor** at each routing decision:
@@ -26,7 +40,7 @@ At each hop, the router checks whether the cross-plane factor would increase or 
 
 ## Results
 
-The algorithm achieves 8–21% reduction in total ISL distance compared to naive Manhattan routing, with zero hop count overhead. The savings come entirely from reordering the same set of hops to exploit orbital geometry. This translates directly to reduced propagation delay and improved link margins (SNR decreases with distance).
+The algorithm achieves 8–21% reduction in total ISL distance compared to naive Manhattan routing, with zero hop count overhead. The savings come entirely from reordering the same set of hops to exploit orbital geometry. Because path loss grows quadratically with distance, the throughput improvement is larger than the distance reduction suggests — shorter links have disproportionately higher capacity.
 
 ## Integration with SpaceCoMP
 

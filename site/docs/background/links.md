@@ -13,6 +13,12 @@ Two ISL technologies exist:
 
 ISL latency within LEO is 1–5 ms per hop, depending on the distance between satellites. A path across 10 hops takes tens of milliseconds — comparable to terrestrial internet latency.
 
+### Distance and Throughput
+
+ISL link quality degrades with distance. The signal weakens according to free-space path loss, which grows with the square of distance. A link that is twice as long has four times the path loss, resulting in lower signal-to-noise ratio and reduced channel capacity. This means longer links carry less data per second, not just with more delay.
+
+In a Walker Delta constellation, cross-plane link distances vary by ~40% over each orbit — shortest near the poles (where orbital planes converge) and longest near the equator (where they diverge). This variation directly affects throughput: the same cross-plane hop carries more data near the poles than near the equator. [Distance-minimizing routing](/spacecomp/routing) exploits this by scheduling cross-plane hops when they are shortest.
+
 ## Ground Station Passes
 
 A ground station sees a LEO satellite only when it is above the local horizon. The **elevation angle** — the angle between the horizon and the satellite as seen from the station — determines link quality: higher elevation means shorter path through the atmosphere and better signal. A minimum elevation of 5–10° is typical; below that, atmospheric attenuation and multipath make the link unreliable.
