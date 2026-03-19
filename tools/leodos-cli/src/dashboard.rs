@@ -969,19 +969,9 @@ pub async fn run(
                             s.output_focus = false;
                         }
                         KeyCode::Up | KeyCode::Char('k')
-                            if s.tab == 3 && s.output_focus =>
-                        {
-                            s.output_scroll = s.output_scroll.saturating_sub(1);
-                        }
-                        KeyCode::Down | KeyCode::Char('j')
-                            if s.tab == 3 && s.output_focus =>
-                        {
-                            let max = s.action_log.len().saturating_sub(1) as u16;
-                            s.output_scroll = (s.output_scroll + 1).min(max);
-                        }
-                        KeyCode::Up | KeyCode::Char('k')
                             if s.tab == 3 =>
                         {
+                            s.output_focus = false;
                             let count = btn_count(&s.btns);
                             s.selected_btn =
                                 (s.selected_btn + count - 1) % count;
@@ -989,6 +979,7 @@ pub async fn run(
                         KeyCode::Down | KeyCode::Char('j')
                             if s.tab == 3 =>
                         {
+                            s.output_focus = false;
                             s.selected_btn =
                                 (s.selected_btn + 1) % btn_count(&s.btns);
                         }
