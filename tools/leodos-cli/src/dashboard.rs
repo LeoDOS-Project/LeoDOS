@@ -474,7 +474,7 @@ fn discover_buttons() -> (Vec<Btn>, Vec<String>) {
         (" Stop Sim ".into(), "sim-stop".into(), "Stop all simulation containers".into()),
         (" Shell ".into(), "shell".into(), "Open an interactive shell in the FSW container".into()),
         (String::new(), String::new(), String::new()),
-        (" Deploy... ".into(), "deploy-popup".into(), "Upload and reload a cFS app".into()),
+        (" Deploy ".into(), "deploy-popup".into(), "Upload and reload a cFS app".into()),
         (" Datagen ".into(), "datagen".into(), "Generate synthetic thermal sensor data".into()),
         (" Enable TO_LAB ".into(), "enable-tolab".into(), "Enable telemetry output via TO_LAB".into()),
         (" Status ".into(), "status".into(), "Query system status".into()),
