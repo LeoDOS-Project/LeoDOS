@@ -21,24 +21,22 @@ In a Walker Delta constellation, cross-plane link distances vary by ~40% over ea
 
 Both RF and optical ISLs are subject to free-space path loss — it applies to any electromagnetic signal in free space, regardless of wavelength. Optical links handle it better because their narrow beam (microradians) concentrates more power on the receiver, achieving higher SNR at the same distance. But the narrow beam requires sub-microradian pointing accuracy between two platforms moving at 7.5 km/s.
 
-### ISLs vs Fiber
+### Optical ISLs vs Fiber
 
-ISLs and terrestrial fiber optics are both photonic links, but they operate in different regimes:
+Optical ISLs and terrestrial fiber are both photonic links — laser light carrying data. But they operate in fundamentally different regimes.
 
-| Property | ISL (free space) | Fiber optic |
-|---|---|---|
-| Medium | Vacuum | Glass core |
-| Speed of light | 299,792 km/s (c) | ~200,000 km/s (~0.67c) |
-| Signal containment | Beam diverges (inverse square law) | Guided in core (minimal spread) |
-| Path loss model | Free-space path loss — quadratic with distance | Attenuation — ~0.2 dB/km, linear with distance |
-| Amplification | None (full distance unamplified) | Repeaters every 80–100 km |
-| Typical link distance | 1,000–5,000 km | 1–100 km between nodes |
-| Capacity vs distance | Drops with distance (SNR degrades) | Essentially constant (with amplifiers) |
-| Weather/environment | Unaffected (vacuum) | Unaffected (shielded cable) |
+**Advantages of optical ISLs over fiber:**
 
-The key difference is signal containment. In fiber, light stays trapped in the glass core — the signal barely spreads regardless of distance, and amplifiers restore it periodically. In free space, the beam diverges and the signal spreads over a larger area, so the receiver captures a smaller fraction of the transmitted power as distance increases. This is why ISL capacity is distance-dependent while fiber capacity is not.
+- **Faster propagation** — light travels at full speed in vacuum (299,792 km/s), about 47% faster than in glass fiber (~200,000 km/s). For latency-sensitive paths, an ISL mesh can beat a terrestrial fiber route even if the physical distance is longer.
+- **No infrastructure** — no cables to lay, no landing rights, no undersea repeaters. A constellation creates a global mesh network by launching satellites. Adding capacity means launching more satellites, not digging trenches.
+- **No weather or terrain constraints** — fiber routes must avoid mountains, oceans, and political boundaries. ISLs operate in vacuum and are unaffected by weather.
 
-Despite this, ISLs are faster per kilometer (47% speed advantage in vacuum) and have no cable infrastructure to deploy or maintain. For a satellite constellation, they are the only option for inter-node communication.
+**Disadvantages of optical ISLs compared to fiber:**
+
+- **Signal diverges with distance** — in fiber, light is guided inside a glass core and barely spreads, regardless of how far it travels. In free space, the beam diverges and the power spreads over a larger area. The receiver captures a smaller fraction as distance increases, following the inverse square law. This means ISL capacity drops with distance, while fiber capacity does not.
+- **No amplification** — fiber networks place repeaters every 80–100 km to restore the signal. An ISL must cover the full 1,000–5,000 km between satellites without amplification. The signal arrives weaker than it would over the same distance in fiber.
+- **Pointing precision** — a fiber connector is physically mated and stays aligned. An optical ISL must aim a microradian-wide beam at a receiver on another satellite thousands of kilometers away, while both platforms move at 7.5 km/s. Acquiring and maintaining this lock is a significant engineering challenge.
+- **Variable link quality** — fiber capacity between two nodes is constant (the cable doesn't change length). ISL capacity varies as orbital geometry changes — cross-plane links are stronger near the poles and weaker near the equator.
 
 ## Ground Station Passes
 
