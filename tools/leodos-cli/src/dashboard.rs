@@ -706,12 +706,53 @@ fn spawn_action(cmd: String, state: Arc<Mutex<AppState>>) {
     tokio::spawn(async move {
         let output = match cmd.as_str() {
             "build" => run_shell("make nos3-build && make nos3-config && make nos3-build-sim && make nos3-build-fsw").await,
-            "sim-start" => run_shell("make constellation-build && make constellation-gen && docker compose -f docker-compose.constellation.yml up -d").await,
+            "sim-start" => {
+                let res = run_shell("make constellation-build && make constellation-gen && docker compose -f docker-compose.constellation.yml up -d").await;
+                if res.is_ok() {
+                    // Wait for cFS to initialize, then enable TO_LAB on all orbits
+                    let st = state.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        let (orbits, _sats) = {
+                            let s = st.lock().unwrap();
+                            (s.orbits, s.sats)
+                        };
+                        for orb in 0..orbits {
+                            let host = format!("172.20.{orb}.10");
+                            let mut ip_payload = [0u8; 16];
+                            let ip_str = b"172.20.0.1";
+                            ip_payload[..ip_str.len()].copy_from_slice(ip_str);
+                            let _ = crate::tc::send(&host, 1234, 0x1880, 6, &ip_payload, false).await;
+                            if let Ok(mut s) = st.lock() {
+                                s.action_log.push_back(format!("  TO_LAB enabled on orb-{orb}"));
+                            }
+                        }
+                    });
+                }
+                res
+            },
             "sim-stop" => run_shell("docker compose -f docker-compose.constellation.yml down").await,
             "shell" => { return; } // Can't run interactive shell from TUI
             "datagen" => run_shell("cd tools/eosim && uv run eosim wildfire examples/california_wildfire.yaml -o output/ --fmt bin").await,
             "status" => run_shell("echo 'Status query sent'").await,
-            "enable-tolab" => run_shell("echo 'TO_LAB enable sent'").await,
+            "enable-tolab" => {
+                let st = state.clone();
+                let (orbits, _) = {
+                    let s = st.lock().unwrap();
+                    (s.orbits, s.sats)
+                };
+                for orb in 0..orbits {
+                    let host = format!("172.20.{orb}.10");
+                    let mut ip_payload = [0u8; 16];
+                    let ip_str = b"172.20.0.1";
+                    ip_payload[..ip_str.len()].copy_from_slice(ip_str);
+                    let _ = crate::tc::send(&host, 1234, 0x1880, 6, &ip_payload, false).await;
+                    if let Ok(mut s) = st.lock() {
+                        s.action_log.push_back(format!("  TO_LAB enabled on orb-{orb}"));
+                    }
+                }
+                Ok("TO_LAB enabled on all orbits".into())
+            },
             cmd if cmd.starts_with("deploy ") => {
                 let app = &cmd[7..];
                 run_shell(&format!(
