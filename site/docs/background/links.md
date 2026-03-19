@@ -37,6 +37,7 @@ Optical ISLs and terrestrial fiber are both photonic links — laser light carry
 - **No amplification** — fiber networks place repeaters every 80–100 km to restore the signal. An ISL must cover the full 1,000–5,000 km between satellites without amplification. The signal arrives weaker than it would over the same distance in fiber.
 - **Pointing precision** — a fiber connector is physically mated and stays aligned. An optical ISL must aim a microradian-wide beam at a receiver on another satellite thousands of kilometers away, while both platforms move at 7.5 km/s. Acquiring and maintaining this lock is a significant engineering challenge.
 - **Variable link quality** — fiber capacity between two nodes is constant (the cable doesn't change length). ISL capacity varies as orbital geometry changes — cross-plane links are stronger near the poles and weaker near the equator.
+- **More overhead per bit** — lower SNR on longer links means more forward error correction (FEC) is needed to achieve the same bit error rate. A short link with high SNR can use a light FEC code and devote most of the channel bandwidth to data. A long link with low SNR needs a heavier code — more parity bits per data bit — so the effective data throughput drops even beyond what the raw capacity suggests. The [coding layer](/protocols/coding/fec/overview) (Reed-Solomon, LDPC) handles this, but the cost is real: longer links spend more bandwidth on error correction and less on useful data.
 
 ## Ground Station Passes
 
