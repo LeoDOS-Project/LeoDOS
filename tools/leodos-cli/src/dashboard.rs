@@ -602,26 +602,15 @@ fn draw_control(
         }
     }
 
-    // Right side: tooltip + output log
+    // Action output log + tooltip below
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
             Constraint::Min(0),
+            Constraint::Length(1),
         ])
         .split(log_area);
 
-    // Tooltip for selected button
-    let (_, _, tooltip) = &state.btns[selected_real];
-    frame.render_widget(
-        Span::styled(
-            format!(" {tooltip}"),
-            Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC),
-        ),
-        right_chunks[0],
-    );
-
-    // Action output log
     let items: Vec<Line> = state
         .action_log
         .iter()
@@ -636,11 +625,21 @@ fn draw_control(
         )
         .scroll((
             state.action_log.len().saturating_sub(
-                right_chunks[1].height.saturating_sub(2) as usize,
+                right_chunks[0].height.saturating_sub(2) as usize,
             ) as u16,
             0,
         ));
-    frame.render_widget(paragraph, right_chunks[1]);
+    frame.render_widget(paragraph, right_chunks[0]);
+
+    // Tooltip for selected button
+    let (_, _, tooltip) = &state.btns[selected_real];
+    frame.render_widget(
+        Span::styled(
+            format!(" {tooltip}"),
+            Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC),
+        ),
+        right_chunks[1],
+    );
 }
 
 fn handle_click(
