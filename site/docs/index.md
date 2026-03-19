@@ -11,7 +11,7 @@ The system is designed around a single premise: satellites in a LEO constellatio
 
 ## Documentation
 
-- **[Building and Running](/building/overview)** — how to build, test, and run the simulation
+- **[Building and Running](/building/overview)** — how to build, test, and run LeoDOS
 - **[SpaceCoMP](/spacecomp/overview)** — distributed computation across the constellation: task allocation, workflows, and use cases
 - **[LEO Communication Protocols](/protocols/overview)** — CCSDS communication stack from physical modulation to reliable transport
 - **[Core Flight System](/cfs/overview)** — the cFS framework: architecture, mission structure, and the five cFE services

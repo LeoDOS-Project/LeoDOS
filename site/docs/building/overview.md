@@ -85,8 +85,8 @@ The site source is in `site/docs/`. It deploys automatically to GitHub Pages on 
 
 Generated Rust API docs are hosted alongside the documentation site:
 
-- [`leodos-protocols`](/rustdoc/leodos_protocols/) — the communication stack and SpaceCoMP implementation (built with `cfs` and `tokio` features)
-- [`leodos-libcfs`](/rustdoc/leodos_libcfs/) — safe Rust wrappers for the cFE, OSAL, and PSP APIs
+- [`leodos-protocols`](pathname:///LeoDOS/rustdoc/leodos_protocols/) — the communication stack and SpaceCoMP implementation (built with `cfs` and `tokio` features)
+- [`leodos-libcfs`](pathname:///LeoDOS/rustdoc/leodos_libcfs/) — safe Rust wrappers for the cFE, OSAL, and PSP APIs
 
 To build locally (requires Docker for cFS headers):
 
