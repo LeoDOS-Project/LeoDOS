@@ -1,0 +1,127 @@
+# Overview
+
+LeoDOS uses NASA's NOS3 framework to simulate a satellite constellation on a development machine. The same cFS flight software runs in simulation and in flight — application code is identical in both environments, with only the hardware abstraction layer swapped.
+
+## Architecture
+
+The simulation has four layers. Flight software at the top communicates with hardware simulators at the bottom through a bus abstraction layer. NOS Engine replaces physical hardware buses with TCP connections. The diagram shows a single simulated satellite.
+
+import Link from '@docusaurus/Link';
+
+export const Layer = ({name, href, children}) => (
+  <div style={{border: '2px solid #333', borderRadius: 6, padding: 6, marginBottom: -2, width: 540}}>
+    <div style={{fontWeight: 'bold', fontSize: '0.9em', marginBottom: 4}}>{href ? <Link to={href} style={{color: '#333', textDecoration: 'none'}}>{name}</Link> : name}</div>
+    {children}
+  </div>
+);
+
+export const Group = ({name, children}) => (
+  <div style={{border: '1px solid #999', borderRadius: 4, padding: 5, margin: '3px 0', background: '#fafafa'}}>
+    <div style={{fontSize: '0.8em', fontStyle: 'italic', color: '#666', marginBottom: 3}}>{name}</div>
+    <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>{children}</div>
+  </div>
+);
+
+export const Chip = ({name, href}) => {
+  const content = href
+    ? <Link to={href} style={{color: '#333', textDecoration: 'none'}}>{name}</Link>
+    : name;
+  return (
+    <div style={{
+      border: '1px solid #88aa88',
+      borderRadius: 4,
+      padding: '3px 8px',
+      fontSize: '0.85em',
+      fontWeight: 'bold',
+      background: '#d4e8d4',
+      color: '#333',
+    }}>{content}</div>
+  );
+};
+
+export const Bus = ({name, href}) => {
+  const content = href
+    ? <Link to={href} style={{color: '#333', textDecoration: 'none'}}>{name}</Link>
+    : name;
+  return (
+    <div style={{
+      border: '1px solid #bba050',
+      borderRadius: 4,
+      padding: '3px 8px',
+      fontSize: '0.85em',
+      fontWeight: 'bold',
+      background: '#f5e0b0',
+      color: '#333',
+    }}>{content}</div>
+  );
+};
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+<Layer name="Flight Software" href="/cfs/overview">
+  <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
+    <Chip name="cFS Apps" href="/cfs/mission/structure" />
+    <Chip name="Software Bus" href="/cfs/cfe/sb" />
+    <Chip name="ISL Router" href="/protocols/network/routing" />
+    <Chip name="SRSPP" href="/protocols/transport/srspp" />
+    <Chip name="SpaceCoMP" href="/spacecomp/overview" />
+  </div>
+</Layer>
+<Layer name="hwlib — Bus Abstraction">
+  <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
+    <Bus name="UART" href="/protocols/physical/hardware/uart" />
+    <Bus name="SPI" href="/protocols/physical/hardware/spi" />
+    <Bus name="I2C" href="/protocols/physical/hardware/i2c" />
+    <Bus name="CAN" href="/protocols/physical/hardware/can" />
+  </div>
+  <div style={{fontSize: '0.8em', color: '#666', marginTop: 4, fontStyle: 'italic'}}>
+    ↑ same code in simulation and flight — ↓ NOS Engine replaces real hardware
+  </div>
+</Layer>
+<Layer name="NOS3 Hardware Simulators" href="sensors">
+  <Group name="Attitude">
+    <Chip name="Sun Sensors" />
+    <Chip name="IMU" />
+    <Chip name="Star Tracker" />
+    <Chip name="Magnetometer" />
+    <Chip name="Reaction Wheels" />
+    <Chip name="Torquers" />
+    <Chip name="Thrusters" />
+  </Group>
+  <Group name="Navigation & Power">
+    <Chip name="GPS" />
+    <Chip name="EPS" />
+  </Group>
+  <Group name="Communication">
+    <Chip name="Radio (Ground)" href="communication" />
+    <Chip name="Radio (ISL)" href="communication" />
+  </Group>
+  <Group name="Imaging">
+    <Chip name="Arducam" />
+    <Chip name="Thermal Camera" href="earth-observation" />
+  </Group>
+</Layer>
+<Layer name="42 — Orbital Mechanics" href="orbital-mechanics">
+  <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
+    <Chip name="Orbits" />
+    <Chip name="Attitude Dynamics" />
+    <Chip name="Gravity (EGM96)" />
+    <Chip name="Magnetic Field (IGRF)" />
+    <Chip name="Atmosphere" />
+    <Chip name="Solar Geometry" />
+  </div>
+</Layer>
+
+<div style={{display: 'flex', gap: 16, marginTop: 10, fontSize: '0.85em', alignItems: 'center', flexWrap: 'wrap'}}>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '1px solid #88aa88', borderRadius: 3}} /> Component</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f5e0b0', border: '1px solid #bba050', borderRadius: 3}} /> Hardware Bus</div>
+</div>
+</div>
+
+Simulation time is synchronized at 10 μs per tick. NOS Engine distributes the clock to all components. The simulation can run faster or slower than wall clock time.
+
+## Sections
+
+- [Orbital Mechanics](orbital-mechanics) — orbit propagation, attitude dynamics, and the space environment
+- [Sensors and Actuators](sensors) — attitude, navigation, power, propulsion, and imaging hardware
+- [Communication](communication) — ground links, inter-satellite links, and hardware bus emulation
+- [Earth Observation](earth-observation) — synthetic sensor data for workflow testing
