@@ -580,37 +580,48 @@ fn draw_control(
         }
     }
 
-    // Separator + key hints below buttons in the button panel
+    // Separator + tooltip + key hints below buttons
     let btns_end = state.btns.len() as u16 + 1;
     if btns_end < inner.height {
         let sep_y = inner.y + btns_end;
-        let sep = "─".repeat(inner.width.saturating_sub(2) as usize);
+        let w = inner.width.saturating_sub(2);
+        let sep = "─".repeat(w as usize);
         frame.render_widget(
             Span::styled(&sep, Style::default().fg(Color::DarkGray)),
-            Rect::new(inner.x + 1, sep_y, inner.width.saturating_sub(2), 1),
+            Rect::new(inner.x + 1, sep_y, w, 1),
         );
 
+        // Tooltip (word-wrapped into the button panel)
+        let (_, _, tooltip) = &state.btns[selected_real];
+        if !tooltip.is_empty() {
+            let tooltip_area = Rect::new(
+                inner.x + 1,
+                sep_y + 1,
+                w,
+                inner.height.saturating_sub(btns_end + 2),
+            );
+            frame.render_widget(
+                Paragraph::new(tooltip.as_str())
+                    .wrap(Wrap { trim: true })
+                    .style(Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC)),
+                tooltip_area,
+            );
+        }
+
+        // Key hints at bottom
         let hints_y = inner.y + inner.height - 1;
-        if hints_y > sep_y {
+        if hints_y > sep_y + 1 {
             frame.render_widget(
                 Span::styled(
                     "j/k ↑↓  Enter  q",
                     Style::default().fg(Color::DarkGray),
                 ),
-                Rect::new(inner.x + 1, hints_y, inner.width.saturating_sub(2), 1),
+                Rect::new(inner.x + 1, hints_y, w, 1),
             );
         }
     }
 
-    // Action output log + tooltip below
-    let right_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(log_area);
-
+    // Action output log
     let items: Vec<Line> = state
         .action_log
         .iter()
@@ -625,21 +636,11 @@ fn draw_control(
         )
         .scroll((
             state.action_log.len().saturating_sub(
-                right_chunks[0].height.saturating_sub(2) as usize,
+                log_area.height.saturating_sub(2) as usize,
             ) as u16,
             0,
         ));
-    frame.render_widget(paragraph, right_chunks[0]);
-
-    // Tooltip for selected button
-    let (_, _, tooltip) = &state.btns[selected_real];
-    frame.render_widget(
-        Span::styled(
-            format!(" {tooltip}"),
-            Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC),
-        ),
-        right_chunks[1],
-    );
+    frame.render_widget(paragraph, log_area);
 }
 
 fn handle_click(
