@@ -40,12 +40,6 @@ export const Row = ({children, gap}) => (
 The solution: a ground process acts as the ColonyOS executor. It is always reachable — no keepalive problem. ColonyOS sees a single, always-available executor and requires no modifications. Satellites execute autonomously over ISL, outside ColonyOS's awareness.
 
 <Diagram>
-  <Box bold color="#e8eef8" border="#6688bb">ColonyOS Server (cloud)</Box>
-  <Arrow label="assign / result" />
-  <Box bold color="#d4e8d4" border="#88aa88">Ground Coordinator (executor)</Box>
-  <Arrow label="ground link" />
-  <Box color="#f5e0b0" border="#bba050">LOS Satellite</Box>
-  <Arrow label="ISL" />
   <Row gap={12}>
     <Box color="#f5e0b0" border="#bba050">Sat A</Box>
     <Arrow label="ISL" dir="h" />
@@ -53,6 +47,12 @@ The solution: a ground process acts as the ColonyOS executor. It is always reach
     <Arrow label="ISL" dir="h" />
     <Box color="#f5e0b0" border="#bba050">Sat C</Box>
   </Row>
+  <Arrow label="ISL" />
+  <Box color="#f5e0b0" border="#bba050">LOS Satellite</Box>
+  <Arrow label="ground link" />
+  <Box bold color="#d4e8d4" border="#88aa88">Ground Coordinator (executor)</Box>
+  <Arrow label="assign / result" />
+  <Box bold color="#e8eef8" border="#6688bb">ColonyOS Server (cloud)</Box>
 </Diagram>
 
 ### Ground-Originated Jobs
@@ -81,15 +81,15 @@ For time-critical cases, a satellite could coordinate directly in orbit — plan
 Every satellite is a ColonyOS executor, each holding a blocking `assign()` connection routed through the LOS gateway. This is a poor fit: hundreds of connections through one gateway, every phase transition bounces through the ground, and satellites are constantly considered dead due to LOS cycling.
 
 <Diagram>
-  <Box bold color="#e8eef8" border="#6688bb">ColonyOS Server (cloud)</Box>
-  <Arrow label="ground link" />
-  <Box color="#f5e0b0" border="#bba050">LOS Gateway</Box>
-  <Arrow label="assign / result per satellite" />
   <Row gap={12}>
     <Box color="#f0d0d0" border="#bb7070">Sat A (executor)</Box>
     <Box color="#f0d0d0" border="#bb7070">Sat B (executor)</Box>
     <Box color="#f0d0d0" border="#bb7070">Sat C (executor)</Box>
   </Row>
+  <Arrow label="assign / result per satellite" />
+  <Box color="#f5e0b0" border="#bba050">LOS Gateway</Box>
+  <Arrow label="ground link" />
+  <Box bold color="#e8eef8" border="#6688bb">ColonyOS Server (cloud)</Box>
 </Diagram>
 
 ### Satellite Coordinator
@@ -97,10 +97,6 @@ Every satellite is a ColonyOS executor, each holding a blocking `assign()` conne
 One satellite is the ColonyOS executor. It receives jobs from the server and coordinates other satellites over ISL. Data flows directly between satellites, and ColonyOS sees one job in, one result out. But the coordinator satellite also goes in and out of LOS — the same keepalive problem remains.
 
 <Diagram>
-  <Box bold color="#e8eef8" border="#6688bb">ColonyOS Server (cloud)</Box>
-  <Arrow label="ground link" />
-  <Box bold color="#f0d0d0" border="#bb7070">Coordinator Sat (executor)</Box>
-  <Arrow label="ISL" />
   <Row gap={12}>
     <Box color="#f5e0b0" border="#bba050">Sat A</Box>
     <Arrow label="ISL" dir="h" />
@@ -108,6 +104,10 @@ One satellite is the ColonyOS executor. It receives jobs from the server and coo
     <Arrow label="ISL" dir="h" />
     <Box color="#f5e0b0" border="#bba050">Sat C</Box>
   </Row>
+  <Arrow label="ISL" />
+  <Box bold color="#f0d0d0" border="#bb7070">Coordinator Sat (executor)</Box>
+  <Arrow label="ground link" />
+  <Box bold color="#e8eef8" border="#6688bb">ColonyOS Server (cloud)</Box>
 </Diagram>
 
 ### Satellite Server (Future)
@@ -115,8 +115,6 @@ One satellite is the ColonyOS executor. It receives jobs from the server and coo
 ColonyOS server running on a satellite. Executors (other satellites) communicate entirely over ISL — no ground round-trips for orchestration. The keepalive problem is reduced because satellites can always reach the server over ISL. However, ColonyOS is implemented in Go and requires a full OS environment. Running it on a satellite would require an embedded reimplementation (`no_std`, [cFS](/cfs/overview)). A single satellite server is also a single point of failure.
 
 <Diagram>
-  <Box bold color="#f0d0d0" border="#bb7070">ColonyOS Server (on satellite)</Box>
-  <Arrow label="ISL" />
   <Row gap={12}>
     <Box color="#f5e0b0" border="#bba050">Sat A (executor)</Box>
     <Arrow label="ISL" dir="h" />
@@ -124,6 +122,8 @@ ColonyOS server running on a satellite. Executors (other satellites) communicate
     <Arrow label="ISL" dir="h" />
     <Box color="#f5e0b0" border="#bba050">Sat C (executor)</Box>
   </Row>
+  <Arrow label="ISL" />
+  <Box bold color="#f0d0d0" border="#bb7070">ColonyOS Server (on satellite)</Box>
 </Diagram>
 
 ## Comparison
