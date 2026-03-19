@@ -267,7 +267,10 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'ColonyOS',
-      items: ['colonyos/integration'],
+      items: [
+        'colonyos/overview',
+        'colonyos/integration',
+      ],
     },
   ],
 };

@@ -1,8 +1,6 @@
-# ColonyOS Integration
+# Integration
 
-ColonyOS is a meta-OS for distributed computing. It coordinates heterogeneous workers (executors) via a central server using a pull-based model: executors call `assign()` when ready, receive a process specification, execute it, and report the result. Every colony, executor, and user has an ECDSA key pair — all messages are signed and verified.
-
-The challenge is integrating this with a satellite constellation where nodes are predictably unreachable. ColonyOS assumes executors are always reachable — if an executor stops sending keepalives, the server considers it dead and reassigns its work. Satellites go in and out of ground contact every ~95 minutes. A satellite executor would be considered dead every time it loses line of sight, which is the normal state, not a failure.
+[ColonyOS](overview) assumes executors are always reachable — if an executor stops sending keepalives, the server considers it dead and reassigns its work. Satellites go in and out of ground contact every ~95 minutes. A satellite executor would be considered dead every time it loses line of sight, which is the normal state, not a failure. This page describes how LeoDOS integrates with ColonyOS despite this mismatch.
 
 export const Box = ({children, bold, color, border, width}) => (
   <div style={{
