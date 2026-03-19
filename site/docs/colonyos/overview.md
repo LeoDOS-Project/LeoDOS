@@ -5,8 +5,9 @@ ColonyOS is a meta-OS for distributed computing developed at RISE. It coordinate
 ## Core Concepts
 
 - **Colony** — a group of executors managed by a single server. Each colony has an identity (ECDSA key pair) and a process queue.
-- **Executor** — a worker that pulls jobs from the colony. An executor calls `assign()` when ready, receives a process specification, executes it, and reports the result. Executors can run anywhere — in a data center, on a laptop, or on a satellite.
-- **Process** — a unit of work submitted to the colony. Describes what to run, with what inputs, and where to deliver the result.
+- **Function Specification** — a description of work to be done: function name, arguments, target executor type, and constraints. A user submits a function spec to the colony to request computation.
+- **Process** — an instance created when a function spec is submitted. The process tracks the lifecycle of that specific execution: waiting in the queue, assigned to an executor, running, completed, or failed.
+- **Executor** — a worker that pulls processes from the colony. An executor calls `assign()` when ready, receives a process, executes it, and reports the result. Executors can run anywhere — in a data center, on a laptop, or on a satellite.
 - **Keepalive** — executors send periodic heartbeats to the server. If an executor stops responding, the server considers it dead and makes its process available for another executor.
 
 ## Pull-Based Model
