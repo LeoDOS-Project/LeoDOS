@@ -94,17 +94,7 @@ export const HArrow = () => (
 
 Within each container, satellites run as separate cFS processes with unique spacecraft IDs. The ISL router in each satellite connects to its four torus neighbors (north, south, east, west) — intra-orbit neighbors are in the same container, cross-orbit neighbors are in adjacent containers.
 
-## CLI
-
-The `leodos-cli` tool orchestrates constellation simulation:
-
-```
-leodos-cli sim start 3 22     # start 3 orbits × 22 satellites = 66 satellites
-leodos-cli sim stop           # stop all containers
-leodos-cli sim shell 0        # open a shell in orbit-0 container
-```
-
-The `start` command generates a Docker Compose configuration, assigns spacecraft IDs and ports, and brings up all containers. Each satellite gets a unique ID derived from its grid position: `(orbit + 1) × 1000 + satellite_number`.
+See [Building and Running](/building/overview) for CLI commands to start, stop, and interact with a constellation simulation.
 
 ## Scaling
 

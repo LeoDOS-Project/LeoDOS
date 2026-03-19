@@ -39,6 +39,18 @@ make nos3-shell      # interactive shell in FSW container
 
 NOS3 configuration is in `libs/nos3/cfg/`. Hardware simulator sources are in `libs/nos3/components/`.
 
+## Constellation Simulation
+
+The `leodos-cli` tool orchestrates multi-satellite [constellation simulation](/simulation/constellation):
+
+```
+leodos-cli sim start 3 22     # start 3 orbits × 22 satellites = 66 satellites
+leodos-cli sim stop           # stop all containers
+leodos-cli sim shell 0        # open a shell in orbit-0 container
+```
+
+The `start` command generates a Docker Compose configuration, assigns spacecraft IDs and ports, and brings up all containers. Each satellite gets a unique ID derived from its grid position: `(orbit + 1) × 1000 + satellite_number`.
+
 ## Earth Observation Data
 
 Generate synthetic sensor data for [workflow testing](/simulation/earth-observation) before launching the simulation:
