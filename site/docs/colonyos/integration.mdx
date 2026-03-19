@@ -87,7 +87,7 @@ For time-critical cases, a satellite could coordinate directly in orbit — plan
 
 A [GEO relay satellite](/background#cross-orbit-communication) (such as TDRSS or EDRS) provides near-continuous low-bandwidth connectivity between LEO satellites and the ground, eliminating the ground contact gap. This makes the ground coordinator more responsive — job uploads and status updates no longer wait for a direct ground pass.
 
-However, the ground coordinator design remains the right approach even with a GEO relay. The relay adds ~250 ms round-trip latency (LEO→GEO→ground→GEO→LEO), which is fine for uploading a job plan but not for coordinating each step of a multi-satellite computation in real time. Satellites should still execute autonomously over ISL after receiving the plan, rather than continuously synchronizing with the ground through the relay.
+The ground coordinator design still applies with a GEO relay — the relay makes plan uploads and status updates more timely, but the ~250 ms round-trip latency (LEO→GEO→ground→GEO→LEO) is still too high for coordinating each step of a multi-satellite computation in real time. The approach of uploading a plan and letting satellites execute autonomously over ISL avoids this latency and requires no changes to ColonyOS.
 
 ### Alternative Designs Considered
 
