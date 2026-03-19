@@ -15,7 +15,7 @@ pub async fn send(
     payload: &[u8],
     expect_response: bool,
 ) -> Result<()> {
-    let apid = Apid::new(mid).expect("Should be a valid APID");
+    let apid = Apid::new(mid & 0x07FF).expect("Should be a valid APID");
     let mut buffer = [0u8; 256];
 
     let packet = Telecommand::builder()
