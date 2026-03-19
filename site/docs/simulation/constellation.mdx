@@ -1,0 +1,113 @@
+# Constellation Simulation
+
+The [simulation overview](overview) shows a single satellite. A constellation simulation runs many satellites simultaneously, each with its own flight software instance, connected by inter-satellite links across a Docker network.
+
+## How It Works
+
+A constellation simulation has three components:
+
+- **42** — a single instance propagates orbits for all spacecraft in the constellation. Each satellite gets its own orbital elements (inclination, RAAN, mean anomaly) derived from the [Walker Delta geometry](/spacecomp/constellation).
+- **One Docker container per orbital plane** — each container runs multiple satellite processes. Satellites within the same orbit share a container; different orbits run in separate containers on a shared Docker bridge network.
+- **Inter-satellite links over UDP** — radio simulators in different containers communicate via UDP across the Docker network. Each satellite has a unique set of ports for its ground link and ISL connections.
+
+export const Box = ({children, width, color, border}) => (
+  <div style={{
+    border: `2px solid ${border || '#555'}`,
+    borderRadius: 6,
+    padding: '8px 12px',
+    background: color || '#fff',
+    width: width || 'auto',
+    textAlign: 'center',
+    fontSize: '0.85em',
+    fontWeight: 'bold',
+  }}>{children}</div>
+);
+
+export const Sat = ({id}) => (
+  <div style={{
+    border: '1px solid #88aa88',
+    borderRadius: 4,
+    padding: '2px 8px',
+    background: '#d4e8d4',
+    fontSize: '0.8em',
+    fontWeight: 'bold',
+  }}>Sat {id}</div>
+);
+
+export const Arrow = ({label}) => (
+  <div style={{textAlign: 'center', fontSize: '0.75em', color: '#666', padding: '2px 0'}}>
+    {label ? `↕ ${label}` : '↕'}
+  </div>
+);
+
+export const HArrow = () => (
+  <div style={{display: 'flex', alignItems: 'center', fontSize: '0.75em', color: '#666', padding: '0 4px'}}>
+    ← UDP →
+  </div>
+);
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0}}>
+  <div style={{border: '2px solid #333', borderRadius: 8, padding: 12, background: '#f8f8f8', width: 540}}>
+    <div style={{fontWeight: 'bold', fontSize: '0.9em', marginBottom: 8, color: '#333'}}>Docker Network</div>
+
+    <div style={{display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'stretch', marginBottom: 4}}>
+      <div style={{border: '2px solid #6688bb', borderRadius: 6, padding: 8, background: '#e8eef8', flex: 1}}>
+        <div style={{fontWeight: 'bold', fontSize: '0.8em', marginBottom: 6}}>Orbit 0</div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 3}}>
+          <Sat id="0" /><Sat id="1" /><Sat id="2" />
+          <div style={{fontSize: '0.75em', color: '#888'}}>...</div>
+        </div>
+      </div>
+      <HArrow />
+      <div style={{border: '2px solid #6688bb', borderRadius: 6, padding: 8, background: '#e8eef8', flex: 1}}>
+        <div style={{fontWeight: 'bold', fontSize: '0.8em', marginBottom: 6}}>Orbit 1</div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 3}}>
+          <Sat id="0" /><Sat id="1" /><Sat id="2" />
+          <div style={{fontSize: '0.75em', color: '#888'}}>...</div>
+        </div>
+      </div>
+      <HArrow />
+      <div style={{border: '2px solid #6688bb', borderRadius: 6, padding: 8, background: '#e8eef8', flex: 1}}>
+        <div style={{fontWeight: 'bold', fontSize: '0.8em', marginBottom: 6}}>Orbit 2</div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 3}}>
+          <Sat id="0" /><Sat id="1" /><Sat id="2" />
+          <div style={{fontSize: '0.75em', color: '#888'}}>...</div>
+        </div>
+      </div>
+      <div style={{display: 'flex', alignItems: 'center', fontSize: '0.85em', color: '#888', padding: '0 4px'}}>...</div>
+    </div>
+
+    <Arrow label="UDP" />
+
+    <div style={{display: 'flex', gap: 8, justifyContent: 'center'}}>
+      <Box color="#f5e0b0" border="#bba050" width="240px">42 (all orbits)</Box>
+      <Box color="#f0d0d0" border="#bb7070" width="240px">Ground Station</Box>
+    </div>
+  </div>
+
+  <div style={{display: 'flex', gap: 16, marginTop: 10, fontSize: '0.85em', alignItems: 'center', flexWrap: 'wrap'}}>
+    <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#e8eef8', border: '2px solid #6688bb', borderRadius: 3}} /> Docker container</div>
+    <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '1px solid #88aa88', borderRadius: 3}} /> Satellite process</div>
+    <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f5e0b0', border: '2px solid #bba050', borderRadius: 3}} /> Shared service</div>
+  </div>
+</div>
+
+Within each container, satellites run as separate cFS processes with unique spacecraft IDs. The ISL router in each satellite connects to its four torus neighbors (north, south, east, west) — intra-orbit neighbors are in the same container, cross-orbit neighbors are in adjacent containers.
+
+## CLI
+
+The `leodos-cli` tool orchestrates constellation simulation:
+
+```
+leodos-cli sim start 3 22     # start 3 orbits × 22 satellites = 66 satellites
+leodos-cli sim stop           # stop all containers
+leodos-cli sim shell 0        # open a shell in orbit-0 container
+```
+
+The `start` command generates a Docker Compose configuration, assigns spacecraft IDs and ports, and brings up all containers. Each satellite gets a unique ID derived from its grid position: `(orbit + 1) × 1000 + satellite_number`.
+
+## Scaling
+
+42 handles the orbital mechanics for the entire constellation in a single process — 10,000+ satellites have been propagated. The scaling bottleneck is the flight software: each satellite runs a full cFS instance with its own sensor simulators. A 66-satellite constellation (3 × 22) runs comfortably on a workstation; larger constellations require more memory and CPU.
+
+For protocol-only testing without NOS3, the `leodos-protocols` demo crate runs all satellites as lightweight tokio tasks in a single process, connected by in-memory channels. This scales to thousands of nodes and is useful for testing routing and transport behavior across the full torus topology.
