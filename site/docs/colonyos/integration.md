@@ -1,35 +1,74 @@
 # ColonyOS Integration
 
-ColonyOS is an external job orchestration framework that coordinates computation across heterogeneous workers — ground servers, edge devices, and satellites. LeoDOS integrates with ColonyOS as a bridge between ground-initiated workflows and the onboard [SpaceCoMP](/spacecomp/overview) execution model.
+ColonyOS is a meta-OS for distributed computing. It coordinates heterogeneous workers (executors) via a central server using a pull-based model: executors call `assign()` when ready, receive a process specification, execute it, and report the result. Every colony, executor, and user has an ECDSA key pair — all messages are signed and verified.
 
-## Role in LeoDOS
+The challenge is integrating this with a satellite constellation where nodes are predictably unreachable.
 
-SpaceCoMP handles the onboard side: task allocation, data collection, map/reduce processing, and alert routing across the constellation. But the workflow must be *initiated* — someone needs to define the job, select the target satellites, and schedule execution. ColonyOS fills this role:
+## The Keepalive Problem
 
-1. **Job submission** — a ground operator or automated system submits a job to ColonyOS with a geographic area of interest, sensor requirements, and processing pipeline.
-2. **Colony assignment** — ColonyOS determines which "colony" (a group of satellites with the right orbital coverage) can execute the job and assigns it.
-3. **Uplink** — the job definition is translated into a SpaceCoMP workflow descriptor and uplinked to the constellation via [CFDP](/protocols/transport/cfdp).
-4. **Execution** — the constellation executes the workflow autonomously using SpaceCoMP's [Collect-Map-Reduce model](/spacecomp/overview).
-5. **Result collection** — alert packets and processed results are downlinked and reported back to ColonyOS as completed tasks.
+ColonyOS assumes executors are always reachable. If an executor stops sending keepalives, the server considers it dead and reassigns its work. This works for cloud workers and ground servers, but satellites go in and out of ground contact every ~95 minutes. A satellite executor would be considered dead every time it loses line of sight — which is the normal state, not a failure.
 
-## Why an External Orchestrator
+## Design Options
 
-The constellation cannot orchestrate itself for ground-initiated jobs. Satellites have intermittent ground contact (5–15 minutes per pass), limited visibility into the full constellation state, and no persistent connection to ground systems. ColonyOS provides:
+Three architectures were evaluated:
 
-- **Persistent job queue** — jobs survive ground station outages and are uplinked on the next available pass.
-- **Multi-colony coordination** — a single job can span multiple ground stations and multiple satellite groups if the AOI is large.
-- **Heterogeneous workers** — some processing (baseline generation, historical comparison, result archiving) happens on ground servers. ColonyOS coordinates the ground and space portions of a workflow as a single job.
+### A1: Direct Communication
 
-## Workflow Lifecycle
+Every satellite is a ColonyOS executor. Each holds a blocking `assign()` connection routed through the LOS gateway.
 
-```
-Ground operator
-  → ColonyOS (job queue, scheduling)
-    → Ground station (uplink via CFDP)
-      → Constellation (SpaceCoMP execution)
-        → Downlink (alert packets via SRSPP)
-          → ColonyOS (result collection)
-            → Ground operator (dashboard, archive)
-```
+**Problems:** hundreds of connections through one gateway. Every phase transition bounces through the ground. Satellites constantly considered dead due to LOS cycling.
 
-The onboard portion is autonomous — once the workflow descriptor is loaded into the satellite's [Table Services](/cfs/cfe/tbl), the cFS app executes it on every qualifying pass without further ground interaction. ColonyOS only re-engages when results arrive or when the ground wants to update or cancel the workflow.
+### A2: Satellite Coordinator
+
+One satellite is the ColonyOS executor. It receives jobs from the server and coordinates other satellites over ISL. Data flows directly between satellites.
+
+**Improvement:** ColonyOS sees one job in, one result out. No per-phase ground round-trips.
+
+**Remaining problem:** the coordinator satellite also goes in and out of LOS. Same keepalive issue.
+
+### A3: Ground Coordinator (Recommended)
+
+A ground process is the ColonyOS executor. It is always reachable — no keepalive problem. It receives jobs, computes the plan using orbital predictions, uploads assignments to the constellation via the current LOS satellite, and collects results when they arrive.
+
+**Advantages:**
+- No keepalive issue — ground executor is always reachable
+- Satellites execute autonomously over ISL
+- ColonyOS sees a single, always-available executor
+- No changes to ColonyOS required
+
+## Job Flow
+
+### Ground-Originated
+
+1. User submits a [SpaceCoMP](/spacecomp/overview) job to ColonyOS (AOI, algorithm, parameters).
+2. Ground coordinator pulls the job via `assign()`.
+3. Coordinator computes the plan: which satellites are collectors, mappers, reducer (using orbital predictions).
+4. Coordinator uploads assignments to the constellation via the current LOS satellite.
+5. Satellites execute autonomously over ISL. Data flows directly between satellites via [SRSPP](/protocols/transport/srspp).
+6. Result routes back through whichever satellite has LOS at completion — Earth rotates during the job, so the originating LOS satellite may no longer be visible.
+7. Ground coordinator reports the result to ColonyOS.
+
+### Satellite-Originated
+
+1. A satellite detects an anomaly in sensor data (e.g., displacement threshold exceeded in a [workflow](/spacecomp/use-cases/overview)).
+2. It routes a job request through the ISL mesh to the LOS satellite.
+3. LOS satellite relays the request to the ground coordinator.
+4. Ground coordinator submits to ColonyOS, pulls it back, and orchestrates as above.
+
+For time-critical cases, a satellite could coordinate directly in orbit — planning and assigning roles without involving the ground. This eliminates the ground round-trip but cannot leverage ColonyOS for orchestration.
+
+## Design Comparison
+
+|  | A1: Direct | A2: Sat Coord. | A3: Gnd Coord. | B: Sat Server |
+|---|---|---|---|---|
+| Keepalive issue | Yes | Yes | **No** | Reduced |
+| Ground round-trips | Every phase | Job in/out | Job in/out | None |
+| ISL data flow | No | Yes | Yes | Yes |
+| ColonyOS changes | None | None | None | Reimplementation |
+| Practical today | Poor fit | Poor fit | **Yes** | No |
+
+## Future: Design B — Satellite Server
+
+ColonyOS server running on a satellite. Executors (other satellites) communicate entirely over ISL — no ground round-trips for orchestration. The keepalive problem is reduced because satellites can always reach the server over ISL.
+
+**Challenges:** ColonyOS is implemented in Go and requires a full OS environment. Running it on a satellite would require an embedded reimplementation (`no_std`, [cFS](/cfs/overview)). A single satellite server is also a single point of failure.
