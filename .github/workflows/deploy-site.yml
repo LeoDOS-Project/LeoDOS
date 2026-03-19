@@ -62,6 +62,11 @@ jobs:
       - name: Prep cFS headers
         run: docker compose run --rm cfs-build bash -c "make SIMULATION=native prep"
 
+      - name: Verify cFS headers exist
+        run: |
+          ls build/inc/osconfig.h || echo "osconfig.h not in build/inc/"
+          find build -name osconfig.h 2>/dev/null || echo "osconfig.h not found anywhere in build/"
+
       - name: Build rustdoc (leodos-protocols with all features)
         run: |
           docker compose run --rm cfs-build \
