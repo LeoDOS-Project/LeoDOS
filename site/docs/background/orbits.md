@@ -104,3 +104,45 @@ A sun-synchronous orbit (SSO) is a special inclination (typically 97–98° for 
 This means the satellite passes over any given ground location at the same local solar time on every pass. For Earth observation, this provides consistent illumination conditions — shadows fall the same way in every image, making change detection easier. Most Earth observation satellites (Sentinel-1, Sentinel-2, Landsat) use sun-synchronous orbits.
 
 The required inclination depends on altitude and eccentricity. For a circular orbit at 550 km, the sun-synchronous inclination is approximately 97.6°.
+
+## Attitude
+
+A satellite's orbit describes *where* it is. Its attitude describes *which way it's pointing* — the orientation of the spacecraft body relative to a reference frame.
+
+Attitude matters because spacecraft are not symmetric. Antennas must point at ground stations or ISL neighbors. Solar panels must face the Sun. Cameras must point at the Earth's surface. Thrusters must fire in specific directions. If the attitude is wrong, none of these work.
+
+### Representation
+
+Attitude is typically represented as a rotation from an inertial reference frame to the spacecraft body frame. Common representations:
+
+- **Quaternion** — four numbers that describe a rotation without the singularities (gimbal lock) that Euler angles suffer from. The standard representation used in flight software.
+- **Direction cosine matrix (DCM)** — a 3×3 rotation matrix. Mathematically equivalent to a quaternion but uses nine numbers instead of four.
+- **Euler angles** — three angles (roll, pitch, yaw). Intuitive for humans but has mathematical problems at certain orientations. Used in ground displays, not usually in onboard computation.
+
+### Determination
+
+The satellite needs to know its current attitude before it can control it. Attitude determination uses sensor measurements:
+
+- **Star tracker** — photographs the star field and matches patterns against a catalog to compute orientation in inertial space. Most accurate sensor (arcsecond-level) but needs a clear field of view and processing time.
+- **Sun sensors** — measure the direction to the Sun. Coarse (degrees) but simple and reliable. Multiple sensors on different faces give a full sun vector.
+- **Magnetometer** — measures Earth's magnetic field direction. By comparing against a model (IGRF) at the known orbital position, attitude can be estimated. Lower accuracy but works in all lighting conditions.
+- **IMU (gyroscope)** — measures angular rate, not absolute orientation. Integrating the rate gives attitude change over time, but errors accumulate (gyro drift). Must be periodically corrected by an absolute sensor (star tracker or sun sensor).
+
+In practice, an attitude determination algorithm fuses all sensor inputs — the star tracker provides periodic absolute fixes, the gyroscope propagates between fixes, and sun sensors and magnetometer provide backup when the star tracker is unavailable (e.g., blinded by the Sun or Earth).
+
+### Control
+
+Once the satellite knows its attitude, actuators change it:
+
+- **Reaction wheels** — spinning flywheels that trade angular momentum with the spacecraft. Spinning a wheel faster in one direction rotates the spacecraft in the opposite direction. Precise, fast, but momentum accumulates over time from external torques (atmospheric drag, gravity gradient) and must be periodically removed.
+- **Magnetorquers** — electromagnetic coils that push against Earth's magnetic field. Used to remove accumulated momentum from reaction wheels (desaturation). Low torque, but requires no propellant.
+- **Thrusters** — produce torque by expelling propellant. Used for large attitude changes or when reaction wheels are saturated. Consumes finite propellant.
+
+### Pointing Modes
+
+A satellite typically operates in one of several pointing modes:
+
+- **Nadir pointing** — the camera or antenna always points straight down at Earth. The most common mode for Earth observation.
+- **Sun pointing** — solar panels face the Sun for maximum power. Used during safe mode or when the battery is low.
+- **Target tracking** — the satellite slews to point at a specific ground target or another satellite (for ISL acquisition). Requires the attitude control system to follow a moving target.
+- **Inertial hold** — the satellite maintains a fixed orientation relative to the stars. Used during star tracker calibration or specific science observations.
