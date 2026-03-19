@@ -4,25 +4,11 @@ Integrating [ColonyOS](overview) with a satellite constellation raises problems 
 
 ## Problems
 
-### Intermittent Ground Contact
-
-Satellites are in line of sight of a ground station for only 5–15 minutes per ~95-minute orbit. ColonyOS requires executors to complete processes within `maxexectime` and respond to the server regularly. A satellite executor would be considered dead every time it loses line of sight — which is the normal state, not a failure.
-
-### Split Originator and Completer
-
-Earth rotates during a job. The satellite that had line of sight when the job was uploaded may not be the one that has line of sight when the result is ready. Results must route through whichever satellite currently sees the ground station. ColonyOS expects the assigned executor to close the process, but the result may arrive through a different network path.
-
-### Multi-Node Jobs
-
-A single [SpaceCoMP](/spacecomp/overview) job requires multiple satellites working together — [collectors, mappers, and a reducer](/spacecomp/roles). ColonyOS assigns a process to a single executor. There is no built-in concept of a group of cooperating executors sharing one job.
-
-### Position-Dependent Assignment
-
-Which satellite runs which role depends on its orbital position relative to the area of interest, not on generic worker availability. The [planner](/spacecomp/job-lifecycle) must use orbital predictions to select satellites. ColonyOS's executor-type matching does not account for geographic position.
-
-### Embedded Execution
-
-Satellites run `no_std` Rust on [cFS](/cfs/overview). There is no HTTP, no Go runtime, no general-purpose OS. The on-board protocol stack ([SRSPP](/protocols/transport/srspp), [ISL routing](/protocols/network/routing)) is fundamentally different from ColonyOS's server-client model. Satellites cannot run a ColonyOS executor directly.
+- **Intermittent ground contact** — satellites are in line of sight of a ground station for only 5–15 minutes per ~95-minute orbit. ColonyOS requires executors to complete processes within `maxexectime` and respond to the server regularly. A satellite executor would be considered dead every time it loses line of sight — which is the normal state, not a failure.
+- **Split originator and completer** — Earth rotates during a job. The satellite that had line of sight when the job was uploaded may not be the one with line of sight when the result is ready. ColonyOS expects the assigned executor to close the process, but the result may arrive through a different satellite.
+- **Multi-node jobs** — a single [SpaceCoMP](/spacecomp/overview) job requires multiple satellites working together ([collectors, mappers, reducer](/spacecomp/roles)). ColonyOS assigns a process to a single executor — there is no built-in concept of a group of cooperating executors sharing one job.
+- **Position-dependent assignment** — which satellite runs which role depends on its orbital position relative to the area of interest, not on generic worker availability. The [planner](/spacecomp/job-lifecycle) must use orbital predictions. ColonyOS's executor-type matching does not account for geographic position.
+- **Embedded execution** — satellites run `no_std` Rust on [cFS](/cfs/overview) with no HTTP, no Go runtime, and no general-purpose OS. Satellites cannot run a ColonyOS executor directly.
 
 ## Solutions
 
