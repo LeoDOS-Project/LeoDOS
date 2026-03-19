@@ -58,3 +58,9 @@
 [submodule "libs/42"]
 	path = libs/42
 	url = https://github.com/ericstoneking/42.git
+[submodule "libs/bp"]
+	path = libs/bp
+	url = https://github.com/nasa/bp.git
+[submodule "libs/bplib"]
+	path = libs/bplib
+	url = https://github.com/nasa/bplib.git
