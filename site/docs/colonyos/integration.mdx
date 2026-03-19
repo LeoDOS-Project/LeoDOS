@@ -80,9 +80,9 @@ Every satellite is a ColonyOS executor, each holding a blocking `assign()` conne
 
 <Diagram>
   <Row gap={12}>
-    <Box color="#d4e8d4" border="#88aa88">Sat A (executor)</Box>
-    <Box color="#d4e8d4" border="#88aa88">Sat B (executor)</Box>
-    <Box color="#d4e8d4" border="#88aa88">Sat C (executor)</Box>
+    <Box color="#f5e0b0" border="#bba050">Sat A (executor)</Box>
+    <Box color="#f5e0b0" border="#bba050">Sat B (executor)</Box>
+    <Box color="#f5e0b0" border="#bba050">Sat C (executor)</Box>
   </Row>
   <Arrow label="assign / result per satellite" />
   <Box color="#d4e8d4" border="#88aa88">LOS Gateway</Box>
@@ -103,7 +103,7 @@ One satellite is the ColonyOS executor. It receives jobs from the server and coo
     <Box color="#d4e8d4" border="#88aa88">Sat C</Box>
   </Row>
   <Arrow label="ISL" />
-  <Box bold color="#d4e8d4" border="#88aa88">Coordinator Sat (executor)</Box>
+  <Box bold color="#f5e0b0" border="#bba050">Coordinator Sat (executor)</Box>
   <Arrow label="ground link" />
   <Box bold color="#e8eef8" border="#6688bb">ColonyOS Server (cloud)</Box>
 </Diagram>
@@ -114,14 +114,14 @@ ColonyOS server running on a satellite. Executors (other satellites) communicate
 
 <Diagram>
   <Row gap={12}>
-    <Box color="#d4e8d4" border="#88aa88">Sat A (executor)</Box>
+    <Box color="#f5e0b0" border="#bba050">Sat A (executor)</Box>
     <Arrow label="ISL" dir="h" />
-    <Box color="#d4e8d4" border="#88aa88">Sat B (executor)</Box>
+    <Box color="#f5e0b0" border="#bba050">Sat B (executor)</Box>
     <Arrow label="ISL" dir="h" />
-    <Box color="#d4e8d4" border="#88aa88">Sat C (executor)</Box>
+    <Box color="#f5e0b0" border="#bba050">Sat C (executor)</Box>
   </Row>
   <Arrow label="ISL" />
-  <Box bold color="#d4e8d4" border="#88aa88">ColonyOS Server (on satellite)</Box>
+  <Box bold color="#e8eef8" border="#6688bb">ColonyOS Server (on satellite)</Box>
 </Diagram>
 
 ## Comparison
