@@ -707,7 +707,18 @@ fn spawn_action(cmd: String, state: Arc<Mutex<AppState>>) {
         let output = match cmd.as_str() {
             "build" => run_shell("make nos3-build && make nos3-config && make nos3-build-sim && make nos3-build-fsw").await,
             "sim-start" => {
-                let res = run_shell("make constellation-build && make constellation-gen && docker compose -f docker-compose.constellation.yml up -d").await;
+                let (orbits, sats) = {
+                    let s = state.lock().unwrap();
+                    (s.orbits, s.sats)
+                };
+                let envs = [
+                    ("MAX_ORB", orbits.to_string()),
+                    ("MAX_SAT", sats.to_string()),
+                ];
+                let res = run_shell_env(
+                    "make constellation-build && make constellation-gen && docker compose -f docker-compose.constellation.yml up -d",
+                    &envs,
+                ).await;
                 if res.is_ok() {
                     // Wait for cFS to initialize, then enable TO_LAB on all orbits
                     let st = state.clone();
@@ -772,12 +783,28 @@ fn spawn_action(cmd: String, state: Arc<Mutex<AppState>>) {
 }
 
 async fn run_shell(cmd: &str) -> Result<String> {
-    let output = tokio::process::Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
-        .output()
-        .await?;
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    run_shell_env(cmd, &[]).await
+}
+
+async fn run_shell_env(cmd: &str, envs: &[(&str, String)]) -> Result<String> {
+    let mut command = tokio::process::Command::new("sh");
+    command.arg("-c").arg(cmd);
+    for (k, v) in envs {
+        command.env(k, v);
+    }
+    let output = command.output().await?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        let msg = stderr.trim().is_empty()
+            .then(|| stdout.trim().to_string())
+            .unwrap_or_else(|| stderr.trim().to_string());
+        anyhow::bail!("{msg}");
+    }
+    let combined = stdout.trim().is_empty()
+        .then(|| stderr.trim().to_string())
+        .unwrap_or_else(|| stdout.trim().to_string());
+    Ok(combined)
 }
 
 pub async fn run(
