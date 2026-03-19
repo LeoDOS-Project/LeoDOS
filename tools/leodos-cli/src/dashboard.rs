@@ -580,7 +580,7 @@ fn draw_control(
         }
     }
 
-    // Separator + tooltip + key hints below buttons
+    // Separator + key hints below buttons in the button panel
     let btns_end = state.btns.len() as u16 + 1;
     if btns_end < inner.height {
         let sep_y = inner.y + btns_end;
@@ -590,28 +590,36 @@ fn draw_control(
             Rect::new(inner.x + 1, sep_y, inner.width.saturating_sub(2), 1),
         );
 
-        // Tooltip for selected button
-        let (_, _, tooltip) = &state.btns[selected_real];
-        if !tooltip.is_empty() && sep_y + 1 < inner.y + inner.height {
+        let hints_y = inner.y + inner.height - 1;
+        if hints_y > sep_y {
             frame.render_widget(
                 Span::styled(
-                    tooltip.as_str(),
-                    Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC),
+                    "j/k ↑↓  Enter  q",
+                    Style::default().fg(Color::DarkGray),
                 ),
-                Rect::new(inner.x + 1, sep_y + 1, inner.width.saturating_sub(2), 1),
-            );
-        }
-
-        // Key hints
-        let hints = "j/k: navigate  Enter: select  q: quit";
-        let hints_y = inner.y + inner.height - 1;
-        if hints_y > sep_y + 1 {
-            frame.render_widget(
-                Span::styled(hints, Style::default().fg(Color::DarkGray)),
                 Rect::new(inner.x + 1, hints_y, inner.width.saturating_sub(2), 1),
             );
         }
     }
+
+    // Right side: tooltip + output log
+    let right_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(log_area);
+
+    // Tooltip for selected button
+    let (_, _, tooltip) = &state.btns[selected_real];
+    frame.render_widget(
+        Span::styled(
+            format!(" {tooltip}"),
+            Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC),
+        ),
+        right_chunks[0],
+    );
 
     // Action output log
     let items: Vec<Line> = state
@@ -628,11 +636,11 @@ fn draw_control(
         )
         .scroll((
             state.action_log.len().saturating_sub(
-                log_area.height.saturating_sub(2) as usize,
+                right_chunks[1].height.saturating_sub(2) as usize,
             ) as u16,
             0,
         ));
-    frame.render_widget(paragraph, log_area);
+    frame.render_widget(paragraph, right_chunks[1]);
 }
 
 fn handle_click(
