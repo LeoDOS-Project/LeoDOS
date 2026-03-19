@@ -34,12 +34,14 @@ jobs:
           test -f osal/CMakeLists.txt && echo "osal OK" || exit 1
           test -f psp/CMakeLists.txt && echo "psp OK" || exit 1
 
-      - name: Create minimal targets.cmake for header generation
+      - name: Stub missing submodule CMakeLists
         run: |
-          cat > sample_defs/targets.cmake <<'TARGETS'
-          SET(cpu1_APPLIST)
-          SET(cpu1_FILELIST cfe_es_startup.scr)
-          TARGETS
+          for dir in apps/ci_lab apps/to_lab apps/sch_lab apps/sample_app libs/sample_lib libs/cf; do
+            if [ ! -f "$dir/CMakeLists.txt" ]; then
+              mkdir -p "$dir"
+              echo "project(stub)" > "$dir/CMakeLists.txt"
+            fi
+          done
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -61,11 +63,6 @@ jobs:
 
       - name: Prep cFS headers
         run: docker compose run --rm cfs-build bash -c "make SIMULATION=native prep"
-
-      - name: Verify cFS headers exist
-        run: |
-          ls build/inc/osconfig.h || echo "osconfig.h not in build/inc/"
-          find build -name osconfig.h 2>/dev/null || echo "osconfig.h not found anywhere in build/"
 
       - name: Build rustdoc (leodos-protocols with all features)
         run: |
