@@ -35,5 +35,7 @@ pub mod util;
 pub use util::cstring;
 #[cfg(feature = "cfdp")]
 pub mod cf;
+#[cfg(feature = "bp")]
+pub mod bp;
 #[cfg(feature = "nos3")]
 pub mod nos3;

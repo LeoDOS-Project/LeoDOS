@@ -208,6 +208,8 @@ fn main() {
     let psp_dir = get_path("PSP_DIR");
     let build_dir = get_path("BUILD_DIR");
     let cf_dir = env::var("CF_DIR").ok().map(PathBuf::from);
+    let bp_dir = env::var("BP_DIR").ok().map(PathBuf::from);
+    let bplib_dir = env::var("BPLIB_DIR").ok().map(PathBuf::from);
     #[cfg(feature = "nos3")]
     let hwlib_dir = env::var("HWLIB_DIR").ok().map(PathBuf::from);
     #[cfg(feature = "nos3")]
@@ -221,6 +223,12 @@ fn main() {
         println!("cargo::warning=BUILD_DIR={}", build_dir.display());
         if let Some(ref cf) = cf_dir {
             println!("cargo::warning=CF_DIR={}", cf.display());
+        }
+        if let Some(ref bp) = bp_dir {
+            println!("cargo::warning=BP_DIR={}", bp.display());
+        }
+        if let Some(ref bplib) = bplib_dir {
+            println!("cargo::warning=BPLIB_DIR={}", bplib.display());
         }
         #[cfg(feature = "nos3")]
         if let Some(ref hw) = hwlib_dir {
@@ -288,9 +296,9 @@ fn main() {
         .ctypes_prefix("libc")
         .clang_arg("-D_LINUX_OS_")
         .clang_arg("-D_POSIX_OS_")
-        .allowlist_function("CFE_.*|OSAL_.*|OS_.*|CF_.*")
-        .allowlist_type("CFE_.*|OSAL_.*|OS_.*|CF_.*")
-        .allowlist_var("CFE_.*|OSAL_.*|OS_.*|CF_.*")
+        .allowlist_function("CFE_.*|OSAL_.*|OS_.*|CF_.*|BPLib_.*|BPLIB_.*")
+        .allowlist_type("CFE_.*|OSAL_.*|OS_.*|CF_.*|BPLib_.*|BPLIB_.*")
+        .allowlist_var("CFE_.*|OSAL_.*|OS_.*|CF_.*|BPLib_.*|BPLIB_.*")
         .layout_tests(false)
         .derive_default(true)
         .parse_callbacks(Box::new(macro_detector.clone()));
@@ -311,6 +319,34 @@ fn main() {
             .header(header(cf, "fsw/src/cf_cfdp_types.h"))
             .header(header(cf, "fsw/src/cf_cfdp.h"))
             .header(header(cf, "fsw/src/cf_app.h"));
+    }
+
+    if let Some(ref bplib) = bplib_dir {
+        include_paths.push(bplib.join("inc"));
+        include_paths.push(bplib.join("ci/crc/inc"));
+        include_paths.push(bplib.join("ci/cbor/inc"));
+        include_paths.push(bplib.join("ci/time/inc"));
+        include_paths.push(bplib.join("ci/eid/inc"));
+        include_paths.push(bplib.join("ci/em/inc"));
+        include_paths.push(bplib.join("ci/qm/inc"));
+        include_paths.push(bplib.join("ci/rbt/inc"));
+        include_paths.push(bplib.join("ci/mem/inc"));
+        include_paths.push(bplib.join("ci/pi/inc"));
+        include_paths.push(bplib.join("ci/cla/inc"));
+        include_paths.push(bplib.join("ci/stor/inc"));
+        include_paths.push(bplib.join("ci/bi/inc"));
+        include_paths.push(bplib.join("ci/nc/inc"));
+        include_paths.push(bplib.join("ci/pl/inc"));
+        include_paths.push(bplib.join("ci/fwp/inc"));
+        include_paths.push(bplib.join("ci/as/inc"));
+        include_paths.push(bplib.join("ci/arp/inc"));
+        include_paths.push(bplib.join("ci/pdb/inc"));
+        builder = builder.header(header(bplib, "inc/bplib.h"));
+    }
+
+    if let Some(ref bp) = bp_dir {
+        include_paths.push(bp.join("fsw/inc"));
+        include_paths.push(bp.join("config"));
     }
 
     // Provide stub struct can_frame for non-Linux hosts so
