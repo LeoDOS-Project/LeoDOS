@@ -19,6 +19,27 @@ ISL link quality degrades with distance. The signal weakens according to free-sp
 
 In a Walker Delta constellation, cross-plane link distances vary by ~40% over each orbit — shortest near the poles (where orbital planes converge) and longest near the equator (where they diverge). This variation directly affects throughput: the same cross-plane hop carries more data near the poles than near the equator. [Distance-minimizing routing](/spacecomp/routing) exploits this by scheduling cross-plane hops when they are shortest.
 
+Both RF and optical ISLs are subject to free-space path loss — it applies to any electromagnetic signal in free space, regardless of wavelength. Optical links handle it better because their narrow beam (microradians) concentrates more power on the receiver, achieving higher SNR at the same distance. But the narrow beam requires sub-microradian pointing accuracy between two platforms moving at 7.5 km/s.
+
+### ISLs vs Fiber
+
+ISLs and terrestrial fiber optics are both photonic links, but they operate in different regimes:
+
+| Property | ISL (free space) | Fiber optic |
+|---|---|---|
+| Medium | Vacuum | Glass core |
+| Speed of light | 299,792 km/s (c) | ~200,000 km/s (~0.67c) |
+| Signal containment | Beam diverges (inverse square law) | Guided in core (minimal spread) |
+| Path loss model | Free-space path loss — quadratic with distance | Attenuation — ~0.2 dB/km, linear with distance |
+| Amplification | None (full distance unamplified) | Repeaters every 80–100 km |
+| Typical link distance | 1,000–5,000 km | 1–100 km between nodes |
+| Capacity vs distance | Drops with distance (SNR degrades) | Essentially constant (with amplifiers) |
+| Weather/environment | Unaffected (vacuum) | Unaffected (shielded cable) |
+
+The key difference is signal containment. In fiber, light stays trapped in the glass core — the signal barely spreads regardless of distance, and amplifiers restore it periodically. In free space, the beam diverges and the signal spreads over a larger area, so the receiver captures a smaller fraction of the transmitted power as distance increases. This is why ISL capacity is distance-dependent while fiber capacity is not.
+
+Despite this, ISLs are faster per kilometer (47% speed advantage in vacuum) and have no cable infrastructure to deploy or maintain. For a satellite constellation, they are the only option for inter-node communication.
+
 ## Ground Station Passes
 
 A ground station sees a LEO satellite only when it is above the local horizon. The **elevation angle** — the angle between the horizon and the satellite as seen from the station — determines link quality: higher elevation means shorter path through the atmosphere and better signal. A minimum elevation of 5–10° is typical; below that, atmospheric attenuation and multipath make the link unreliable.
