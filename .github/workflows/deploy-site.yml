@@ -74,7 +74,7 @@ jobs:
         run: |
           docker compose run --rm cfs-build \
             cargo doc --manifest-path crates/leodos-libcfs/Cargo.toml \
-            --no-deps --all-features
+            --no-deps
 
       - name: Copy rustdoc into site build
         run: |
