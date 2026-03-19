@@ -80,3 +80,13 @@ npm run build        # production build
 ```
 
 The site source is in `site/docs/`. It deploys automatically to GitHub Pages on pushes to `main` that modify `site/`.
+
+## Rust API Documentation
+
+Generated Rust API docs for `leodos-protocols` are hosted at [`/LeoDOS/rustdoc/leodos_protocols/`](/rustdoc/leodos_protocols/). They are built and deployed automatically alongside the documentation site.
+
+To build locally:
+
+```
+cargo doc --manifest-path crates/leodos-protocols/Cargo.toml --no-deps --open
+```

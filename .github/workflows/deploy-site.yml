@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'site/**'
+      - 'crates/leodos-protocols/**'
   workflow_dispatch:
 
 permissions:
@@ -30,6 +31,9 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install dependencies
         working-directory: site
         run: npm ci
@@ -37,6 +41,14 @@ jobs:
       - name: Build site
         working-directory: site
         run: npm run build
+
+      - name: Build rustdoc
+        run: cargo doc --manifest-path crates/leodos-protocols/Cargo.toml --no-deps
+
+      - name: Copy rustdoc into site build
+        run: |
+          mkdir -p site/build/rustdoc
+          cp -r crates/leodos-protocols/target/doc/* site/build/rustdoc/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
