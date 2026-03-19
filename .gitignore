@@ -3,3 +3,5 @@ build
 # /sample_defs
 .DS_Store
 target/
+__pycache__/
+tools/eosim/output/
