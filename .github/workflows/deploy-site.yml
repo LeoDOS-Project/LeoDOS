@@ -27,6 +27,13 @@ jobs:
       - name: Init cFS submodules
         run: git submodule update --init --depth=1 cfe osal psp tools/elf2cfetbl
 
+      - name: Create minimal targets.cmake for header generation
+        run: |
+          cat > sample_defs/targets.cmake <<'TARGETS'
+          SET(cpu1_APPLIST)
+          SET(cpu1_FILELIST cfe_es_startup.scr)
+          TARGETS
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
