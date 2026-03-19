@@ -1,6 +1,12 @@
 # Integration
 
-[ColonyOS](overview) assumes executors are always reachable — if an executor stops sending keepalives, the server considers it dead and reassigns its work. Satellites go in and out of ground contact every ~95 minutes. A satellite executor would be considered dead every time it loses line of sight, which is the normal state, not a failure. This page describes how LeoDOS integrates with ColonyOS despite this mismatch.
+Integrating [ColonyOS](overview) with a satellite constellation raises problems that do not exist in traditional distributed computing:
+
+- **Intermittent ground contact** — satellites are in line of sight of a ground station for only 5–15 minutes per ~95-minute orbit. ColonyOS requires executors to send keepalives; a satellite executor would be considered dead every time it loses line of sight, which is the normal state, not a failure.
+- **Split originator and completer** — Earth rotates during a job. The satellite that had line of sight when the job was uploaded may not be the one that has line of sight when the result is ready. Results must route through whichever satellite currently sees the ground station.
+- **Multi-node jobs** — a single SpaceCoMP job requires multiple satellites ([collectors, mappers, reducer](/spacecomp/roles)). ColonyOS assigns work to individual executors, not to groups of cooperating nodes.
+- **Position-dependent assignment** — which satellite runs which role depends on its orbital position relative to the area of interest, not on generic worker availability. The planner must use orbital predictions, not ColonyOS's built-in scheduling.
+- **Embedded execution** — satellites run `no_std` Rust on [cFS](/cfs/overview). There is no HTTP, no Go runtime, no general-purpose OS. The on-board protocol stack ([SRSPP](/protocols/transport/srspp), [ISL routing](/protocols/network/routing)) is fundamentally different from ColonyOS's server-client model.
 
 export const Box = ({children, bold, color, border, width}) => (
   <div style={{
