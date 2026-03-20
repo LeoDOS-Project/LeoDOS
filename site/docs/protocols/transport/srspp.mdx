@@ -29,11 +29,48 @@ rather than the failure case.
 
 ## How It Works
 
-SRSPP uses a sliding window: the sender can have multiple packets in flight simultaneously, and the receiver acknowledges them with cumulative + selective ACKs.
+SRSPP builds on top of CCSDS Space Packets (SPP). It reuses fields from the SPP primary header rather than adding its own:
+
+export const Field = ({name, color, border, width}) => (
+  <div style={{
+    background: color || '#e0e0e0',
+    border: border || '1px solid #ccc',
+    borderRadius: 3,
+    padding: '3px 6px',
+    fontSize: '0.7em',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    width: width || 'auto',
+    flexShrink: 0,
+  }}>{name}</div>
+);
+
+<div style={{margin: '12px 0'}}>
+<div style={{fontSize: '0.75em', fontWeight: 'bold', marginBottom: 4}}>SPP Primary Header (6 bytes) — fields used by SRSPP:</div>
+<div style={{display: 'flex', gap: 2, flexWrap: 'wrap'}}>
+  <Field name="Version (3b)" />
+  <Field name="Type (1b)" />
+  <Field name="Sec Hdr (1b)" />
+  <Field name="APID (11b)" color="#c8daf8" border="1px solid #6688bb" />
+  <Field name="Seq Flags (2b)" color="#d4e8d4" border="1px solid #88aa88" />
+  <Field name="Seq Count (14b)" color="#d4e8d4" border="1px solid #88aa88" />
+  <Field name="Length (16b)" />
+</div>
+<div style={{fontSize: '0.7em', color: '#666', marginTop: 4}}>
+  <span style={{color: '#6688bb'}}>■</span> APID = destination address &nbsp;
+  <span style={{color: '#88aa88'}}>■</span> Seq Flags = segmentation (FIRST/CONT/LAST/UNSEG), Seq Count = packet sequence number for ordering and loss detection
+</div>
+</div>
+
+SRSPP adds a 3-byte header after the SPP header containing the source address, packet type (DATA/ACK/EOS), and protocol version. The sequence count from SPP serves as the packet number — no additional sequence field is needed.
+
+### Sliding Window
+
+The sender maintains a window of packets it is allowed to have in flight simultaneously. The window size (WIN) limits how many unacknowledged packets can be outstanding.
 
 export const Pkt = ({seq, color, border, label}) => (
   <div style={{
-    width: 40, height: 32,
+    width: 38, height: 38,
     borderRadius: 4,
     background: color || '#e0e0e0',
     border: border || '1px solid #ccc',
@@ -42,41 +79,43 @@ export const Pkt = ({seq, color, border, label}) => (
     flexDirection: 'column', lineHeight: 1.2,
   }}>
     <div>{seq}</div>
-    {label && <div style={{fontSize: '0.8em', color: '#666'}}>{label}</div>}
+    {label && <div style={{fontSize: '0.75em', fontWeight: 'normal', color: '#555'}}>{label}</div>}
   </div>
 );
 
-<div style={{margin: '16px 0'}}>
-<div style={{fontSize: '0.85em', fontWeight: 'bold', marginBottom: 4}}>Sender's view (window size = 4):</div>
-<div style={{display: 'flex', gap: 3, alignItems: 'center'}}>
+<div style={{margin: '12px 0'}}>
+<div style={{fontSize: '0.8em', fontWeight: 'bold', marginBottom: 4}}>Sender's view (WIN = 4):</div>
+<div style={{display: 'flex', gap: 2, alignItems: 'center'}}>
   <Pkt seq="0" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
   <Pkt seq="1" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
   <Pkt seq="2" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
-  <div style={{borderLeft: '3px solid #cc4444', height: 40, margin: '0 2px'}} />
+  <div style={{width: 2, height: 44, background: '#cc4444', margin: '0 3px', flexShrink: 0}} />
   <Pkt seq="3" color="#c8daf8" border="2px solid #6688bb" label="sent" />
   <Pkt seq="4" color="#c8daf8" border="2px solid #6688bb" label="sent" />
-  <Pkt seq="5" color="#f5e0b0" border="2px solid #bba050" label="wait" />
-  <Pkt seq="6" color="#f5e0b0" border="2px solid #bba050" label="wait" />
-  <div style={{borderLeft: '3px solid #cc4444', height: 40, margin: '0 2px'}} />
-  <Pkt seq="7" label="next" />
-  <Pkt seq="8" label="next" />
+  <Pkt seq="5" color="#c8daf8" border="2px solid #6688bb" label="sent" />
+  <Pkt seq="6" color="#c8daf8" border="2px solid #6688bb" label="sent" />
+  <div style={{width: 2, height: 44, background: '#cc4444', margin: '0 3px', flexShrink: 0}} />
+  <Pkt seq="7" color="#f0f0f0" border="1px solid #ccc" label="" />
+  <Pkt seq="8" color="#f0f0f0" border="1px solid #ccc" label="" />
 </div>
-<div style={{display: 'flex', gap: 16, fontSize: '0.75em', marginTop: 6, color: '#666'}}>
-  <span>← ACKed (freed)</span>
-  <span style={{color: '#cc4444'}}>|</span>
-  <span>← Window (in flight + waiting) →</span>
-  <span style={{color: '#cc4444'}}>|</span>
-  <span>Not yet queued →</span>
+<div style={{display: 'flex', fontSize: '0.7em', marginTop: 4, color: '#666', gap: 4}}>
+  <span>ACKed &amp; freed</span>
+  <span style={{color: '#cc4444', fontWeight: 'bold'}}>│</span>
+  <span>Window: 4 packets in flight</span>
+  <span style={{color: '#cc4444', fontWeight: 'bold'}}>│</span>
+  <span>Cannot send yet (window full)</span>
 </div>
 </div>
 
-<div style={{display: 'flex', gap: 16, fontSize: '0.8em', marginBottom: 16, flexWrap: 'wrap'}}>
+<div style={{display: 'flex', gap: 16, fontSize: '0.8em', marginBottom: 12, flexWrap: 'wrap'}}>
   <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '1px solid #88aa88', borderRadius: 3}} /> ACKed</div>
-  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#c8daf8', border: '1px solid #6688bb', borderRadius: 3}} /> Sent, awaiting ACK</div>
-  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f5e0b0', border: '1px solid #bba050', borderRadius: 3}} /> Queued, waiting for window space</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#c8daf8', border: '1px solid #6688bb', borderRadius: 3}} /> In flight (awaiting ACK)</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f0f0f0', border: '1px solid #ccc', borderRadius: 3}} /> Blocked (window full)</div>
 </div>
 
-When the receiver sends an ACK with cumulative=2, packets 0–2 are freed and the window slides forward, allowing packets 7–8 to enter the window. If packet 3 is lost, the receiver can still acknowledge packet 4 via the selective bitmap — the sender knows not to retransmit 4 and only retries 3 when its timer expires.
+All 4 window slots are occupied by packets 3–6, all transmitted and awaiting ACKs. Packets 7–8 cannot be sent until the window slides forward. When the receiver sends an ACK with cumulative=4, packets 3–4 are freed, the window slides to cover 5–8, and packets 7–8 can now be transmitted.
+
+If packet 4 is lost but 5 and 6 arrive, the receiver sets bits in the selective ACK bitmap for 5 and 6. The sender knows not to retransmit those — it only retries packet 4 when its timer expires.
 
 ## SRSPP Header
 
