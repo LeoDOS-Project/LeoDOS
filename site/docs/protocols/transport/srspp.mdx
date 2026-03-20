@@ -31,38 +31,94 @@ rather than the failure case.
 
 SRSPP builds on top of CCSDS Space Packets (SPP). It reuses fields from the SPP primary header rather than adding its own:
 
-export const Field = ({name, color, border, width}) => (
+{/* Reusable packet diagram components — 3 nesting levels */}
+
+export const Packet = ({title, children}) => (
   <div style={{
-    background: color || '#e0e0e0',
-    border: border || '1px solid #ccc',
-    borderRadius: 3,
-    padding: '3px 6px',
-    fontSize: '0.7em',
-    fontWeight: 'bold',
-    textAlign: 'center',
-    width: width || 'auto',
-    flexShrink: 0,
-  }}>{name}</div>
+    border: '2px solid #333', borderRadius: 8, padding: 10,
+    margin: '16px 0', maxWidth: 400,
+  }}>
+    <div style={{fontSize: '0.8em', fontWeight: 'bold', marginBottom: 6}}>{title}</div>
+    <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+      {children}
+    </div>
+  </div>
 );
 
-<div style={{margin: '12px 0'}}>
-<div style={{fontSize: '0.75em', fontWeight: 'bold', marginBottom: 4}}>SPP Primary Header (6 bytes) — fields used by SRSPP:</div>
-<div style={{display: 'flex', gap: 2, flexWrap: 'wrap'}}>
-  <Field name="Version (3b)" />
-  <Field name="Type (1b)" />
-  <Field name="Sec Hdr (1b)" />
-  <Field name="APID (11b)" color="#c8daf8" border="1px solid #6688bb" />
-  <Field name="Seq Flags (2b)" color="#d4e8d4" border="1px solid #88aa88" />
-  <Field name="Seq Count (14b)" color="#d4e8d4" border="1px solid #88aa88" />
-  <Field name="Length (16b)" />
-</div>
-<div style={{fontSize: '0.7em', color: '#666', marginTop: 4}}>
-  <span style={{color: '#6688bb'}}>■</span> APID = destination address &nbsp;
-  <span style={{color: '#88aa88'}}>■</span> Seq Flags = segmentation (FIRST/CONT/LAST/UNSEG), Seq Count = packet sequence number for ordering and loss detection
-</div>
-</div>
+export const Header = ({title, color, border, children}) => (
+  <div style={{
+    border: `2px solid ${border || '#888'}`, borderRadius: 6,
+    background: color || '#fafafa', padding: 6,
+  }}>
+    <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 4, color: border || '#555'}}>{title}</div>
+    <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
+      {children}
+    </div>
+  </div>
+);
 
-SRSPP adds a 3-byte header after the SPP header containing the source address, packet type (DATA/ACK/EOS), and protocol version. The sequence count from SPP serves as the packet number — no additional sequence field is needed.
+export const Field = ({name, bits, desc, highlight}) => (
+  <div style={{
+    display: 'flex', alignItems: 'center', gap: 6,
+    background: highlight || '#fff',
+    border: '1px solid #ddd', borderRadius: 3,
+    padding: '2px 6px', fontSize: '0.7em',
+  }}>
+    <span style={{fontWeight: 'bold', minWidth: 50}}>{name}</span>
+    <span style={{color: '#888', minWidth: 35}}>{bits}</span>
+    {desc && <span style={{color: '#666'}}>{desc}</span>}
+  </div>
+);
+
+export const Payload = ({label, color}) => (
+  <div style={{
+    border: `2px dashed ${color || '#888'}`, borderRadius: 6,
+    padding: '8px 6px', textAlign: 'center',
+    fontSize: '0.7em', fontWeight: 'bold', color: color || '#888',
+  }}>{label}</div>
+);
+
+### SRSPP DATA Packet
+
+<Packet title="SRSPP DATA Packet">
+  <Header title="SPP Primary Header (6 bytes)" color="#eef3ff" border="#6688bb">
+    <Field name="Version" bits="3 bits" />
+    <Field name="Type" bits="1 bit" desc="0 = TM, 1 = TC" />
+    <Field name="Sec Hdr" bits="1 bit" desc="Secondary header present" />
+    <Field name="APID" bits="11 bits" desc="Destination address" highlight="#dce8f8" />
+    <Field name="Seq Flags" bits="2 bits" desc="FIRST / CONT / LAST / UNSEG" highlight="#ddf0dd" />
+    <Field name="Seq Count" bits="14 bits" desc="Packet sequence number" highlight="#ddf0dd" />
+    <Field name="Length" bits="16 bits" desc="Remaining packet length − 1" />
+  </Header>
+  <Header title="SRSPP Header (3 bytes)" color="#fff8ee" border="#bba050">
+    <Field name="Source" bits="16 bits" desc="Sender spacecraft address" />
+    <Field name="Type" bits="2 bits" desc="0 = DATA, 1 = ACK, 2 = EOS" />
+    <Field name="Version" bits="2 bits" desc="Protocol version (0)" />
+    <Field name="Spare" bits="4 bits" />
+  </Header>
+  <Payload label="Payload (variable)" color="#88aa88" />
+</Packet>
+
+### SRSPP ACK Packet
+
+<Packet title="SRSPP ACK Packet">
+  <Header title="SPP Primary Header (6 bytes)" color="#eef3ff" border="#6688bb">
+    <Field name="APID" bits="11 bits" desc="Destination address" highlight="#dce8f8" />
+    <Field name="Seq Count" bits="14 bits" desc="Packet sequence number" highlight="#ddf0dd" />
+    <Field name="..." bits="" desc="(other fields same as above)" />
+  </Header>
+  <Header title="SRSPP Header (3 bytes)" color="#fff8ee" border="#bba050">
+    <Field name="Source" bits="16 bits" desc="Sender spacecraft address" />
+    <Field name="Type" bits="2 bits" desc="1 = ACK" />
+    <Field name="..." bits="" />
+  </Header>
+  <Header title="ACK Payload (4 bytes)" color="#f0fff0" border="#88aa88">
+    <Field name="Cum ACK" bits="16 bits" desc="Highest in-order seq received" />
+    <Field name="Bitmap" bits="16 bits" desc="Selective ACK for out-of-order packets" />
+  </Header>
+</Packet>
+
+SRSPP reuses the SPP primary header rather than duplicating fields. The **APID** identifies the destination, the **Seq Count** provides ordering and loss detection, and the **Seq Flags** handle message segmentation (splitting messages larger than the MTU into FIRST/CONTINUATION/LAST segments). SRSPP adds only the source address and packet type.
 
 ### Sliding Window
 
