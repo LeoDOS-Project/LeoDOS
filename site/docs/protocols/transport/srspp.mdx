@@ -130,8 +130,8 @@ The first three headers are shared with all ISL packets — see [SPP](/protocols
 - **Source Address** — the sending satellite's grid position (orbital plane, satellite index) or ground station. Together with the APID from the SPP header, this forms the stream key that identifies a unique sender-receiver pair.
 - **Version** — 2 bits identifying the protocol version (currently 0). A receiver that sees an unrecognized version discards the packet silently.
 - **Packet Type** — 2 bits: `0` = DATA (carries application payload), `1` = ACK (carries acknowledgment), `2` = EOS (end of stream, no payload). The remaining 4 bits of the byte are reserved.
-- **Cumulative ACK** (ACK only) — the highest sequence number for which all packets up to and including that number have been received. The sender can free all packets up to this number.
-- **Selective Bitmap** (ACK only) — a 16-bit bitmap where each bit represents a packet beyond the cumulative ACK. Bit 0 = cumulative+1, bit 1 = cumulative+2, etc. Set bits indicate received out-of-order packets that do not need retransmission.
+- **Cumulative ACK** (ACK only) — the highest sequence number received in-order. All packets up to and including this number are acknowledged. The sender can free them.
+- **Selective ACK Bitmap** (ACK only) — a 16-bit bitmap indicating which out-of-order packets have been received. Bit N indicates receipt of packet `cumulative_ack + 1 + N`. The sender knows not to retransmit these.
 
 ### Sliding Window
 
