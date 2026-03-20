@@ -80,8 +80,9 @@ export const Payload = ({label, color}) => (
 
 ### Packet Layout
 
-<div style={{display: 'flex', gap: 16, flexWrap: 'wrap'}}>
-<Packet title="DATA Packet (13 + N bytes)">
+All SRSPP packets share the same header stack. The payload varies by type.
+
+<Packet title="SRSPP Packet (13 bytes + payload)">
   <Header title="SPP Primary Header (6 bytes)" color="#eef3ff" border="#6688bb">
     <Field name="Version" bits="3 bits" desc="Packet version (0)" />
     <Field name="Type" bits="1 bit" desc="1 = Telecommand" />
@@ -101,39 +102,26 @@ export const Payload = ({label, color}) => (
   <Header title="SRSPP Header (3 bytes)" color="#fff8ee" border="#bba050">
     <Field name="Source Address" bits="16 bits" desc="Sender (orb, sat)" />
     <Field name="Version" bits="2 bits" desc="Protocol version (0)" />
-    <Field name="Packet Type" bits="2 bits" desc="0 = DATA" />
+    <Field name="Packet Type" bits="2 bits" desc="0 = DATA, 1 = ACK, 2 = EOS" />
     <Field name="Spare" bits="4 bits" desc="Reserved (0)" />
   </Header>
-  <Payload label="Application Payload (variable)" color="#88aa88" />
+  <Payload label="Payload (varies by type — see below)" color="#88aa88" />
 </Packet>
 
-<Packet title="ACK Packet (17 bytes, fixed)">
-  <Header title="SPP Primary Header (6 bytes)" color="#eef3ff" border="#6688bb">
-    <Field name="Version" bits="3 bits" desc="Packet version (0)" />
-    <Field name="Type" bits="1 bit" desc="1 = Telecommand" />
-    <Field name="Sec Hdr Flag" bits="1 bit" desc="1 = Present" />
-    <Field name="APID" bits="11 bits" desc="Destination (0–2047)" highlight="#dce8f8" />
-    <Field name="Seq Flags" bits="2 bits" desc="Unsegmented (0b11)" />
-    <Field name="Seq Count" bits="14 bits" desc="Sequence (0–16383)" highlight="#ddf0dd" />
-    <Field name="Data Length" bits="16 bits" desc="Remaining length − 1" />
-  </Header>
-  <Header title="cFE Secondary Header (2 bytes)" color="#f5f0ff" border="#8866bb">
-    <Field name="Function Code" bits="8 bits" desc="Command code" />
-    <Field name="Checksum" bits="8 bits" desc="XOR of entire packet" />
-  </Header>
-  <Header title="ISL Routing Header (2 bytes)" color="#fff0f0" border="#bb6666">
-    <Field name="Target Address" bits="16 bits" desc="Destination (orb, sat)" />
-  </Header>
-  <Header title="SRSPP Header (3 bytes)" color="#fff8ee" border="#bba050">
-    <Field name="Source Address" bits="16 bits" desc="Sender (orb, sat)" />
-    <Field name="Version" bits="2 bits" desc="Protocol version (0)" />
-    <Field name="Packet Type" bits="2 bits" desc="1 = ACK" />
-    <Field name="Spare" bits="4 bits" desc="Reserved (0)" />
-  </Header>
+### Payload by Type
+
+<div style={{display: 'flex', gap: 12, flexWrap: 'wrap'}}>
+<Packet title="DATA">
+  <Payload label="Application data (variable length)" color="#88aa88" />
+</Packet>
+<Packet title="ACK">
   <Header title="ACK Payload (4 bytes)" color="#f0fff0" border="#88aa88">
     <Field name="Cumulative ACK" bits="16 bits" desc="Highest in-order seq received" />
     <Field name="Selective Bitmap" bits="16 bits" desc="Out-of-order packet bits" />
   </Header>
+</Packet>
+<Packet title="EOS">
+  <Payload label="No payload (header only)" color="#ccc" />
 </Packet>
 </div>
 
