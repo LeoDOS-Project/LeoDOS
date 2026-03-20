@@ -100,7 +100,8 @@ export const Payload = ({label, color}) => (
   </Header>
   <Header title="SRSPP Header (3 bytes)" color="#fff8ee" border="#bba050">
     <Field name="Source Address" bits="16 bits" desc="Sender (orb, sat)" />
-    <Field name="Packet Type" bits="8 bits" desc="0x00 = DATA" />
+    <Field name="Packet Type" bits="1 bit" desc="0 = DATA" />
+    <Field name="Spare" bits="7 bits" desc="Reserved (0)" />
   </Header>
   <Payload label="Application Payload (variable)" color="#88aa88" />
 </Packet>
@@ -124,7 +125,8 @@ export const Payload = ({label, color}) => (
   </Header>
   <Header title="SRSPP Header (3 bytes)" color="#fff8ee" border="#bba050">
     <Field name="Source Address" bits="16 bits" desc="Sender (orb, sat)" />
-    <Field name="Packet Type" bits="8 bits" desc="0x01 = ACK" />
+    <Field name="Packet Type" bits="1 bit" desc="1 = ACK" />
+    <Field name="Spare" bits="7 bits" desc="Reserved (0)" />
   </Header>
   <Header title="ACK Payload (4 bytes)" color="#f0fff0" border="#88aa88">
     <Field name="Cumulative ACK" bits="16 bits" desc="Highest in-order seq received" />
@@ -133,7 +135,12 @@ export const Payload = ({label, color}) => (
 </Packet>
 </div>
 
-The packet has four header layers. SRSPP reuses the **SPP primary header** for destination (APID), sequencing (Seq Count), and segmentation (Seq Flags). The **cFE secondary header** provides a function code and integrity checksum. The **ISL routing header** carries the target satellite address for multi-hop forwarding. SRSPP adds only the **source address** and **packet type** (DATA or ACK).
+The first three headers are shared with all ISL packets — see [SPP](/protocols/datalink/packet/spp), [cFE headers](/protocols/datalink/cfe-headers/overview), and [ISL routing](/protocols/network/routing). SRSPP adds:
+
+- **Source Address** — the sending satellite's grid position (orbital plane, satellite index) or ground station. Together with the APID from the SPP header, this forms the stream key that identifies a unique sender-receiver pair.
+- **Packet Type** — 1 bit: `0` for DATA (carries application payload), `1` for ACK (carries acknowledgment). The remaining 7 bits of the byte are reserved.
+- **Cumulative ACK** (ACK only) — the highest sequence number for which all packets up to and including that number have been received. The sender can free all packets up to this number.
+- **Selective Bitmap** (ACK only) — a 16-bit bitmap where each bit represents a packet beyond the cumulative ACK. Bit 0 = cumulative+1, bit 1 = cumulative+2, etc. Set bits indicate received out-of-order packets that do not need retransmission.
 
 ### Sliding Window
 

@@ -64,6 +64,10 @@ export const Pay = ({label, color}) => (
   <Pay label="Application Payload (variable)" color="#88aa88" />
 </Packet>
 
+The [SPP](/protocols/datalink/packet/spp) and [cFE](/protocols/datalink/cfe-headers/overview) headers are shared across all packet types. The routing layer adds:
+
+- **Target Address** — the final destination satellite or ground station. The router at each hop reads this field, computes the next hop on the torus, and forwards the packet. The address is not modified in transit — every hop sees the same destination.
+
 ## Address Encoding
 
 The address wire format (2 bytes):
