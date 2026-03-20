@@ -6,7 +6,9 @@ overhead.
 
 ## How It Works
 
-**How streams are created.** SRSPP is connectionless — there is no handshake. A sender transmits immediately; a receiver accepts data from any sender automatically. This avoids wasting a round-trip on connection setup, which matters when contact windows are short and latency is high. The receiver maintains a separate stream for each sender it hears from (identified by the sender's source address). When a packet arrives from a new sender, the receiver creates a stream with its own sequence tracking, reorder buffer, and ACK state. Up to a configurable *maximum number of streams* can be active simultaneously.
+**How streams are identified.** Each stream is identified by the pair of source address (from the SRSPP header) and destination APID (from the [SPP](/protocols/datalink/packet/spp) header). Only one sender per spacecraft is supported for each destination APID.
+
+**How streams are created.** SRSPP is connectionless — there is no handshake. A sender transmits immediately; a receiver accepts data from any sender automatically. This avoids wasting a round-trip on connection setup, which matters when contact windows are short and latency is high. The receiver maintains a separate stream for each sender it hears from. When a packet arrives from a new source address, the receiver creates a stream with its own sequence tracking, reorder buffer, and ACK state. Up to a configurable *maximum number of streams* can be active simultaneously.
 
 **How data is sent.** Within each stream, the sender breaks a message into packets, assigns each a sequence number, and transmits them. It keeps a copy of each packet until the receiver acknowledges it. If an acknowledgment doesn't arrive within a timeout, the sender retransmits.
 
@@ -44,7 +46,8 @@ The tradeoff is that sending to an unreachable receiver wastes time until packet
 
 ## Sub-pages
 
-- [Packet Structure](packet-structure) — header layout, field descriptions, sliding window
+- [Packet Structure](packet-structure) — header layout, field descriptions
+- [Flow Control](flow-control) — sliding window, send buffer
 - [Reliability](reliability) — sequence numbers, acknowledgments, retransmission
 - [Configuration](configuration) — parameters, RTO policies, compatibility
 - [Delay-Tolerant Extensions](dtn) — orbit-aware retransmission, contact schedules, comparison with BP

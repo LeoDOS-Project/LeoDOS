@@ -89,6 +89,7 @@ const sidebars: SidebarsConfig = {
               link: { type: 'doc', id: 'protocols/transport/srspp/overview' },
               items: [
                 'protocols/transport/srspp/packet-structure',
+                'protocols/transport/srspp/flow-control',
                 'protocols/transport/srspp/reliability',
                 'protocols/transport/srspp/configuration',
                 'protocols/transport/srspp/dtn',

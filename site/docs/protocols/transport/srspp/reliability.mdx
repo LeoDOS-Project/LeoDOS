@@ -7,14 +7,10 @@ Sequence numbers wrap around at 16383 (0x3FFF).
 
 ## Acknowledgments
 
-The receiver acknowledges received packets using a combined cumulative and selective
-ACK scheme:
+The receiver acknowledges received packets using a combined cumulative and selective ACK scheme:
 
-**Cumulative ACK**: The highest sequence number received in-order. All packets up to
-and including this number are acknowledged.
-
-**Selective ACK Bitmap**: A 16-bit bitmap indicating which out-of-order packets have
-been received. Bit N indicates receipt of packet (cumulative_ack + 1 + N).
+- **Cumulative ACK** — the highest sequence number received in-order. All packets up to and including this number are acknowledged.
+- **Selective ACK Bitmap** — a 16-bit bitmap indicating which out-of-order packets have been received. Bit N indicates receipt of the packet N positions beyond the cumulative ACK.
 
 Example: the receiver has received packets 0, 1, 2, 5, and 7. Packets 3, 4, and 6 are missing.
 
