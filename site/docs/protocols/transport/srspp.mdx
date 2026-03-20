@@ -35,6 +35,14 @@ The receiver collects packets, reorders them by sequence number, and reassembles
 
 A sliding window limits how many packets can be in flight at once, preventing the sender from overwhelming the receiver or the network.
 
+When things go wrong:
+
+- **Packet lost** — the sender's retransmission timer expires. It resends the packet and restarts the timer. If the packet is lost again, it retries up to `max_retransmits` times (default 3). After that, the packet is declared lost and the application is notified.
+- **Receiver unreachable** — the retransmission timeout (RTO) determines how long the sender waits. A fixed RTO works for stable ISL links. An orbit-aware RTO adapts to contact schedules — if the receiver is behind the horizon, the sender waits until the next contact window instead of burning through retransmit attempts during a predictable gap.
+- **Out-of-order arrival** — the receiver buffers out-of-order packets and reports them in the selective ACK bitmap. The sender does not retransmit these. Only the gap (the missing packet) is retransmitted.
+- **Message too large** — messages exceeding the MTU are split into segments (FIRST / CONTINUATION / LAST). The receiver reassembles them in sequence order. If any segment is lost, only that segment is retransmitted — not the entire message.
+- **Stream complete** — the sender transmits an EOS (End of Stream) packet with its own sequence number. The receiver acknowledges it like a data packet. Once the EOS is ACKed, both sides know the transfer is complete and can release resources.
+
 ### Packet Structure
 
 SRSPP builds on top of CCSDS Space Packets (SPP), reusing fields from the SPP primary header rather than adding its own:
