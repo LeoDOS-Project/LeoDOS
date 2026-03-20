@@ -206,6 +206,7 @@ impl<
         };
         match parsed.srspp_type() {
             Ok(SrsppType::Data) => self.receiver.process_data(packet, &mut self.link).await,
+            Ok(SrsppType::Eos) => self.receiver.process_data(packet, &mut self.link).await,
             Ok(SrsppType::Ack) => self.sender.process_ack(packet),
             Err(_) => Ok(()),
         }
