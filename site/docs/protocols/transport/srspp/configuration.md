@@ -19,19 +19,8 @@ passing the current time so the policy can adapt dynamically.
 
 Two built-in policies are provided:
 
-**FixedRto** — returns a constant timeout. Suitable for ISL links
-with stable, predictable latency.
-
-**OrbitAwareRto** — adapts the timeout based on a contact schedule:
-
-- If the current time falls inside a LOS window: use a short ISL RTO
-  (the link is active, real loss should be detected quickly).
-- If outside a window: set RTO to the time until the next LOS window
-  plus a configurable margin. This prevents the sender from declaring
-  packets lost during normal orbital gaps.
-- If no future windows exist in the schedule: fall back to the ISL RTO.
-
-The contact schedule is stored in a fixed-size buffer, suitable for embedded systems. Each window records a station ID and start/end time in seconds.
+- **Fixed** — returns a constant timeout. Suitable for ISL links with stable, predictable latency.
+- **Orbit-aware** — adapts the timeout based on a contact schedule. During a line-of-sight window, uses a short RTO (the link is active, real loss should be detected quickly). Outside a window, sets the RTO to the time until the next window plus a configurable margin — this prevents the sender from declaring packets lost during normal orbital gaps. If no future windows exist in the schedule, falls back to the short RTO. The contact schedule is stored in a fixed-size buffer suitable for embedded systems.
 
 Custom policies can be implemented by providing a different RTO computation.
 
