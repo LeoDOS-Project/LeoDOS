@@ -110,22 +110,9 @@ fn recv_port(point: Point, hop: Hop) -> u16 {
     send_port(point, hop) + 1
 }
 
-fn orbit_ip(orbit: u8, out: &mut [u8; 16]) -> Result<usize, core::fmt::Error> {
-    leodos_protocols::fmt!(out, "172.20.{orbit}.10")
-}
-
-fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> {
+fn udp_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> {
     let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
     let remote = SocketAddr::new_ipv4(LOCALHOST, remote_port)?;
-    UdpDatalink::bind(local, remote)
-}
-
-fn remote_link(local_port: u16, remote_orbit: u8, remote_port: u16) -> Result<UdpDatalink, CfsError> {
-    let mut ip_buf = [0u8; 16];
-    let len = orbit_ip(remote_orbit, &mut ip_buf).map_err(|_| CfsError::ValidationFailure)?;
-    let ip = core::str::from_utf8(&ip_buf[..len]).map_err(|_| CfsError::ValidationFailure)?;
-    let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
-    let remote = SocketAddr::new_ipv4(ip, remote_port)?;
     UdpDatalink::bind(local, remote)
 }
 
@@ -153,25 +140,23 @@ pub extern "C" fn SPACECOMP_AppMain() {
         let w = Hop::Isl(Direction::West);
         let g = Hop::Ground;
 
-        let north_link = local_link(
+        let north_link = udp_link(
             send_port(point, n),
             recv_port(north_point, s),
         )?;
-        let south_link = local_link(
+        let south_link = udp_link(
             send_port(point, s),
             recv_port(south_point, n),
         )?;
-        let east_link = remote_link(
+        let east_link = udp_link(
             send_port(point, e),
-            east_point.orb,
             recv_port(east_point, w),
         )?;
-        let west_link = remote_link(
+        let west_link = udp_link(
             send_port(point, w),
-            west_point.orb,
             recv_port(west_point, e),
         )?;
-        let ground_link = local_link(
+        let ground_link = udp_link(
             send_port(point, g),
             recv_port(point, g),
         )?;

@@ -118,24 +118,9 @@ fn ground_ports(point: Point) -> (u16, u16) {
     (base, base + 1)
 }
 
-fn orb_ip(orb: u8, out: &mut [u8; 16]) -> Result<&str, CfsError> {
-    leodos_protocols::fmt!(out, "172.20.{orb}.10")
-        .ok()
-        .and_then(|len| core::str::from_utf8(&out[..len]).ok())
-        .ok_or_else(|| CfsError::ValidationFailure)
-}
-
-fn local_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> {
+fn udp_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> {
     let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
     let remote = SocketAddr::new_ipv4(LOCALHOST, remote_port)?;
-    UdpDatalink::bind(local, remote)
-}
-
-fn remote_link(local_port: u16, remote_orb: u8, remote_port: u16) -> Result<UdpDatalink, CfsError> {
-    let mut buf = [0u8; 16];
-    let ip = orb_ip(remote_orb, &mut buf)?;
-    let local = SocketAddr::new_ipv4(LOCALHOST, local_port)?;
-    let remote = SocketAddr::new_ipv4(ip, remote_port)?;
     UdpDatalink::bind(local, remote)
 }
 
@@ -143,16 +128,12 @@ fn isl_link(point: Point, dir: Direction) -> Result<UdpDatalink, CfsError> {
     let neighbor = TORUS.neighbor(point, dir);
     let (send, _) = isl_ports(point, dir);
     let (_, recv) = isl_ports(neighbor, dir.opposite());
-    if point.orb == neighbor.orb {
-        local_link(send, recv)
-    } else {
-        remote_link(send, neighbor.orb, recv)
-    }
+    udp_link(send, recv)
 }
 
 fn ground_link(point: Point) -> Result<UdpDatalink, CfsError> {
     let (send, recv) = ground_ports(point);
-    local_link(send, recv)
+    udp_link(send, recv)
 }
 
 #[no_mangle]
