@@ -10,7 +10,7 @@ overhead.
 
 **How data is sent.** Within each stream, the sender breaks a message into packets, assigns each a sequence number, and transmits them. It keeps a copy of each packet until the receiver acknowledges it. If an acknowledgment doesn't arrive within a timeout, the sender retransmits.
 
-**How data is acknowledged.** The receiver collects packets, reorders them by sequence number, and reassembles the original message. It sends acknowledgments back to the sender: a cumulative ACK says "I have everything up to packet N," and a selective bitmap says "I also have these specific packets beyond N." This tells the sender exactly which packets are missing so it only retransmits those.
+**How the sender knows what arrived.** The receiver collects packets, reorders them by sequence number, and reassembles the original message. It sends acknowledgments back to the sender: a cumulative ACK says "I have everything up to packet N," and a selective bitmap says "I also have these specific packets beyond N." This tells the sender exactly which packets are missing so it only retransmits those.
 
 **How flow is controlled.** A sliding window limits how many packets can be in flight at once, preventing the sender from overwhelming the receiver or the network.
 
