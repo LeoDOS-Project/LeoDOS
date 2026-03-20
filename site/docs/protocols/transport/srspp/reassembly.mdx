@@ -1,0 +1,134 @@
+# Reassembly
+
+When packets arrive out of order or messages span multiple packets, the receiver must buffer, reorder, and reassemble them. SRSPP provides three receiver backends that trade off memory usage, insertion speed, and delivery cost.
+
+export const Slot = ({label, color, border, w}) => (
+  <div style={{
+    width: w || 50, height: 28, borderRadius: 3,
+    background: color || '#f0f0f0',
+    border: border || '1px solid #ccc',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '0.65em', fontWeight: 'bold', color: '#333',
+    flexShrink: 0,
+  }}>{label}</div>
+);
+
+export const Region = ({title, color, border, children}) => (
+  <div style={{
+    border: `2px solid ${border || '#888'}`, borderRadius: 6,
+    background: color || '#fafafa', padding: 6, marginBottom: 4,
+  }}>
+    <div style={{fontSize: '0.7em', fontWeight: 'bold', color: border || '#555', marginBottom: 3}}>{title}</div>
+    {children}
+  </div>
+);
+
+## Comparison
+
+| | Fast | Lite | Packed |
+|---|---|---|---|
+| Out-of-order insert | O(1) | O(WIN) | O(1) |
+| Delivery | O(1) advance | O(REASM) shift | O(MSG) copy |
+| Per-segment storage | MTU (fixed) | MTU (fixed) | Actual payload size |
+| Static memory | WIN × MTU + REASM | REASM | BUF + REASM |
+| Best for | High throughput | Memory-constrained | Variable-size payloads |
+
+## Fast
+
+Every window slot reserves the full MTU size, regardless of how large the actual payload is. Insertion is O(1) — compute the slot index as `seq % WIN` and write. Delivery is O(1) per packet — walk consecutive occupied slots and copy to the reassembly buffer.
+
+The tradeoff: wastes memory when payloads are smaller than the MTU.
+
+<Region title="Fast backend memory layout" border="#6688bb" color="#eef3ff">
+  <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 3}}>Slot array (WIN × MTU bytes) — one fixed-size slot per window position:</div>
+  <div style={{display: 'flex', gap: 2, flexWrap: 'wrap', marginBottom: 6}}>
+    <Slot label="seq 3" color="#c8daf8" border="1px solid #6688bb" w={60} />
+    <Slot label="(empty)" w={60} />
+    <Slot label="seq 5" color="#c8daf8" border="1px solid #6688bb" w={60} />
+    <Slot label="(empty)" w={60} />
+    <Slot label="seq 7" color="#c8daf8" border="1px solid #6688bb" w={60} />
+    <Slot label="(empty)" w={60} />
+    <Slot label="(empty)" w={60} />
+    <Slot label="(empty)" w={60} />
+  </div>
+  <div style={{fontSize: '0.65em', color: '#888', marginBottom: 6}}>Each slot is MTU bytes wide. Occupied slots (blue) contain payload data. Empty slots waste space.</div>
+  <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 3}}>Occupancy bitset (1 bit per slot):</div>
+  <div style={{display: 'flex', gap: 1, marginBottom: 6}}>
+    <Slot label="1" color="#c8daf8" border="1px solid #6688bb" w={24} />
+    <Slot label="0" w={24} />
+    <Slot label="1" color="#c8daf8" border="1px solid #6688bb" w={24} />
+    <Slot label="0" w={24} />
+    <Slot label="1" color="#c8daf8" border="1px solid #6688bb" w={24} />
+    <Slot label="0" w={24} />
+    <Slot label="0" w={24} />
+    <Slot label="0" w={24} />
+  </div>
+  <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 3}}>Reassembly buffer (REASM bytes):</div>
+  <div style={{display: 'flex', gap: 0}}>
+    <Slot label="completed message data" color="#d4e8d4" border="1px solid #88aa88" w={200} />
+    <Slot label="(free)" w={120} />
+  </div>
+</Region>
+
+## Lite
+
+Uses a single shared buffer for both reordering and reassembly. Segments are placed at computed byte offsets. A gap tracker records which byte ranges are filled and which are still missing.
+
+The tradeoff: delivery requires shifting the entire buffer left when a message is consumed — O(REASM) bytes moved. But memory usage is minimal: only the REASM buffer plus gap metadata.
+
+<Region title="Lite backend memory layout" border="#88aa88" color="#f0fff0">
+  <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 3}}>Single buffer (REASM bytes) — segments placed at computed offsets:</div>
+  <div style={{display: 'flex', gap: 0, marginBottom: 4}}>
+    <Slot label="seg 0" color="#d4e8d4" border="1px solid #88aa88" w={50} />
+    <Slot label="gap" color="#f0d0d0" border="1px solid #cc6666" w={50} />
+    <Slot label="seg 2" color="#d4e8d4" border="1px solid #88aa88" w={50} />
+    <Slot label="gap" color="#f0d0d0" border="1px solid #cc6666" w={50} />
+    <Slot label="seg 4" color="#d4e8d4" border="1px solid #88aa88" w={50} />
+    <Slot label="(free)" w={80} />
+  </div>
+  <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 3}}>Gap tracker — intervals of missing byte ranges:</div>
+  <div style={{display: 'flex', gap: 4}}>
+    <Slot label="[50..100]" color="#f0d0d0" border="1px solid #cc6666" w={80} />
+    <Slot label="[150..200]" color="#f0d0d0" border="1px solid #cc6666" w={80} />
+  </div>
+  <div style={{fontSize: '0.65em', color: '#888', marginTop: 4}}>When gaps are filled, the tracker merges intervals. When a message is consumed, the buffer shifts left.</div>
+</Region>
+
+## Packed
+
+Like Fast, uses a bitset and slot indices for O(1) insertion. But instead of reserving MTU bytes per slot, payloads are appended to a bump allocator (append-only slab). Each slot stores only a metadata record (offset + length into the slab).
+
+The tradeoff: no wasted space per slot (payloads packed tightly), but delivery requires copying from the slab to the reassembly buffer — O(message size).
+
+<Region title="Packed backend memory layout" border="#bba050" color="#fff8ee">
+  <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 3}}>Slot metadata (WIN entries) — offset and length into the slab:</div>
+  <div style={{display: 'flex', gap: 2, marginBottom: 6}}>
+    <Slot label="0:120" color="#f5e0b0" border="1px solid #bba050" w={50} />
+    <Slot label="—" w={50} />
+    <Slot label="120:85" color="#f5e0b0" border="1px solid #bba050" w={50} />
+    <Slot label="—" w={50} />
+    <Slot label="205:200" color="#f5e0b0" border="1px solid #bba050" w={50} />
+    <Slot label="—" w={50} />
+  </div>
+  <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 3}}>Bump slab (BUF bytes) — payloads packed contiguously:</div>
+  <div style={{display: 'flex', gap: 0, marginBottom: 6}}>
+    <Slot label="payload 3 (120B)" color="#f5e0b0" border="1px solid #bba050" w={100} />
+    <Slot label="payload 5 (85B)" color="#f5e0b0" border="1px solid #bba050" w={75} />
+    <Slot label="payload 7 (200B)" color="#f5e0b0" border="1px solid #bba050" w={130} />
+    <Slot label="(free)" w={60} />
+  </div>
+  <div style={{fontSize: '0.65em', color: '#888', marginBottom: 6}}>Payloads use only their actual size — no MTU padding. Slab is cleared after delivery.</div>
+  <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 3}}>Reassembly buffer (REASM bytes):</div>
+  <div style={{display: 'flex', gap: 0}}>
+    <Slot label="completed message data" color="#d4e8d4" border="1px solid #88aa88" w={200} />
+    <Slot label="(free)" w={120} />
+  </div>
+</Region>
+
+## Choosing a Backend
+
+- **Fast** — use when throughput matters most and memory is available. Typical for ground stations or satellites with sufficient RAM.
+- **Lite** — use on the most memory-constrained satellites where every byte counts. Accepts slower delivery in exchange for the smallest possible footprint.
+- **Packed** — use when payload sizes vary significantly (some packets carry 50 bytes, others carry 500). Avoids the wasted space of Fast without the delivery cost of Lite.
+
+All three backends produce identical output — the choice is purely a resource tradeoff. The application does not need to know which backend the receiver uses.
