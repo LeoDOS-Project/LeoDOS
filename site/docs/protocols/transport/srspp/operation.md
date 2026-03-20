@@ -16,7 +16,7 @@ is in one of two states:
    - Assign the next sequence number
    - Store packet in send buffer
    - Mark as Pending Transmit
-4. Transmit all Pending Transmit packets
+4. Transmit Pending Transmit packets up to the window limit — if the window is full, remaining packets stay queued until ACKs free window slots
 5. Start retransmission timer for each transmitted packet
 6. Mark transmitted packets as Awaiting ACK
 
