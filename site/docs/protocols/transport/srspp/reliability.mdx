@@ -38,44 +38,47 @@ export const Bit = ({val, color, border}) => (
 );
 
 <div style={{margin: '12px 0'}}>
-<div style={{fontSize: '0.8em', fontWeight: 'bold', marginBottom: 4}}>Receiver's state:</div>
-<div style={{display: 'flex', gap: 2, alignItems: 'center'}}>
-  <Sq seq="0" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
-  <Sq seq="1" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
-  <Sq seq="2" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
-  <Sq seq="3" color="#f0d0d0" border="2px solid #cc6666" label="gap" />
-  <Sq seq="4" color="#f0d0d0" border="2px solid #cc6666" label="gap" />
-  <Sq seq="5" color="#c8daf8" border="2px solid #6688bb" label="✓" />
-  <Sq seq="6" color="#f0d0d0" border="2px solid #cc6666" label="gap" />
-  <Sq seq="7" color="#c8daf8" border="2px solid #6688bb" label="✓" />
+<div style={{border: '2px solid #333', borderRadius: 8, padding: 8, marginBottom: 6}}>
+  <div style={{fontSize: '0.75em', fontWeight: 'bold', marginBottom: 4, color: '#555'}}>Receiver's state</div>
+  <div style={{display: 'flex', gap: 2, alignItems: 'center'}}>
+    <Sq seq="0" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
+    <Sq seq="1" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
+    <Sq seq="2" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
+    <Sq seq="3" color="#f0d0d0" border="2px solid #cc6666" label="gap" />
+    <Sq seq="4" color="#f0d0d0" border="2px solid #cc6666" label="gap" />
+    <Sq seq="5" color="#c8daf8" border="2px solid #6688bb" label="✓" />
+    <Sq seq="6" color="#f0d0d0" border="2px solid #cc6666" label="gap" />
+    <Sq seq="7" color="#c8daf8" border="2px solid #6688bb" label="✓" />
+  </div>
 </div>
 
-<div style={{fontSize: '0.8em', fontWeight: 'bold', marginTop: 10, marginBottom: 4}}>ACK sent: Cumulative = 2</div>
-
-<div style={{fontSize: '0.8em', fontWeight: 'bold', marginTop: 6, marginBottom: 4}}>Selective bitmap (starts at seq 3):</div>
-<div style={{display: 'flex', gap: 2, alignItems: 'center', marginLeft: 114}}>
-  <div style={{width: 36, textAlign: 'center', fontSize: '0.6em', color: '#888'}}>↑</div>
-  <div style={{width: 36, textAlign: 'center', fontSize: '0.6em', color: '#888'}}>↑</div>
-  <div style={{width: 36, textAlign: 'center', fontSize: '0.6em', color: '#6688bb', fontWeight: 'bold'}}>↑</div>
-  <div style={{width: 36, textAlign: 'center', fontSize: '0.6em', color: '#888'}}>↑</div>
-  <div style={{width: 36, textAlign: 'center', fontSize: '0.6em', color: '#6688bb', fontWeight: 'bold'}}>↑</div>
+<div style={{display: 'flex', gap: 2, alignItems: 'center', marginLeft: 114, marginBottom: 2}}>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.7em', color: '#888'}}>↑</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.7em', color: '#888'}}>↑</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.7em', color: '#6688bb', fontWeight: 'bold'}}>↑</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.7em', color: '#888'}}>↑</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.7em', color: '#6688bb', fontWeight: 'bold'}}>↑</div>
 </div>
-<div style={{display: 'flex', gap: 2, alignItems: 'center', marginLeft: 114}}>
-  <Bit val="0" color="#f0d0d0" border="2px solid #cc6666" />
-  <Bit val="0" color="#f0d0d0" border="2px solid #cc6666" />
-  <Bit val="1" color="#c8daf8" border="2px solid #6688bb" />
-  <Bit val="0" color="#f0d0d0" border="2px solid #cc6666" />
-  <Bit val="1" color="#c8daf8" border="2px solid #6688bb" />
+
+<div style={{border: '2px solid #333', borderRadius: 8, padding: 8}}>
+  <div style={{fontSize: '0.75em', fontWeight: 'bold', marginBottom: 4, color: '#555'}}>ACK: Cumulative = 2, Selective bitmap</div>
+  <div style={{display: 'flex', gap: 2, alignItems: 'center', marginLeft: 114}}>
+    <Bit val="0" color="#f0d0d0" border="2px solid #cc6666" />
+    <Bit val="0" color="#f0d0d0" border="2px solid #cc6666" />
+    <Bit val="1" color="#c8daf8" border="2px solid #6688bb" />
+    <Bit val="0" color="#f0d0d0" border="2px solid #cc6666" />
+    <Bit val="1" color="#c8daf8" border="2px solid #6688bb" />
+  </div>
 </div>
 </div>
 
 <div style={{display: 'flex', gap: 16, fontSize: '0.8em', marginBottom: 12, flexWrap: 'wrap'}}>
-  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '1px solid #88aa88', borderRadius: 3}} /> Covered by cumulative ACK</div>
-  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#c8daf8', border: '1px solid #6688bb', borderRadius: 3}} /> Received (bitmap = 1)</div>
-  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f0d0d0', border: '1px solid #cc6666', borderRadius: 3}} /> Missing (bitmap = 0)</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '1px solid #88aa88', borderRadius: 3}} /> Covered by cumulative ACK (seq 0–2)</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#c8daf8', border: '1px solid #6688bb', borderRadius: 3}} /> Received out-of-order (bitmap = 1)</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f0d0d0', border: '1px solid #cc6666', borderRadius: 3}} /> Missing — needs retransmission (bitmap = 0)</div>
 </div>
 
-The bitmap starts at the first packet after the cumulative ACK (seq 3). Each bit maps to one packet: 0 = missing, 1 = received. The sender sees this and knows to retransmit only packets 3, 4, and 6.
+The bitmap starts at the first packet after the cumulative ACK. Each bit corresponds to one packet: 1 = received, 0 = missing. The sender retransmits only the missing packets (3, 4, and 6).
 
 ## Retransmission
 
