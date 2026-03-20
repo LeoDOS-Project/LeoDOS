@@ -25,40 +25,47 @@ export const Label = ({children}) => (
 
 The following diagram shows a 8×8 section of the torus grid. Each cell is a satellite. The source (S) needs to reach the destination (D), which is 3 planes east and 2 satellites north. Both paths take 5 hops.
 
+{/* Row 0 = pole (top), Row 7 = equator (bottom). Columns = orbital planes. */}
+{/* S at row 5, col 1. D at row 3, col 4. Manhattan: 3 east then 2 north. Dist-min: 2 north then 3 east. */}
+
 <div style={{display: 'flex', gap: 24, flexWrap: 'wrap', justifyContent: 'center', margin: '16px 0'}}>
 <div>
+<div style={{fontSize: '0.65em', color: '#999', marginBottom: 2}}>← pole</div>
 <Grid>
   <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
-  <Cell /><Cell /><Cell /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell /><Cell /><Cell />
-  <Cell /><Cell /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell color="#c8daf8" border="2px solid #6688bb" label="D" /><Cell /><Cell /><Cell />
-  <Cell /><Cell color="#f5e0b0" border="2px solid #bba050" label="S" /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell /><Cell /><Cell /><Cell /><Cell />
   <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
   <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell /><Cell color="#c8daf8" border="2px solid #6688bb" label="D" /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell /><Cell /><Cell />
+  <Cell /><Cell color="#f5e0b0" border="2px solid #bba050" label="S" /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell /><Cell /><Cell />
   <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
   <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
 </Grid>
-<Label>Manhattan: east then north.<br/>All cross-plane hops at equator.</Label>
+<div style={{fontSize: '0.65em', color: '#999', marginTop: 2}}>← equator</div>
+<Label>Manhattan: east 3, then north 2.<br/>Cross-plane hops at equator (long links).</Label>
 </div>
 <div>
+<div style={{fontSize: '0.65em', color: '#999', marginBottom: 2}}>← pole</div>
 <Grid>
-  <Cell /><Cell /><Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell color="#d4e8d4" border="2px solid #88aa88" label="D" /><Cell /><Cell /><Cell />
-  <Cell /><Cell /><Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell /><Cell /><Cell /><Cell />
-  <Cell /><Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell color="#d4e8d4" border="2px solid #88aa88" label="D" /><Cell /><Cell /><Cell />
+  <Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
   <Cell /><Cell color="#f5e0b0" border="2px solid #bba050" label="S" /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
-  <Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
-  <Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
   <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
   <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
 </Grid>
-<Label>Distance-minimizing: north first,<br/>cross-plane hops near pole (shorter).</Label>
+<div style={{fontSize: '0.65em', color: '#999', marginTop: 2}}>← equator</div>
+<Label>Distance-minimizing: north 2, then east 3.<br/>Cross-plane hops near pole (short links).</Label>
 </div>
 </div>
 
 <div style={{display: 'flex', gap: 16, fontSize: '0.8em', justifyContent: 'center', marginBottom: 16}}>
-  <span>↑ North (toward pole) &nbsp; ↓ South (toward equator) &nbsp; ← → Cross-plane</span>
+  <span>↑ North (toward pole) &nbsp; ↓ South (toward equator) &nbsp; ← → Cross-plane (between orbital planes)</span>
 </div>
 
-In the Manhattan path (left), the three cross-plane hops happen at the equator where links are longest. In the distance-minimizing path (right), the satellite first moves north (toward the pole) along its own plane, then takes the cross-plane hops where the planes are closer together, then moves south to the destination. Same 5 hops — shorter total distance.
+Both paths take exactly 5 hops. The Manhattan path (left) goes east first — all 3 cross-plane hops happen at the equator where orbital planes are far apart. The distance-minimizing path (right) goes north first along its own plane, then takes the 3 cross-plane hops closer to the pole where the planes converge. The total distance is shorter because the cross-plane links near the pole are physically shorter.
 
 ## Manhattan Routing
 
