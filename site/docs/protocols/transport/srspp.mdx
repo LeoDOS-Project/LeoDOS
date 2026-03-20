@@ -29,7 +29,11 @@ rather than the failure case.
 
 ## How It Works
 
-The sender breaks a message into packets, assigns each a sequence number, and transmits them. It keeps a copy of each packet until the receiver acknowledges it. If an acknowledgment doesn't arrive within a timeout, the sender retransmits.
+SRSPP is connectionless — there is no handshake. A sender transmits immediately; a receiver accepts data from any sender automatically.
+
+The receiver maintains a separate stream for each sender it hears from (identified by the sender's source address). When a packet arrives from a new sender, the receiver creates a stream with its own sequence tracking, reorder buffer, and ACK state. Up to a configurable *maximum number of streams* can be active simultaneously.
+
+Within each stream, the sender breaks a message into packets, assigns each a sequence number, and transmits them. It keeps a copy of each packet until the receiver acknowledges it. If an acknowledgment doesn't arrive within a timeout, the sender retransmits.
 
 The receiver collects packets, reorders them by sequence number, and reassembles the original message. It sends acknowledgments back to the sender: a cumulative ACK says "I have everything up to packet N," and a selective bitmap says "I also have these specific packets beyond N." This tells the sender exactly which packets are missing so it only retransmits those.
 
