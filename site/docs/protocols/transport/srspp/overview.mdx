@@ -16,7 +16,7 @@ The receiver collects packets, reorders them by sequence number, and reassembles
 
 A sliding window limits how many packets can be in flight at once, preventing the sender from overwhelming the receiver or the network.
 
-When things go wrong:
+### Failure Scenarios
 
 - **Packet lost** — the sender's retransmission timer expires. It resends the packet and restarts the timer. If the packet is lost again, it retries up to the *maximum retransmit count* (default 3). After that, the packet is declared lost and the application is notified.
 - **Receiver unreachable** — the *retransmission timeout* (RTO) determines how long the sender waits. A fixed RTO works for stable ISL links. An *orbit-aware* RTO adapts to contact schedules — if the receiver is behind the horizon, the sender waits until the next contact window instead of burning through retransmit attempts during a predictable gap.
