@@ -103,7 +103,7 @@ fn port_offset(hop: Hop) -> u16 {
 }
 
 fn send_port(point: Point, hop: Hop) -> u16 {
-    PORT_BASE + point.sat as u16 * PORTS_PER_SAT + port_offset(hop)
+    PORT_BASE + (point.orb as u16 * NUM_SATS as u16 + point.sat as u16) * PORTS_PER_SAT + port_offset(hop)
 }
 
 fn recv_port(point: Point, hop: Hop) -> u16 {

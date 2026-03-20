@@ -89,7 +89,7 @@ fn isl_port_offset(dir: Direction) -> u16 {
 
 fn isl_ports(point: Point, dir: Direction) -> (u16, u16) {
     let base = PORT_BASE
-        + point.sat as u16 * PORTS_PER_SAT
+        + (point.orb as u16 * NUM_SATS as u16 + point.sat as u16) * PORTS_PER_SAT
         + isl_port_offset(dir);
     (base, base + 1)
 }
