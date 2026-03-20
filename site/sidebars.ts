@@ -10,8 +10,14 @@ const sidebars: SidebarsConfig = {
       items: [
         'background/orbits',
         'background/constellations',
-        'background/satellite-links',
-        'background/ground-links',
+        {
+          type: 'category',
+          label: 'Links',
+          items: [
+            'background/satellite-links',
+            'background/ground-links',
+          ],
+        },
         'background/sensors',
         'background/threats',
         'background/hardware',
