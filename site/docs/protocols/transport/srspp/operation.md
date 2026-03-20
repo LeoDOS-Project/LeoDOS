@@ -27,9 +27,8 @@ When an ACK arrives:
 1. For each packet covered by the cumulative ACK (seq ≤ cumulative\_ack):
    - Stop its retransmission timer
    - Remove from send buffer
-2. For each bit set in the selective bitmap:
-   - Calculate seq = cumulative_ack + 1 + bit_position
-   - Stop that packet's retransmission timer
+2. For each bit set in the selective bitmap: bit N means the receiver has packet N positions beyond the cumulative ACK (i.e., sequence number cumulative\_ack + 1 + N). For each such packet:
+   - Stop its retransmission timer
    - Remove from send buffer
 3. Slide the window forward
 
