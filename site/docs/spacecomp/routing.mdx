@@ -2,6 +2,64 @@
 
 SpaceCoMP uses a distance-minimizing shortest-path algorithm that exploits the physical geometry of the [Walker Delta constellation](constellation) to reduce total ISL distance traversed while maintaining the same hop count as standard Manhattan routing on the torus.
 
+export const Cell = ({color, label, border}) => (
+  <div style={{
+    width: 28, height: 28,
+    borderRadius: 4,
+    background: color || '#e0e0e0',
+    border: border || '1px solid #ccc',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '0.6em', fontWeight: 'bold', color: '#333',
+  }}>{label}</div>
+);
+
+export const Grid = ({children}) => (
+  <div style={{display: 'inline-grid', gridTemplateColumns: 'repeat(8, 28px)', gap: 2}}>
+    {children}
+  </div>
+);
+
+export const Label = ({children}) => (
+  <div style={{fontSize: '0.75em', color: '#666', textAlign: 'center', marginTop: 4}}>{children}</div>
+);
+
+The following diagram shows a 8×8 section of the torus grid. Each cell is a satellite. The source (S) needs to reach the destination (D), which is 3 planes east and 2 satellites north. Both paths take 5 hops.
+
+<div style={{display: 'flex', gap: 24, flexWrap: 'wrap', justifyContent: 'center', margin: '16px 0'}}>
+<div>
+<Grid>
+  <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell color="#c8daf8" border="2px solid #6688bb" label="D" /><Cell /><Cell /><Cell />
+  <Cell /><Cell color="#f5e0b0" border="2px solid #bba050" label="S" /><Cell color="#c8daf8" border="2px solid #6688bb" /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+</Grid>
+<Label>Manhattan: east then north.<br/>All cross-plane hops at equator.</Label>
+</div>
+<div>
+<Grid>
+  <Cell /><Cell /><Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell color="#d4e8d4" border="2px solid #88aa88" label="D" /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell color="#f5e0b0" border="2px solid #bba050" label="S" /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell color="#d4e8d4" border="2px solid #88aa88" /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+  <Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell /><Cell />
+</Grid>
+<Label>Distance-minimizing: north first,<br/>cross-plane hops near pole (shorter).</Label>
+</div>
+</div>
+
+<div style={{display: 'flex', gap: 16, fontSize: '0.8em', justifyContent: 'center', marginBottom: 16}}>
+  <span>↑ North (toward pole) &nbsp; ↓ South (toward equator) &nbsp; ← → Cross-plane</span>
+</div>
+
+In the Manhattan path (left), the three cross-plane hops happen at the equator where links are longest. In the distance-minimizing path (right), the satellite first moves north (toward the pole) along its own plane, then takes the cross-plane hops where the planes are closer together, then moves south to the destination. Same 5 hops — shorter total distance.
+
 ## Manhattan Routing
 
 The baseline routing algorithm on a 2D torus computes the shortest path in grid hops — the Manhattan distance between source and destination, accounting for wraparound on both axes. Each hop moves one step in either the orbital-plane axis (east/west) or the satellite axis (north/south). This minimizes hop count but ignores the fact that ISL distances vary with orbital position.

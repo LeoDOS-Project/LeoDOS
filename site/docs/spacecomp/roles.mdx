@@ -2,6 +2,67 @@
 
 SpaceCoMP distributes computation across four roles: coordinator, collector, mapper, and reducer. Each role is a mode of operation within the same cFS app — any satellite can take on any role depending on the job assignment.
 
+export const Box = ({children, color, border, width}) => (
+  <div style={{
+    border: `2px solid ${border || '#555'}`,
+    borderRadius: 6,
+    padding: '4px 10px',
+    background: color || '#fff',
+    width: width || 'auto',
+    textAlign: 'center',
+    fontSize: '0.8em',
+    fontWeight: 'bold',
+  }}>{children}</div>
+);
+
+export const Arrow = ({label}) => (
+  <div style={{textAlign: 'center', fontSize: '0.7em', color: '#666', padding: '1px 0'}}>
+    ↓ {label}
+  </div>
+);
+
+export const HArrow = ({label}) => (
+  <div style={{fontSize: '0.7em', color: '#666', padding: '0 4px', display: 'flex', alignItems: 'center'}}>
+    → {label}
+  </div>
+);
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, margin: '16px 0'}}>
+  <Box color="#e8eef8" border="#6688bb">Ground Station</Box>
+  <Arrow label="SubmitJob" />
+  <Box color="#f5e0b0" border="#bba050">Coordinator</Box>
+  <Arrow label="AssignCollector / AssignMapper / AssignReducer" />
+  <div style={{display: 'flex', gap: 24, alignItems: 'flex-start'}}>
+    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2}}>
+      <Box color="#d4e8d4" border="#88aa88">Collector A</Box>
+      <Box color="#d4e8d4" border="#88aa88">Collector B</Box>
+    </div>
+    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 8}}>
+      <div style={{fontSize: '0.7em', color: '#666'}}>→ DataChunk →</div>
+    </div>
+    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2}}>
+      <Box color="#d4e8d4" border="#88aa88">Mapper A</Box>
+      <Box color="#d4e8d4" border="#88aa88">Mapper B</Box>
+    </div>
+    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 8}}>
+      <div style={{fontSize: '0.7em', color: '#666'}}>→ DataChunk →</div>
+    </div>
+    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2}}>
+      <Box color="#d4e8d4" border="#88aa88">Reducer</Box>
+    </div>
+  </div>
+  <Arrow label="JobResult" />
+  <Box color="#f5e0b0" border="#bba050">Coordinator</Box>
+  <Arrow label="result" />
+  <Box color="#e8eef8" border="#6688bb">Ground Station</Box>
+</div>
+
+<div style={{display: 'flex', gap: 16, fontSize: '0.8em', justifyContent: 'center', marginBottom: 16, flexWrap: 'wrap'}}>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#e8eef8', border: '2px solid #6688bb', borderRadius: 3}} /> Ground</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f5e0b0', border: '2px solid #bba050', borderRadius: 3}} /> Coordinator</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '2px solid #88aa88', borderRadius: 3}} /> Worker satellite</div>
+</div>
+
 ## Coordinator
 
 The coordinator receives job requests from the ground station (via the line-of-sight gateway node), plans the computation, and assigns roles to participating satellites. Planning involves:
