@@ -21,13 +21,19 @@ use zerocopy::Unaligned;
 use zerocopy::byteorder::network_endian;
 
 /// SRSPP packet type discriminator.
+/// Current SRSPP protocol version.
+pub const SRSPP_VERSION: u8 = 0;
+
+/// SRSPP packet type discriminator (2 bits).
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u8)]
 pub enum SrsppType {
     /// Data packet carrying application payload.
-    Data = 0b0,
+    Data = 0,
     /// Acknowledgment packet.
-    Ack = 0b1,
+    Ack = 1,
+    /// End-of-stream signal (no payload).
+    Eos = 2,
 }
 
 impl TryFrom<u8> for SrsppType {
@@ -35,27 +41,37 @@ impl TryFrom<u8> for SrsppType {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0x00 => Ok(Self::Data),
-            0x01 => Ok(Self::Ack),
+            0 => Ok(Self::Data),
+            1 => Ok(Self::Ack),
+            2 => Ok(Self::Eos),
             _ => Err(SrsppPacketError::InvalidPacketType { value }),
         }
     }
 }
 
 /// Wire-format SRSPP header following the ISL routing header.
+///
+/// Byte layout (3 bytes):
+///   - source_address: 2 bytes (RawAddress)
+///   - version_type:   1 byte  (version[7:6] | type[5:4] | spare[3:0])
 #[repr(C, packed)]
 #[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
 pub(crate) struct SrsppHeader {
     /// Source address of the sender.
     source_address: RawAddress,
-    /// Raw SRSPP packet type discriminator byte.
-    packet_type: u8,
+    /// Packed version (2 bits), type (2 bits), spare (4 bits).
+    version_type: u8,
 }
 
 impl SrsppHeader {
     /// Parse the packet type field into an `SrsppType`.
     pub(crate) fn srspp_type(&self) -> Result<SrsppType, SrsppPacketError> {
-        SrsppType::try_from(self.packet_type)
+        SrsppType::try_from((self.version_type >> 4) & 0x03)
+    }
+
+    /// Returns the protocol version (2 bits).
+    pub(crate) fn version(&self) -> u8 {
+        (self.version_type >> 6) & 0x03
     }
 
     /// Returns the parsed source address.
@@ -68,9 +84,9 @@ impl SrsppHeader {
         self.source_address = RawAddress::from(address);
     }
 
-    /// Sets the packet type discriminator.
+    /// Sets the version and packet type fields.
     pub(crate) fn set_srspp_type(&mut self, srspp_type: SrsppType) {
-        self.packet_type = srspp_type as u8;
+        self.version_type = (SRSPP_VERSION << 6) | ((srspp_type as u8) << 4);
     }
 }
 
