@@ -6,7 +6,16 @@ Satellites run on radiation-hardened processors that differ significantly from c
 
 Flight processors range from 32-bit (LEON3, ARM Cortex-R) to 64-bit (LEON5, ARM Cortex-A on newer missions). They are orders of magnitude slower than ground servers — hundreds of MHz to low GHz, with limited RAM (megabytes to low gigabytes). Performance is constrained by radiation hardening, power budget, and thermal limits.
 
-Some missions carry COTS (commercial off-the-shelf) ARM processors with radiation shielding, or FPGA fabric for specialized processing (compression, image classification). GPU accelerators (Nvidia Jetson) have flown on CubeSats for ML inference.
+| Processor | Architecture | Clock | RAM | Radiation | Use case |
+|---|---|---|---|---|---|
+| **LEON3** | SPARC V8 (32-bit) | ~100 MHz | 128–512 MB | Rad-hard | Heritage flight processor, ESA/NASA missions |
+| **LEON5** | SPARC V8 (64-bit) | ~250 MHz | 1–4 GB | Rad-hard | Next-gen European missions |
+| **ARM Cortex-R** | ARMv7-R (32-bit) | ~400 MHz | 256 MB–1 GB | Rad-tolerant | Safety-critical real-time tasks |
+| **ARM Cortex-A** | ARMv8-A (64-bit) | ~1.5 GHz | 2–8 GB | COTS + shielding | High-performance payloads, ML inference |
+| **Nvidia Jetson** | ARM + GPU | ~1.5 GHz + 128 CUDA | 4–8 GB | COTS + shielding | ML inference on CubeSats |
+| **FPGA** (Xilinx) | Configurable | — | — | Rad-hard variants | Compression, image processing, custom pipelines |
+
+For comparison, a ground server runs at 3–5 GHz with 64–512 GB RAM and terabytes of storage. Flight processors trade performance for radiation tolerance, power efficiency, and reliability over multi-year missions.
 
 ## Memory
 

@@ -6,22 +6,26 @@ Satellites run real-time flight software that manages all onboard operations: at
 
 Several frameworks exist for structuring flight software:
 
-- **[cFS](/cfs/overview)** (NASA) — open-source, layered architecture (PSP → OSAL → cFE), app-based with a publish-subscribe Software Bus. Used on 50+ NASA missions. LeoDOS uses cFS.
-- **F Prime** (NASA JPL) — open-source, component-based, targets smaller missions (CubeSats, instruments). Used on the Ingenuity Mars Helicopter.
-- **OSRA/SAVOIR** (ESA) — reference architecture for European missions. Implementations are proprietary.
-- **KOSMOS** (CNES) — modular framework with pre-qualified components. Available to CNES partners.
+| Framework | Agency | Open source | Architecture | Target scale | Notable missions |
+|---|---|---|---|---|---|
+| **[cFS](/cfs/overview)** | NASA Goddard | Yes (Apache 2.0) | Layered (PSP → OSAL → cFE), app-based, pub-sub Software Bus | Medium to large | GPM, Lunar Gateway, Roman Space Telescope |
+| **F Prime** | NASA JPL | Yes (Apache 2.0) | Component-based, port connections, code generation | Small (CubeSats, instruments) | Ingenuity Mars Helicopter, ASTERIA |
+| **OSRA/SAVOIR** | ESA | Spec public, impl proprietary | Reference architecture, Eclipse tooling | Medium to large | European institutional missions |
+| **KOSMOS** | CNES | No (institutional) | Modular, pre-qualified components (ECSS Level B) | Medium to large | CNES missions since 2019 |
 
-See [Core Flight System](/cfs/overview) for details on cFS and how LeoDOS uses it.
+LeoDOS uses cFS — the only open-source framework with heritage on large missions and a layered architecture that separates hardware, OS, and application concerns. See [Core Flight System](/cfs/overview) for details.
 
 ## Real-Time Operating Systems
 
-Flight software runs on a real-time operating system (RTOS) that provides deterministic scheduling — tasks run at guaranteed times with bounded latency. Common choices:
+Flight software runs on a real-time operating system (RTOS) that provides deterministic scheduling — tasks run at guaranteed times with bounded latency.
 
-- **VxWorks** — the most widely used RTOS in space. Commercial, proprietary.
-- **RTEMS** — open-source RTOS used by several space missions. POSIX-compatible.
-- **Linux** — used for development and some flight missions (typically with real-time patches). Not traditionally considered flight-qualified, but increasingly used on newer missions with COTS hardware.
+| RTOS | License | POSIX | Determinism | Use case |
+|---|---|---|---|---|
+| **VxWorks** | Commercial | Partial | Hard real-time | Most widely used RTOS in space |
+| **RTEMS** | Open source (BSD) | Yes | Hard real-time | ESA and NASA missions, growing adoption |
+| **Linux** | Open source (GPL) | Yes | Soft (hard with RT patches) | Development, COTS hardware, payload processing |
 
-cFS abstracts the OS through [OSAL](/cfs/osal), so the same application code runs on any of these without modification.
+cFS abstracts the OS through [OSAL](/cfs/osal), so the same application code runs on any of these without modification. LeoDOS develops on Linux and targets RTEMS or VxWorks for flight.
 
 ## LeoDOS
 
