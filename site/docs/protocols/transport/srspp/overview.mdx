@@ -6,15 +6,13 @@ overhead.
 
 ## How It Works
 
-SRSPP is connectionless — there is no handshake. A sender transmits immediately; a receiver accepts data from any sender automatically. This avoids wasting a round-trip on connection setup, which matters when contact windows are short and latency is high.
+**How streams are created.** SRSPP is connectionless — there is no handshake. A sender transmits immediately; a receiver accepts data from any sender automatically. This avoids wasting a round-trip on connection setup, which matters when contact windows are short and latency is high. The receiver maintains a separate stream for each sender it hears from (identified by the sender's source address). When a packet arrives from a new sender, the receiver creates a stream with its own sequence tracking, reorder buffer, and ACK state. Up to a configurable *maximum number of streams* can be active simultaneously.
 
-The receiver maintains a separate stream for each sender it hears from (identified by the sender's source address). When a packet arrives from a new sender, the receiver creates a stream with its own sequence tracking, reorder buffer, and ACK state. Up to a configurable *maximum number of streams* can be active simultaneously.
+**How data is sent.** Within each stream, the sender breaks a message into packets, assigns each a sequence number, and transmits them. It keeps a copy of each packet until the receiver acknowledges it. If an acknowledgment doesn't arrive within a timeout, the sender retransmits.
 
-Within each stream, the sender breaks a message into packets, assigns each a sequence number, and transmits them. It keeps a copy of each packet until the receiver acknowledges it. If an acknowledgment doesn't arrive within a timeout, the sender retransmits.
+**How data is acknowledged.** The receiver collects packets, reorders them by sequence number, and reassembles the original message. It sends acknowledgments back to the sender: a cumulative ACK says "I have everything up to packet N," and a selective bitmap says "I also have these specific packets beyond N." This tells the sender exactly which packets are missing so it only retransmits those.
 
-The receiver collects packets, reorders them by sequence number, and reassembles the original message. It sends acknowledgments back to the sender: a cumulative ACK says "I have everything up to packet N," and a selective bitmap says "I also have these specific packets beyond N." This tells the sender exactly which packets are missing so it only retransmits those.
-
-A sliding window limits how many packets can be in flight at once, preventing the sender from overwhelming the receiver or the network.
+**How flow is controlled.** A sliding window limits how many packets can be in flight at once, preventing the sender from overwhelming the receiver or the network.
 
 ### Failure Scenarios
 
