@@ -26,14 +26,22 @@ For comparison, a single ISL achieves 10–100+ Gbps in vacuum with no weather d
 
 ## Cross-Orbit Relay
 
-LEO satellites can communicate with relay satellites in higher orbits to maintain near-continuous ground connectivity:
+LEO satellites can communicate with relay satellites in GEO to maintain near-continuous ground connectivity, bypassing the contact window limitation.
 
-- **TDRSS** (NASA) — GEO relay satellites providing contact with LEO spacecraft (ISS, Hubble, science missions)
-- **EDRS** (ESA) — European Data Relay System with optical laser terminals relaying LEO data to ground
+The relay path has two segments that use different technologies:
+
+- **LEO → GEO** (inter-orbit uplink) — optical laser. EDRS uses a 1064 nm laser link at 1.8 Gbps between the LEO satellite and the GEO relay. The link operates in vacuum, so it has the same characteristics as an [ISL](/background/satellite-links) — no atmospheric effects, but requires precise pointing between orbits 35,000 km apart.
+- **GEO → Ground** (relay downlink) — Ka-band RF (~26 GHz). Even systems that use laser for the inter-orbit leg switch to RF for the final hop to ground, because laser links through the atmosphere are blocked by clouds. Ka-band is reliable enough for continuous service.
+
+| System | Agency | LEO ↔ GEO link | GEO ↔ Ground link | Data rate | Status |
+|---|---|---|---|---|---|
+| **TDRSS** | NASA | S-band and Ka-band RF | S-band and Ka-band RF | ~300 Mbps | Operational since 1983, 9 satellites |
+| **EDRS** | ESA / Airbus | Optical laser (1064 nm) | Ka-band RF | 1.8 Gbps | Operational since 2016, 40 TB/day capacity |
+| **LCRD** | NASA | Optical laser | Optical laser | 1.2 Gbps | Demonstration since 2021, testing optical ground links |
 
 A GEO relay adds ~250 ms round-trip latency (LEO → GEO → ground → GEO → LEO) but eliminates the ground contact gap. This creates two communication planes:
 
 - **Control plane** — through GEO relay: commands, status, workflow uploads. Low bandwidth, near-continuous.
 - **Data plane** — through ISL mesh and direct ground passes: sensor data, file transfers, results. High bandwidth, intermittent.
 
-The downlink wall — the fundamental mismatch between data generation rate and downlink capacity — is not solved by a GEO relay. Bulk data still needs direct passes or ISL routing.
+The downlink wall — the fundamental mismatch between data generation rate and downlink capacity — is not solved by a GEO relay. Even EDRS at 1.8 Gbps cannot match the 1–2 TB/day that an Earth observation satellite generates. Bulk data still needs onboard processing and selective downlink.
