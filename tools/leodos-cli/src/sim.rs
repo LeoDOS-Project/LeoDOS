@@ -29,26 +29,26 @@ pub async fn start(orbits: u8, sats: u8) -> Result<()> {
     ];
 
     make("constellation-build", &envs)?;
-    make("constellation-gen", &envs)?;
 
     let status = Command::new("docker")
         .args([
-            "compose",
-            "-f",
-            "docker-compose.constellation.yml",
-            "up",
-            "-d",
+            "run", "-d",
+            "--name", "leodos-constellation",
+            "-e", &format!("MAX_ORB={orbits}"),
+            "-e", &format!("MAX_SAT={sats}"),
+            "-p", "1234:1234/udp",
+            "-p", "1235:1235/udp",
+            "--sysctl", "fs.mqueue.msg_max=1000",
+            "leodos-sat:latest",
         ])
-        .env("MAX_ORB", orbits.to_string())
-        .env("MAX_SAT", sats.to_string())
         .status()
         .context("Failed to start constellation")?;
 
     if !status.success() {
-        anyhow::bail!("docker compose up failed");
+        anyhow::bail!("docker run failed");
     }
 
-    println!("Constellation running.");
+    println!("Constellation running ({total} satellites in one container).");
     Ok(())
 }
 
@@ -56,35 +56,25 @@ pub async fn stop() -> Result<()> {
     println!("Stopping simulation...");
 
     let status = Command::new("docker")
-        .args([
-            "compose",
-            "-f",
-            "docker-compose.constellation.yml",
-            "down",
-        ])
+        .args(["stop", "leodos-constellation"])
         .status()
         .context("Failed to stop constellation")?;
 
     if !status.success() {
-        anyhow::bail!("docker compose down failed");
+        anyhow::bail!("docker stop failed");
     }
+
+    let _ = Command::new("docker")
+        .args(["rm", "leodos-constellation"])
+        .status();
 
     println!("Simulation stopped.");
     Ok(())
 }
 
-pub async fn shell(sat: &str) -> Result<()> {
-    let parts: Vec<&str> = sat.split('.').collect();
-    if parts.len() != 2 {
-        anyhow::bail!(
-            "Invalid satellite address. Use 'orbit.sat' format."
-        );
-    }
-    let orb = parts[0];
-    let container = format!("orb-{orb}");
-
+pub async fn shell(_sat: &str) -> Result<()> {
     let status = Command::new("docker")
-        .args(["exec", "-it", &container, "/bin/bash"])
+        .args(["exec", "-it", "leodos-constellation", "/bin/bash"])
         .status()
         .context("Failed to open shell")?;
 

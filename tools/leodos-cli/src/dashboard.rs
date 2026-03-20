@@ -730,55 +730,47 @@ fn spawn_action(cmd: String, state: Arc<Mutex<AppState>>) {
                     ("MAX_ORB", orbits.to_string()),
                     ("MAX_SAT", sats.to_string()),
                 ];
+                let cmd = format!(
+                    "make constellation-build && docker run -d --name leodos-constellation \
+                     -e MAX_ORB={orbits} -e MAX_SAT={sats} \
+                     -p 1234:1234/udp -p 1235:1235/udp \
+                     --sysctl fs.mqueue.msg_max=1000 \
+                     leodos-sat:latest"
+                );
                 let res = run_shell_env_streamed(
-                    "make constellation-build && make constellation-gen && docker compose -f docker-compose.constellation.yml up -d",
+                    &cmd,
                     &envs,
                     Some(state.clone()),
                 ).await;
                 if res.is_ok() {
-                    // Wait for cFS to initialize, then enable TO_LAB on all orbits
                     let st = state.clone();
                     tokio::spawn(async move {
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        let (orbits, _sats) = {
-                            let s = st.lock().unwrap();
-                            (s.orbits, s.sats)
-                        };
-                        for orb in 0..orbits {
-                            let host = format!("172.20.{orb}.10");
-                            let mut ip_payload = [0u8; 16];
-                            let ip_str = b"172.20.0.1";
-                            ip_payload[..ip_str.len()].copy_from_slice(ip_str);
-                            let _ = crate::tc::send(&host, 1234, 0x1880, 6, &ip_payload, false).await;
-                            if let Ok(mut s) = st.lock() {
-                                s.action_log.push_back(format!("  TO_LAB enabled on orb-{orb}"));
-                            }
+                        let host = "127.0.0.1".to_string();
+                        let mut ip_payload = [0u8; 16];
+                        let ip_str = b"host.docker.internal";
+                        let len = ip_str.len().min(15);
+                        ip_payload[..len].copy_from_slice(&ip_str[..len]);
+                        let _ = crate::tc::send(&host, 1234, 0x1880, 6, &ip_payload, false).await;
+                        if let Ok(mut s) = st.lock() {
+                            s.action_log.push_back("  TO_LAB enabled".into());
                         }
                     });
                 }
                 res
             },
-            "sim-stop" => run_shell("docker compose -f docker-compose.constellation.yml down").await,
+            "sim-stop" => run_shell("docker stop leodos-constellation && docker rm leodos-constellation").await,
             "shell" => { return; } // Can't run interactive shell from TUI
             "datagen" => run_shell("cd tools/eosim && uv run eosim wildfire examples/california_wildfire.yaml -o output/ --fmt bin").await,
             "status" => run_shell("echo 'Status query sent'").await,
             "enable-tolab" => {
-                let st = state.clone();
-                let (orbits, _) = {
-                    let s = st.lock().unwrap();
-                    (s.orbits, s.sats)
-                };
-                for orb in 0..orbits {
-                    let host = format!("172.20.{orb}.10");
-                    let mut ip_payload = [0u8; 16];
-                    let ip_str = b"172.20.0.1";
-                    ip_payload[..ip_str.len()].copy_from_slice(ip_str);
-                    let _ = crate::tc::send(&host, 1234, 0x1880, 6, &ip_payload, false).await;
-                    if let Ok(mut s) = st.lock() {
-                        s.action_log.push_back(format!("  TO_LAB enabled on orb-{orb}"));
-                    }
-                }
-                Ok("TO_LAB enabled on all orbits".into())
+                let host = "127.0.0.1".to_string();
+                let mut ip_payload = [0u8; 16];
+                let ip_str = b"host.docker.internal";
+                let len = ip_str.len().min(15);
+                ip_payload[..len].copy_from_slice(&ip_str[..len]);
+                let _ = crate::tc::send(&host, 1234, 0x1880, 6, &ip_payload, false).await;
+                Ok("TO_LAB enabled".into())
             },
             cmd if cmd.starts_with("deploy ") => {
                 let app = &cmd[7..];

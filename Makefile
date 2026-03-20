@@ -192,14 +192,18 @@ MAX_SAT ?= 3
 constellation-build:
 	docker build -f tools/constellation/Dockerfile.sat -t leodos-sat:latest .
 
-constellation-gen:
-	MAX_ORB=$(MAX_ORB) MAX_SAT=$(MAX_SAT) bash tools/constellation/create_constellation.sh
-
-constellation-up: constellation-gen
-	docker compose -f docker-compose.constellation.yml up
+constellation-up:
+	docker run --rm -it \
+		--name leodos-constellation \
+		-e MAX_ORB=$(MAX_ORB) \
+		-e MAX_SAT=$(MAX_SAT) \
+		-p 1234:1234/udp \
+		-p 1235:1235/udp \
+		--sysctl fs.mqueue.msg_max=1000 \
+		leodos-sat:latest
 
 constellation-down:
-	docker compose -f docker-compose.constellation.yml down
+	docker stop leodos-constellation 2>/dev/null || true
 
 # NOS3 simulation targets
 NOS3_DC = docker compose -f docker-compose.nos3.yml

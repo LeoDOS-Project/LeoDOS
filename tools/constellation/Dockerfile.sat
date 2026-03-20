@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /cFS/build/exe/cpu1 /cFS/build/exe/cpu1
-COPY tools/constellation/start_orbit.sh /start_orbit.sh
-RUN chmod +x /start_orbit.sh
+COPY tools/constellation/start_constellation.sh /start_constellation.sh
+RUN chmod +x /start_constellation.sh
 
-ENTRYPOINT ["/start_orbit.sh"]
+ENTRYPOINT ["/start_constellation.sh"]

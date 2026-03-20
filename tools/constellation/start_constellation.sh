@@ -1,0 +1,34 @@
+#!/bin/bash
+set -e
+
+MAX_ORB=${MAX_ORB:-3}
+MAX_SAT=${MAX_SAT:-3}
+TOTAL=$(( MAX_ORB * MAX_SAT ))
+
+echo "Starting constellation: $MAX_ORB orbits x $MAX_SAT sats = $TOTAL satellites"
+
+pids=()
+for orb in $(seq 0 $((MAX_ORB - 1))); do
+    for sat in $(seq 1 "$MAX_SAT"); do
+        SCID=$(( (orb + 1) * 1000 + sat ))
+        CPUID=$(( orb * MAX_SAT + sat ))
+        echo "Launching SCID=$SCID CPUID=$CPUID (orbit=$orb, sat=$sat)"
+        cd /cFS/build/exe/cpu1
+        ./core-cpu1 --scid "$SCID" --cpuid "$CPUID" &
+        pids+=($!)
+    done
+done
+
+echo "All $TOTAL satellites launched."
+
+cleanup() {
+    echo "Shutting down constellation..."
+    for pid in "${pids[@]}"; do
+        kill "$pid" 2>/dev/null || true
+    done
+    wait
+}
+
+trap cleanup SIGTERM SIGINT
+
+wait
