@@ -18,22 +18,51 @@ This forms a 2D torus with four neighbors per satellite:
 
 ## Packet Structure
 
-| Field | Size |
-|-------|------|
-| Primary Header (SPP) | 6 bytes |
-| Secondary Header (cFE) | 2 bytes |
-| Target Address | 2 bytes |
-| Message ID | 1 byte |
-| Action Code | 1 byte |
-| Payload | variable |
+export const Packet = ({title, children}) => (
+  <div style={{border: '2px solid #333', borderRadius: 8, padding: 10, maxWidth: 380}}>
+    <div style={{fontSize: '0.8em', fontWeight: 'bold', marginBottom: 6}}>{title}</div>
+    <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>{children}</div>
+  </div>
+);
 
-### Header Fields
+export const Hdr = ({title, color, border, children}) => (
+  <div style={{border: `2px solid ${border || '#888'}`, borderRadius: 6, background: color || '#fafafa', padding: 6}}>
+    <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 4, color: border || '#555'}}>{title}</div>
+    <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>{children}</div>
+  </div>
+);
 
-| Field        | Size    | Description                                    |
-|--------------|---------|------------------------------------------------|
-| target       | 2 bytes | Destination address (ground, satellite, or service area) |
-| message_id   | 1 byte  | Request/response correlation ID (0 for async)  |
-| action_code  | 1 byte  | Application-specific action identifier         |
+export const F = ({name, bits, desc, highlight}) => (
+  <div style={{display: 'flex', alignItems: 'center', gap: 6, background: highlight || '#fff', border: '1px solid #ddd', borderRadius: 3, padding: '2px 6px', fontSize: '0.7em'}}>
+    <span style={{fontWeight: 'bold', minWidth: 55}}>{name}</span>
+    <span style={{color: '#888', minWidth: 35}}>{bits}</span>
+    {desc && <span style={{color: '#666'}}>{desc}</span>}
+  </div>
+);
+
+export const Pay = ({label, color}) => (
+  <div style={{border: `2px dashed ${color || '#888'}`, borderRadius: 6, padding: '8px 6px', textAlign: 'center', fontSize: '0.7em', fontWeight: 'bold', color: color || '#888'}}>{label}</div>
+);
+
+<Packet title="ISL Routing Packet (10 + N bytes)">
+  <Hdr title="SPP Primary Header (6 bytes)" color="#eef3ff" border="#6688bb">
+    <F name="Version" bits="3 bits" desc="Packet version (0)" />
+    <F name="Type" bits="1 bit" desc="1 = Telecommand" />
+    <F name="Sec Hdr Flag" bits="1 bit" desc="1 = Present" />
+    <F name="APID" bits="11 bits" desc="Destination application (0–2047)" />
+    <F name="Seq Flags" bits="2 bits" desc="Segmentation control" />
+    <F name="Seq Count" bits="14 bits" desc="Sequence number (0–16383)" />
+    <F name="Data Length" bits="16 bits" desc="Remaining length − 1" />
+  </Hdr>
+  <Hdr title="cFE Secondary Header (2 bytes)" color="#f5f0ff" border="#8866bb">
+    <F name="Function Code" bits="8 bits" desc="Command code" />
+    <F name="Checksum" bits="8 bits" desc="XOR of entire packet" />
+  </Hdr>
+  <Hdr title="ISL Routing Header (2 bytes)" color="#fff0f0" border="#bb6666">
+    <F name="Target Address" bits="16 bits" desc="Destination (orb, sat) or ground" />
+  </Hdr>
+  <Pay label="Application Payload (variable)" color="#88aa88" />
+</Packet>
 
 ## Address Encoding
 

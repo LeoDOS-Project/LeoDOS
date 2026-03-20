@@ -1,0 +1,154 @@
+# Gossip
+
+The ISL Gossip Protocol provides broadcast message dissemination across a
+satellite constellation. It floods messages to all satellites within a
+specified service area while preventing duplicate delivery.
+
+## Use Cases
+
+- Distributing configuration updates
+- Propagating consensus/blockchain data
+- Broadcasting telemetry to ground-visible satellites
+
+## Packet Structure
+
+export const Packet = ({title, children}) => (
+  <div style={{border: '2px solid #333', borderRadius: 8, padding: 10, maxWidth: 380}}>
+    <div style={{fontSize: '0.8em', fontWeight: 'bold', marginBottom: 6}}>{title}</div>
+    <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>{children}</div>
+  </div>
+);
+
+export const Hdr = ({title, color, border, children}) => (
+  <div style={{border: `2px solid ${border || '#888'}`, borderRadius: 6, background: color || '#fafafa', padding: 6}}>
+    <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 4, color: border || '#555'}}>{title}</div>
+    <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>{children}</div>
+  </div>
+);
+
+export const F = ({name, bits, desc}) => (
+  <div style={{display: 'flex', alignItems: 'center', gap: 6, background: '#fff', border: '1px solid #ddd', borderRadius: 3, padding: '2px 6px', fontSize: '0.7em'}}>
+    <span style={{fontWeight: 'bold', minWidth: 60}}>{name}</span>
+    <span style={{color: '#888', minWidth: 35}}>{bits}</span>
+    {desc && <span style={{color: '#666'}}>{desc}</span>}
+  </div>
+);
+
+export const Pay = ({label, color}) => (
+  <div style={{border: `2px dashed ${color || '#888'}`, borderRadius: 6, padding: '8px 6px', textAlign: 'center', fontSize: '0.7em', fontWeight: 'bold', color: color || '#888'}}>{label}</div>
+);
+
+<Packet title="Gossip Packet (18 + N bytes)">
+  <Hdr title="SPP Primary Header (6 bytes)" color="#eef3ff" border="#6688bb">
+    <F name="Version" bits="3 bits" desc="Packet version (0)" />
+    <F name="Type" bits="1 bit" desc="1 = Telecommand" />
+    <F name="Sec Hdr Flag" bits="1 bit" desc="1 = Present" />
+    <F name="APID" bits="11 bits" desc="Destination application" />
+    <F name="Seq Flags" bits="2 bits" desc="Segmentation control" />
+    <F name="Seq Count" bits="14 bits" desc="Sequence number" />
+    <F name="Data Length" bits="16 bits" desc="Remaining length − 1" />
+  </Hdr>
+  <Hdr title="cFE Secondary Header (2 bytes)" color="#f5f0ff" border="#8866bb">
+    <F name="Function Code" bits="8 bits" desc="Command code" />
+    <F name="Checksum" bits="8 bits" desc="XOR of entire packet" />
+  </Hdr>
+  <Hdr title="Gossip Header (10 bytes)" color="#fff8ee" border="#bba050">
+    <F name="Origin" bits="16 bits" desc="Node that created this gossip" />
+    <F name="Predecessor" bits="16 bits" desc="Immediate sender (to avoid echo)" />
+    <F name="Area Min" bits="8 bits" desc="Min satellite index in target area" />
+    <F name="Area Max" bits="8 bits" desc="Max satellite index in target area" />
+    <F name="Epoch" bits="16 bits" desc="Sequence number for duplicate detection" />
+  </Hdr>
+  <Pay label="Application Payload (variable)" color="#88aa88" />
+</Packet>
+
+## Address Fields
+
+Two addresses serve different purposes:
+
+- **originator**: The node that created the gossip. Stays constant as the
+  packet propagates. Used for application-level identification.
+
+- **from_address**: The immediate sender. Updated at each hop. Used to avoid
+  echoing the packet back to the sender.
+
+## Service Area
+
+The service area defines which satellites should receive and process the gossip.
+It's specified as a range of satellite IDs within each orbit:
+
+```
+service_area_min = 3
+service_area_max = 7
+
+Satellites 3, 4, 5, 6, 7 in each orbit will process the gossip.
+```
+
+### Wraparound
+
+When `service_area_min > service_area_max`, the range wraps around:
+
+```
+service_area_min = 8
+service_area_max = 2
+constellation_size = 10
+
+Satellites 8, 9, 0, 1, 2 are in the service area.
+```
+
+This handles the case where the ground-visible region crosses the orbit boundary.
+
+## Duplicate Detection
+
+Each gossip has a unique `epoch` identifier. The receiver maintains a cache of
+recently seen epochs:
+
+The cache uses a circular buffer - old entries are overwritten when the cache
+is full.
+
+## Forwarding Logic
+
+When a gossip packet arrives:
+
+1. Check if epoch is in the duplicate cache
+2. If duplicate, drop the packet
+3. Otherwise:
+   - Add epoch to cache
+   - Deliver payload to application
+   - Forward to eligible neighbors
+
+### Neighbor Eligibility
+
+A neighbor receives the forwarded gossip if:
+1. It's not the sender (`to_address != from_address`)
+2. It's within the service area (`satellite_id` in `[min, max]`)
+
+## Gossip Handler
+
+The gossip handler processes incoming packets by checking the epoch cache, delivering new messages to the application callback, and forwarding to eligible neighbors.
+
+### Processing Flow
+
+```
+recv gossip packet
+    |
+    v
+is_duplicate(epoch)?
+    |
+    +-- yes --> drop
+    |
+    +-- no --> app_logic(packet)
+               |
+               v
+           forward_gossip()
+               |
+               v
+           send to eligible neighbors
+```
+
+## Configuration
+
+The gossip handler requires:
+- Own address (orbit_id, satellite_id)
+- Torus topology (for neighbor calculation)
+- Application callback for payload processing
