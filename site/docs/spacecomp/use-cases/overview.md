@@ -3,10 +3,16 @@
 Downlink bandwidth is the bottleneck in Earth observation: satellites
 generate terabytes of raw imagery per day but can only transmit a
 fraction during brief ground passes. These use cases show how
-onboard processing reduces gigabytes of sensor data to kilobyte-sized
-alert packets, extending the SpaceCoMP Collect-Map-Reduce model from
-one-shot queries to continuous, orbit-recurring workflows with
-autonomous change detection and alerting.
+onboard batch processing reduces gigabytes of sensor data to
+kilobyte-sized alert packets using the SpaceCoMP
+[Collect-Map-Reduce](/spacecomp/roles) model.
+
+Each use case is a single job: the ground submits a request, collectors
+acquire data on one pass, mappers process it, the reducer aggregates,
+and the result is downlinked. For continuous monitoring that spans
+multiple passes and fuses data over time, see the
+[streaming use cases](/research/data-stream-processing#use-cases) in
+the Research section.
 
 **Use cases:**
 
