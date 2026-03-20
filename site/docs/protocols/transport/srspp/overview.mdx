@@ -1,0 +1,56 @@
+# SRSPP
+
+SRSPP is a lightweight reliable transport protocol built on top of CCSDS Space Packets.
+It provides reliable, ordered delivery of messages over unreliable links with minimal
+overhead.
+
+## Design Goals
+
+- **Minimal overhead**: Reuses existing SPP header fields (sequence count, sequence flags)
+- **No congestion control**: Designed for point-to-point links with predictable latency
+- **Simple implementation**: Suitable for resource-constrained flight software
+- **Efficient ACKs**: Combined cumulative and selective acknowledgment
+- **No handshake**: Data is sent immediately without connection establishment
+
+### Why No Handshake?
+
+SRSPP has no connection setup or liveness check. The sender can transmit data
+immediately without waiting for a round-trip confirmation that the receiver exists.
+
+This design choice is motivated by space link characteristics:
+- **High latency**: Handshakes add significant delay on links with multi-second round-trips. In the worst case, a satellite may pass out of range before a handshake completes.
+- **Known endpoints**: Mission configurations define who communicates with whom
+- **Scheduled contacts**: Ground stations know when satellites are reachable
+
+The tradeoff is that sending to an unreachable receiver wastes time until packets
+hit max retransmits. The application receives packet loss notifications and can
+decide when to abort. This optimizes for the common case (receiver is reachable)
+rather than the failure case.
+
+## How It Works
+
+SRSPP is connectionless — there is no handshake. A sender transmits immediately; a receiver accepts data from any sender automatically.
+
+The receiver maintains a separate stream for each sender it hears from (identified by the sender's source address). When a packet arrives from a new sender, the receiver creates a stream with its own sequence tracking, reorder buffer, and ACK state. Up to a configurable *maximum number of streams* can be active simultaneously.
+
+Within each stream, the sender breaks a message into packets, assigns each a sequence number, and transmits them. It keeps a copy of each packet until the receiver acknowledges it. If an acknowledgment doesn't arrive within a timeout, the sender retransmits.
+
+The receiver collects packets, reorders them by sequence number, and reassembles the original message. It sends acknowledgments back to the sender: a cumulative ACK says "I have everything up to packet N," and a selective bitmap says "I also have these specific packets beyond N." This tells the sender exactly which packets are missing so it only retransmits those.
+
+A sliding window limits how many packets can be in flight at once, preventing the sender from overwhelming the receiver or the network.
+
+When things go wrong:
+
+- **Packet lost** — the sender's retransmission timer expires. It resends the packet and restarts the timer. If the packet is lost again, it retries up to the *maximum retransmit count* (default 3). After that, the packet is declared lost and the application is notified.
+- **Receiver unreachable** — the *retransmission timeout* (RTO) determines how long the sender waits. A fixed RTO works for stable ISL links. An *orbit-aware* RTO adapts to contact schedules — if the receiver is behind the horizon, the sender waits until the next contact window instead of burning through retransmit attempts during a predictable gap.
+- **Out-of-order arrival** — the receiver buffers out-of-order packets and reports them in the selective ACK bitmap. The sender does not retransmit these. Only the gap (the missing packet) is retransmitted.
+- **Message too large** — messages exceeding the MTU are split into segments (FIRST / CONTINUATION / LAST). The receiver reassembles them in sequence order. If any segment is lost, only that segment is retransmitted — not the entire message.
+- **Stream complete** — the sender transmits an EOS (End of Stream) packet with its own sequence number. The receiver acknowledges it like a data packet. Once the EOS is ACKed, both sides know the transfer is complete and can release resources.
+
+## Sub-pages
+
+- [Packet Structure](packet-structure) — header layout, field descriptions, sliding window
+- [Reliability](reliability) — sequence numbers, acknowledgments, retransmission
+- [Configuration](configuration) — parameters, RTO policies, compatibility
+- [Operation](operation) — sender and receiver state machines, error handling
+- [Protocol Sequences](sequences) — annotated message sequence diagrams

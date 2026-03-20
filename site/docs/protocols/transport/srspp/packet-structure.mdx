@@ -1,0 +1,164 @@
+# Packet Structure
+
+SRSPP builds on top of CCSDS Space Packets (SPP), reusing fields from the SPP primary header rather than adding its own:
+
+{/* Reusable packet diagram components — 3 nesting levels */}
+
+export const Packet = ({title, children}) => (
+  <div style={{
+    border: '2px solid #333', borderRadius: 8, padding: 10,
+    margin: '16px 0', maxWidth: 400,
+  }}>
+    <div style={{fontSize: '0.8em', fontWeight: 'bold', marginBottom: 6}}>{title}</div>
+    <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+      {children}
+    </div>
+  </div>
+);
+
+export const Header = ({title, color, border, children}) => (
+  <div style={{
+    border: `2px solid ${border || '#888'}`, borderRadius: 6,
+    background: color || '#fafafa', padding: 6,
+  }}>
+    <div style={{fontSize: '0.7em', fontWeight: 'bold', marginBottom: 4, color: border || '#555'}}>{title}</div>
+    <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
+      {children}
+    </div>
+  </div>
+);
+
+export const Field = ({name, bits, desc, highlight}) => (
+  <div style={{
+    display: 'flex', alignItems: 'center', gap: 6,
+    background: highlight || '#fff',
+    border: '1px solid #ddd', borderRadius: 3,
+    padding: '2px 6px', fontSize: '0.7em',
+  }}>
+    <span style={{fontWeight: 'bold', minWidth: 50}}>{name}</span>
+    <span style={{color: '#888', minWidth: 35}}>{bits}</span>
+    {desc && <span style={{color: '#666'}}>{desc}</span>}
+  </div>
+);
+
+export const Payload = ({label, color}) => (
+  <div style={{
+    border: `2px dashed ${color || '#888'}`, borderRadius: 6,
+    padding: '8px 6px', textAlign: 'center',
+    fontSize: '0.7em', fontWeight: 'bold', color: color || '#888',
+  }}>{label}</div>
+);
+
+export const Pkt = ({seq, color, border, label}) => (
+  <div style={{
+    width: 38, height: 38,
+    borderRadius: 4,
+    background: color || '#e0e0e0',
+    border: border || '1px solid #ccc',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '0.7em', fontWeight: 'bold', color: '#333',
+    flexDirection: 'column', lineHeight: 1.2,
+  }}>
+    <div>{seq}</div>
+    {label && <div style={{fontSize: '0.75em', fontWeight: 'normal', color: '#555'}}>{label}</div>}
+  </div>
+);
+
+## Packet Layout
+
+All SRSPP packets share the same header stack. The payload varies by type.
+
+<Packet title="SRSPP Packet (13 bytes + payload)">
+  <Header title="SPP Primary Header (6 bytes)" color="#eef3ff" border="#6688bb">
+    <Field name="Version" bits="3 bits" desc="Packet version (0)" />
+    <Field name="Type" bits="1 bit" desc="1 = Telecommand" />
+    <Field name="Sec Hdr Flag" bits="1 bit" desc="1 = Present" />
+    <Field name="APID" bits="11 bits" desc="Destination (0–2047)" highlight="#dce8f8" />
+    <Field name="Seq Flags" bits="2 bits" desc="FIRST / CONT / LAST / UNSEG" highlight="#ddf0dd" />
+    <Field name="Seq Count" bits="14 bits" desc="Sequence (0–16383)" highlight="#ddf0dd" />
+    <Field name="Data Length" bits="16 bits" desc="Remaining length − 1" />
+  </Header>
+  <Header title="cFE Secondary Header (2 bytes)" color="#f5f0ff" border="#8866bb">
+    <Field name="Function Code" bits="8 bits" desc="Command code" />
+    <Field name="Checksum" bits="8 bits" desc="XOR of entire packet" />
+  </Header>
+  <Header title="ISL Routing Header (2 bytes)" color="#fff0f0" border="#bb6666">
+    <Field name="Target Address" bits="16 bits" desc="Destination (orb, sat)" />
+  </Header>
+  <Header title="SRSPP Header (3 bytes)" color="#fff8ee" border="#bba050">
+    <Field name="Source Address" bits="16 bits" desc="Sender (orb, sat)" />
+    <Field name="Version" bits="2 bits" desc="Protocol version (0)" />
+    <Field name="Packet Type" bits="2 bits" desc="0 = DATA, 1 = ACK, 2 = EOS" />
+    <Field name="Spare" bits="4 bits" desc="Reserved (0)" />
+  </Header>
+  <Payload label="Payload (varies by type — see below)" color="#88aa88" />
+</Packet>
+
+## Payload by Type
+
+<div style={{display: 'flex', gap: 12, flexWrap: 'wrap'}}>
+<Packet title="DATA">
+  <Payload label="Application data (variable length)" color="#88aa88" />
+</Packet>
+<Packet title="ACK">
+  <Header title="ACK Payload (4 bytes)" color="#f0fff0" border="#88aa88">
+    <Field name="Cumulative ACK" bits="16 bits" desc="Highest in-order seq received" />
+    <Field name="Selective Bitmap" bits="16 bits" desc="Out-of-order packet bits" />
+  </Header>
+</Packet>
+<Packet title="EOS">
+  <Payload label="No payload (header only)" color="#ccc" />
+</Packet>
+</div>
+
+## Field Descriptions
+
+The first three headers are shared with all ISL packets — see [SPP](/protocols/datalink/packet/spp), [cFE headers](/protocols/datalink/cfe-headers/overview), and [ISL routing](/protocols/network/routing). SRSPP adds:
+
+- **Source Address** — the sending satellite's grid position (orbital plane, satellite index) or ground station. Together with the APID from the SPP header, this forms the stream key that identifies a unique sender-receiver pair.
+- **Version** — 2 bits identifying the protocol version (currently 0). A receiver that sees an unrecognized version discards the packet silently.
+- **Packet Type** — 2 bits: `0` = DATA (carries application payload), `1` = ACK (carries acknowledgment), `2` = EOS (end of stream, no payload). The remaining 4 bits of the byte are reserved.
+- **Cumulative ACK** (ACK only) — the highest sequence number received in-order. All packets up to and including this number are acknowledged. The sender can free them.
+- **Selective ACK Bitmap** (ACK only) — a 16-bit bitmap indicating which out-of-order packets have been received. Bit N indicates receipt of packet `cumulative_ack + 1 + N`. The sender knows not to retransmit these.
+
+## Sliding Window
+
+The sender maintains a window of packets it is allowed to have in flight simultaneously. The window size (WIN) limits how many unacknowledged packets can be outstanding.
+
+<div style={{margin: '12px 0'}}>
+<div style={{fontSize: '0.8em', fontWeight: 'bold', marginBottom: 4}}>Sender's view (WIN = 4):</div>
+<div style={{display: 'flex', gap: 2, alignItems: 'center'}}>
+  <Pkt seq="0" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
+  <Pkt seq="1" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
+  <Pkt seq="2" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
+  <div style={{width: 2, height: 44, background: '#cc4444', margin: '0 3px', flexShrink: 0}} />
+  <Pkt seq="3" color="#c8daf8" border="2px solid #6688bb" label="sent" />
+  <Pkt seq="4" color="#c8daf8" border="2px solid #6688bb" label="sent" />
+  <Pkt seq="5" color="#c8daf8" border="2px solid #6688bb" label="sent" />
+  <Pkt seq="6" color="#c8daf8" border="2px solid #6688bb" label="sent" />
+  <div style={{width: 2, height: 44, background: '#cc4444', margin: '0 3px', flexShrink: 0}} />
+  <Pkt seq="7" color="#f0f0f0" border="1px solid #ccc" label="" />
+  <Pkt seq="8" color="#f0f0f0" border="1px solid #ccc" label="" />
+</div>
+<div style={{display: 'flex', fontSize: '0.7em', marginTop: 4, color: '#666', gap: 4}}>
+  <span>ACKed &amp; freed</span>
+  <span style={{color: '#cc4444', fontWeight: 'bold'}}>│</span>
+  <span>Window: 4 packets in flight</span>
+  <span style={{color: '#cc4444', fontWeight: 'bold'}}>│</span>
+  <span>Cannot send yet (window full)</span>
+</div>
+</div>
+
+<div style={{display: 'flex', gap: 16, fontSize: '0.8em', marginBottom: 12, flexWrap: 'wrap'}}>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '1px solid #88aa88', borderRadius: 3}} /> ACKed</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#c8daf8', border: '1px solid #6688bb', borderRadius: 3}} /> In flight (awaiting ACK)</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f0f0f0', border: '1px solid #ccc', borderRadius: 3}} /> Blocked (window full)</div>
+</div>
+
+All 4 window slots are occupied by packets 3–6, all transmitted and awaiting ACKs. Packets 7–8 cannot be sent until the window slides forward. When the receiver sends an ACK with cumulative=4, packets 3–4 are freed, the window slides to cover 5–8, and packets 7–8 can now be transmitted.
+
+If packet 4 is lost but 5 and 6 arrive, the receiver sets bits in the selective ACK bitmap for 5 and 6. The sender knows not to retransmit those — it only retries packet 4 when its timer expires.
+
+## Stream Identity
+
+Each SRSPP stream is identified by the pair `(source_address, destination_apid)` — the source address from the SRSPP header and the APID from the [SPP](/protocols/datalink/packet/spp) header. Only one sender per spacecraft is supported for each destination APID.

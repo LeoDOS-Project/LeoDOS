@@ -83,7 +83,18 @@ const sidebars: SidebarsConfig = {
           label: 'Transport',
           link: { type: 'doc', id: 'protocols/transport/overview' },
           items: [
-            'protocols/transport/srspp',
+            {
+              type: 'category',
+              label: 'SRSPP',
+              link: { type: 'doc', id: 'protocols/transport/srspp/overview' },
+              items: [
+                'protocols/transport/srspp/packet-structure',
+                'protocols/transport/srspp/reliability',
+                'protocols/transport/srspp/configuration',
+                'protocols/transport/srspp/operation',
+                'protocols/transport/srspp/sequences',
+              ],
+            },
             'protocols/transport/cfdp',
             'protocols/transport/bp',
           ],
