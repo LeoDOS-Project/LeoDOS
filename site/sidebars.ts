@@ -91,6 +91,7 @@ const sidebars: SidebarsConfig = {
                 'protocols/transport/srspp/packet-structure',
                 'protocols/transport/srspp/reliability',
                 'protocols/transport/srspp/configuration',
+                'protocols/transport/srspp/dtn',
                 'protocols/transport/srspp/operation',
                 'protocols/transport/srspp/sequences',
               ],
