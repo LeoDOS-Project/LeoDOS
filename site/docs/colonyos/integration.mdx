@@ -91,7 +91,7 @@ For time-critical cases, a satellite could coordinate directly in orbit — plan
 
 #### GEO Relay
 
-A [GEO relay satellite](/background/links#cross-orbit-relay) (such as TDRSS or EDRS) provides near-continuous low-bandwidth connectivity between LEO satellites and the ground, eliminating the ground contact gap. This makes the ground coordinator more responsive — job uploads and status updates no longer wait for a direct ground pass.
+A [GEO relay satellite](/background/ground-links#cross-orbit-relay) (such as TDRSS or EDRS) provides near-continuous low-bandwidth connectivity between LEO satellites and the ground, eliminating the ground contact gap. This makes the ground coordinator more responsive — job uploads and status updates no longer wait for a direct ground pass.
 
 The ground coordinator design still applies with a GEO relay. Satellite orbits are deterministic — the ground knows exactly where every satellite is and when it will be available. There is no need for satellites to continuously check in with a server to advertise their availability. The ground coordinator computes the plan using orbital predictions, uploads it when a link is available (faster with a GEO relay), and satellites execute autonomously. This requires no changes to ColonyOS.
 
