@@ -6,8 +6,8 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Background',
+      link: { type: 'doc', id: 'background/overview' },
       items: [
-        'background/overview',
         'background/orbits',
         'background/constellations',
         'background/links',
@@ -17,15 +17,14 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Building and Running',
-      items: [
-        'building/overview',
-      ],
+      link: { type: 'doc', id: 'building/overview' },
+      items: [],
     },
     {
       type: 'category',
       label: 'SpaceCoMP',
+      link: { type: 'doc', id: 'spacecomp/overview' },
       items: [
-        'spacecomp/overview',
         'spacecomp/constellation',
         'spacecomp/roles',
         'spacecomp/job-lifecycle',
@@ -41,8 +40,8 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'Use Cases',
+          link: { type: 'doc', id: 'spacecomp/use-cases/overview' },
           items: [
-            'spacecomp/use-cases/overview',
             'spacecomp/use-cases/tailings-dam',
             'spacecomp/use-cases/wildfire',
             'spacecomp/use-cases/deforestation',
@@ -57,13 +56,13 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'LEO Communication Protocols',
+      link: { type: 'doc', id: 'protocols/overview' },
       items: [
-        'protocols/overview',
         {
           type: 'category',
           label: 'Composition',
+          link: { type: 'doc', id: 'protocols/composition/overview' },
           items: [
-            'protocols/composition/overview',
             'protocols/composition/reliability',
             'protocols/composition/security',
             'protocols/composition/time-codes',
@@ -72,8 +71,8 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'Transport',
+          link: { type: 'doc', id: 'protocols/transport/overview' },
           items: [
-            'protocols/transport/overview',
             'protocols/transport/srspp',
             'protocols/transport/cfdp',
             'protocols/transport/bp',
@@ -82,8 +81,8 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'Network',
+          link: { type: 'doc', id: 'protocols/network/overview' },
           items: [
-            'protocols/network/overview',
             'protocols/network/routing',
             'protocols/network/point-to-point',
             'protocols/network/gossip',
@@ -92,13 +91,13 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'Data Link',
+          link: { type: 'doc', id: 'protocols/datalink/overview' },
           items: [
-            'protocols/datalink/overview',
             {
               type: 'category',
               label: 'cFE Headers',
+              link: { type: 'doc', id: 'protocols/datalink/cfe-headers/overview' },
               items: [
-                'protocols/datalink/cfe-headers/overview',
                 'protocols/datalink/cfe-headers/tm',
                 'protocols/datalink/cfe-headers/tc',
               ],
@@ -106,16 +105,16 @@ const sidebars: SidebarsConfig = {
             {
               type: 'category',
               label: 'Packet Protocol',
+              link: { type: 'doc', id: 'protocols/datalink/packet/overview' },
               items: [
-                'protocols/datalink/packet/overview',
                 'protocols/datalink/packet/spp',
               ],
             },
             {
               type: 'category',
               label: 'Transfer Frame',
+              link: { type: 'doc', id: 'protocols/datalink/transfer-frame/overview' },
               items: [
-                'protocols/datalink/transfer-frame/overview',
                 'protocols/datalink/transfer-frame/tm',
                 'protocols/datalink/transfer-frame/tc',
                 'protocols/datalink/transfer-frame/aos',
@@ -126,16 +125,16 @@ const sidebars: SidebarsConfig = {
             {
               type: 'category',
               label: 'Security',
+              link: { type: 'doc', id: 'protocols/datalink/security/overview' },
               items: [
-                'protocols/datalink/security/overview',
                 'protocols/datalink/security/sdls',
               ],
             },
             {
               type: 'category',
               label: 'Reliability',
+              link: { type: 'doc', id: 'protocols/datalink/reliability/overview' },
               items: [
-                'protocols/datalink/reliability/overview',
                 'protocols/datalink/reliability/cop1',
               ],
             },
@@ -144,21 +143,21 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'Coding',
+          link: { type: 'doc', id: 'protocols/coding/overview' },
           items: [
-            'protocols/coding/overview',
             {
               type: 'category',
               label: 'Randomization',
+              link: { type: 'doc', id: 'protocols/coding/randomization/overview' },
               items: [
-                'protocols/coding/randomization/overview',
                 'protocols/coding/randomization/pseudo-random',
               ],
             },
             {
               type: 'category',
               label: 'Forward Error Correction',
+              link: { type: 'doc', id: 'protocols/coding/fec/overview' },
               items: [
-                'protocols/coding/fec/overview',
                 'protocols/coding/fec/reed-solomon',
                 'protocols/coding/fec/ldpc',
                 'protocols/coding/fec/convolutional',
@@ -167,8 +166,8 @@ const sidebars: SidebarsConfig = {
             {
               type: 'category',
               label: 'Framing',
+              link: { type: 'doc', id: 'protocols/coding/framing/overview' },
               items: [
-                'protocols/coding/framing/overview',
                 'protocols/coding/framing/asm-cadu',
                 'protocols/coding/framing/cltu',
               ],
@@ -176,8 +175,8 @@ const sidebars: SidebarsConfig = {
             {
               type: 'category',
               label: 'Data Compression',
+              link: { type: 'doc', id: 'protocols/coding/compression/overview' },
               items: [
-                'protocols/coding/compression/overview',
                 'protocols/coding/compression/rice',
                 'protocols/coding/compression/dwt',
                 'protocols/coding/compression/hyperspectral',
@@ -188,13 +187,13 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'Physical',
+          link: { type: 'doc', id: 'protocols/physical/overview' },
           items: [
-            'protocols/physical/overview',
             {
               type: 'category',
               label: 'Modulation',
+              link: { type: 'doc', id: 'protocols/physical/modulation/overview' },
               items: [
-                'protocols/physical/modulation/overview',
                 'protocols/physical/modulation/bpsk',
                 'protocols/physical/modulation/qpsk',
                 'protocols/physical/modulation/oqpsk',
@@ -205,8 +204,8 @@ const sidebars: SidebarsConfig = {
             {
               type: 'category',
               label: 'Hardware',
+              link: { type: 'doc', id: 'protocols/physical/hardware/overview' },
               items: [
-                'protocols/physical/hardware/overview',
                 'protocols/physical/hardware/uart',
                 'protocols/physical/hardware/spi',
                 'protocols/physical/hardware/i2c',
@@ -221,13 +220,13 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Core Flight System',
+      link: { type: 'doc', id: 'cfs/overview' },
       items: [
-        'cfs/overview',
         {
           type: 'category',
           label: 'Mission',
+          link: { type: 'doc', id: 'cfs/mission/overview' },
           items: [
-            'cfs/mission/overview',
             'cfs/mission/structure',
             'cfs/mission/deployment',
             'cfs/mission/scheduling',
@@ -242,8 +241,8 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'cFE',
+          link: { type: 'doc', id: 'cfs/cfe/overview' },
           items: [
-            'cfs/cfe/overview',
             'cfs/cfe/es',
             'cfs/cfe/sb',
             'cfs/cfe/evs',
@@ -258,8 +257,8 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Research',
+      link: { type: 'doc', id: 'research/overview' },
       items: [
-        'research/overview',
         'research/data-stream-processing',
         'research/security',
         'research/local-first',
@@ -268,8 +267,8 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Simulation',
+      link: { type: 'doc', id: 'simulation/overview' },
       items: [
-        'simulation/overview',
         'simulation/constellation',
         'simulation/orbital-mechanics',
         'simulation/sensors',
@@ -280,8 +279,8 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'ColonyOS',
+      link: { type: 'doc', id: 'colonyos/overview' },
       items: [
-        'colonyos/overview',
         'colonyos/integration',
       ],
     },
