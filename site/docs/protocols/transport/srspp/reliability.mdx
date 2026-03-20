@@ -1,0 +1,103 @@
+# Reliability Mechanism
+
+## Sequence Numbers
+
+SRSPP uses the 14-bit sequence count field from the SPP primary header for reliability.
+Sequence numbers wrap around at 16383 (0x3FFF).
+
+## Acknowledgments
+
+The receiver acknowledges received packets using a combined cumulative and selective
+ACK scheme:
+
+**Cumulative ACK**: The highest sequence number received in-order. All packets up to
+and including this number are acknowledged.
+
+**Selective ACK Bitmap**: A 16-bit bitmap indicating which out-of-order packets have
+been received. Bit N indicates receipt of packet (cumulative_ack + 1 + N).
+
+Example: the receiver has received packets 0, 1, 2, 5, and 7. Packets 3, 4, and 6 are missing.
+
+export const Sq = ({seq, color, border, label}) => (
+  <div style={{
+    width: 36, height: 36, borderRadius: 4,
+    background: color || '#f0f0f0',
+    border: border || '1px solid #ccc',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '0.7em', fontWeight: 'bold', flexDirection: 'column', lineHeight: 1.2,
+  }}>
+    <div>{seq}</div>
+    {label && <div style={{fontSize: '0.75em', fontWeight: 'normal', color: '#555'}}>{label}</div>}
+  </div>
+);
+
+<div style={{margin: '12px 0'}}>
+<div style={{fontSize: '0.8em', fontWeight: 'bold', marginBottom: 4}}>Receiver's state:</div>
+<div style={{display: 'flex', gap: 2, alignItems: 'center'}}>
+  <Sq seq="0" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
+  <Sq seq="1" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
+  <Sq seq="2" color="#d4e8d4" border="2px solid #88aa88" label="✓" />
+  <Sq seq="3" color="#f0d0d0" border="2px solid #cc6666" label="gap" />
+  <Sq seq="4" color="#f0d0d0" border="2px solid #cc6666" label="gap" />
+  <Sq seq="5" color="#c8daf8" border="2px solid #6688bb" label="✓" />
+  <Sq seq="6" color="#f0d0d0" border="2px solid #cc6666" label="gap" />
+  <Sq seq="7" color="#c8daf8" border="2px solid #6688bb" label="✓" />
+</div>
+<div style={{fontSize: '0.8em', marginTop: 8}}>
+<strong>ACK sent:</strong> Cumulative = 2, Bitmap = <code>0b00010100</code>
+</div>
+<div style={{display: 'flex', gap: 2, alignItems: 'center', marginTop: 4}}>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.65em', color: '#888'}}>bit 0</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.65em', color: '#888'}}>bit 1</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.65em', color: '#6688bb', fontWeight: 'bold'}}>bit 2</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.65em', color: '#888'}}>bit 3</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.65em', color: '#6688bb', fontWeight: 'bold'}}>bit 4</div>
+</div>
+<div style={{display: 'flex', gap: 2, alignItems: 'center'}}>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.65em', color: '#888'}}>seq 3</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.65em', color: '#888'}}>seq 4</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.65em', color: '#6688bb', fontWeight: 'bold'}}>seq 5</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.65em', color: '#888'}}>seq 6</div>
+  <div style={{width: 36, textAlign: 'center', fontSize: '0.65em', color: '#6688bb', fontWeight: 'bold'}}>seq 7</div>
+</div>
+</div>
+
+<div style={{display: 'flex', gap: 16, fontSize: '0.8em', marginBottom: 12, flexWrap: 'wrap'}}>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '1px solid #88aa88', borderRadius: 3}} /> Covered by cumulative ACK</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#c8daf8', border: '1px solid #6688bb', borderRadius: 3}} /> Received out-of-order (bitmap bit set)</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#f0d0d0', border: '1px solid #cc6666', borderRadius: 3}} /> Missing (needs retransmission)</div>
+</div>
+
+The sender sees this ACK and knows: packets 0–2 are done, packets 5 and 7 are received, so only packets 3, 4, and 6 need retransmission.
+
+## Retransmission
+
+The sender maintains a retransmission timer for each unacknowledged packet. When a
+timer expires, the packet is retransmitted. After a configurable number of failed
+retransmissions, the packet is considered lost.
+
+## ACK Timing
+
+The receiver can be configured for:
+- **Immediate ACK**: Send ACK immediately upon receiving any data packet
+- **Delayed ACK**: Wait for a timeout before sending ACK (allows batching)
+
+## Segmentation
+
+Large messages that exceed the MTU are segmented using the SPP sequence flags:
+
+- **Unsegmented** (0b11) — complete message in one packet
+- **First** (0b01) — first segment of a multi-packet message
+- **Continuation** (0b00) — middle segment
+- **Last** (0b10) — final segment
+
+The receiver reassembles segments in order. All segments of a message share consecutive sequence numbers.
+
+## Flow Control
+
+SRSPP uses a sliding window for flow control:
+
+- **Window size (WIN)**: Maximum number of unacknowledged packets in flight
+- **Send buffer (BUF)**: Total bytes that can be queued for transmission
+
+The sender blocks when either the window is full or the buffer is exhausted.
