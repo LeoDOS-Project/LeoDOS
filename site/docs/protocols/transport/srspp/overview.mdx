@@ -6,7 +6,7 @@ overhead.
 
 ## How It Works
 
-SRSPP is connectionless — there is no handshake. A sender transmits immediately; a receiver accepts data from any sender automatically.
+SRSPP is connectionless — there is no handshake. A sender transmits immediately; a receiver accepts data from any sender automatically. This avoids wasting a round-trip on connection setup, which matters when contact windows are short and latency is high.
 
 The receiver maintains a separate stream for each sender it hears from (identified by the sender's source address). When a packet arrives from a new sender, the receiver creates a stream with its own sequence tracking, reorder buffer, and ACK state. Up to a configurable *maximum number of streams* can be active simultaneously.
 
