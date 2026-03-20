@@ -4,29 +4,6 @@ SRSPP is a lightweight reliable transport protocol built on top of CCSDS Space P
 It provides reliable, ordered delivery of messages over unreliable links with minimal
 overhead.
 
-## Design Goals
-
-- **Minimal overhead**: Reuses existing SPP header fields (sequence count, sequence flags)
-- **No congestion control**: Designed for point-to-point links with predictable latency
-- **Simple implementation**: Suitable for resource-constrained flight software
-- **Efficient ACKs**: Combined cumulative and selective acknowledgment
-- **No handshake**: Data is sent immediately without connection establishment
-
-### Why No Handshake?
-
-SRSPP has no connection setup or liveness check. The sender can transmit data
-immediately without waiting for a round-trip confirmation that the receiver exists.
-
-This design choice is motivated by space link characteristics:
-- **High latency**: Handshakes add significant delay on links with multi-second round-trips. In the worst case, a satellite may pass out of range before a handshake completes.
-- **Known endpoints**: Mission configurations define who communicates with whom
-- **Scheduled contacts**: Ground stations know when satellites are reachable
-
-The tradeoff is that sending to an unreachable receiver wastes time until packets
-hit max retransmits. The application receives packet loss notifications and can
-decide when to abort. This optimizes for the common case (receiver is reachable)
-rather than the failure case.
-
 ## How It Works
 
 SRSPP is connectionless — there is no handshake. A sender transmits immediately; a receiver accepts data from any sender automatically.
@@ -46,6 +23,25 @@ When things go wrong:
 - **Out-of-order arrival** — the receiver buffers out-of-order packets and reports them in the selective ACK bitmap. The sender does not retransmit these. Only the gap (the missing packet) is retransmitted.
 - **Message too large** — messages exceeding the MTU are split into segments (FIRST / CONTINUATION / LAST). The receiver reassembles them in sequence order. If any segment is lost, only that segment is retransmitted — not the entire message.
 - **Stream complete** — the sender transmits an EOS (End of Stream) packet with its own sequence number. The receiver acknowledges it like a data packet. Once the EOS is ACKed, both sides know the transfer is complete and can release resources.
+
+## Why No Handshake?
+
+SRSPP has no connection setup or liveness check. The sender can transmit data immediately without waiting for a round-trip confirmation that the receiver exists.
+
+This design choice is motivated by space link characteristics:
+- **High latency** — handshakes add significant delay on links with multi-second round-trips. In the worst case, a satellite may pass out of range before a handshake completes.
+- **Known endpoints** — mission configurations define who communicates with whom.
+- **Scheduled contacts** — ground stations know when satellites are reachable.
+
+The tradeoff is that sending to an unreachable receiver wastes time until packets hit the *maximum retransmit count*. The application receives packet loss notifications and can decide when to abort. This optimizes for the common case (receiver is reachable) rather than the failure case.
+
+## Design Goals
+
+- **Minimal overhead** — reuses existing SPP header fields (sequence count, sequence flags)
+- **No congestion control** — designed for point-to-point links with predictable latency
+- **Simple implementation** — suitable for resource-constrained flight software
+- **Efficient ACKs** — combined cumulative and selective acknowledgment
+- **No handshake** — data is sent immediately without connection establishment
 
 ## Sub-pages
 
