@@ -122,11 +122,7 @@ impl PromptPdu {
         directive_pdu.set_directive_code(DirectiveCode::Prompt);
 
         let prompt_pdu = PromptPdu::mut_from_bytes(&mut directive_pdu.rest).unwrap();
-        let response_bit = match response_required {
-            PromptResponse::Nak => 0,
-            PromptResponse::KeepAlive => 1,
-        };
-        prompt_pdu.packed_flags = response_bit << 7;
+        prompt_pdu.set_prompt_response(response_required);
 
         Ok(pdu)
     }

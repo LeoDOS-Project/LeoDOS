@@ -55,6 +55,32 @@ already exist.
   DatalinkWrite::write, NetworkWrite::write.
 
 
+### Missing CCSDS protocols
+
+Protocols from CCSDS 130.0-G-4 not yet implemented:
+
+- [ ] 734.1-B — Licklider Transmission Protocol (LTP): convergence
+  layer for Bundle Protocol over lossy links. Needed for
+  full BP/DTN support.
+- [x] 355.1-B — SDLS Extended Procedures: key management and
+  security association negotiation for SDLS.
+- [x] 211.1-B — Proximity-1 Physical Layer: GMSK params, UHF
+  bands, data rates. `physical::proximity1`.
+- [x] 211.2-B — Proximity-1 Coding and Sync Sublayer: pipeline
+  composition (randomizer + convolutional + 24-bit ASM).
+  `coding::proximity1`.
+- [x] 122.1-B — Spectral Preprocessing Transform: upshift,
+  downshift, IWT (5-level CDF 5/3). `coding::compression::spectral`.
+  POT and AAT transforms not yet implemented.
+- [ ] IP over SRSPP — carry IP datagrams over SRSPP for
+  constellation-wide IP connectivity. Similar to IPoC
+  (702.1-B) but using SRSPP for reliable delivery instead
+  of raw Encapsulation Packets over data link frames.
+
+Note: CCSDS 352.0-B (Cryptographic Algorithms) specifies
+AES-GCM 128/256 which we already cover via the `aes-gcm`
+crate. No custom crypto implementation needed.
+
 ## Communication stack composition
 
 Five trait boundaries stitch the stack together:

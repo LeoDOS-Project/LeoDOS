@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | jq -r '.command' | grep -q 'git commit'; then git diff --cached --name-only --diff-filter=ACM -- '*.rs' | xargs -r rustfmt; git diff --cached --name-only --diff-filter=ACM -- '*.rs' | xargs -r git add; fi",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

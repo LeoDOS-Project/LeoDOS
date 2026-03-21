@@ -1,19 +1,40 @@
 use std::env;
 use std::path::PathBuf;
 
+/// Apps whose config headers should be included in bindings.
+const SHARED_APPS: &[&str] = &[
+    "router",
+    "spacecomp",
+    "gossip",
+    "wildfire",
+];
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=../config/default_spacecomp_msgids.h");
-    println!("cargo:rerun-if-changed=../config/default_spacecomp_perfids.h");
-    println!("cargo:rerun-if-changed=../config/default_spacecomp_platform_cfg.h");
 
-    let bindings = bindgen::Builder::default()
-        .clang_arg(format!("-I{}/inc", std::env::var("BUILD_DIR").unwrap_or_default()))
-        .header("../config/default_spacecomp_msgids.h")
-        .header("../config/default_spacecomp_perfids.h")
-        .header("../config/default_spacecomp_platform_cfg.h")
-        .allowlist_var("SPACECOMP_.*")
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+    let apps_dir = PathBuf::from("../..");
+    let mut builder = bindgen::Builder::default()
+        .clang_arg(format!(
+            "-I{}/inc",
+            env::var("BUILD_DIR").unwrap_or_default()
+        ))
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
+
+    for app in SHARED_APPS {
+        let config_dir = apps_dir.join(app).join("config");
+        if let Ok(headers) = std::fs::read_dir(&config_dir) {
+            for header in headers.flatten() {
+                let path = header.path();
+                if path.extension().is_some_and(|e| e == "h") {
+                    println!("cargo:rerun-if-changed={}", path.display());
+                    builder = builder.header(path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    let bindings = builder
+        .allowlist_var("[A-Z_]+")
         .generate()
         .expect("Unable to generate bindings for app config");
 

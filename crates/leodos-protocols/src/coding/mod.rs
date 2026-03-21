@@ -8,13 +8,14 @@ pub mod compression;
 pub mod randomizer;
 /// CRC-protected Space Packet wrapper.
 pub mod crc;
-mod checksum;
 
 use core::convert::Infallible;
 use core::future::Future;
 
 /// Coding pipeline that composes randomizer, FEC, and framer.
 pub mod pipeline;
+/// Proximity-1 coding pipeline (CCSDS 211.2-B-3).
+pub mod proximity1;
 
 // ── Layer boundary traits ──────────────────────────────────────
 
@@ -36,55 +37,14 @@ pub trait CodingRead {
     fn read(&mut self, buffer: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>>;
 }
 
-// ── Group traits ───────────────────────────────────────────────
+// ── Group traits (re-exported from their respective modules) ──
 
-/// Forward error-correction encoder (Reed-Solomon, LDPC, convolutional).
-pub trait FecEncoder {
-    /// Error type for encoding operations.
-    type Error;
-    /// Encodes `data` with FEC parity into `output`.
-    fn encode(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error>;
-}
-
-/// Forward error-correction decoder.
-pub trait FecDecoder {
-    /// Error type for decoding operations.
-    type Error;
-    /// Decodes and corrects `data` in-place.
-    fn decode(&self, data: &mut [u8]) -> Result<usize, Self::Error>;
-}
-
-/// Wraps coded data for transmission (ASM for TM, CLTU for TC).
-pub trait Framer {
-    /// Error type for framing operations.
-    type Error;
-    /// Frames `data` into `output` (e.g. prepends ASM).
-    fn frame(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error>;
-}
-
-/// Extracts coded data from a framed transmission.
-pub trait Deframer {
-    /// Error type for deframing operations.
-    type Error;
-    /// Strips framing from `data` and writes the payload to `output`.
-    fn deframe(&self, data: &[u8], output: &mut [u8]) -> Result<usize, Self::Error>;
-}
-
-/// Lossless or lossy data compression (applied to payload, not frames).
-pub trait Compressor {
-    /// Error type for compression operations.
-    type Error;
-    /// Compresses `input` into `output`.
-    fn compress(&self, input: &[u8], output: &mut [u8]) -> Result<usize, Self::Error>;
-}
-
-/// Decompresses previously compressed data.
-pub trait Decompressor {
-    /// Error type for decompression operations.
-    type Error;
-    /// Decompresses `input` into `output`.
-    fn decompress(&self, input: &[u8], output: &mut [u8]) -> Result<usize, Self::Error>;
-}
+pub use fec::FecEncoder;
+pub use fec::FecDecoder;
+pub use framing::Framer;
+pub use framing::Deframer;
+pub use compression::Compressor;
+pub use compression::Decompressor;
 
 // ── No-op types ──────────────────────────────────────────────
 

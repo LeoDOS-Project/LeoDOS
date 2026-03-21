@@ -16,17 +16,17 @@ use leodos_protocols::application::spacecomp::packet::OpCode;
 use leodos_protocols::application::spacecomp::packet::ParseError;
 use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::datalink::link::cfs::sb::SbDatalink;
-use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::isl::shell::Shell;
 use leodos_protocols::network::isl::torus::Point;
 use leodos_protocols::network::isl::torus::Torus;
+use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::spp::Apid;
-use leodos_protocols::transport::srspp::api::cfs::TransportError;
 use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
 use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
 use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
+use leodos_protocols::transport::srspp::api::cfs::TransportError;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
 use leodos_protocols::transport::srspp::dtn::NoStore;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
@@ -93,7 +93,7 @@ pub extern "C" fn SPACECOMP_AppMain() {
 
         // Communicate through the router app via the Software Bus.
         let recv_mid = MsgId::from_local_tlm(APID);
-        let send_mid = MsgId::from_local_cmd(0x94); // ROUTER_SEND_TOPICID
+        let send_mid = MsgId::from_local_cmd(bindings::ROUTER_SEND_TOPICID as u16);
         let sb_link = SbDatalink::new("SPACECOMP_ISL", 32, recv_mid, send_mid)?;
         let network = PointToPoint::new(sb_link);
 

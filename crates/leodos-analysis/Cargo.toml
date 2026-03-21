@@ -1,0 +1,8 @@
+[package]
+name = "leodos-analysis"
+version = "0.1.0"
+edition = "2021"
+description = "On-board data analysis algorithms for LEO earth observation"
+
+[dependencies]
+libm = "0.2"

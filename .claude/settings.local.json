@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \" import sys, json lines = list\\(sys.stdin\\) # Get ALL human messages to see full conversation flow for i, line in enumerate\\(lines\\): try: msg = json.loads\\(line\\) except: continue if msg.get\\(''type''\\) != ''human'': continue content = msg.get\\(''message'', {}\\).get\\(''content'', []\\) for block in content: text = '''' if isinstance\\(block, str\\): text = block elif isinstance\\(block, dict\\) and block.get\\(''type''\\) == ''text'': text = block.get\\(''text'', ''''\\) text = text.strip\\(\\) # Skip system reminders if text.startswith\\(''<system-reminder>''\\) or not text or text.startswith\\(''Base directory''\\): continue print\\(f''LINE {i}: {text[:300]}''\\) print\\(\\) \")",
+      "Bash(typst compile:*)",
+      "Bash(CARGO_BUILD_TARGET=\"\" cargo check:*)",
+      "WebSearch",
+      "WebFetch(domain:en.wikipedia.org)"
+    ]
+  }
+}

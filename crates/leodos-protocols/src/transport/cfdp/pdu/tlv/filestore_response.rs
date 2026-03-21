@@ -7,6 +7,7 @@ use zerocopy::Unaligned;
 use crate::transport::cfdp::CfdpError;
 use crate::transport::cfdp::filestore::FileId;
 use crate::transport::cfdp::pdu::tlv::FilestoreAction;
+use crate::utils::get_bits_u8;
 
 /// A zero-copy view of the Value of a Filestore Response TLV.
 #[repr(C)]
@@ -29,15 +30,21 @@ pub struct FilestoreResponse {
     pub second_file_name: FileId,
 }
 
+#[rustfmt::skip]
+mod bitmasks {
+    pub const ACTION_CODE_MASK: u8 = 0b1111_0000;
+    pub const STATUS_CODE_MASK: u8 = 0b0000_1111;
+}
+
 impl TlvFilestoreResponse {
     /// Returns the filestore action code from the packed byte.
     pub fn action(&self) -> Result<FilestoreAction, CfdpError> {
-        (self.action_and_status_code >> 4).try_into()
+        get_bits_u8(self.action_and_status_code, bitmasks::ACTION_CODE_MASK).try_into()
     }
 
     /// Returns the 4-bit status code from the packed byte.
     pub fn status_code(&self) -> u8 {
-        self.action_and_status_code & 0x0F
+        get_bits_u8(self.action_and_status_code, bitmasks::STATUS_CODE_MASK)
     }
 
     // NOTE: The parsing logic here can get complex. This implementation assumes a fixed order.

@@ -9,7 +9,13 @@
 //! which is identified by the Security Parameter Index (SPI) in the
 //! Security Header.
 
+/// Extended Procedures PDU format (CCSDS 355.1-B-1).
+pub mod ep;
 mod gcm;
+/// Key management: OTAR, activation, verification, destruction.
+pub mod key;
+/// Security Association lifecycle management.
+pub mod sa_mgmt;
 mod security_header;
 
 pub use gcm::AesGcmCrypto;
@@ -123,6 +129,33 @@ pub enum Error {
     /// A crypto backend error occurred.
     #[error("cryptographic operation failed")]
     CryptoError,
+    /// Invalid EP procedure ID or service group.
+    #[error("invalid SDLS-EP procedure")]
+    InvalidProcedure,
+    /// Key ID not found in the key ring.
+    #[error("unknown key ID: {0}")]
+    UnknownKeyId(u16),
+    /// Duplicate key ID in the key ring.
+    #[error("duplicate key ID")]
+    DuplicateKeyId,
+    /// Key ring is full.
+    #[error("key ring full")]
+    KeyRingFull,
+    /// Invalid key length.
+    #[error("invalid key length")]
+    InvalidKeyLength,
+    /// Key is in the wrong state for this operation.
+    #[error("invalid key state")]
+    InvalidKeyState,
+    /// SA is in the wrong state for this operation.
+    #[error("invalid SA state")]
+    InvalidSaState,
+    /// Duplicate SPI in the SA table.
+    #[error("duplicate SPI: {0}")]
+    DuplicateSpi(u16),
+    /// SA table is full.
+    #[error("SA table full")]
+    SaTableFull,
 }
 
 /// Trait for pluggable cryptographic backends.

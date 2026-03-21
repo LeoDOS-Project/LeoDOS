@@ -11,7 +11,6 @@ use crate::network::NetworkRead;
 use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
-use crate::transport::TransportRead;
 use crate::transport::srspp::machine::receiver::AckInfo;
 use crate::transport::srspp::machine::receiver::AckState;
 use crate::transport::srspp::machine::receiver::HandleResult;
@@ -474,16 +473,5 @@ impl<'a, 'rx, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
             let stream = s.streams.get_mut(&self.source).unwrap();
             stream.machine.consume_message(f).unwrap()
         })
-    }
-}
-
-impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize> TransportRead
-    for SrsppRxHandle<'a, E, R, MAX_STREAMS>
-{
-    type Error = TransportError<E>;
-
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        let (_, len) = self.recv(buf).await?;
-        Ok(len)
     }
 }

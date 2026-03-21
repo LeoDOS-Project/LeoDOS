@@ -7,9 +7,12 @@
 use core::future::Future;
 
 /// Hardware-backed physical channel implementations.
+#[cfg(feature = "nos3")]
 pub mod hardware;
 /// Modulation and demodulation schemes (BPSK, QPSK, OQPSK, 8PSK, GMSK).
 pub mod modulator;
+/// Proximity-1 physical layer parameters (CCSDS 211.1-B-4).
+pub mod proximity1;
 
 /// Async trait for writing raw bytes to a physical channel.
 pub trait PhysicalWrite {

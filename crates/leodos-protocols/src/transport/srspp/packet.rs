@@ -10,6 +10,8 @@ use crate::network::spp::SecondaryHeaderFlag;
 use crate::network::spp::SequenceCount;
 use crate::network::spp::SequenceFlag;
 use crate::utils::checksum_u8;
+use crate::utils::get_bits_u8;
+use crate::utils::set_bits_u8;
 use crate::utils::validate_checksum_u8;
 use bon::bon;
 use core::mem::size_of;
@@ -63,15 +65,24 @@ pub(crate) struct SrsppHeader {
     version_type: u8,
 }
 
+#[rustfmt::skip]
+mod bitmask {
+    /// Bitmask for the 2-bit protocol version field.
+    pub const VERSION_MASK: u8 = 0b_1100_0000;
+    /// Bitmask for the 2-bit packet type field.
+    pub const TYPE_MASK: u8 =    0b_0011_0000;
+}
+
 impl SrsppHeader {
     /// Parse the packet type field into an `SrsppType`.
     pub(crate) fn srspp_type(&self) -> Result<SrsppType, SrsppPacketError> {
-        SrsppType::try_from((self.version_type >> 4) & 0x03)
+        SrsppType::try_from(get_bits_u8(self.version_type, bitmask::TYPE_MASK))
     }
 
     /// Returns the protocol version (2 bits).
+    #[allow(unused)]
     pub(crate) fn version(&self) -> u8 {
-        (self.version_type >> 6) & 0x03
+        get_bits_u8(self.version_type, bitmask::VERSION_MASK)
     }
 
     /// Returns the parsed source address.
@@ -86,7 +97,8 @@ impl SrsppHeader {
 
     /// Sets the version and packet type fields.
     pub(crate) fn set_srspp_type(&mut self, srspp_type: SrsppType) {
-        self.version_type = (SRSPP_VERSION << 6) | ((srspp_type as u8) << 4);
+        set_bits_u8(&mut self.version_type, bitmask::VERSION_MASK, SRSPP_VERSION);
+        set_bits_u8(&mut self.version_type, bitmask::TYPE_MASK, srspp_type as u8);
     }
 }
 

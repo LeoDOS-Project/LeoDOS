@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 [dependencies]
 leodos-protocols = { path = "../../../crates/leodos-protocols", features = ["cfs"] }
 leodos-libcfs = { path = "../../../crates/leodos-libcfs", features = ["nos3"] }
+leodos-analysis = { path = "../../../crates/leodos-analysis" }
 heapless = "0.9"
 
 [profile.release]

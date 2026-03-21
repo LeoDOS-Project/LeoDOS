@@ -30,6 +30,7 @@
 //! let mut receiver = CfdpReceiver::new(entity_id);
 //! let file = receiver.accept().await;
 //! ```
+//! TODO: Finish this implementation
 
 /// Class 2 (acknowledged) CFDP state machines and transaction management.
 pub mod class2;

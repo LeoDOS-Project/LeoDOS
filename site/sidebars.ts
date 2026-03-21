@@ -100,6 +100,7 @@ const sidebars: SidebarsConfig = {
             },
             'protocols/transport/cfdp',
             'protocols/transport/bp',
+            'protocols/transport/ltp',
           ],
         },
         {
@@ -132,6 +133,7 @@ const sidebars: SidebarsConfig = {
               link: { type: 'doc', id: 'protocols/datalink/packet/overview' },
               items: [
                 'protocols/datalink/packet/spp',
+                'protocols/datalink/packet/encapsulation',
               ],
             },
             {
@@ -239,6 +241,25 @@ const sidebars: SidebarsConfig = {
             },
           ],
         },
+        {
+          type: 'category',
+          label: 'Misc',
+          items: [
+            'protocols/misc/sle',
+          ],
+        },
+      ],
+    },
+    {
+      type: 'category',
+      label: 'On-Board Analysis',
+      link: { type: 'doc', id: 'analysis/overview' },
+      items: [
+        'analysis/indices',
+        'analysis/thermal',
+        'analysis/cloud',
+        'analysis/stats',
+        'analysis/geo',
       ],
     },
     {

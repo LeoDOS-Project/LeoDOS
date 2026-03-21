@@ -1,0 +1,108 @@
+# On-Board Analysis
+
+LeoDOS includes a library of on-board data analysis algorithms for processing earth observation imagery directly on the satellite. These algorithms are designed to run on resource-constrained platforms (no GPU, no heap allocation, `no_std` Rust) and produce compact results that can be downlinked instead of raw imagery.
+
+import Link from '@docusaurus/Link';
+
+export const Group = ({name, children}) => (
+  <div style={{border: '1px solid #999', borderRadius: 4, padding: 8, margin: '6px 0', background: '#fafafa'}}>
+    <div style={{fontSize: '0.85em', fontWeight: 'bold', marginBottom: 4}}>{name}</div>
+    <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>{children}</div>
+  </div>
+);
+
+export const Algo = ({name, origin, href}) => {
+  const bg = origin === 'standard' ? '#d4e8d4' : origin === 'adapted' ? '#e8ddf4' : '#c8daf8';
+  const bd = origin === 'standard' ? '#88aa88' : origin === 'adapted' ? '#9977bb' : '#6688bb';
+  const content = href
+    ? <Link to={href} style={{color: '#333', textDecoration: 'none'}}>{name}</Link>
+    : name;
+  return (
+    <div style={{
+      border: '1px solid ' + bd,
+      borderRadius: 4,
+      padding: '3px 8px',
+      fontSize: '0.85em',
+      fontWeight: 'bold',
+      background: bg,
+      color: '#333',
+    }}>{content}</div>
+  );
+};
+
+## Algorithm Overview
+
+<div style={{display: 'flex', flexDirection: 'column', width: 520}}>
+<Group name="Spectral Indices">
+  <Algo name="NDVI" origin="standard" href="/analysis/indices" />
+  <Algo name="NDWI" origin="standard" href="/analysis/indices" />
+  <Algo name="NBR / dNBR" origin="standard" href="/analysis/indices" />
+  <Algo name="NDSI" origin="standard" href="/analysis/indices" />
+  <Algo name="EVI" origin="standard" href="/analysis/indices" />
+  <Algo name="SAVI" origin="standard" href="/analysis/indices" />
+</Group>
+<Group name="Thermal / Fire Detection">
+  <Algo name="MODIS Fire" origin="adapted" href="/analysis/thermal" />
+  <Algo name="FRP Estimate" origin="adapted" href="/analysis/thermal" />
+</Group>
+<Group name="Cloud Masking">
+  <Algo name="Fmask" origin="adapted" href="/analysis/cloud" />
+  <Algo name="Cirrus Test" origin="standard" href="/analysis/cloud" />
+  <Algo name="NDSI Snow" origin="standard" href="/analysis/cloud" />
+  <Algo name="HOT" origin="standard" href="/analysis/cloud" />
+</Group>
+<Group name="Statistics">
+  <Algo name="Histogram" origin="standard" href="/analysis/stats" />
+  <Algo name="Percentiles" origin="standard" href="/analysis/stats" />
+</Group>
+<Group name="Geospatial">
+  <Algo name="Haversine" origin="standard" href="/analysis/geo" />
+  <Algo name="GSD" origin="standard" href="/analysis/geo" />
+  <Algo name="Pixel ↔ LatLon" origin="standard" href="/analysis/geo" />
+</Group>
+
+<div style={{display: 'flex', gap: 16, marginTop: 10, fontSize: '0.85em', alignItems: 'center', flexWrap: 'wrap'}}>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#d4e8d4', border: '1px solid #88aa88', borderRadius: 3}} /> Published algorithm (exact formula)</div>
+  <div style={{display: 'flex', alignItems: 'center', gap: 4}}><div style={{width: 14, height: 14, background: '#e8ddf4', border: '1px solid #9977bb', borderRadius: 3}} /> Adapted (simplified from reference)</div>
+</div>
+</div>
+
+## Processing Pipeline
+
+On-board processing follows a standard flow:
+
+1. **Cloud masking** — reject cloud-contaminated pixels before analysis
+2. **Spectral index** — compute the relevant index (NDVI for vegetation, NBR for fire damage, etc.)
+3. **Threshold / detection** — classify pixels or detect anomalies
+4. **Geolocation** — convert pixel coordinates to lat/lon
+5. **Downlink** — send compact results (hotspot list, mask, statistics) instead of raw image
+
+This pipeline runs in the SpaceCoMP map phase: each satellite processes its own swath independently, producing compact results that are aggregated in the reduce phase.
+
+## Origin of Algorithms
+
+All algorithms in `leodos-analysis` are based on published remote sensing literature. None are novel — the value is in having them available as lightweight, embedded-ready Rust implementations.
+
+| Algorithm | Reference | Notes |
+|-----------|-----------|-------|
+| NDVI | Rouse et al. (1974) | Exact formula |
+| NDWI | McFeeters (1996) | Exact formula |
+| NBR / dNBR | Key & Benson (2006) | Exact formula |
+| EVI | Huete et al. (2002), MODIS | Exact formula with published coefficients |
+| SAVI | Huete (1988) | Exact formula |
+| Fire detection | Giglio et al. (2016), MODIS Collection 6.1 | Simplified: uses 4 of ~12 tests from the full algorithm |
+| FRP estimate | Wooster et al. (2003) | Simplified: uses BT proxy instead of MIR radiance |
+| Cloud mask | Zhu & Woodcock (2012), Fmask | Simplified: 7 tests from the full cascade; no cloud shadow detection |
+| HOT | Zhang et al. (2002) | Exact formula |
+| NDSI snow | Hall et al. (1995), MODIS | Exact formula with SWIR1 refinement |
+| Haversine | Standard geodesy | Exact formula |
+| GSD | Standard optics | Exact formula |
+
+### What is simplified
+
+The fire detection and cloud masking algorithms are subsets of their full published versions:
+
+- **MODIS fire** — the full algorithm has ~12 tests including sun glint rejection, desert false alarm suppression, and coastal pixel handling. We implement the 4 core tests (absolute MIR, split-window, contextual MIR anomaly, contextual split-window anomaly).
+- **Fmask cloud** — the full algorithm includes cloud shadow detection, temporal consistency, and object-based refinement. We implement the per-pixel spectral tests only (cirrus, NDSI snow, thermal, brightness, whiteness, HOT, NDVI).
+
+These simplifications are appropriate for on-board processing where computational resources are limited and the goal is fast screening rather than science-grade classification.

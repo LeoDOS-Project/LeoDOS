@@ -24,7 +24,8 @@
 //! - CADU encoding (prepend ASM to a frame)
 //! - Frame synchronization (find ASM in a bitstream)
 
-use crate::physical::{PhysicalRead, PhysicalWrite};
+use crate::physical::PhysicalRead;
+use crate::physical::PhysicalWrite;
 
 /// Standard 32-bit ASM for TM and AOS frames (CCSDS 131.0-B-5).
 pub const ASM_TM: [u8; 4] = [0x1A, 0xCF, 0xFC, 0x1D];
@@ -70,11 +71,7 @@ impl core::error::Error for CaduError {}
 ///
 /// Writes `asm | frame` into `output` and returns the total bytes
 /// written.
-pub fn encode_cadu(
-    asm: &[u8],
-    frame: &[u8],
-    output: &mut [u8],
-) -> Result<usize, CaduError> {
+pub fn encode_cadu(asm: &[u8], frame: &[u8], output: &mut [u8]) -> Result<usize, CaduError> {
     let total = asm.len() + frame.len();
     if output.len() < total {
         return Err(CaduError::BufferTooSmall {
@@ -90,10 +87,7 @@ pub fn encode_cadu(
 /// Strips the ASM from a CADU and returns the frame payload.
 ///
 /// Verifies that the leading bytes match the expected `asm` pattern.
-pub fn decode_cadu<'a>(
-    asm: &[u8],
-    cadu: &'a [u8],
-) -> Result<&'a [u8], CaduError> {
+pub fn decode_cadu<'a>(asm: &[u8], cadu: &'a [u8]) -> Result<&'a [u8], CaduError> {
     if cadu.len() < asm.len() {
         return Err(CaduError::InputTooShort);
     }
@@ -134,10 +128,7 @@ impl<'a> FrameSync<'a> {
     /// position of the ASM in `data` and `frame` is the frame
     /// payload (after the ASM). Returns `None` if no complete frame
     /// is found.
-    pub fn find_frame<'b>(
-        &self,
-        data: &'b [u8],
-    ) -> Option<(usize, &'b [u8])> {
+    pub fn find_frame<'b>(&self, data: &'b [u8]) -> Option<(usize, &'b [u8])> {
         let cadu_len = self.cadu_len();
         if data.len() < cadu_len {
             return None;
@@ -159,10 +150,7 @@ impl<'a> FrameSync<'a> {
     /// Returns an iterator of `(offset, frame_slice)` pairs.
     /// Frames may overlap if the data contains spurious ASM
     /// matches; callers should validate frame contents.
-    pub fn find_all_frames<'b>(
-        &'b self,
-        data: &'b [u8],
-    ) -> FrameIter<'b> {
+    pub fn find_all_frames<'b>(&'b self, data: &'b [u8]) -> FrameIter<'b> {
         FrameIter {
             sync: self,
             data,
@@ -208,7 +196,9 @@ impl AsmFramer {
 
     /// Creates a Proximity-1 ASM framer.
     pub fn proximity1() -> Self {
-        Self { asm: &ASM_PROXIMITY1 }
+        Self {
+            asm: &ASM_PROXIMITY1,
+        }
     }
 }
 
@@ -229,12 +219,18 @@ pub struct AsmDeframer {
 impl AsmDeframer {
     /// Creates a TM/AOS ASM deframer for the given frame length.
     pub fn tm(frame_len: usize) -> Self {
-        Self { asm: &ASM_TM, frame_len }
+        Self {
+            asm: &ASM_TM,
+            frame_len,
+        }
     }
 
     /// Creates a Proximity-1 ASM deframer for the given frame length.
     pub fn proximity1(frame_len: usize) -> Self {
-        Self { asm: &ASM_PROXIMITY1, frame_len }
+        Self {
+            asm: &ASM_PROXIMITY1,
+            frame_len,
+        }
     }
 }
 
@@ -297,14 +293,11 @@ impl<W, const BUF: usize> AsmWriter<W, BUF> {
     }
 }
 
-impl<W: PhysicalWrite, const BUF: usize> PhysicalWrite
-    for AsmWriter<W, BUF>
-{
+impl<W: PhysicalWrite, const BUF: usize> PhysicalWrite for AsmWriter<W, BUF> {
     type Error = AsmWriterError<W::Error>;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        let len = encode_cadu(self.asm, data, &mut self.buffer)
-            .map_err(AsmWriterError::Cadu)?;
+        let len = encode_cadu(self.asm, data, &mut self.buffer).map_err(AsmWriterError::Cadu)?;
         self.writer
             .write(&self.buffer[..len])
             .await
@@ -330,9 +323,7 @@ pub enum FrameSyncReaderError<E> {
     Reader(E),
 }
 
-impl<E: core::fmt::Display> core::fmt::Display
-    for FrameSyncReaderError<E>
-{
+impl<E: core::fmt::Display> core::fmt::Display for FrameSyncReaderError<E> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::NoFrame => write!(f, "no ASM-aligned frame found"),
@@ -341,10 +332,7 @@ impl<E: core::fmt::Display> core::fmt::Display
     }
 }
 
-impl<E: core::error::Error> core::error::Error
-    for FrameSyncReaderError<E>
-{
-}
+impl<E: core::error::Error> core::error::Error for FrameSyncReaderError<E> {}
 
 impl<R, const BUF: usize> FrameSyncReader<R, BUF> {
     /// Creates a reader that searches for TM ASM and extracts
@@ -369,15 +357,10 @@ impl<R, const BUF: usize> FrameSyncReader<R, BUF> {
     }
 }
 
-impl<R: PhysicalRead, const BUF: usize> PhysicalRead
-    for FrameSyncReader<R, BUF>
-{
+impl<R: PhysicalRead, const BUF: usize> PhysicalRead for FrameSyncReader<R, BUF> {
     type Error = FrameSyncReaderError<R::Error>;
 
-    async fn read(
-        &mut self,
-        output: &mut [u8],
-    ) -> Result<usize, Self::Error> {
+    async fn read(&mut self, output: &mut [u8]) -> Result<usize, Self::Error> {
         let len = self
             .reader
             .read(&mut self.buffer)
@@ -385,9 +368,7 @@ impl<R: PhysicalRead, const BUF: usize> PhysicalRead
             .map_err(FrameSyncReaderError::Reader)?;
 
         let sync = FrameSync::new(self.asm, self.frame_len);
-        let Some((_offset, frame)) =
-            sync.find_frame(&self.buffer[..len])
-        else {
+        let Some((_offset, frame)) = sync.find_frame(&self.buffer[..len]) else {
             return Err(FrameSyncReaderError::NoFrame);
         };
 
@@ -416,8 +397,7 @@ mod tests {
     fn encode_proximity1_cadu() {
         let frame = [0xBB; 10];
         let mut buf = [0u8; 13];
-        let len =
-            encode_cadu(&ASM_PROXIMITY1, &frame, &mut buf).unwrap();
+        let len = encode_cadu(&ASM_PROXIMITY1, &frame, &mut buf).unwrap();
 
         assert_eq!(len, 13);
         assert_eq!(&buf[..3], &ASM_PROXIMITY1);
@@ -494,8 +474,7 @@ mod tests {
         data[8..12].copy_from_slice(&ASM_TM);
         data[12..16].fill(0x22);
 
-        let frames: heapless::Vec<(usize, &[u8]), 4> =
-            sync.find_all_frames(&data).collect();
+        let frames: heapless::Vec<(usize, &[u8]), 4> = sync.find_all_frames(&data).collect();
 
         assert_eq!(frames.len(), 2);
         assert_eq!(frames[0].0, 0);
@@ -525,8 +504,7 @@ mod tests {
         let frame = [0x42; 64];
         let mut cadu_buf = [0u8; 68];
 
-        let len =
-            encode_cadu(&ASM_TM, &frame, &mut cadu_buf).unwrap();
+        let len = encode_cadu(&ASM_TM, &frame, &mut cadu_buf).unwrap();
         let decoded = decode_cadu(&ASM_TM, &cadu_buf[..len]).unwrap();
 
         assert_eq!(decoded, &frame);
@@ -537,10 +515,8 @@ mod tests {
         let frame = [0x77; 32];
         let mut cadu_buf = [0u8; 35];
 
-        let len = encode_cadu(&ASM_PROXIMITY1, &frame, &mut cadu_buf)
-            .unwrap();
-        let decoded =
-            decode_cadu(&ASM_PROXIMITY1, &cadu_buf[..len]).unwrap();
+        let len = encode_cadu(&ASM_PROXIMITY1, &frame, &mut cadu_buf).unwrap();
+        let decoded = decode_cadu(&ASM_PROXIMITY1, &cadu_buf[..len]).unwrap();
 
         assert_eq!(decoded, &frame);
     }

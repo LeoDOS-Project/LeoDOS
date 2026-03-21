@@ -12,7 +12,9 @@ use zerocopy::Unaligned;
 use zerocopy::byteorder::network_endian::U16;
 
 use crate::ids::Scid;
+use crate::utils::get_bits_u8;
 use crate::utils::get_bits_u16;
+use crate::utils::set_bits_u8;
 use crate::utils::set_bits_u16;
 
 /// A zero-copy view over a Proximity-1 Version-3 Transfer Frame.
@@ -606,6 +608,15 @@ impl core::fmt::Display for Plcw {
 //   Bits 0-1: Sequence Flags
 //   Bits 2-7: Pseudo Packet ID
 
+/// Bitmasks for the 8-bit segment header.
+#[rustfmt::skip]
+pub mod segment_bitmask {
+    /// 2-bit Sequence Flags (bits 0-1).
+    pub const FLAGS_MASK: u8           = 0b_1100_0000;
+    /// 6-bit Pseudo Packet ID (bits 2-7).
+    pub const PSEUDO_PACKET_ID_MASK: u8 = 0b_0011_1111;
+}
+
 /// Sequence flags for segmented data units.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[repr(u8)]
@@ -627,7 +638,10 @@ pub struct SegmentHeader(u8);
 impl SegmentHeader {
     /// Creates a new segment header.
     pub fn new(flags: SequenceFlag, pseudo_packet_id: u8) -> Self {
-        Self((flags as u8) << 6 | (pseudo_packet_id & 0x3F))
+        let mut val = 0u8;
+        set_bits_u8(&mut val, segment_bitmask::FLAGS_MASK, flags as u8);
+        set_bits_u8(&mut val, segment_bitmask::PSEUDO_PACKET_ID_MASK, pseudo_packet_id);
+        Self(val)
     }
 
     /// Parses a segment header from a byte.
@@ -642,7 +656,7 @@ impl SegmentHeader {
 
     /// Returns the sequence flags.
     pub fn flags(&self) -> SequenceFlag {
-        match self.0 >> 6 {
+        match get_bits_u8(self.0, segment_bitmask::FLAGS_MASK) {
             0b01 => SequenceFlag::First,
             0b00 => SequenceFlag::Continuation,
             0b10 => SequenceFlag::Last,
@@ -652,7 +666,7 @@ impl SegmentHeader {
 
     /// Returns the 6-bit pseudo packet identifier.
     pub fn pseudo_packet_id(&self) -> u8 {
-        self.0 & 0x3F
+        get_bits_u8(self.0, segment_bitmask::PSEUDO_PACKET_ID_MASK)
     }
 }
 

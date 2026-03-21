@@ -5,11 +5,11 @@ mod base;
 pub mod utils;
 
 /// Receiver backends with different performance and memory tradeoffs.
-pub mod backends;
+pub mod reassembly;
 
-pub use backends::fast::FastReceiver;
-pub use backends::lite::LiteReceiver;
-pub use backends::packed::PackedReceiver;
+pub use reassembly::fast::FastReceiver;
+pub use reassembly::lite::LiteReceiver;
+pub use reassembly::packed::PackedReceiver;
 
 use crate::network::isl::address::Address;
 use crate::network::spp::Apid;

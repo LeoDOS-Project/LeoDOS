@@ -12,6 +12,7 @@ use crate::transport::cfdp::pdu::header::PduType;
 use crate::transport::cfdp::pdu::tlv::TlvIterator;
 use crate::transport::cfdp::pdu::tlv::TlvType;
 use crate::utils::get_bits_u8;
+use crate::utils::set_bits_u8;
 
 use bon::bon;
 use zerocopy::FromBytes;
@@ -104,8 +105,7 @@ impl FinishedPdu {
     }
     /// Sets the condition code field.
     pub fn set_condition_code(&mut self, code: ConditionCode) {
-        let code_bits = (code as u8) << 4;
-        self.packed_flags = (self.packed_flags & !FINISHED_CONDITION_CODE_MASK) | code_bits;
+        set_bits_u8(&mut self.packed_flags, FINISHED_CONDITION_CODE_MASK, code as u8);
     }
 
     /// Returns the Delivery Code from the bit-packed field. `true` means Data Complete.
@@ -116,8 +116,11 @@ impl FinishedPdu {
     }
     /// Sets the delivery code. `true` means Data Complete.
     pub fn set_delivery_code(&mut self, complete: bool) {
-        let delivery_bit = if complete { 0 } else { 1 } << 2;
-        self.packed_flags = (self.packed_flags & !FINISHED_DELIVERY_CODE_MASK) | delivery_bit;
+        set_bits_u8(
+            &mut self.packed_flags,
+            FINISHED_DELIVERY_CODE_MASK,
+            (!complete) as u8,
+        );
     }
 
     /// Returns the File Status (Table 5-7) from the bit-packed field.
@@ -126,8 +129,7 @@ impl FinishedPdu {
     }
     /// Sets the file status field.
     pub fn set_file_status(&mut self, status: FileStatus) {
-        let status_bits = status as u8;
-        self.packed_flags = (self.packed_flags & !FINISHED_FILE_STATUS_MASK) | status_bits;
+        set_bits_u8(&mut self.packed_flags, FINISHED_FILE_STATUS_MASK, status as u8);
     }
 
     /// Returns an iterator over all TLVs in the data field.

@@ -40,6 +40,7 @@ mod bindings {
 
 const REG_STATUS: u8 = 0x01;
 const REG_TRIGGER: u8 = 0x02;
+const REG_NUM_BANDS: u8 = 0x0F;
 const REG_WIDTH: u8 = 0x10;
 const REG_HEIGHT: u8 = 0x11;
 const REG_FIFO_SIZE_0: u8 = 0x12;
@@ -106,8 +107,10 @@ struct AlertTlm {
     pass_number: u32,
 }
 
+/// Capture result: (width, height, num_bands).
+/// Band 0 = MWIR, Band 1 = LWIR (if present).
 trait ThermalSensor {
-    fn capture(&mut self, frame: &mut [f32]) -> Result<(u32, u32), CfsError>;
+    fn capture(&mut self, mwir: &mut [f32], lwir: &mut [f32]) -> Result<(u32, u32, u8), CfsError>;
 }
 
 struct SpiCamera {
@@ -129,7 +132,7 @@ impl SpiCamera {
 }
 
 impl ThermalSensor for SpiCamera {
-    fn capture(&mut self, frame: &mut [f32]) -> Result<(u32, u32), CfsError> {
+    fn capture(&mut self, mwir: &mut [f32], lwir: &mut [f32]) -> Result<(u32, u32, u8), CfsError> {
         let status = self.read_reg(REG_STATUS);
         if status & 0x02 == 0 {
             return Err(CfsError::IncorrectState);
@@ -137,6 +140,7 @@ impl ThermalSensor for SpiCamera {
 
         self.write_reg(REG_TRIGGER, 0x01);
 
+        let num_bands = self.read_reg(REG_NUM_BANDS).max(1);
         let width = self.read_reg(REG_WIDTH) as u32;
         let height = self.read_reg(REG_HEIGHT) as u32;
 
@@ -144,60 +148,98 @@ impl ThermalSensor for SpiCamera {
         let s1 = self.read_reg(REG_FIFO_SIZE_1) as u32;
         let s2 = self.read_reg(REG_FIFO_SIZE_2) as u32;
         let fifo_bytes = s0 | (s1 << 8) | (s2 << 16);
-        let num_pixels = (fifo_bytes / 4) as usize;
+        let pixels_per_band = (width * height) as usize;
+        let total_pixels = (fifo_bytes / 4) as usize;
 
-        let n = num_pixels.min(frame.len());
         let mut bytes = [0u8; 4];
-        for pixel in frame.iter_mut().take(n) {
+
+        // Read MWIR band
+        let n_mwir = pixels_per_band.min(mwir.len()).min(total_pixels);
+        for pixel in mwir.iter_mut().take(n_mwir) {
             for b in &mut bytes {
                 *b = self.read_reg(REG_FIFO_READ);
             }
             *pixel = f32::from_le_bytes(bytes);
         }
 
-        Ok((width, height))
+        // Read LWIR band (if present)
+        if num_bands >= 2 {
+            let remaining = total_pixels.saturating_sub(pixels_per_band);
+            let n_lwir = pixels_per_band.min(lwir.len()).min(remaining);
+            for pixel in lwir.iter_mut().take(n_lwir) {
+                for b in &mut bytes {
+                    *b = self.read_reg(REG_FIFO_READ);
+                }
+                *pixel = f32::from_le_bytes(bytes);
+            }
+        } else {
+            // Single band: use MWIR as LWIR estimate
+            let n = n_mwir.min(lwir.len());
+            lwir[..n].copy_from_slice(&mwir[..n]);
+        }
+
+        Ok((width, height, num_bands))
     }
 }
 
-// ── Detection ───────────────────────────────────────────────
+// ── Detection (using leodos-analysis) ───────────────────────
 
-fn detect_hotspots(frame: &[f32], width: u32, height: u32, cfg: &WildfireConfig) -> Option<Alert> {
-    let mut hot_count: u32 = 0;
-    let mut max_temp: f32 = 0.0;
-    let mut sum_row: f32 = 0.0;
-    let mut sum_col: f32 = 0.0;
+fn detect_hotspots(
+    mwir: &[f32],
+    lwir: &[f32],
+    width: u32,
+    height: u32,
+    cfg: &WildfireConfig,
+) -> Option<Alert> {
+    let thresholds = leodos_analysis::thermal::FireThresholds {
+        t4_abs: cfg.bt_threshold_k,
+        ..leodos_analysis::thermal::FireThresholds::day()
+    };
 
-    for row in 0..height {
-        for col in 0..width {
-            let idx = (row * width + col) as usize;
-            if idx < frame.len() {
-                let bt = frame[idx];
-                if bt > cfg.bt_threshold_k {
-                    hot_count += 1;
-                    if bt > max_temp {
-                        max_temp = bt;
-                    }
-                    sum_row += row as f32;
-                    sum_col += col as f32;
-                }
-            }
-        }
-    }
+    let mut hotspots = [leodos_analysis::thermal::Hotspot {
+        x: 0,
+        y: 0,
+        t4: 0.0,
+        t11: 0.0,
+        dt4: 0.0,
+        dt4_t11: 0.0,
+        frp: 0.0,
+        confidence: 0.0,
+    }; 64];
 
-    if hot_count < cfg.min_cluster_pixels {
+    let n = leodos_analysis::thermal::detect_fire(
+        mwir,
+        lwir,
+        width as usize,
+        height as usize,
+        &thresholds,
+        &mut hotspots,
+    );
+
+    if (n as u32) < cfg.min_cluster_pixels {
         return None;
     }
 
-    let cr = sum_row / hot_count as f32;
-    let cc = sum_col / hot_count as f32;
+    let mut sum_lat = 0.0f32;
+    let mut sum_lon = 0.0f32;
+    let mut max_temp = 0.0f32;
 
-    let lat = cfg.aoi_north - cr / height as f32 * (cfg.aoi_north - cfg.aoi_south);
-    let lon = cfg.aoi_west + cc / width as f32 * (cfg.aoi_east - cfg.aoi_west);
+    for h in &hotspots[..n] {
+        let lat = cfg.aoi_north
+            - h.y as f32 / height as f32 * (cfg.aoi_north - cfg.aoi_south);
+        let lon = cfg.aoi_west
+            + h.x as f32 / width as f32 * (cfg.aoi_east - cfg.aoi_west);
+        sum_lat += lat;
+        sum_lon += lon;
+        if h.t4 > max_temp {
+            max_temp = h.t4;
+        }
+    }
 
     Some(Alert {
-        lat,
-        lon,
-        hot_pixel_count: hot_count,
+        lat: sum_lat / n as f32,
+        lon: sum_lon / n as f32,
+        hot_pixel_count: n as u32,
         max_temp_k: max_temp,
     })
 }
@@ -292,11 +334,12 @@ pub extern "C" fn WILDFIRE_AppMain() {
                     info!("Entering AOI pass {}", state.pass_count).ok();
 
                     if let Some(ref mut cam) = camera {
-                        let mut frame = [0.0f32; MAX_PIXELS];
-                        match cam.capture(&mut frame) {
-                            Ok((w, h)) => {
+                        let mut mwir = [0.0f32; MAX_PIXELS];
+                        let mut lwir = [0.0f32; MAX_PIXELS];
+                        match cam.capture(&mut mwir, &mut lwir) {
+                            Ok((w, h, _bands)) => {
                                 let n = (w * h) as usize;
-                                if let Some(alert) = detect_hotspots(&frame[..n], w, h, &cfg) {
+                                if let Some(alert) = detect_hotspots(&mwir[..n], &lwir[..n], w, h, &cfg) {
                                     state.alerts_sent += 1;
                                     info!(
                                         "ALERT #{}: {} px, \

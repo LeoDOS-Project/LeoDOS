@@ -31,3 +31,4 @@ and packet length fields to find packet boundaries even when
 packets span multiple frames.
 
 - [SPP](spp) — Space Packet header format
+- [Encapsulation](encapsulation) — Encapsulation Packet for non-CCSDS data

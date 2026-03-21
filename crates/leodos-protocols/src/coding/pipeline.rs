@@ -1,9 +1,15 @@
 //! Coding pipeline that composes randomizer, FEC, and framer
 //! into a single `CodingWrite` / `CodingRead`.
 
+use crate::coding::CodingRead;
+use crate::coding::CodingWrite;
+use crate::coding::Deframer;
+use crate::coding::FecDecoder;
+use crate::coding::FecEncoder;
+use crate::coding::Framer;
 use crate::coding::randomizer::Randomizer;
-use crate::coding::{CodingRead, CodingWrite, Deframer, FecDecoder, FecEncoder, Framer};
-use crate::physical::{PhysicalRead, PhysicalWrite};
+use crate::physical::PhysicalRead;
+use crate::physical::PhysicalWrite;
 
 // ── Write pipeline ──────────────────────────────────────────
 

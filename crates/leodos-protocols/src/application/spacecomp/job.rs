@@ -19,6 +19,8 @@ use zerocopy::network_endian::U64;
 
 use crate::network::isl::geo::GeoAoi;
 use crate::network::isl::geo::LatLon;
+use crate::utils::get_bits_u8;
+use crate::utils::set_bits_u8;
 
 /// Which assignment algorithm to use for collector-to-mapper matching.
 #[repr(u8)]
@@ -76,6 +78,12 @@ pub struct Job {
     flags: u8,
 }
 
+#[rustfmt::skip]
+mod bitmask {
+    pub const ASCENDING_ONLY_MASK: u8 = 0b_0000_0001;
+    pub const SOLVER_MASK: u8 =         0b_0000_0110;
+}
+
 #[bon]
 impl Job {
     #[builder]
@@ -90,7 +98,9 @@ impl Job {
         #[builder(default = false)] ascending_only: bool,
         #[builder(default)] solver: AssignmentSolver,
     ) -> Self {
-        let flags = (ascending_only as u8) | ((solver as u8 & 0x03) << 1);
+        let mut flags = 0u8;
+        set_bits_u8(&mut flags, bitmask::ASCENDING_ONLY_MASK, ascending_only as u8);
+        set_bits_u8(&mut flags, bitmask::SOLVER_MASK, solver as u8);
         Self {
             upper_left_lat: U32::new(geo_aoi.upper_left.lat_deg.to_bits()),
             upper_left_lon: U32::new(geo_aoi.upper_left.lon_deg.to_bits()),
@@ -146,12 +156,12 @@ impl Job {
 
     /// Returns whether only ascending satellites should be used.
     pub fn ascending_only(&self) -> bool {
-        self.flags & 0x01 != 0
+        get_bits_u8(self.flags, bitmask::ASCENDING_ONLY_MASK) != 0
     }
 
     /// Returns the assignment solver algorithm.
     pub fn solver(&self) -> AssignmentSolver {
-        let bits = (self.flags >> 1) & 0x03;
+        let bits = get_bits_u8(self.flags, bitmask::SOLVER_MASK);
         AssignmentSolver::try_from(bits).unwrap_or_default()
     }
 }

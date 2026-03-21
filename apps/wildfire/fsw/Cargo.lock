@@ -386,6 +386,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
+name = "leodos-analysis"
+version = "0.1.0"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "leodos-libcfs"
 version = "0.1.1"
 dependencies = [
@@ -697,6 +704,7 @@ version = "0.1.0"
 dependencies = [
  "bindgen",
  "heapless",
+ "leodos-analysis",
  "leodos-libcfs",
  "leodos-protocols",
 ]
