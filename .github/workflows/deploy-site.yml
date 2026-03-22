@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'site/**'
-      - 'crates/**'
+      # - 'crates/**'
   workflow_dispatch:
 
 permissions:
