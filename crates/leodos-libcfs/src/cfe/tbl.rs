@@ -301,8 +301,10 @@ impl<T: Sized> Table<T> {
         handles: [TableHandle; N],
     ) -> Result<[TableAccessor<'static, ()>; N]> {
         let mut ptrs: [*mut c_void; N] = [core::ptr::null_mut(); N];
+        let mut ptr_ptrs: [*mut *mut c_void; N] =
+            core::array::from_fn(|i| &mut ptrs[i] as *mut *mut c_void);
         check(ffi::CFE_TBL_GetAddresses(
-            &mut (ptrs.as_mut_ptr() as *mut *mut c_void),
+            ptr_ptrs.as_mut_ptr(),
             N as u16,
             handles.as_ptr() as *const _,
         ))?;

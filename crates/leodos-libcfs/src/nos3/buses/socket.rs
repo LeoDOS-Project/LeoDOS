@@ -115,7 +115,9 @@ impl Socket {
         let mut info: ffi::socket_info_t = unsafe {
             MaybeUninit::zeroed().assume_init()
         };
-        info.ip_address = ip.as_ptr() as *mut _;
+        // SAFETY: socket_create only reads ip_address; the C header
+        // declares it as `char *` instead of `const char *`.
+        info.ip_address = ip.as_ptr().cast_mut();
         info.port_num = port;
         info.address_family = match family {
             AddrFamily::V4 => ffi::addr_fam_e_ip_ver_4,

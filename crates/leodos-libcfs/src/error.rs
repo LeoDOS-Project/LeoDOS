@@ -738,13 +738,12 @@ impl CfsError {
     /// Retrieves the symbolic name for an OSAL status code.
     pub fn name(error: i32) -> Result<CString<{ ffi::OS_ERROR_NAME_LENGTH as usize }>> {
         const SIZE: usize = ffi::OS_ERROR_NAME_LENGTH as usize;
-        let mut name_buf = [0u8; SIZE];
-        check(unsafe {
-            ffi::OS_GetErrorName(error, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE])
-        })?;
+        let mut name_buf = [0 as libc::c_char; SIZE];
+        check(unsafe { ffi::OS_GetErrorName(error, &mut name_buf) })?;
 
+        let c_str = unsafe { core::ffi::CStr::from_ptr(name_buf.as_ptr()) };
         let mut s = CString::new();
-        s.extend_from_bytes(&name_buf)
+        s.extend_from_bytes(c_str.to_bytes())
             .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
         Ok(s)
     }
@@ -755,13 +754,12 @@ pub fn get_cfe_status_name(
     status: i32,
 ) -> Result<CString<{ ffi::CFE_STATUS_STRING_LENGTH as usize }>> {
     const SIZE: usize = ffi::CFE_STATUS_STRING_LENGTH as usize;
-    let mut name_buf = [0u8; SIZE];
-    unsafe {
-        ffi::CFE_ES_StatusToString(status, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE])
-    };
+    let mut name_buf = [0 as libc::c_char; SIZE];
+    unsafe { ffi::CFE_ES_StatusToString(status, &mut name_buf) };
 
+    let c_str = unsafe { core::ffi::CStr::from_ptr(name_buf.as_ptr()) };
     let mut s = CString::new();
-    s.extend_from_bytes(&name_buf)
+    s.extend_from_bytes(c_str.to_bytes())
         .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
     Ok(s)
 }
@@ -772,11 +770,12 @@ pub fn osal_status_to_string(
     status: i32,
 ) -> Result<CString<{ ffi::OS_STATUS_STRING_LENGTH as usize }>> {
     const SIZE: usize = ffi::OS_STATUS_STRING_LENGTH as usize;
-    let mut name_buf = [0u8; SIZE];
-    unsafe { ffi::OS_StatusToString(status, &mut name_buf as *mut _ as *mut [libc::c_char; SIZE]) };
+    let mut name_buf = [0 as libc::c_char; SIZE];
+    unsafe { ffi::OS_StatusToString(status, &mut name_buf) };
 
+    let c_str = unsafe { core::ffi::CStr::from_ptr(name_buf.as_ptr()) };
     let mut s = CString::new();
-    s.extend_from_bytes(&name_buf)
+    s.extend_from_bytes(c_str.to_bytes())
         .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
     Ok(s)
 }
