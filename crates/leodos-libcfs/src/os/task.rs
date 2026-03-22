@@ -45,11 +45,36 @@ impl TaskId {
     pub fn current() -> Result<Self> {
         let id = unsafe { ffi::OS_TaskGetId() };
         if id == 0 {
-            // OS_TaskGetId returns 0 if not called from a valid task context.
             Err(CfsError::Osal(OsalError::InvalidId))
         } else {
             Ok(Self(id))
         }
+    }
+
+    /// Returns a zero-based index for this task, suitable for
+    /// indexing into a user-provided per-task context array.
+    ///
+    /// This is the workaround for OSAL not supporting per-task
+    /// arguments (see nasa/osal#1394). Usage:
+    ///
+    /// ```ignore
+    /// static CONTEXTS: [AtomicPtr<()>; 16] = /* ... */;
+    ///
+    /// // At task creation:
+    /// let task = Task::new("worker", worker_entry, ...)?;
+    /// CONTEXTS[task.id().index()? as usize].store(ctx_ptr, Ordering::Release);
+    ///
+    /// // Inside the task:
+    /// let idx = TaskId::current()?.index()? as usize;
+    /// let ctx = CONTEXTS[idx].load(Ordering::Acquire);
+    /// ```
+    pub fn index(&self) -> Result<u32> {
+        OsalId(self.0).to_index()
+    }
+
+    /// Shorthand: get the current task's zero-based index.
+    pub fn current_index() -> Result<u32> {
+        Self::current()?.index()
     }
 
     /// Finds an existing OSAL task ID by its name.
