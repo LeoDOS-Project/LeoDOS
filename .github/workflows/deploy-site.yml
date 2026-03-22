@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'site/**'
-      # - 'crates/**'
+      - 'crates/**'
   workflow_dispatch:
 
 permissions:
@@ -58,29 +58,29 @@ jobs:
         working-directory: site
         run: npm run build
 
-      # - name: Build Docker image
-      #   run: docker compose build cfs-build
+      - name: Build Docker image
+        run: docker compose build cfs-build
 
-      # - name: Prep cFS headers
-      #   run: docker compose run --rm cfs-build bash -c "make SIMULATION=native prep"
+      - name: Prep cFS headers
+        run: docker compose run --rm cfs-build bash -c "make SIMULATION=native prep"
 
-      # - name: Build rustdoc (leodos-protocols with all features)
-      #   run: |
-      #     docker compose run --rm cfs-build \
-      #       cargo doc --manifest-path crates/leodos-protocols/Cargo.toml \
-      #       --features=cfs,tokio --no-deps
+      - name: Build rustdoc (leodos-protocols with all features)
+        run: |
+          docker compose run --rm cfs-build \
+            cargo doc --manifest-path crates/leodos-protocols/Cargo.toml \
+            --features=cfs,tokio --no-deps
 
-      # - name: Build rustdoc (leodos-libcfs)
-      #   run: |
-      #     docker compose run --rm cfs-build \
-      #       cargo doc --manifest-path crates/leodos-libcfs/Cargo.toml \
-      #       --no-deps
+      - name: Build rustdoc (leodos-libcfs)
+        run: |
+          docker compose run --rm cfs-build \
+            cargo doc --manifest-path crates/leodos-libcfs/Cargo.toml \
+            --no-deps
 
-      # - name: Copy rustdoc into site build
-      #   run: |
-      #     mkdir -p site/build/rustdoc
-      #     cp -r crates/leodos-protocols/target/doc/* site/build/rustdoc/
-      #     cp -r crates/leodos-libcfs/target/doc/* site/build/rustdoc/
+      - name: Copy rustdoc into site build
+        run: |
+          mkdir -p site/build/rustdoc
+          cp -r crates/leodos-protocols/target/doc/* site/build/rustdoc/
+          cp -r crates/leodos-libcfs/target/doc/* site/build/rustdoc/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

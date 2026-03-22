@@ -4,7 +4,7 @@
 //! time bases, which act as sources for timer ticks. The `TimeBase` struct uses
 //! RAII to ensure the underlying OSAL resource is properly cleaned up.
 
-use crate::error::Result;
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::cstring;

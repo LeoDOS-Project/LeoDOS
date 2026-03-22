@@ -3,7 +3,7 @@
 //! This module provides utilities for working with generic `OsalId`s, which
 //! are the underlying type for all OSAL resources (tasks, queues, mutexes, etc.).
 
-use crate::error::{CfsError, OsalError, Result};
+use crate::error::Result;
 use crate::ffi::{self, OS_OBJECT_CREATOR_ANY};
 use crate::status::check;
 use crate::string_from_c_buf;
