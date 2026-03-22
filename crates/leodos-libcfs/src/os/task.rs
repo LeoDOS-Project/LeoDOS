@@ -5,15 +5,15 @@
 
 use bitflags::bitflags;
 
-use crate::error::{CfsError, OsalError, Result};
+use crate::error::Result;
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::cstring;
+use crate::string_from_c_buf;
 use crate::status::check;
-use core::ffi::CStr;
 use core::mem::MaybeUninit;
 use core::time::Duration;
-use heapless::CString;
+use heapless::String;
 
 bitflags! {
     /// Options for task creation.
@@ -69,7 +69,7 @@ pub type TaskDeleteHandler = unsafe extern "C" fn();
 #[derive(Debug, Clone)]
 pub struct TaskProp {
     /// The registered name of the task.
-    pub name: CString<{ ffi::OS_MAX_API_NAME as usize }>,
+    pub name: String<{ ffi::OS_MAX_API_NAME as usize }>,
     /// The OSAL ID of the task that created this task.
     pub creator: OsalId,
     /// The allocated stack size of the task in bytes.
@@ -140,14 +140,8 @@ impl Task {
         check(unsafe { ffi::OS_TaskGetInfo(self.id.0, prop.as_mut_ptr()) })?;
         let prop = unsafe { prop.assume_init() };
 
-        let mut name_str = CString::new();
-        let c_str = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
-        name_str
-            .extend_from_bytes(c_str.to_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
-
         Ok(TaskProp {
-            name: name_str,
+            name: string_from_c_buf(&prop.name)?,
             creator: OsalId(prop.creator),
             stack_size: prop.stack_size,
             priority: prop.priority,

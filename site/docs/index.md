@@ -16,6 +16,5 @@ The system is designed around a single premise: satellites in a LEO constellatio
 - **[SpaceCoMP](/spacecomp/overview)** — distributed computation across the constellation: task allocation, workflows, and use cases
 - **[LEO Communication Protocols](/protocols/overview)** — CCSDS communication stack from physical modulation to reliable transport
 - **[Core Flight System](/cfs/overview)** — the cFS framework: architecture, mission structure, and the five cFE services
-- **[Research](/research/overview)** — open problems in data stream processing and security for space systems
 - **[Simulation](/simulation/overview)** — NOS3-based constellation simulator: orbits, sensors, communication, Earth observation
 - **[ColonyOS](/colonyos/integration)** — external job orchestration for ground-initiated workflows

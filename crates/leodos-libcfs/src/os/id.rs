@@ -6,8 +6,9 @@
 use crate::error::{CfsError, OsalError, Result};
 use crate::ffi::{self, OS_OBJECT_CREATOR_ANY};
 use crate::status::check;
+use crate::string_from_c_buf;
 use core::mem::MaybeUninit;
-use heapless::CString;
+use heapless::String;
 
 /// A generic, type-safe wrapper for an OSAL object ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,21 +28,16 @@ impl OsalId {
     ///
     /// Returns an error if the object ID is invalid, the buffer is too small
     /// (unlikely with `heapless`), or the name is not valid UTF-8.
-    pub fn name(&self) -> Result<CString<{ ffi::OS_MAX_API_NAME as usize }>> {
-        let mut buffer = [0u8; ffi::OS_MAX_API_NAME as usize];
+    pub fn name(&self) -> Result<String<{ ffi::OS_MAX_API_NAME as usize }>> {
+        let mut buffer = [0i8; ffi::OS_MAX_API_NAME as usize];
         check(unsafe {
             ffi::OS_GetResourceName(
                 self.0,
-                buffer.as_mut_ptr() as *mut libc::c_char,
+                buffer.as_mut_ptr(),
                 buffer.len(),
             )
         })?;
-
-        let len = buffer.iter().position(|&b| b == 0).unwrap_or(0);
-        let mut s = CString::new();
-        s.extend_from_bytes(&buffer[..len])
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
-        Ok(s)
+        string_from_c_buf(&buffer)
     }
 
     /// Identifies the type of this OSAL object.

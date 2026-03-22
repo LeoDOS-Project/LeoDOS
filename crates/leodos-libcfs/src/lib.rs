@@ -33,6 +33,7 @@ pub mod macros;
 pub mod app;
 pub mod util;
 pub use util::cstring;
+pub use util::string_from_c_buf;
 #[cfg(feature = "cfdp")]
 pub mod cf;
 #[cfg(feature = "bp")]

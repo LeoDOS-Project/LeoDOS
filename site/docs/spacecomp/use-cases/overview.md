@@ -10,9 +10,7 @@ kilobyte-sized alert packets using the SpaceCoMP
 Each use case is a single job: the ground submits a request, collectors
 acquire data on one pass, mappers process it, the reducer aggregates,
 and the result is downlinked. For continuous monitoring that spans
-multiple passes and fuses data over time, see the
-[streaming use cases](/research/data-stream-processing#use-cases) in
-the Research section.
+multiple passes and fuses data over time.
 
 **Use cases:**
 

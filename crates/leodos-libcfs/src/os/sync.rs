@@ -4,22 +4,22 @@
 //! Counting Semaphores. It uses RAII guards for mutexes to ensure they are
 //! always released, preventing deadlocks.
 
-use crate::error::{CfsError, OsalError, Result};
+use crate::error::Result;
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::time::OsTime;
 use crate::os::util::c_name_from_str;
+use crate::string_from_c_buf;
 use crate::status::check;
-use core::ffi::CStr;
 use core::mem::MaybeUninit;
 use core::ops::Drop;
-use heapless::CString;
+use heapless::String;
 
 /// Properties of a mutex, returned by `Mutex::get_info`.
 #[derive(Debug, Clone)]
 pub struct MutexProp {
     /// The registered name of the mutex.
-    pub name: CString<{ ffi::OS_MAX_API_NAME as usize }>,
+    pub name: String<{ ffi::OS_MAX_API_NAME as usize }>,
     /// The OSAL ID of the task that created the mutex.
     pub creator: OsalId,
 }
@@ -70,14 +70,8 @@ impl Mutex {
         check(unsafe { ffi::OS_MutSemGetInfo(self.id, prop.as_mut_ptr()) })?;
         let prop = unsafe { prop.assume_init() };
 
-        let mut name_str = CString::new();
-        let c_str = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
-        name_str
-            .extend_from_bytes(c_str.to_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
-
         Ok(MutexProp {
-            name: name_str,
+            name: string_from_c_buf(&prop.name)?,
             creator: OsalId(prop.creator),
         })
     }
@@ -127,7 +121,7 @@ impl SemState {
 #[derive(Debug, Clone)]
 pub struct BinSemProp {
     /// The registered name of the binary semaphore.
-    pub name: CString<{ ffi::OS_MAX_API_NAME as usize }>,
+    pub name: String<{ ffi::OS_MAX_API_NAME as usize }>,
     /// The OSAL ID of the task that created the semaphore.
     pub creator: OsalId,
     /// The current value of the semaphore (typically 0 or 1).
@@ -201,12 +195,8 @@ impl BinSem {
         check(unsafe { ffi::OS_BinSemGetInfo(self.id, prop.as_mut_ptr()) })?;
         let prop = unsafe { prop.assume_init() };
 
-        let mut name_str = CString::new();
-        let c_str = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
-        name_str.extend_from_bytes(c_str.to_bytes()).unwrap(); // Should not fail
-
         Ok(BinSemProp {
-            name: name_str,
+            name: string_from_c_buf(&prop.name)?,
             creator: OsalId(prop.creator),
             value: prop.value,
         })
@@ -223,7 +213,7 @@ impl Drop for BinSem {
 #[derive(Debug, Clone)]
 pub struct CountSemProp {
     /// The registered name of the counting semaphore.
-    pub name: CString<{ ffi::OS_MAX_API_NAME as usize }>,
+    pub name: String<{ ffi::OS_MAX_API_NAME as usize }>,
     /// The OSAL ID of the task that created the semaphore.
     pub creator: OsalId,
     /// The current count of the semaphore.
@@ -292,12 +282,8 @@ impl CountSem {
         check(unsafe { ffi::OS_CountSemGetInfo(self.id, prop.as_mut_ptr()) })?;
         let prop = unsafe { prop.assume_init() };
 
-        let mut name_str = CString::new();
-        let c_str = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
-        name_str.extend_from_bytes(c_str.to_bytes()).unwrap(); // Should not fail
-
         Ok(CountSemProp {
-            name: name_str,
+            name: string_from_c_buf(&prop.name)?,
             creator: OsalId(prop.creator),
             value: prop.value,
         })
@@ -314,7 +300,7 @@ impl Drop for CountSem {
 #[derive(Debug, Clone)]
 pub struct CondVarProp {
     /// The registered name of the condition variable.
-    pub name: CString<{ ffi::OS_MAX_API_NAME as usize }>,
+    pub name: String<{ ffi::OS_MAX_API_NAME as usize }>,
     /// The OSAL ID of the task that created the condition variable.
     pub creator: OsalId,
 }
@@ -380,12 +366,8 @@ impl CondVar {
         check(unsafe { ffi::OS_CondVarGetInfo(self.id, prop.as_mut_ptr()) })?;
         let prop = unsafe { prop.assume_init() };
 
-        let mut name_str = CString::new();
-        let c_str = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
-        name_str.extend_from_bytes(c_str.to_bytes()).unwrap();
-
         Ok(CondVarProp {
-            name: name_str,
+            name: string_from_c_buf(&prop.name)?,
             creator: OsalId(prop.creator),
         })
     }

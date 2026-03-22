@@ -4,22 +4,22 @@
 //! message passing. The `Queue` struct is an RAII wrapper that ensures the
 //! underlying OSAL resource is properly cleaned up.
 
-use crate::error::{CfsError, OsalError, Result};
+use crate::error::Result;
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::util::c_name_from_str;
+use crate::string_from_c_buf;
 use crate::status::check;
-use core::ffi::CStr;
 use core::marker::PhantomData;
 use core::mem::{self, MaybeUninit};
 use core::ops::Drop;
-use heapless::CString;
+use heapless::String;
 
 /// Properties of a message queue, returned by `Queue::get_info`.
 #[derive(Debug, Clone)]
 pub struct QueueProp {
     /// The registered name of the queue.
-    pub name: CString<{ ffi::OS_MAX_API_NAME as usize }>,
+    pub name: String<{ ffi::OS_MAX_API_NAME as usize }>,
     /// The OSAL ID of the task that created the queue.
     pub creator: OsalId,
 }
@@ -130,14 +130,8 @@ impl<T: Copy + Sized> Queue<T> {
         check(unsafe { ffi::OS_QueueGetInfo(self.id.0, prop.as_mut_ptr()) })?;
         let prop = unsafe { prop.assume_init() };
 
-        let mut name_str = CString::new();
-        let c_str = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
-        name_str
-            .extend_from_bytes(c_str.to_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
-
         Ok(QueueProp {
-            name: name_str,
+            name: string_from_c_buf(&prop.name)?,
             creator: OsalId(prop.creator),
         })
     }

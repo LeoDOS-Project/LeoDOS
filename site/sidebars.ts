@@ -301,16 +301,6 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Research',
-      link: { type: 'doc', id: 'research/overview' },
-      items: [
-        'research/data-stream-processing',
-        'research/security',
-        'research/local-first',
-      ],
-    },
-    {
-      type: 'category',
       label: 'Simulation',
       link: { type: 'doc', id: 'simulation/overview' },
       items: [

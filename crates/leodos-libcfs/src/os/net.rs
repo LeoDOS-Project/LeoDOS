@@ -5,8 +5,8 @@ use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::time::OsTime;
 use crate::cstring;
+use crate::string_from_c_buf;
 use crate::status::check;
-use core::ffi::CStr;
 use core::fmt::Write;
 use core::future::Future;
 use core::mem::MaybeUninit;
@@ -41,15 +41,9 @@ impl SocketAddr {
         })?;
 
         // 2. Set the IP address from a string
-        let mut c_ip: String<{ ffi::OS_MAX_PATH_LEN as usize }> = String::new();
-        c_ip.push_str(ip_addr)
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
-        c_ip.push('\0').map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_ip = cstring::<{ ffi::OS_MAX_PATH_LEN as usize }>(ip_addr)?;
         check(unsafe {
-            ffi::OS_SocketAddrFromString(
-                addr_uninit.as_mut_ptr(),
-                c_ip.as_ptr() as *const libc::c_char,
-            )
+            ffi::OS_SocketAddrFromString(addr_uninit.as_mut_ptr(), c_ip.as_ptr())
         })?;
 
         // 3. Set the port
@@ -96,15 +90,12 @@ impl TryFrom<core::net::SocketAddr> for SocketAddr {
         check(unsafe { ffi::OS_SocketAddrInit(addr_uninit.as_mut_ptr(), domain.into()) })?;
 
         // Format IP to C-String for OSAL
-        let mut c_ip: String<{ ffi::OS_MAX_PATH_LEN as usize }> = String::new();
-        write!(c_ip, "{}", addr.ip()).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
-        c_ip.push('\0').map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let mut ip_buf: String<{ ffi::OS_MAX_PATH_LEN as usize }> = String::new();
+        write!(ip_buf, "{}", addr.ip()).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
+        let c_ip = cstring::<{ ffi::OS_MAX_PATH_LEN as usize }>(&ip_buf)?;
 
         check(unsafe {
-            ffi::OS_SocketAddrFromString(
-                addr_uninit.as_mut_ptr(),
-                c_ip.as_ptr() as *const libc::c_char,
-            )
+            ffi::OS_SocketAddrFromString(addr_uninit.as_mut_ptr(), c_ip.as_ptr())
         })?;
 
         check(unsafe { ffi::OS_SocketAddrSetPort(addr_uninit.as_mut_ptr(), addr.port()) })?;
@@ -512,12 +503,8 @@ pub fn get_socket_info(sock_id: OsalId) -> Result<SocketProp> {
     check(unsafe { ffi::OS_SocketGetInfo(sock_id.0, prop.as_mut_ptr()) })?;
     let prop = unsafe { prop.assume_init() };
 
-    let name_cstr = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
-    let name_str = name_cstr.to_str().map_err(|_| CfsError::InvalidString)?;
-    let name = String::try_from(name_str).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
-
     Ok(SocketProp {
-        name,
+        name: string_from_c_buf(&prop.name)?,
         creator: OsalId(prop.creator),
     })
 }

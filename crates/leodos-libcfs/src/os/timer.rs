@@ -5,16 +5,17 @@
 //! struct uses RAII to ensure the underlying OSAL resource is deleted when it
 //! is dropped.
 
-use crate::error::{CfsError, OsalError, Result};
+use crate::error::Result;
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::timebase::TimeBaseId;
 use crate::os::util::c_name_from_str;
+use crate::string_from_c_buf;
 use crate::status::check;
-use core::ffi::{c_void, CStr};
+use core::ffi::c_void;
 use core::mem::MaybeUninit;
 use core::ops::Drop;
-use heapless::CString;
+use heapless::String;
 
 /// A type alias for the callback function used by an OSAL timer.
 ///
@@ -28,7 +29,7 @@ pub type TimerArgCallback = unsafe extern "C" fn(timer_id: ffi::osal_id_t, arg: 
 #[derive(Debug, Clone)]
 pub struct TimerProp {
     /// The registered name of the timer.
-    pub name: CString<{ ffi::OS_MAX_API_NAME as usize }>,
+    pub name: String<{ ffi::OS_MAX_API_NAME as usize }>,
     /// The OSAL ID of the task that created the timer.
     pub creator: OsalId,
     /// The configured start time in microseconds.
@@ -151,15 +152,8 @@ impl Timer {
         check(unsafe { ffi::OS_TimerGetInfo(self.id, prop.as_mut_ptr()) })?;
         let prop = unsafe { prop.assume_init() };
 
-        let name_ptr = prop.name.as_ptr();
-        let name_cstr = unsafe { CStr::from_ptr(name_ptr) };
-        let mut name_string = CString::new();
-        name_string
-            .extend_from_bytes(name_cstr.to_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
-
         Ok(TimerProp {
-            name: name_string,
+            name: string_from_c_buf(&prop.name)?,
             creator: OsalId(prop.creator),
             start_time: prop.start_time,
             interval_time: prop.interval_time,

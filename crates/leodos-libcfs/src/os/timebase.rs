@@ -4,16 +4,16 @@
 //! time bases, which act as sources for timer ticks. The `TimeBase` struct uses
 //! RAII to ensure the underlying OSAL resource is properly cleaned up.
 
-use crate::error::{CfsError, OsalError, Result};
+use crate::error::Result;
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::cstring;
 use crate::os::util::c_name_from_str;
+use crate::string_from_c_buf;
 use crate::status::check;
-use core::ffi::CStr;
 use core::mem::MaybeUninit;
 use core::time::Duration;
-use heapless::CString;
+use heapless::String;
 
 /// A type-safe, zero-cost wrapper for an OSAL Time Base ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +45,7 @@ impl TimeBaseId {
 #[derive(Debug, Clone)]
 pub struct TimeBaseProp {
     /// The registered name of the time base.
-    pub name: CString<{ ffi::OS_MAX_API_NAME as usize }>,
+    pub name: String<{ ffi::OS_MAX_API_NAME as usize }>,
     /// The OSAL ID of the task that created the time base.
     pub creator: OsalId,
     /// The nominal interval time in microseconds.
@@ -130,13 +130,8 @@ impl TimeBase {
         check(unsafe { ffi::OS_TimeBaseGetInfo(self.id.0, prop.as_mut_ptr()) })?;
         let prop = unsafe { prop.assume_init() };
 
-        let name_cstr = unsafe { CStr::from_ptr(prop.name.as_ptr()) };
-        let mut name = CString::new();
-        name.extend_from_bytes(name_cstr.to_bytes())
-            .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
-
         Ok(TimeBaseProp {
-            name,
+            name: string_from_c_buf(&prop.name)?,
             creator: OsalId(prop.creator),
             nominal_interval_time: prop.nominal_interval_time,
             freerun_time: prop.freerun_time,

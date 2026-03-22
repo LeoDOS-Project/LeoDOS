@@ -4,15 +4,17 @@
 //! dynamically loaded shared library, ensuring it is properly unloaded when
 //! it goes out of scope.
 
-use crate::error::{CfsError, OsalError, Result};
+use crate::error::Result;
 use crate::ffi;
+use crate::os::util::c_name_from_str;
 use crate::os::util::c_path_from_str;
+use crate::os::util::path_from_c_buf;
+use crate::string_from_c_buf;
 use crate::status::check;
 use bitflags::bitflags;
 use core::ffi::c_void;
-use core::ffi::CStr;
 use core::mem::MaybeUninit;
-use heapless::{CString, String};
+use heapless::String;
 
 /// A type-safe, zero-cost wrapper for an OSAL Module ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +64,7 @@ impl Module {
     /// * `filename`: The path to the object file to load (e.g., "/cf/my_lib.so").
     /// * `flags`: Options for how symbols are loaded.
     pub fn load(name: &str, filename: &str, flags: ModuleFlags) -> Result<Self> {
-        let c_name = c_string_from_str(name)?;
+        let c_name = c_name_from_str(name)?;
         let c_filename = c_path_from_str(filename)?;
         let mut module_id = MaybeUninit::uninit();
 
@@ -91,7 +93,7 @@ impl Module {
     /// it is cast to the correct function pointer type and that the function
     /// signature is correct. The symbol's lifetime is tied to the `Module` instance.
     pub fn symbol(&self, name: &str) -> Result<*mut c_void> {
-        let c_name = c_string_from_str(name)?;
+        let c_name = c_name_from_str(name)?;
         let mut symbol_addr = 0;
         check(unsafe { ffi::OS_ModuleSymbolLookup(self.id.0, &mut symbol_addr, c_name.as_ptr()) })?;
         Ok(symbol_addr as *mut c_void)
@@ -108,19 +110,9 @@ impl Module {
         check(unsafe { ffi::OS_ModuleInfo(self.id.0, prop.as_mut_ptr()) })?;
         let prop = unsafe { prop.assume_init() };
 
-        let name_bytes = unsafe { CStr::from_ptr(prop.name.as_ptr()) }.to_bytes();
-        let name_vec =
-            heapless::Vec::from_slice(name_bytes).map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
-        let name = String::from_utf8(name_vec).map_err(|_| CfsError::InvalidString)?;
-
-        let filename_bytes = unsafe { CStr::from_ptr(prop.filename.as_ptr()) }.to_bytes();
-        let filename_vec =
-            heapless::Vec::from_slice(filename_bytes).map_err(|_| CfsError::Osal(OsalError::FsPathTooLong))?;
-        let filename = String::from_utf8(filename_vec).map_err(|_| CfsError::InvalidString)?;
-
         Ok(ModuleProp {
-            name,
-            filename,
+            name: string_from_c_buf(&prop.name)?,
+            filename: path_from_c_buf(&prop.filename)?,
             entry_point: prop.entry_point,
         })
     }
@@ -131,15 +123,6 @@ impl Drop for Module {
     fn drop(&mut self) {
         let _ = unsafe { ffi::OS_ModuleUnload(self.id.0) };
     }
-}
-
-/// Helper to create a CString for a resource name.
-fn c_string_from_str(name: &str) -> Result<CString<{ ffi::OS_MAX_API_NAME as usize }>> {
-    let mut c_str = CString::new();
-    c_str
-        .extend_from_bytes(name.as_bytes())
-        .map_err(|_| CfsError::Osal(OsalError::NameTooLong))?;
-    Ok(c_str)
 }
 
 /// Dumps the system symbol table to the specified file.
@@ -166,7 +149,7 @@ pub fn symbol_table_dump(filename: &str, size_limit: usize) -> Result<()> {
 /// it is cast to the correct function pointer type and that the function
 /// signature is correct. The lifetime of the symbol is not managed by this function.
 pub fn symbol_lookup(name: &str) -> Result<*mut c_void> {
-    let c_name = c_string_from_str(name)?;
+    let c_name = c_name_from_str(name)?;
     let mut symbol_addr = 0;
     check(unsafe { ffi::OS_SymbolLookup(&mut symbol_addr, c_name.as_ptr()) })?;
     Ok(symbol_addr as *mut c_void)
