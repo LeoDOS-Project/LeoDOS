@@ -243,7 +243,9 @@ fn main() {
         build_dir.join("native/default_cpu1/osal/inc"),
         build_dir.join("native/default_cpu1/psp/inc"),
         build_dir.join("native/default_cpu1/inc"),
-        // NOS3 build uses amd64-nos3 platform instead of native.
+        build_dir.join("i686-linux-gnu/default_cpu1/osal/inc"),
+        build_dir.join("i686-linux-gnu/default_cpu1/psp/inc"),
+        build_dir.join("i686-linux-gnu/default_cpu1/inc"),
         build_dir.join("amd64-nos3/default_cpu1/osal/inc"),
         build_dir.join("amd64-nos3/default_cpu1/psp/inc"),
         build_dir.join("amd64-nos3/default_cpu1/inc"),
@@ -323,24 +325,17 @@ fn main() {
 
     if let Some(ref bplib) = bplib_dir {
         include_paths.push(bplib.join("inc"));
-        include_paths.push(bplib.join("ci/crc/inc"));
-        include_paths.push(bplib.join("ci/cbor/inc"));
-        include_paths.push(bplib.join("ci/time/inc"));
-        include_paths.push(bplib.join("ci/eid/inc"));
-        include_paths.push(bplib.join("ci/em/inc"));
-        include_paths.push(bplib.join("ci/qm/inc"));
-        include_paths.push(bplib.join("ci/rbt/inc"));
-        include_paths.push(bplib.join("ci/mem/inc"));
-        include_paths.push(bplib.join("ci/pi/inc"));
-        include_paths.push(bplib.join("ci/cla/inc"));
-        include_paths.push(bplib.join("ci/stor/inc"));
-        include_paths.push(bplib.join("ci/bi/inc"));
-        include_paths.push(bplib.join("ci/nc/inc"));
-        include_paths.push(bplib.join("ci/pl/inc"));
-        include_paths.push(bplib.join("ci/fwp/inc"));
-        include_paths.push(bplib.join("ci/as/inc"));
-        include_paths.push(bplib.join("ci/arp/inc"));
-        include_paths.push(bplib.join("ci/pdb/inc"));
+        for entry in walkdir::WalkDir::new(bplib)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_type().is_dir() && entry.file_name() == "inc" {
+                include_paths.push(entry.path().to_path_buf());
+            }
+        }
+        for path in &include_paths {
+            builder = builder.clang_arg(format!("-I{}", path.display()));
+        }
         builder = builder.header(header(bplib, "inc/bplib.h"));
     }
 
