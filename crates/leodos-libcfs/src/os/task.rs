@@ -5,7 +5,7 @@
 
 use bitflags::bitflags;
 
-use crate::error::Result;
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::cstring;

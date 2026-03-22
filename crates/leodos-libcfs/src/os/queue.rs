@@ -4,7 +4,7 @@
 //! message passing. The `Queue` struct is an RAII wrapper that ensures the
 //! underlying OSAL resource is properly cleaned up.
 
-use crate::error::Result;
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
 use crate::os::util::c_name_from_str;
