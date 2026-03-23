@@ -208,6 +208,7 @@ impl UdpSocket {
     }
 
     /// Receives a datagram with an absolute timeout.
+    #[cfg(not(feature = "nos3"))]
     pub fn recv_from_abs<'a>(
         &self,
         buf: &'a mut [u8],
@@ -346,6 +347,7 @@ impl TcpStream {
     }
 
     /// Accepts a new connection with an absolute timeout.
+    #[cfg(not(feature = "nos3"))]
     pub fn accept_abs(&self, abstime: OsTime) -> Result<(TcpStream, SocketAddr)> {
         let mut remote_addr_uninit = MaybeUninit::<ffi::OS_SockAddr_t>::uninit();
         let mut conn_sock_id = MaybeUninit::uninit();
@@ -364,6 +366,7 @@ impl TcpStream {
     }
 
     /// Opens a TCP connection to a remote host with an absolute timeout.
+    #[cfg(not(feature = "nos3"))]
     pub fn connect_abs(addr: SocketAddr, domain: SocketDomain, abstime: OsTime) -> Result<Self> {
         let mut sock_id = MaybeUninit::uninit();
         check(unsafe {
@@ -451,6 +454,7 @@ pub fn select_single(id: OsalId, state: &mut u32, timeout_ms: i32) -> Result<()>
 }
 
 /// Waits for events on a single file handle with an absolute timeout.
+    #[cfg(not(feature = "nos3"))]
 pub fn select_single_abs(id: OsalId, state: &mut u32, abstime: OsTime) -> Result<()> {
     check(unsafe { ffi::OS_SelectSingleAbs(id.0, state, abstime.0) })?;
     Ok(())
@@ -469,6 +473,7 @@ pub fn select_multiple(
 }
 
 /// Waits for events across multiple file handles with an absolute timeout.
+    #[cfg(not(feature = "nos3"))]
 pub fn select_multiple_abs(
     read_set: Option<&mut FdSet>,
     write_set: Option<&mut FdSet>,

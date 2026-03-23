@@ -407,6 +407,7 @@ impl File {
     }
 
     /// Reads from the file with an absolute timeout.
+    #[cfg(not(feature = "nos3"))]
     pub fn timed_read_abs(&mut self, buf: &mut [u8], abstime: OsTime) -> Result<usize> {
         let bytes_read = unsafe {
             ffi::OS_TimedReadAbs(self.id.0, buf.as_mut_ptr() as *mut _, buf.len(), abstime.0)
@@ -431,6 +432,7 @@ impl File {
     }
 
     /// Writes to the file with an absolute timeout.
+    #[cfg(not(feature = "nos3"))]
     pub fn timed_write_abs(&mut self, buf: &[u8], abstime: OsTime) -> Result<usize> {
         let bytes_written = unsafe {
             ffi::OS_TimedWriteAbs(self.id.0, buf.as_ptr() as *const _, buf.len(), abstime.0)

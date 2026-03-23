@@ -36,3 +36,46 @@ pub(crate) const OS_OBJECT_ID_UNDEFINED: osal_id_t = 0;
 
 #[doc = "@brief Constant that may be passed to OS_ForEachObject()/OS_ForEachObjectOfType() to match any\ncreator (i.e. get all objects)"]
 pub(crate) const OS_OBJECT_CREATOR_ANY: osal_id_t = OS_OBJECT_ID_UNDEFINED;
+
+// TopicId-to-MsgId conversion functions.
+// These exist in cFE equuleus-rc1+dev but not in the NOS3 cFE fork.
+// Provide Rust fallbacks for the NOS3 build.
+#[cfg(feature = "nos3")]
+pub(crate) unsafe fn CFE_SB_CmdTopicIdToMsgId(topic_id: u16, _instance: u16) -> CFE_SB_MsgId_Atom_t {
+    CFE_PLATFORM_CMD_MID_BASE + topic_id as CFE_SB_MsgId_Atom_t
+}
+
+#[cfg(feature = "nos3")]
+pub(crate) unsafe fn CFE_SB_TlmTopicIdToMsgId(topic_id: u16, _instance: u16) -> CFE_SB_MsgId_Atom_t {
+    CFE_PLATFORM_TLM_MID_BASE + topic_id as CFE_SB_MsgId_Atom_t
+}
+
+#[cfg(feature = "nos3")]
+pub(crate) unsafe fn CFE_SB_GlobalCmdTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {
+    CFE_PLATFORM_CMD_MID_BASE_GLOB + topic_id as CFE_SB_MsgId_Atom_t
+}
+
+#[cfg(feature = "nos3")]
+pub(crate) unsafe fn CFE_SB_GlobalTlmTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {
+    CFE_PLATFORM_TLM_MID_BASE_GLOB + topic_id as CFE_SB_MsgId_Atom_t
+}
+
+#[cfg(feature = "nos3")]
+pub(crate) unsafe fn CFE_SB_LocalCmdTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {
+    CFE_SB_CmdTopicIdToMsgId(topic_id, 0)
+}
+
+#[cfg(feature = "nos3")]
+pub(crate) unsafe fn CFE_SB_LocalTlmTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {
+    CFE_SB_TlmTopicIdToMsgId(topic_id, 0)
+}
+
+// CRC type enum value — present in newer cFE but not NOS3 fork.
+#[cfg(feature = "nos3")]
+pub(crate) const CFE_ES_CrcType_Enum_CFE_ES_CrcType_16_ARC: u32 = 2;
+#[cfg(feature = "nos3")]
+pub(crate) type CFE_ES_CrcType_Enum_t = u32;
+
+// Table full name length — present in newer cFE but not NOS3 fork.
+#[cfg(feature = "nos3")]
+pub(crate) const CFE_MISSION_TBL_MAX_FULL_NAME_LEN: u32 = OS_MAX_API_NAME + CFE_MISSION_MAX_API_LEN + 4;
