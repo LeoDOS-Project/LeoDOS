@@ -2,8 +2,8 @@
 pub mod fec;
 /// Frame synchronization and transmission unit encoding (CADU, CLTU).
 pub mod framing;
-/// CCSDS data compression algorithms (Rice, CCSDS 122, CCSDS 123).
-pub mod compression;
+/// Re-export from application layer for backward compatibility.
+pub use crate::application::compression;
 /// CCSDS pseudo-randomization for TC and TM frames.
 pub mod randomizer;
 /// CRC-protected Space Packet wrapper.
@@ -43,8 +43,6 @@ pub use fec::FecEncoder;
 pub use fec::FecDecoder;
 pub use framing::Framer;
 pub use framing::Deframer;
-pub use compression::Compressor;
-pub use compression::Decompressor;
 
 // ── No-op types ──────────────────────────────────────────────
 
