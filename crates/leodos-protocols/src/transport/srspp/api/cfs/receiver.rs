@@ -23,7 +23,7 @@ use crate::transport::srspp::packet::SrsppDataPacket;
 use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
 use crate::utils::cell::SyncRefCell;
-use heapless::index_map::FnvIndexMap;
+use heapless::LinearMap;
 
 use super::TransportError;
 use super::sender::duration_until;
@@ -45,7 +45,7 @@ pub(super) struct MultiReceiverState<E, R: ReceiverBackend, const MAX_STREAMS: u
     /// Configuration shared across all streams.
     pub(super) config: ReceiverConfig,
     /// Per-sender stream states keyed by source address.
-    pub(super) streams: FnvIndexMap<Address, StreamState<R>, MAX_STREAMS>,
+    pub(super) streams: LinearMap<Address, StreamState<R>, MAX_STREAMS>,
     /// Delayed ACK duration.
     pub(super) ack_delay: Duration,
     /// Whether the handle has signaled no more receives.
@@ -60,7 +60,7 @@ pub(super) struct MultiReceiverState<E, R: ReceiverBackend, const MAX_STREAMS: u
 pub struct SrsppReceiver<
     E,
     R: ReceiverBackend = ReceiverMachine<8, 4096, 8192>,
-    const MAX_STREAMS: usize = 4,
+    const MAX_STREAMS: usize = 1,
 > {
     /// Interior-mutable receiver state shared between handle and driver.
     state: SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
@@ -73,7 +73,7 @@ impl<E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize> SrsppReceiver<E, R,
         Self {
             state: SyncRefCell::new(MultiReceiverState {
                 config,
-                streams: FnvIndexMap::new(),
+                streams: LinearMap::new(),
                 ack_delay,
                 closed: false,
                 error: None,
@@ -227,7 +227,8 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     pub(super) fn next_deadline(&self) -> Option<SysTime> {
         self.state.with(|s| {
             s.streams
-                .values()
+                .iter()
+                .map(|(_, s)| s)
                 .flat_map(|s| [s.ack_deadline, s.progress_deadline])
                 .flatten()
                 .min()
@@ -381,7 +382,7 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     /// Check if there's a message ready from any sender.
     pub fn has_message(&self) -> bool {
         self.receiver
-            .with(|s| s.streams.values().any(|s| s.machine.has_message()))
+            .with(|s| s.streams.iter().any(|(_, s)| s.machine.has_message()))
     }
 
     /// Get the number of active streams.

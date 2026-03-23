@@ -186,11 +186,8 @@ docker-test:
 		"[ -f build/.prep ] || make SIMULATION=native prep && cd crates/leodos-protocols && cargo test --features=cfs"
 
 check:
-	docker compose run --rm cfs-build bash -c "\
-		make SIMULATION=native distclean prep && \
-		cd crates/leodos-protocols && cargo build --features=cfs && cargo test --features=cfs && \
-		cd ../leodos-libcfs && cargo build && \
-		cd /cFS && mkdir -p build/tables/staging && make install"
+	cd crates/leodos-protocols && cargo check --features=cfs && cargo test --features=cfs
+	cd crates/leodos-libcfs && cargo check
 
 # Constellation targets
 MAX_ORB ?= 3

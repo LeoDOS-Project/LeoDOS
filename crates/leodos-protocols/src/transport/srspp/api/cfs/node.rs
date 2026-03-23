@@ -17,7 +17,6 @@ use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::rto::RtoPolicy;
 use crate::utils::cell::SyncRefCell;
-use heapless::index_map::FnvIndexMap;
 
 use super::TimerSet;
 use super::receiver::MultiReceiverState;
@@ -38,7 +37,7 @@ pub struct SrsppNode<
     const WIN: usize = 8,
     const BUF: usize = 4096,
     const MTU: usize = 512,
-    const MAX_STREAMS: usize = 4,
+    const MAX_STREAMS: usize = 1,
 > {
     /// Interior-mutable sender state.
     pub(super) sender: SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
@@ -70,7 +69,7 @@ impl<
             }),
             receiver: SyncRefCell::new(MultiReceiverState {
                 config: receiver_config,
-                streams: FnvIndexMap::new(),
+                streams: heapless::LinearMap::new(),
                 ack_delay,
                 closed: false,
                 error: None,
