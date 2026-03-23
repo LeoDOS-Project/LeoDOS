@@ -13,6 +13,7 @@ use leodos_protocols::datalink::framing::sdlp::tm::{
 use leodos_protocols::datalink::link::framed::{
     DatalinkReader, DatalinkWriter,
 };
+use leodos_protocols::datalink::security::NoSecurity;
 use leodos_protocols::datalink::{DatalinkRead, DatalinkWrite};
 use leodos_protocols::ids::{Scid, Vcid};
 use leodos_protocols::network::spp::{
@@ -143,7 +144,11 @@ fn tc_sender_builds_valid_frame() {
         let mock = MockChannel::new();
         let frame_writer = TcFrameWriter::<512>::new(config);
         let mut writer =
-            DatalinkWriter::new(frame_writer, mock.writer());
+            DatalinkWriter::builder()
+                .frame_writer(frame_writer)
+                .coding_writer(mock.writer())
+                .security(NoSecurity)
+                .build();
 
         let mut pkt_buf = [0u8; 128];
         let pkt_len =
@@ -170,7 +175,11 @@ fn tc_round_trip() {
         let wire = MockChannel::new();
         let frame_writer = TcFrameWriter::<512>::new(config);
         let mut writer =
-            DatalinkWriter::new(frame_writer, wire.writer());
+            DatalinkWriter::builder()
+                .frame_writer(frame_writer)
+                .coding_writer(wire.writer())
+                .security(NoSecurity)
+                .build();
 
         let mut pkt_buf = [0u8; 128];
         let payload = b"Hello, TC round trip!";
@@ -181,7 +190,11 @@ fn tc_round_trip() {
 
         let frame_reader = TcFrameReader::<512>::new();
         let mut reader =
-            DatalinkReader::new(frame_reader, wire.reader());
+            DatalinkReader::builder()
+                .frame_reader(frame_reader)
+                .coding_reader(wire.reader())
+                .security(NoSecurity)
+                .build();
 
         let mut recv_buf = [0u8; 512];
         let recv_len =
@@ -213,7 +226,11 @@ fn tm_sender_builds_valid_frame() {
         let mock = MockChannel::new();
         let frame_writer = TmFrameWriter::<512>::new(config);
         let mut writer =
-            DatalinkWriter::new(frame_writer, mock.writer());
+            DatalinkWriter::builder()
+                .frame_writer(frame_writer)
+                .coding_writer(mock.writer())
+                .security(NoSecurity)
+                .build();
 
         let mut pkt_buf = [0u8; 128];
         let pkt_len =
@@ -238,7 +255,11 @@ fn tm_round_trip() {
         let wire = MockChannel::new();
         let frame_writer = TmFrameWriter::<512>::new(config);
         let mut writer =
-            DatalinkWriter::new(frame_writer, wire.writer());
+            DatalinkWriter::builder()
+                .frame_writer(frame_writer)
+                .coding_writer(wire.writer())
+                .security(NoSecurity)
+                .build();
 
         let mut pkt_buf = [0u8; 128];
         let payload = b"Hello, TM round trip!";
@@ -249,7 +270,11 @@ fn tm_round_trip() {
 
         let frame_reader = TmFrameReader::<512>::new();
         let mut reader =
-            DatalinkReader::new(frame_reader, wire.reader());
+            DatalinkReader::builder()
+                .frame_reader(frame_reader)
+                .coding_reader(wire.reader())
+                .security(NoSecurity)
+                .build();
 
         let mut recv_buf = [0u8; 512];
         let recv_len =

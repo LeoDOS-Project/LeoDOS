@@ -1,9 +1,11 @@
 //! Generic frame link channel.
 //!
 //! Provides [`DatalinkWriter`] and [`DatalinkReader`] that compose a
-//! frame format ([`FrameWrite`]/[`FrameRead`]) with a coding
-//! pipeline ([`CodingWrite`]/[`CodingRead`]) into a single
-//! owned type — no split, no shared state, no extra buffers.
+//! frame format ([`FrameWrite`]/[`FrameRead`]) with optional security
+//! ([`SecurityProcessor`]) and a coding pipeline
+//! ([`CodingWrite`]/[`CodingRead`]) into a single owned type.
+
+use bon::bon;
 
 use crate::coding::CodingRead;
 use crate::coding::CodingWrite;
@@ -12,6 +14,7 @@ use crate::datalink::DatalinkWrite;
 use crate::datalink::framing::FrameRead;
 use crate::datalink::framing::FrameWrite;
 use crate::datalink::framing::PushError;
+use crate::datalink::security::SecurityProcessor;
 use crate::datalink::spp::SpacePacket;
 
 /// Errors that can occur during link channel operations.
@@ -29,28 +32,43 @@ pub enum DatalinkError<E> {
     /// Failed to construct a transfer frame.
     #[error("frame build error")]
     BuildError,
+    /// Security processing failed.
+    #[error("security error")]
+    Security,
 }
 
 // ── DatalinkWriter ──
 
-/// Owns a [`FrameWrite`] and a [`CodingWrite`], accumulating
-/// packets into frames and flushing them to the coding pipeline.
-pub struct DatalinkWriter<F, W> {
+/// Owns a [`FrameWrite`], [`SecurityProcessor`], and [`CodingWrite`],
+/// accumulating packets into frames and flushing them through
+/// security → coding.
+pub struct DatalinkWriter<F, W, S> {
     frame_writer: F,
+    security: S,
     coding_writer: W,
+    scratch: [u8; 2048],
 }
 
-impl<F: FrameWrite, W: CodingWrite> DatalinkWriter<F, W> {
+#[bon]
+impl<F, W, S> DatalinkWriter<F, W, S>
+where
+    F: FrameWrite,
+    S: SecurityProcessor,
+    W: CodingWrite,
+{
     /// Creates a new link writer.
-    pub fn new(frame_writer: F, coding_writer: W) -> Self {
+    #[builder]
+    pub fn new(frame_writer: F, coding_writer: W, security: S) -> Self {
         Self {
             frame_writer,
+            security,
             coding_writer,
+            scratch: [0u8; 2048],
         }
     }
 
-    /// Finish the current frame and write it to the coding
-    /// pipeline.
+    /// Finish the current frame and write it through
+    /// security → coding.
     pub async fn flush(&mut self) -> Result<(), DatalinkError<W::Error>> {
         if self.frame_writer.is_empty() {
             return Ok(());
@@ -61,22 +79,29 @@ impl<F: FrameWrite, W: CodingWrite> DatalinkWriter<F, W> {
             .finish()
             .map_err(|_| DatalinkError::BuildError)?;
 
+        let len = frame.len().min(2048);
+        self.scratch[..len].copy_from_slice(&frame[..len]);
+
+        let secured_len = self
+            .security
+            .apply(&mut self.scratch[..len])
+            .map_err(|_| DatalinkError::Security)?;
+
         self.coding_writer
-            .write(frame)
+            .write(&self.scratch[..secured_len])
             .await
             .map_err(DatalinkError::Link)
     }
 }
 
-impl<F, W> DatalinkWrite for DatalinkWriter<F, W>
+impl<F, W, S> DatalinkWrite for DatalinkWriter<F, W, S>
 where
     F: FrameWrite,
+    S: SecurityProcessor,
     W: CodingWrite,
 {
     type Error = DatalinkError<W::Error>;
 
-    /// Push a packet into the current frame. If the frame is
-    /// full, flushes it first, then retries.
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         match self.frame_writer.push(data) {
             Ok(()) => Ok(()),
@@ -93,31 +118,34 @@ where
 
 // ── DatalinkReader ──
 
-/// Owns a [`FrameRead`] and a [`CodingRead`], reading
-/// frames from the coding pipeline and extracting packets.
-///
-/// Packet extraction (previously in each FrameRead impl) is
-/// handled here using [`SpacePacket::parse`] over the raw data
-/// field returned by [`FrameRead::data_field`].
-pub struct DatalinkReader<F, R> {
+/// Owns a [`FrameRead`], [`SecurityProcessor`], and [`CodingRead`],
+/// reading frames through coding → security removal → packet
+/// extraction.
+pub struct DatalinkReader<F, R, S> {
     frame_reader: F,
+    security: S,
     coding_reader: R,
-    /// Current read position within the data field.
     pos: usize,
 }
 
-impl<F: FrameRead, R: CodingRead> DatalinkReader<F, R> {
+#[bon]
+impl<F, R, S> DatalinkReader<F, R, S>
+where
+    F: FrameRead,
+    S: SecurityProcessor,
+    R: CodingRead,
+{
     /// Creates a new link reader.
-    pub fn new(frame_reader: F, coding_reader: R) -> Self {
+    #[builder]
+    pub fn new(frame_reader: F, coding_reader: R, security: S) -> Self {
         Self {
             frame_reader,
+            security,
             coding_reader,
             pos: 0,
         }
     }
 
-    /// Try to extract the next packet from the current data
-    /// field, returning its byte length or `None` if exhausted.
     fn extract_packet(&mut self, buffer: &mut [u8]) -> Option<usize> {
         let data = self.frame_reader.data_field();
         if self.pos >= data.len() {
@@ -133,31 +161,34 @@ impl<F: FrameRead, R: CodingRead> DatalinkReader<F, R> {
     }
 }
 
-impl<F, R> DatalinkRead for DatalinkReader<F, R>
+impl<F, R, S> DatalinkRead for DatalinkReader<F, R, S>
 where
     F: FrameRead,
+    S: SecurityProcessor,
     R: CodingRead,
 {
     type Error = DatalinkError<R::Error>;
 
-    /// Reads the next packet. Fetches a new frame from the
-    /// coding pipeline when the current frame is exhausted.
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
-        // Try extracting from current frame first.
         if let Some(n) = self.extract_packet(buffer) {
             return Ok(n);
         }
 
-        // Read a new frame directly into frame_reader's buffer.
+        let frame_buf = self.frame_reader.buffer_mut();
         let len = self
             .coding_reader
-            .read(self.frame_reader.buffer_mut())
+            .read(frame_buf)
             .await
             .map_err(DatalinkError::Link)?;
 
         if len == 0 {
             return Ok(0);
         }
+
+        let _secured_len = self
+            .security
+            .process(&mut frame_buf[..len])
+            .map_err(|_| DatalinkError::Security)?;
 
         self.frame_reader
             .feed(len)
