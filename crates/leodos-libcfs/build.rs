@@ -298,12 +298,14 @@ fn main() {
         .ctypes_prefix("libc")
         .clang_arg("-D_LINUX_OS_")
         .clang_arg("-D_POSIX_OS_")
-        .allowlist_function("CFE_.*|OSAL_.*|OS_.*|CF_.*|BPLib_.*|BPLIB_.*")
-        .allowlist_type("CFE_.*|OSAL_.*|OS_.*|CF_.*|BPLib_.*|BPLIB_.*")
-        .allowlist_var("CFE_.*|OSAL_.*|OS_.*|CF_.*|BPLib_.*|BPLIB_.*")
         .layout_tests(false)
         .derive_default(true)
+        .derive_debug(true)
         .parse_callbacks(Box::new(macro_detector.clone()));
+
+    let mut fn_patterns = vec!["CFE_.*".into(), "OSAL_.*".into(), "OS_.*".into(), "CF_.*".into(), "BPLib_.*".into(), "BPLIB_.*".into()];
+    let mut type_patterns = fn_patterns.clone();
+    let mut var_patterns = fn_patterns.clone();
 
     if let Ok(sysroot) = env::var("SYSROOT") {
         builder = builder.clang_arg(format!("--sysroot={}", sysroot));
@@ -367,10 +369,11 @@ uint8_t data[8]; };\n\
     #[cfg(feature = "nos3")]
     if let Some(ref hw) = hwlib_dir {
         builder = builder
-            .header(header(hw, "fsw/public_inc/hwlib.h"))
-            .allowlist_function("uart_.*|i2c_.*|spi_.*|can_.*|gpio_.*|socket_.*|devmem_.*|trq_.*|HostToIp")
-            .allowlist_type("uart_.*|i2c_.*|spi_.*|can_.*|gpio_.*|socket_.*|trq_.*|canid_t|addr_fam_e|type_e|category_e")
-            .allowlist_var("UART_.*|I2C_.*|SPI_.*|CAN_.*|GPIO_.*|SOCKET_.*|MEM_.*|TRQ_.*|PORT_.*|NUM_.*|HWLIB_.*")
+            .header(header(hw, "fsw/public_inc/hwlib.h"));
+        fn_patterns.extend(["uart_.*", "i2c_.*", "spi_.*", "can_.*", "gpio_.*", "socket_.*", "devmem_.*", "trq_.*", "HostToIp"].map(Into::into));
+        type_patterns.extend(["uart_.*", "i2c_.*", "spi_.*", "can_.*", "gpio_.*", "socket_.*", "trq_.*", "canid_t", "addr_fam_e", "type_e", "category_e"].map(Into::into));
+        var_patterns.extend(["UART_.*", "I2C_.*", "SPI_.*", "CAN_.*", "GPIO_.*", "SOCKET_.*", "MEM_.*", "TRQ_.*", "PORT_.*", "NUM_.*", "HWLIB_.*"].map(Into::into));
+        builder = builder
             // On Linux, can_frame has an anonymous union around
             // can_dlc/len. Blocklist the bindgen output and provide
             // a flat, binary-compatible struct instead.
@@ -446,29 +449,22 @@ uint8_t data[8]; };\n\
             }
         }
 
-        // Build combined allowlist patterns from all component prefixes.
-        // Each prefix needs `.*` because bindgen anchors the regex.
-        let fn_patterns: Vec<String> = components
-            .iter()
-            .map(|(_, _, p)| {
-                // Handle alternatives like "Generic_ADCS|GENERIC_ADCS"
-                p.split('|')
-                    .map(|s| format!("{}.*", s))
-                    .collect::<Vec<_>>()
-                    .join("|")
-            })
-            .collect();
-        let fn_regex = fn_patterns.join("|");
-        builder = builder
-            .allowlist_function(&format!(
-                "{}|GetCurrentMomentum|SetRWTorque|take_picture\
-                |VoV|VxV|SxV|MAGV|UNITV|CopyUnitV\
-                |QxQ|QxQT|QxV|QTxV|UNITQ|RECTIFYQ\
-                |arccos|Limit", fn_regex))
-            .allowlist_type(&fn_regex)
-            .allowlist_var(&fn_regex);
+        for (_, _, p) in &components {
+            for alt in p.split('|') {
+                let pat: String = format!("{}.*", alt);
+                fn_patterns.push(pat.clone());
+                type_patterns.push(pat.clone());
+                var_patterns.push(pat);
+            }
+        }
+        fn_patterns.extend(["GetCurrentMomentum", "SetRWTorque", "take_picture", "VoV", "VxV", "SxV", "MAGV", "UNITV", "CopyUnitV", "QxQ", "QxQT", "QxV", "QTxV", "UNITQ", "RECTIFYQ", "arccos", "Limit"].map(Into::into));
         let _ = comp;
     }
+
+    builder = builder
+        .allowlist_function(&fn_patterns.join("|"))
+        .allowlist_type(&type_patterns.join("|"))
+        .allowlist_var(&var_patterns.join("|"));
 
     let bindings = builder.generate().expect("Unable to generate bindings!");
     // Use a mutable string so we can inject comments later
