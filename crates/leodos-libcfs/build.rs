@@ -474,6 +474,23 @@ uint8_t data[8]; };\n\
     let converted = macro_detector.converted_macros.borrow();
     let skipped_macros: Vec<_> = all.difference(&converted).cloned().collect();
 
+    // Inject fallbacks for constants/types that may be missing in older cFE forks (NOS3).
+    #[cfg(feature = "nos3")]
+    {
+        if !bindings_str.contains("CFE_ES_CrcType_Enum_CFE_ES_CrcType_16_ARC") {
+            bindings_str.push_str("\npub(crate) const CFE_ES_CrcType_Enum_CFE_ES_CrcType_16_ARC: u32 = 2;\n");
+        }
+        if !bindings_str.contains("CFE_ES_CrcType_Enum_t") {
+            bindings_str.push_str("pub(crate) type CFE_ES_CrcType_Enum_t = u32;\n");
+        }
+        if !bindings_str.contains("CFE_MISSION_TBL_MAX_FULL_NAME_LEN") {
+            bindings_str.push_str(&format!(
+                "pub(crate) const CFE_MISSION_TBL_MAX_FULL_NAME_LEN: u32 = {} + {} + 4;\n",
+                "OS_MAX_API_NAME", "CFE_MISSION_MAX_API_LEN"
+            ));
+        }
+    }
+
     // --- PART 1: Process Skipped Macros (Prepend to file) ---
     let mut comment = String::new();
     comment.push_str("// The following constants were skipped by bindgen.\n");

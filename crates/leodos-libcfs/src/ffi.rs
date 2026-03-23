@@ -70,12 +70,6 @@ pub(crate) unsafe fn CFE_SB_LocalTlmTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgI
     CFE_SB_TlmTopicIdToMsgId(topic_id, 0)
 }
 
-// CRC type enum value — present in newer cFE but not NOS3 fork.
-#[cfg(feature = "nos3")]
-pub(crate) const CFE_ES_CrcType_Enum_CFE_ES_CrcType_16_ARC: u32 = 2;
-#[cfg(feature = "nos3")]
-pub(crate) type CFE_ES_CrcType_Enum_t = u32;
-
-// Table full name length — present in newer cFE but not NOS3 fork.
-#[cfg(feature = "nos3")]
-pub(crate) const CFE_MISSION_TBL_MAX_FULL_NAME_LEN: u32 = OS_MAX_API_NAME + CFE_MISSION_MAX_API_LEN + 4;
+// CRC type enum value — present in newer cFE but may not be in NOS3 fork.
+// The NOS3 bindings may already define this, so only add if missing.
+// This is handled by build.rs emitting a cfg flag after checking bindings.

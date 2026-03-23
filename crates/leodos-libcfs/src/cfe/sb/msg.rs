@@ -13,13 +13,25 @@ use core::mem::MaybeUninit;
 
 /// A Command Header.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct CmdHeader(pub(crate) ffi::CFE_MSG_CommandHeader_t);
+
+impl core::fmt::Debug for CmdHeader {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CmdHeader").finish()
+    }
+}
 
 /// A Telemetry Header.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct TlmHeader(pub(crate) ffi::CFE_MSG_TelemetryHeader_t);
+
+impl core::fmt::Debug for TlmHeader {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TlmHeader").finish()
+    }
+}
 
 /// A type-safe, zero-cost wrapper for a cFE Software Bus Message ID.
 #[derive(Debug, Clone, Copy)]
