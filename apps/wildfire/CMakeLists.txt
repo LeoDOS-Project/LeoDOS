@@ -5,7 +5,7 @@ get_filename_component(REAL_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR} REALPATH)
 
 # cFS requires at least one C source to create the shared library
 # target. The Rust cargo build overwrites it in the POST_BUILD step.
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c "")
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c "typedef int placeholder;\n")
 
 add_cfe_app(wildfire ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c)
 

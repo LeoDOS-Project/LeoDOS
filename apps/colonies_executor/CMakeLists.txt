@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 # cFS requires at least one C source to create the shared library
 # target. The Rust cargo build overwrites it in the POST_BUILD step.
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c "")
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c "typedef int placeholder;\n")
 
 add_cfe_app(colonies_executor ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c)
 
