@@ -50,7 +50,7 @@ services:
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: ./nos3-single-simulator nos3-simulator.xml truth42sim
+    command: ./nos3-single-simulator -f nos3-simulator.xml -s truth42sim
     depends_on:
       - nos-engine-server
       - fortytwo
@@ -63,7 +63,7 @@ services:
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: ./nos3-single-simulator nos3-simulator.xml gps
+    command: ./nos3-single-simulator -f nos3-simulator.xml -s gps
     depends_on:
       - nos-engine-server
       - truth42sim
@@ -77,7 +77,7 @@ services:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
       - ./tools/eosim/output:/sim/thermal_data:ro
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: ./nos3-single-simulator nos3-simulator.xml thermal-cam-sim
+    command: ./nos3-single-simulator -f nos3-simulator.xml -s thermal-cam-sim
     depends_on:
       - nos-engine-server
       - truth42sim
@@ -90,7 +90,7 @@ services:
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: ./nos3-single-simulator nos3-simulator.xml time
+    command: ./nos3-single-simulator -f nos3-simulator.xml -s time
     depends_on:
       - nos-engine-server
 
