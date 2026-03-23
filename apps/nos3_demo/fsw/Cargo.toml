@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 leodos-libcfs = { path = "../../../crates/leodos-libcfs", features = ["nos3"] }
+heapless = "0.9"
 
 [profile.release]
 lto = true
