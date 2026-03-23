@@ -212,7 +212,7 @@ constellation-down:
 # Wildfire demo (NOS3 simulation with thermal camera + GPS)
 wildfire-demo-build:
 	docker build -f Dockerfile.nos3 -t nos3-rust:latest .
-	$(NOS3_DC) run --rm fsw bash -c "cd libs/nos3 && make config && make build-fsw"
+	docker run --rm -v "$$(pwd):/cFS" -w /cFS/libs/nos3 nos3-rust:latest bash -c "make config && make build-sim && make build-fsw"
 
 wildfire-demo-up:
 	$(NOS3_DC) up -d
