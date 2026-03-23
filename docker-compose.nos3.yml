@@ -41,6 +41,7 @@ services:
     command: ./42 NOS3InOut
     depends_on:
       - nos-engine-server
+      - time-driver
 
   # Truth data provider — connects to 42 for orbital state.
   truth42sim:
@@ -50,7 +51,7 @@ services:
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: ./nos3-single-simulator -f nos3-simulator.xml -s truth42sim
+    command: sh -c "sleep 10 && ./nos3-single-simulator -f nos3-simulator.xml -s truth42sim"
     depends_on:
       - nos-engine-server
       - fortytwo
@@ -63,7 +64,7 @@ services:
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: ./nos3-single-simulator -f nos3-simulator.xml -s gps
+    command: sh -c "sleep 10 && ./nos3-single-simulator -f nos3-simulator.xml -s gps"
     depends_on:
       - nos-engine-server
       - truth42sim
@@ -77,13 +78,13 @@ services:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
       - ./tools/eosim/output:/sim/thermal_data:ro
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: ./nos3-single-simulator -f nos3-simulator.xml -s thermal-cam-sim
+    command: sh -c "sleep 10 && ./nos3-single-simulator -f nos3-simulator.xml -s thermal-cam-sim"
     depends_on:
       - nos-engine-server
       - truth42sim
 
-  # NOS3 time driver — starts LAST after all sims and FSW are up.
-  # Drives the simulation clock; without it, 42 waits for ticks.
+  # NOS3 time driver — starts after NOS Engine, before 42.
+  # Drives the simulation clock; 42 blocks until ticks arrive.
   time-driver:
     <<: *nos3-common
     hostname: nos-time-driver
@@ -91,14 +92,9 @@ services:
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: sh -c "sleep 10 && ./nos3-single-simulator -f nos3-simulator.xml -s time"
+    command: ./nos3-single-simulator -f nos3-simulator.xml -s time
     depends_on:
       - nos-engine-server
-      - fortytwo
-      - truth42sim
-      - gps-sim
-      - thermal-cam-sim
-      - fsw
 
   # Flight software (cFS with Rust apps).
   # Built with NOS3 toolchain — hwlib routes bus calls
