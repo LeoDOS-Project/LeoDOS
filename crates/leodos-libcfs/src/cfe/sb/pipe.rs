@@ -278,7 +278,8 @@ impl Pipe {
         core::future::poll_fn(|_| {
             let recv_future = self.timed_recv(buf, Timeout::Poll);
             match recv_future {
-                Err(CfsError::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
+                Err(CfsError::Sb(SbError::NoMessage | SbError::TimeOut))
+                | Err(CfsError::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
                 Ok(result) => Poll::Ready(Ok(result)),
                 Err(e) => Poll::Ready(Err(e)),
             }
