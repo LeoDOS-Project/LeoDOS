@@ -42,22 +42,57 @@ services:
     depends_on:
       - nos-engine-server
 
-  # All component simulators in a single process.
-  # Simulates IMU, CSS, FSS, MAG, star tracker, GPS,
-  # reaction wheels, torquers, EPS, radio, camera, thruster,
-  # thermal camera.
-  simulators:
+  # Truth data provider — connects to 42 for orbital state.
+  truth42sim:
     <<: *nos3-common
-    hostname: nos3-sims
-    container_name: nos3-simulators
+    hostname: truth42sim
+    container_name: nos3-truth42sim
+    volumes:
+      - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
+    working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
+    command: ./nos3-single-simulator nos3-simulator.xml truth42sim
+    depends_on:
+      - nos-engine-server
+      - fortytwo
+
+  # GPS simulator.
+  gps-sim:
+    <<: *nos3-common
+    hostname: gps-sim
+    container_name: nos3-gps-sim
+    volumes:
+      - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
+    working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
+    command: ./nos3-single-simulator nos3-simulator.xml gps
+    depends_on:
+      - nos-engine-server
+      - truth42sim
+
+  # Thermal camera simulator.
+  thermal-cam-sim:
+    <<: *nos3-common
+    hostname: thermal-cam-sim
+    container_name: nos3-thermal-cam-sim
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
       - ./tools/eosim/output:/sim/thermal_data:ro
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: ./nos3-all-simulators -f nos3-simulator.xml
+    command: ./nos3-single-simulator nos3-simulator.xml thermal-cam-sim
     depends_on:
       - nos-engine-server
-      - fortytwo
+      - truth42sim
+
+  # NOS3 time driver.
+  time-driver:
+    <<: *nos3-common
+    hostname: nos-time-driver
+    container_name: nos3-time-driver
+    volumes:
+      - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
+    working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
+    command: ./nos3-single-simulator nos3-simulator.xml time
+    depends_on:
+      - nos-engine-server
 
   # Flight software (cFS with Rust apps).
   # Built with NOS3 toolchain — hwlib routes bus calls
@@ -86,7 +121,10 @@ services:
       - SYS_NICE
     depends_on:
       - nos-engine-server
-      - simulators
+      - truth42sim
+      - gps-sim
+      - thermal-cam-sim
+      - time-driver
 
 networks:
   nos3:
