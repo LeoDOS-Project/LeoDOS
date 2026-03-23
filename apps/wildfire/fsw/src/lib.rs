@@ -295,7 +295,7 @@ pub extern "C" fn WILDFIRE_AppMain() {
             .header_overhead(SrsppDataPacket::HEADER_SIZE)
             .build();
         let origin = Address::satellite(0, 1);
-        let sender = SrsppSender::new(sender_config, origin, NoStore, AlwaysReachable);
+        let sender: SrsppSender<_, _, _, 8, 4096, 512> = SrsppSender::new(sender_config, origin, NoStore, AlwaysReachable);
         let (mut tx, mut driver) = sender.split(FixedRto::new(RTO_MS));
 
         // Hardware
