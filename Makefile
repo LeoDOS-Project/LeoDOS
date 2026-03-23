@@ -210,9 +210,12 @@ constellation-down:
 	docker stop leodos-constellation 2>/dev/null || true
 
 # Wildfire demo (NOS3 simulation with thermal camera + GPS)
+NOS3_RUN_STANDALONE = docker run --rm -v "$$(pwd):/cFS" -v "$${HOME}/.nos3:/root/.nos3" -w /cFS nos3-rust:latest
+
 wildfire-demo-build:
 	docker build -f Dockerfile.nos3 -t nos3-rust:latest .
-	docker run --rm -v "$$(pwd):/cFS" -w /cFS/libs/nos3 nos3-rust:latest bash -c "make config && make build-sim && make build-fsw"
+	$(NOS3_RUN_STANDALONE) bash -c "cd libs/42 && make 42PLATFORM=_LINUX && mkdir -p /root/.nos3/42 && cp -a . /root/.nos3/42/"
+	$(NOS3_RUN_STANDALONE) bash -c "cd libs/nos3 && make config && make build-sim && make build-fsw"
 
 wildfire-demo-up:
 	$(NOS3_DC) up -d
