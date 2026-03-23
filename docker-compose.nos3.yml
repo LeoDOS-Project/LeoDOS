@@ -89,6 +89,8 @@ services:
     <<: *nos3-common
     hostname: nos-time-driver
     container_name: nos3-time-driver
+    environment:
+      - TERM=xterm
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
