@@ -29,7 +29,7 @@ impl OsalId {
     /// Returns an error if the object ID is invalid, the buffer is too small
     /// (unlikely with `heapless`), or the name is not valid UTF-8.
     pub fn name(&self) -> Result<String<{ ffi::OS_MAX_API_NAME as usize }>> {
-        let mut buffer = [0i8; ffi::OS_MAX_API_NAME as usize];
+        let mut buffer = [0 as core::ffi::c_char; ffi::OS_MAX_API_NAME as usize];
         check(unsafe {
             ffi::OS_GetResourceName(
                 self.0,
