@@ -22,6 +22,7 @@ services:
     <<: *nos3-common
     hostname: nos-engine-server
     container_name: nos-engine-server
+    stdin_open: true
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
