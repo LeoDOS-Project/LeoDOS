@@ -474,20 +474,47 @@ uint8_t data[8]; };\n\
     let converted = macro_detector.converted_macros.borrow();
     let skipped_macros: Vec<_> = all.difference(&converted).cloned().collect();
 
-    // Inject fallbacks for constants/types that may be missing in older cFE forks (NOS3).
-    #[cfg(feature = "nos3")]
-    {
-        if !bindings_str.contains("CFE_ES_CrcType_Enum_CFE_ES_CrcType_16_ARC") {
-            bindings_str.push_str("\npub(crate) const CFE_ES_CrcType_Enum_CFE_ES_CrcType_16_ARC: u32 = 2;\n");
-        }
-        if !bindings_str.contains("CFE_ES_CrcType_Enum_t") {
-            bindings_str.push_str("pub(crate) type CFE_ES_CrcType_Enum_t = u32;\n");
-        }
-        if !bindings_str.contains("CFE_MISSION_TBL_MAX_FULL_NAME_LEN") {
-            bindings_str.push_str(&format!(
-                "pub(crate) const CFE_MISSION_TBL_MAX_FULL_NAME_LEN: u32 = {} + {} + 4;\n",
-                "OS_MAX_API_NAME", "CFE_MISSION_MAX_API_LEN"
-            ));
+    // Inject fallbacks for symbols that may be missing depending on cFE/OSAL version.
+    // This handles the NOS3 cFE fork which lacks some newer APIs.
+    let fallbacks: &[(&str, &str)] = &[
+        ("CFE_ES_CrcType_Enum_CFE_ES_CrcType_16_ARC", "pub(crate) const CFE_ES_CrcType_Enum_CFE_ES_CrcType_16_ARC: u32 = 2;\n"),
+        ("CFE_ES_CrcType_Enum_t", "pub(crate) type CFE_ES_CrcType_Enum_t = u32;\n"),
+        ("CFE_MISSION_TBL_MAX_FULL_NAME_LEN", "pub(crate) const CFE_MISSION_TBL_MAX_FULL_NAME_LEN: u32 = OS_MAX_API_NAME + CFE_MISSION_MAX_API_LEN + 4;\n"),
+        ("CFE_PLATFORM_CMD_MID_BASE", "pub(crate) const CFE_PLATFORM_CMD_MID_BASE: CFE_SB_MsgId_Atom_t = 0x1800;\n"),
+        ("CFE_PLATFORM_TLM_MID_BASE", "pub(crate) const CFE_PLATFORM_TLM_MID_BASE: CFE_SB_MsgId_Atom_t = 0x0800;\n"),
+        ("CFE_PLATFORM_CMD_MID_BASE_GLOB", "pub(crate) const CFE_PLATFORM_CMD_MID_BASE_GLOB: CFE_SB_MsgId_Atom_t = 0x1860;\n"),
+        ("CFE_PLATFORM_TLM_MID_BASE_GLOB", "pub(crate) const CFE_PLATFORM_TLM_MID_BASE_GLOB: CFE_SB_MsgId_Atom_t = 0x0880;\n"),
+        ("CFE_SB_CmdTopicIdToMsgId", concat!(
+            "#[inline]\n",
+            "pub(crate) unsafe fn CFE_SB_CmdTopicIdToMsgId(topic_id: u16, _instance: u16) -> CFE_SB_MsgId_Atom_t {\n",
+            "    CFE_PLATFORM_CMD_MID_BASE + topic_id as CFE_SB_MsgId_Atom_t\n",
+            "}\n",
+            "#[inline]\n",
+            "pub(crate) unsafe fn CFE_SB_TlmTopicIdToMsgId(topic_id: u16, _instance: u16) -> CFE_SB_MsgId_Atom_t {\n",
+            "    CFE_PLATFORM_TLM_MID_BASE + topic_id as CFE_SB_MsgId_Atom_t\n",
+            "}\n",
+            "#[inline]\n",
+            "pub(crate) unsafe fn CFE_SB_GlobalCmdTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {\n",
+            "    CFE_PLATFORM_CMD_MID_BASE_GLOB + topic_id as CFE_SB_MsgId_Atom_t\n",
+            "}\n",
+            "#[inline]\n",
+            "pub(crate) unsafe fn CFE_SB_GlobalTlmTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {\n",
+            "    CFE_PLATFORM_TLM_MID_BASE_GLOB + topic_id as CFE_SB_MsgId_Atom_t\n",
+            "}\n",
+            "#[inline]\n",
+            "pub(crate) unsafe fn CFE_SB_LocalCmdTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {\n",
+            "    CFE_SB_CmdTopicIdToMsgId(topic_id, 0)\n",
+            "}\n",
+            "#[inline]\n",
+            "pub(crate) unsafe fn CFE_SB_LocalTlmTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {\n",
+            "    CFE_SB_TlmTopicIdToMsgId(topic_id, 0)\n",
+            "}\n",
+        )),
+    ];
+    for (symbol, code) in fallbacks {
+        if !bindings_str.contains(symbol) {
+            bindings_str.push_str("\n");
+            bindings_str.push_str(code);
         }
     }
 

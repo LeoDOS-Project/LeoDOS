@@ -37,48 +37,9 @@ pub(crate) const OS_OBJECT_ID_UNDEFINED: osal_id_t = 0;
 #[doc = "@brief Constant that may be passed to OS_ForEachObject()/OS_ForEachObjectOfType() to match any\ncreator (i.e. get all objects)"]
 pub(crate) const OS_OBJECT_CREATOR_ANY: osal_id_t = OS_OBJECT_ID_UNDEFINED;
 
-// TopicId-to-MsgId conversion functions.
-// These exist in cFE equuleus-rc1+dev but not in the NOS3 cFE fork.
-// Provide Rust fallbacks for the NOS3 build.
-// Platform MsgId base values (from cpu1_msgids.h, skipped by bindgen).
-#[cfg(feature = "nos3")]
-pub(crate) const CFE_PLATFORM_CMD_MID_BASE: CFE_SB_MsgId_Atom_t = 0x1800;
-#[cfg(feature = "nos3")]
-pub(crate) const CFE_PLATFORM_TLM_MID_BASE: CFE_SB_MsgId_Atom_t = 0x0800;
-#[cfg(feature = "nos3")]
-pub(crate) const CFE_PLATFORM_CMD_MID_BASE_GLOB: CFE_SB_MsgId_Atom_t = 0x1860;
-#[cfg(feature = "nos3")]
-pub(crate) const CFE_PLATFORM_TLM_MID_BASE_GLOB: CFE_SB_MsgId_Atom_t = 0x0880;
-
-#[cfg(feature = "nos3")]
-pub(crate) unsafe fn CFE_SB_CmdTopicIdToMsgId(topic_id: u16, _instance: u16) -> CFE_SB_MsgId_Atom_t {
-    CFE_PLATFORM_CMD_MID_BASE + topic_id as CFE_SB_MsgId_Atom_t
-}
-
-#[cfg(feature = "nos3")]
-pub(crate) unsafe fn CFE_SB_TlmTopicIdToMsgId(topic_id: u16, _instance: u16) -> CFE_SB_MsgId_Atom_t {
-    CFE_PLATFORM_TLM_MID_BASE + topic_id as CFE_SB_MsgId_Atom_t
-}
-
-#[cfg(feature = "nos3")]
-pub(crate) unsafe fn CFE_SB_GlobalCmdTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {
-    CFE_PLATFORM_CMD_MID_BASE_GLOB + topic_id as CFE_SB_MsgId_Atom_t
-}
-
-#[cfg(feature = "nos3")]
-pub(crate) unsafe fn CFE_SB_GlobalTlmTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {
-    CFE_PLATFORM_TLM_MID_BASE_GLOB + topic_id as CFE_SB_MsgId_Atom_t
-}
-
-#[cfg(feature = "nos3")]
-pub(crate) unsafe fn CFE_SB_LocalCmdTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {
-    CFE_SB_CmdTopicIdToMsgId(topic_id, 0)
-}
-
-#[cfg(feature = "nos3")]
-pub(crate) unsafe fn CFE_SB_LocalTlmTopicIdToMsgId(topic_id: u16) -> CFE_SB_MsgId_Atom_t {
-    CFE_SB_TlmTopicIdToMsgId(topic_id, 0)
-}
+// TopicId-to-MsgId fallbacks and MID_BASE constants are injected
+// by build.rs into the generated bindings when they are missing
+// (e.g., when building against the NOS3 cFE fork).
 
 // CRC type enum value — present in newer cFE but may not be in NOS3 fork.
 // The NOS3 bindings may already define this, so only add if missing.

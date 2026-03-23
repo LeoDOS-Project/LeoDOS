@@ -99,6 +99,7 @@ struct Alert {
     lon: f32,
     hot_pixel_count: u32,
     max_temp_k: f32,
+    temps: [f32; MAX_HOTSPOTS],
 }
 
 #[repr(C)]
@@ -240,11 +241,17 @@ fn detect_hotspots(
         }
     }
 
+    let mut temps = [0.0f32; MAX_HOTSPOTS];
+    for (i, h) in hotspots[..n].iter().enumerate() {
+        temps[i] = h.t4;
+    }
+
     Some(Alert {
         lat: sum_lat / n as f32,
         lon: sum_lon / n as f32,
         hot_pixel_count: n as u32,
         max_temp_k: max_temp,
+        temps,
     })
 }
 
@@ -263,7 +270,7 @@ pub extern "C" fn WILDFIRE_AppMain() {
 
         // Table config (ground-updatable)
         let table = Table::<WildfireConfig>::new("WILDFIRE.Config", TableOptions::DEFAULT, None)?;
-        table.load_from_slice(&WildfireConfig::default())?;
+        table.load_from_slice(core::slice::from_ref(&WildfireConfig::default()))?;
 
         // CDS persistence
         let (cds, cds_info) = CdsBlock::<WildfireState>::new("WILDFIRE.State")?;
@@ -296,7 +303,7 @@ pub extern "C" fn WILDFIRE_AppMain() {
             .map(|spi| SpiCamera { spi })
             .ok();
 
-        let mut gps = Uart::open(1, 115_200).ok();
+        let mut gps = Uart::open(c"/dev/ttyS1", 115_200, leodos_libcfs::nos3::buses::uart::Access::ReadWrite).ok();
 
         let mut was_over_aoi = false;
 
@@ -374,8 +381,8 @@ pub extern "C" fn WILDFIRE_AppMain() {
                                     let n_hot = (alert.hot_pixel_count as usize).min(MAX_HOTSPOTS);
                                     let padded = ((n_hot + 7) / 8) * 8;
                                     let mut samples = [0u32; MAX_HOTSPOTS];
-                                    for (i, h) in hotspots[..n_hot].iter().enumerate() {
-                                        samples[i] = ((h.t4 - QUANT_OFFSET) * QUANT_SCALE) as u32;
+                                    for (i, t) in alert.temps[..n_hot].iter().enumerate() {
+                                        samples[i] = ((t - QUANT_OFFSET) * QUANT_SCALE) as u32;
                                     }
                                     let rice_cfg = rice::Config {
                                         bits_per_sample: 16,
