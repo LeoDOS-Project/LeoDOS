@@ -18,6 +18,8 @@ add_custom_command(
         OSAL_DIR=${MISSION_SOURCE_DIR}/osal
         PSP_DIR=${MISSION_SOURCE_DIR}/psp
         BUILD_DIR=${MISSION_BINARY_DIR}
+        HWLIB_DIR=/cFS/libs/nos3/fsw/apps/hwlib
+        NOS3_COMPONENTS_DIR=/cFS/libs/nos3/components
         CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR}/cargo_build
         cargo build --release --manifest-path=${REAL_SOURCE_DIR}/fsw/Cargo.toml
     WORKING_DIRECTORY ${REAL_SOURCE_DIR}/fsw

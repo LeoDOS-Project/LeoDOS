@@ -303,7 +303,7 @@ fn main() {
         .derive_debug(true)
         .parse_callbacks(Box::new(macro_detector.clone()));
 
-    let mut fn_patterns = vec!["CFE_.*".into(), "OSAL_.*".into(), "OS_.*".into(), "CF_.*".into(), "BPLib_.*".into(), "BPLIB_.*".into()];
+    let mut fn_patterns: Vec<String> = vec!["CFE_.*".into(), "OSAL_.*".into(), "OS_.*".into(), "CF_.*".into(), "BPLib_.*".into(), "BPLIB_.*".into()];
     let mut type_patterns = fn_patterns.clone();
     let mut var_patterns = fn_patterns.clone();
 
