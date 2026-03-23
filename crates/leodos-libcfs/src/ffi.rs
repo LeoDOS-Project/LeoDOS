@@ -40,6 +40,16 @@ pub(crate) const OS_OBJECT_CREATOR_ANY: osal_id_t = OS_OBJECT_ID_UNDEFINED;
 // TopicId-to-MsgId conversion functions.
 // These exist in cFE equuleus-rc1+dev but not in the NOS3 cFE fork.
 // Provide Rust fallbacks for the NOS3 build.
+// Platform MsgId base values (from cpu1_msgids.h, skipped by bindgen).
+#[cfg(feature = "nos3")]
+pub(crate) const CFE_PLATFORM_CMD_MID_BASE: CFE_SB_MsgId_Atom_t = 0x1800;
+#[cfg(feature = "nos3")]
+pub(crate) const CFE_PLATFORM_TLM_MID_BASE: CFE_SB_MsgId_Atom_t = 0x0800;
+#[cfg(feature = "nos3")]
+pub(crate) const CFE_PLATFORM_CMD_MID_BASE_GLOB: CFE_SB_MsgId_Atom_t = 0x1860;
+#[cfg(feature = "nos3")]
+pub(crate) const CFE_PLATFORM_TLM_MID_BASE_GLOB: CFE_SB_MsgId_Atom_t = 0x0880;
+
 #[cfg(feature = "nos3")]
 pub(crate) unsafe fn CFE_SB_CmdTopicIdToMsgId(topic_id: u16, _instance: u16) -> CFE_SB_MsgId_Atom_t {
     CFE_PLATFORM_CMD_MID_BASE + topic_id as CFE_SB_MsgId_Atom_t
