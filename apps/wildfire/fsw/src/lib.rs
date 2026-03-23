@@ -17,6 +17,7 @@ use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::time::sleep;
 use leodos_libcfs::runtime::Runtime;
 
+use leodos_protocols::application::compression::rice;
 use leodos_protocols::datalink::link::cfs::sb::SbDatalink;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::ptp::PointToPoint;
@@ -49,7 +50,10 @@ const REG_FIFO_SIZE_2: u8 = 0x14;
 const REG_FIFO_READ: u8 = 0x20;
 
 const MAX_PIXELS: usize = 512 * 512;
+const MAX_HOTSPOTS: usize = 64;
 const RTO_MS: u32 = 1000;
+const QUANT_OFFSET: f32 = 200.0;
+const QUANT_SCALE: f32 = 100.0;
 
 // ── Table-based configuration ───────────────────────────────
 
@@ -359,13 +363,38 @@ pub extern "C" fn WILDFIRE_AppMain() {
                                         max_temp_k: alert.max_temp_k,
                                         pass_number: state.pass_count,
                                     };
-                                    let bytes = unsafe {
+                                    let tlm_bytes = unsafe {
                                         core::slice::from_raw_parts(
                                             &tlm as *const _ as *const u8,
                                             core::mem::size_of::<AlertTlm>(),
                                         )
                                     };
-                                    tx.send(Address::Ground { station: 0 }, bytes).await.ok();
+
+                                    // Rice-compress hotspot temperatures
+                                    let n_hot = (alert.hot_pixel_count as usize).min(MAX_HOTSPOTS);
+                                    let padded = ((n_hot + 7) / 8) * 8;
+                                    let mut samples = [0u32; MAX_HOTSPOTS];
+                                    for (i, h) in hotspots[..n_hot].iter().enumerate() {
+                                        samples[i] = ((h.t4 - QUANT_OFFSET) * QUANT_SCALE) as u32;
+                                    }
+                                    let rice_cfg = rice::Config {
+                                        bits_per_sample: 16,
+                                        block_size: 8,
+                                        ref_interval: 0,
+                                        preprocessor: true,
+                                    };
+                                    // Pack alert + compressed pixels into one message
+                                    const TLM_SIZE: usize = core::mem::size_of::<AlertTlm>();
+                                    let mut msg = [0u8; TLM_SIZE + 256];
+                                    msg[..TLM_SIZE].copy_from_slice(tlm_bytes);
+                                    let compressed_len = rice::compress(
+                                        &rice_cfg,
+                                        &samples[..padded],
+                                        &mut msg[TLM_SIZE..],
+                                    ).unwrap_or(0);
+                                    let total = TLM_SIZE + compressed_len;
+                                    tx.send(Address::Ground { station: 0 }, &msg[..total]).await.ok();
+                                    info!("Downlinked alert + {} hotspot temps ({} bytes compressed)", n_hot, compressed_len).ok();
                                 } else {
                                     info!("No fire detected").ok();
                                 }

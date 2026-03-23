@@ -83,43 +83,54 @@ crate. No custom crypto implementation needed.
 
 ## Communication stack composition
 
-Five trait boundaries stitch the stack together:
+Six layers stitch the stack together:
 
 ```
-TransportSender / TransportReceiver    (transport/)
+Application                              (application/)
+  Source coding: Rice, DWT, hyperspectral
+  Compressor / Decompressor traits
         ↕
-NetworkLayer                           (network/)
+TransportWrite / TransportRead           (transport/)
+  SRSPP, CFDP, Bundle Protocol
         ↕
-DataLink = FrameSender + FrameReceiver (datalink/link/)
+NetworkWrite / NetworkRead               (network/)
+  Router, PointToPoint
         ↕
-  ??? gap — trait mismatch ???
+DatalinkWrite / DatalinkRead             (datalink/link/)
+  DatalinkWriter<F, W, S>:
+    FrameWrite → SecurityProcessor → CodingWrite
+  DatalinkReader<F, R, S>:
+    CodingRead → SecurityProcessor → FrameRead
+        ↕
+CodingWrite / CodingRead                 (coding/)
+  Randomizer → FEC → Framer (pipeline.rs)
         ↕
 AsyncPhysicalWriter / AsyncPhysicalReader (physical/)
 ```
 
-### Actual type composition (what exists today)
+### DatalinkWriter composition
 
-Transport holds `L: NetworkLayer`, calls `link.send()`:
-  SrsppSender<Router<N,S,E,W,G,L,R>>
+`DatalinkWriter<F, W, S>` composes:
+- `F: FrameWrite` — TM/TC/AOS/USLP frame construction
+- `S: SecurityProcessor` — SDLS (AES-GCM) or `NoSecurity`
+- `W: CodingWrite` — coding pipeline to physical layer
 
-Network holds `D: DataLink` per direction:
-  Router<UdpDataLink, UdpDataLink, ..., PassThrough<UdpDataLink>>
+Builder via `bon`:
+```rust
+DatalinkWriter::builder()
+    .frame_writer(TmFrameWriter::new(config))
+    .security(SdlsProcessor::new(sa, crypto, 6))
+    .coding_writer(CodingWriter::new(...))
+    .build()
+```
 
-DataLink drivers hold `W: FrameSender`:
-  TmSenderDriver<UdpFrameSender>
-  TcSenderDriver<UdpFrameSender>
-
-Physical has `UartChannel` (behind `cfs` feature):
-  UartChannel wraps hwlib Uart
-
-Coding has standalone encode/decode functions + composable
-wrappers that impl AsyncPhysicalWriter/AsyncPhysicalReader:
-  RandomizerWriter<RsWriter<AsmWriter<UartChannel>>>
-
-### What does not compose yet
+### What composes
 
 - [x] FrameWriter/FrameReader ↔ CodingWriter/CodingReader:
-  Composed via LinkWriter/LinkReader in datalink/link/channel.rs.
+  Composed via DatalinkWriter/DatalinkReader in
+  datalink/link/framed.rs.
+- [x] SDLS security in DatalinkWriter — `SecurityProcessor`
+  applied between frame construction and coding.
 - [x] COP-1 state machines (FARM/FOP) — fully implemented
   in datalink/reliability/cop1/.
 - [x] Coding wrappers — AsmWriter, CltuWriter, FrameSyncReader
