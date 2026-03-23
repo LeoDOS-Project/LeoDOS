@@ -11,9 +11,9 @@ set(SPACECOMP_OUTPUT_LIB ${CMAKE_CURRENT_BINARY_DIR}/cargo_build/release/libspac
 add_custom_command(
     OUTPUT ${SPACECOMP_OUTPUT_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CFE_DIR=$ENV{CFE_DIR}
-        OSAL_DIR=$ENV{OSAL_DIR}
-        PSP_DIR=$ENV{PSP_DIR}
+        CFE_DIR=${MISSION_SOURCE_DIR}/cfe
+        OSAL_DIR=${MISSION_SOURCE_DIR}/osal
+        PSP_DIR=${MISSION_SOURCE_DIR}/psp
         BUILD_DIR=${MISSION_BINARY_DIR}
         CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR}/cargo_build
         cargo build --release --manifest-path=${CMAKE_CURRENT_SOURCE_DIR}/fsw/Cargo.toml

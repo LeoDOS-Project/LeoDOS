@@ -19,7 +19,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 WORKDIR /cFS
 COPY . /cFS
-RUN make SIMULATION=native prep && make install
+RUN make SIMULATION=native prep && mkdir -p build/tables/staging && make install
 
 FROM ubuntu:22.04
 

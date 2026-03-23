@@ -15,15 +15,11 @@ set(SAMPLE_RUST_APP_OUTPUT_LIB ${CMAKE_CURRENT_BINARY_DIR}/cargo_build/release/l
 add_custom_command(
     OUTPUT ${SAMPLE_RUST_APP_OUTPUT_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        # Pass necessary environment variables to the sample_rust_app build script (build.rs).
-        CFE_DIR=$ENV{CFE_DIR}
-        OSAL_DIR=$ENV{OSAL_DIR}
-        PSP_DIR=$ENV{PSP_DIR}
+        CFE_DIR=${MISSION_SOURCE_DIR}/cfe
+        OSAL_DIR=${MISSION_SOURCE_DIR}/osal
+        PSP_DIR=${MISSION_SOURCE_DIR}/psp
         BUILD_DIR=${MISSION_BINARY_DIR}
-        # Set the CARGO_TARGET_DIR to a location inside CMake's build directory.
-        # This keeps all build artifacts in one place.
         CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR}/cargo_build
-        # Invoke Cargo to build the library in release mode.
         cargo build --release --manifest-path=${CMAKE_CURRENT_SOURCE_DIR}/fsw/Cargo.toml
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/fsw
     COMMENT "Building sample_rust_app app with Cargo"
