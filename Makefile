@@ -214,7 +214,7 @@ NOS3_RUN_STANDALONE = docker run --rm -v "$$(pwd):/cFS" -v "$${HOME}/.nos3:/root
 
 wildfire-demo-build:
 	docker build -f Dockerfile.nos3 -t nos3-rust:latest .
-	$(NOS3_RUN_STANDALONE) bash -c "cd libs/42 && make 42PLATFORM=_LINUX && rsync -a --exclude .git . /root/.nos3/42/"
+	$(NOS3_RUN_STANDALONE) bash -c "cd libs/42 && make 42PLATFORM=_LINUX && mkdir -p /root/.nos3/42 && tar --exclude=.git -cf - . | tar -xf - -C /root/.nos3/42/"
 	$(NOS3_RUN_STANDALONE) bash -c "cd libs/nos3 && make config && make build-sim && make build-fsw"
 
 wildfire-demo-up:
