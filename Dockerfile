@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     clang \
     libclang-dev \
+    libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 ENV RUSTUP_HOME=/usr/local/rustup

@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     clang \
     libclang-dev \
+    libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 ENV RUSTUP_HOME=/usr/local/rustup
@@ -18,7 +19,6 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 WORKDIR /cFS
 COPY . /cFS
-
 RUN make SIMULATION=native prep && make install
 
 FROM ubuntu:22.04
