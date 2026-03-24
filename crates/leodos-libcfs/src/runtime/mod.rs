@@ -40,6 +40,7 @@ pub use futures::FutureExt;
 pub use pin_utils::pin_mut;
 
 use crate::cfe::es::app;
+use crate::cfe::es::perf::PerfMarker;
 use crate::log;
 use core::future::Future;
 use core::task::{RawWaker, RawWakerVTable, Waker};
@@ -49,13 +50,22 @@ use core::task::{RawWaker, RawWakerVTable, Waker};
 /// The runtime drives a single `Future` to completion by polling it
 /// every time the cFS scheduler wakes the application.
 pub struct Runtime {
-    _private: (),
+    perf_id: Option<u32>,
 }
 
 impl Runtime {
     /// Creates a new cFS async runtime.
     pub fn new() -> Self {
-        Self { _private: () }
+        Self { perf_id: None }
+    }
+
+    /// Sets the performance monitor ID for this app.
+    ///
+    /// When set, the runtime automatically logs
+    /// `PerfLogEntry`/`PerfLogExit` around each poll cycle.
+    pub fn perf_id(mut self, id: u32) -> Self {
+        self.perf_id = Some(id);
+        self
     }
 
     /// Runs the main async task for the application.
@@ -81,6 +91,7 @@ impl Runtime {
         loop {
             match app::run_loop() {
                 Ok(()) => {
+                    let _perf = self.perf_id.map(PerfMarker::new);
                     if main_future.as_mut().poll(&mut context).is_ready() {
                         log!("Async task finished.").ok();
                         return app::RunStatus::Exit;
