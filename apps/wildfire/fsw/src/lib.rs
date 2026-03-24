@@ -1,14 +1,15 @@
 #![no_std]
 
 use core::cell::Cell;
+use core::time::Duration;
 use leodos_libcfs::app::App;
 use leodos_libcfs::app::Event;
 use leodos_libcfs::cfe::es::cds::CdsBlock;
+use leodos_libcfs::cfe::es::system::wait_for_startup_sync;
 use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::cfe::tbl::Table;
 use leodos_libcfs::cfe::tbl::TableOptions;
 use leodos_libcfs::cfe::tbl::Validate;
-
 use leodos_libcfs::err;
 use leodos_libcfs::error::CfsError;
 use leodos_libcfs::info;
@@ -179,12 +180,16 @@ async fn main() -> Result<(), WildfireError> {
         .build()?;
     let mut gps = Gps::builder().device(c"/dev/ttyS1").baud(115_200).build()?;
 
+    wait_for_startup_sync(Duration::from_millis(10_000));
+
     let (wf, drv, cmd) = join!(
         workflow(&table, &cds, &state, &mut camera, &mut gps, &mut tx),
         driver.run(&mut network),
         command_loop(&mut app, &state),
     )
     .await;
+
+    cds.store(&state.get())?;
 
     wf?;
     drv.map_err(WildfireError::Transport)?;
@@ -302,7 +307,9 @@ async fn scan_and_downlink(
 
 #[no_mangle]
 pub extern "C" fn WILDFIRE_AppMain() {
-    Runtime::new().run(main());
+    Runtime::new()
+        .perf_id(bindings::WILDFIRE_APPMAIN_PERF_ID)
+        .run(main());
 }
 
 #[cfg(not(test))]
