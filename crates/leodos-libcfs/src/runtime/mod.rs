@@ -9,7 +9,8 @@
 //! can be defined within a single `async` block.
 //!
 //! ```rust,ignore
-//! use leodos_libcfs::runtime::{Runtime, join};
+//! use leodos_libcfs::join;
+//! use leodos_libcfs::runtime::Runtime;
 //! use leodos_libcfs::cfe::{evs, sb::pipe::Pipe};
 //!
 //! async fn task_one(pipe: &Pipe) { /* ... */ }
@@ -18,13 +19,10 @@
 //! #[no_mangle]
 //! pub extern "C" fn CFE_ES_Main() {
 //!     Runtime::new().run(async {
-//!         // Initialization and resource creation happens here.
 //!         evs::event::register(&[]).expect("EVS registration failed");
 //!         let pipe = Pipe::new("MY_PIPE", 16).expect("Pipe creation failed");
 //!
-//!         // The main application logic runs concurrently.
-//!         // Variables from the init phase are captured automatically.
-//!         join(task_one(&pipe), task_two()).await;
+//!         join!(task_one(&pipe), task_two()).await;
 //!     });
 //! }
 //! ```
@@ -42,7 +40,6 @@ pub use futures::FutureExt;
 pub use pin_utils::pin_mut;
 
 use crate::cfe::es::app;
-use crate::error::Result;
 use crate::log;
 use core::future::Future;
 use core::task::{RawWaker, RawWakerVTable, Waker};
@@ -66,7 +63,7 @@ impl Runtime {
     /// Polls the future until it completes or cFS commands
     /// the app to exit. All resources owned by the future
     /// are dropped before `CFE_ES_ExitApp` is called.
-    pub fn run(self, main_future: impl Future<Output = Result<()>>) -> ! {
+    pub fn run(self, main_future: impl Future) -> ! {
         let status = self.poll_until_done(main_future);
         app::exit_app(status);
     }
@@ -75,7 +72,7 @@ impl Runtime {
     /// or shutdown. Returns the exit status to pass to
     /// `exit_app`. The future and all its owned resources
     /// are dropped when this function returns.
-    fn poll_until_done(self, main_future: impl Future<Output = Result<()>>) -> app::RunStatus {
+    fn poll_until_done(self, main_future: impl Future) -> app::RunStatus {
         pin_mut!(main_future);
 
         let waker = noop_waker();
