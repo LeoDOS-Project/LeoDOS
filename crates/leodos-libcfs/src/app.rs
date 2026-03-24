@@ -39,11 +39,21 @@ pub struct HkTlm {
     pub err_count: u16,
 }
 
+/// Event returned by [`App::recv`].
+pub enum Event<'a> {
+    /// An app-specific command (NoOp/Reset already handled).
+    Command(MessageRef<'a>),
+    /// HK wakeup — the app should publish telemetry.
+    Hk,
+}
+
 /// Standard cFS application with automatic boilerplate.
 ///
 /// Handles pipe creation, topic subscriptions, EVS
-/// registration, NoOp (fcn 0), Reset Counters (fcn 1),
-/// and housekeeping telemetry publishing.
+/// registration, NoOp (fcn 0), and Reset Counters (fcn 1).
+///
+/// HK wakeups are surfaced as [`Event::Hk`] so the app
+/// controls what telemetry to publish.
 ///
 /// # Example
 ///
@@ -58,13 +68,9 @@ pub struct HkTlm {
 ///
 /// let mut buf = [0u8; 256];
 /// loop {
-///     let msg = app.recv(&mut buf).await?;
-///     match msg.fcn_code()? {
-///         2 => {
-///             // app-specific command
-///             app.ack();
-///         }
-///         _ => app.reject(msg)?,
+///     match app.recv(&mut buf).await? {
+///         Event::Hk => app.send_hk(&my_hk)?,
+///         Event::Command(msg) => app.reject(msg)?,
 ///     }
 /// }
 /// ```
@@ -122,39 +128,35 @@ impl App {
 }
 
 impl App {
-    /// Processes standard commands (NoOp, Reset, HK) in a
-    /// loop. Rejects any unrecognized commands.
+    /// Processes commands and HK in a loop.
     ///
-    /// Use this when the app has no custom commands. For
-    /// apps that need to handle their own function codes,
-    /// use [`recv`](Self::recv) instead.
+    /// Publishes base HK (cmd/err counters) on wakeup,
+    /// rejects unrecognized commands. For custom HK or
+    /// app-specific commands, use [`recv`](Self::recv).
     pub async fn run(&mut self) -> Result<()> {
         let mut buf = [0u8; 256];
         loop {
-            let msg = self.recv(&mut buf).await?;
-            self.reject(msg)?;
+            match self.recv(&mut buf).await? {
+                Event::Hk => self.send_hk_base()?,
+                Event::Command(msg) => self.reject(msg)?,
+            }
         }
     }
 
-    /// Receives the next app-specific command.
+    /// Receives the next event from the Software Bus.
     ///
-    /// Automatically handles:
-    /// - Function code 0 (NoOp): info event, increment
-    ///   cmd counter
-    /// - Function code 1 (Reset): zero both counters,
-    ///   info event
-    /// - HK wakeup: publish housekeeping telemetry
-    ///
-    /// Only returns commands the app needs to handle.
-    pub async fn recv<'a>(&mut self, buf: &'a mut [u8]) -> Result<MessageRef<'a>> {
+    /// Automatically handles NoOp (fcn 0) and Reset (fcn 1).
+    /// Returns [`Event::Hk`] on HK wakeup so the app can
+    /// publish its own telemetry. Returns [`Event::Command`]
+    /// for app-specific commands.
+    pub async fn recv<'a>(&mut self, buf: &'a mut [u8]) -> Result<Event<'a>> {
         loop {
             let len = self.pipe.recv(buf).await?;
             let msg = MessageRef::new(&buf[..len]);
             let msg_id = msg.msg_id()?;
 
             if msg_id == self.send_hk_msg_id {
-                self.send_hk()?;
-                continue;
+                return Ok(Event::Hk);
             }
 
             if msg_id == self.cmd_msg_id {
@@ -173,7 +175,7 @@ impl App {
                         self.err_count = self.err_count.wrapping_add(1);
                         event::error(EVT_INVALID_CC, "Wrong message length")?;
                     }
-                    _ => return Ok(MessageRef::new(&buf[..len])),
+                    _ => return Ok(Event::Command(MessageRef::new(&buf[..len]))),
                 }
             }
         }
@@ -195,22 +197,41 @@ impl App {
         event::error(EVT_INVALID_CC, "Invalid command code")
     }
 
-    /// Publishes base housekeeping telemetry with
-    /// cmd_count and err_count.
-    fn send_hk(&self) -> Result<()> {
+    /// Publishes a custom HK telemetry packet.
+    ///
+    /// The payload is serialized via `as_bytes()`. The app
+    /// should include cmd/err counters (from
+    /// [`cmd_count`](Self::cmd_count) /
+    /// [`err_count`](Self::err_count)) in the struct.
+    pub fn send_hk<H: Copy>(&self, payload: &H) -> Result<()> {
         let hdr = core::mem::size_of::<TlmHeader>();
-        let payload = core::mem::size_of::<HkTlm>();
-        let size = hdr + payload;
+        let size = hdr + core::mem::size_of::<H>();
 
         let mut send_buf = SendBuffer::new(size)?;
         {
             let mut msg = send_buf.view();
             msg.init(self.hk_tlm_msg_id, size)?;
-            let hk = msg.payload::<HkTlm>()?;
-            hk.cmd_count = self.cmd_count;
-            hk.err_count = self.err_count;
+            *msg.payload::<H>()? = *payload;
             msg.timestamp();
         }
         send_buf.send(true)
+    }
+
+    /// Returns the current command counter.
+    pub fn cmd_count(&self) -> u16 {
+        self.cmd_count
+    }
+
+    /// Returns the current error counter.
+    pub fn err_count(&self) -> u16 {
+        self.err_count
+    }
+
+    /// Publishes base HK (cmd/err counters only).
+    fn send_hk_base(&self) -> Result<()> {
+        self.send_hk(&HkTlm {
+            cmd_count: self.cmd_count,
+            err_count: self.err_count,
+        })
     }
 }

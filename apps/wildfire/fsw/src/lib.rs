@@ -1,6 +1,8 @@
 #![no_std]
 
+use core::cell::Cell;
 use leodos_libcfs::app::App;
+use leodos_libcfs::app::Event;
 use leodos_libcfs::cfe::es::cds::CdsBlock;
 use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::cfe::tbl::Table;
@@ -96,6 +98,16 @@ struct WildfireState {
     alerts_sent: u32,
 }
 
+/// Housekeeping telemetry published on HK wakeup.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct WildfireHk {
+    cmd_count: u16,
+    err_count: u16,
+    pass_count: u32,
+    alerts_sent: u32,
+}
+
 // ── Sensor abstraction ──────────────────────────────────────
 
 #[repr(C)]
@@ -135,7 +147,8 @@ async fn main() -> Result<(), WildfireError> {
     let table = Table::<WildfireConfig>::new("WILDFIRE.Config", TableOptions::DEFAULT)?;
 
     // CDS persistence
-    let (cds, mut state) = CdsBlock::<WildfireState>::restore_or_default("WILDFIRE.State")?;
+    let (cds, state_init) = CdsBlock::<WildfireState>::restore_or_default("WILDFIRE.State")?;
+    let state = Cell::new(state_init);
 
     // Derive address from cFS spacecraft ID
     let scid = SpacecraftId::new(leodos_libcfs::cfe::es::system::get_spacecraft_id());
@@ -167,9 +180,9 @@ async fn main() -> Result<(), WildfireError> {
     let mut gps = Gps::builder().device(c"/dev/ttyS1").baud(115_200).build()?;
 
     let (wf, drv, cmd) = join!(
-        workflow(&table, &cds, &mut state, &mut camera, &mut gps, &mut tx),
+        workflow(&table, &cds, &state, &mut camera, &mut gps, &mut tx),
         driver.run(&mut network),
-        app.run(),
+        command_loop(&mut app, &state),
     )
     .await;
 
@@ -180,10 +193,28 @@ async fn main() -> Result<(), WildfireError> {
     Ok(())
 }
 
+async fn command_loop(app: &mut App, state: &Cell<WildfireState>) -> Result<(), WildfireError> {
+    let mut buf = [0u8; 256];
+    loop {
+        match app.recv(&mut buf).await? {
+            Event::Hk => {
+                let s = state.get();
+                app.send_hk(&WildfireHk {
+                    cmd_count: app.cmd_count(),
+                    err_count: app.err_count(),
+                    pass_count: s.pass_count,
+                    alerts_sent: s.alerts_sent,
+                })?;
+            }
+            Event::Command(msg) => app.reject(msg)?,
+        }
+    }
+}
+
 async fn workflow(
     table: &Table<WildfireConfig>,
     cds: &CdsBlock<WildfireState>,
-    state: &mut WildfireState,
+    state: &Cell<WildfireState>,
     camera: &mut Camera,
     gps: &mut Gps,
     tx: &mut TxHandle<'_>,
@@ -198,12 +229,14 @@ async fn workflow(
         let over_aoi = cfg.aoi.contains(data.lat, data.lon);
 
         if over_aoi && !was_over_aoi {
-            state.pass_count += 1;
-            info!("Entering AOI pass {}", state.pass_count)?;
-            if let Err(e) = scan_and_downlink(camera, &cfg, state, tx).await {
+            let mut s = state.get();
+            s.pass_count += 1;
+            info!("Entering AOI pass {}", s.pass_count)?;
+            if let Err(e) = scan_and_downlink(camera, &cfg, &mut s, tx).await {
                 err!("Scan failed: {}", e)?;
             }
-            cds.store(&state)?;
+            state.set(s);
+            cds.store(&s)?;
         } else if !over_aoi && was_over_aoi {
             info!("Leaving AOI")?;
         }
