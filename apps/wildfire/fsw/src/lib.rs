@@ -14,6 +14,7 @@ use leodos_libcfs::nos3::buses::spi::Spi;
 use leodos_libcfs::nos3::buses::uart::Access;
 use leodos_libcfs::nos3::buses::uart::Uart;
 use leodos_libcfs::nos3::drivers::novatel;
+use leodos_libcfs::nos3::drivers::thermal_cam::ThermalCamera;
 use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::time::sleep;
 use leodos_libcfs::runtime::Runtime;
@@ -37,18 +38,6 @@ mod bindings {
     #![allow(dead_code)]
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
-
-// ── Thermal camera SPI registers ────────────────────────────
-
-const REG_STATUS: u8 = 0x01;
-const REG_TRIGGER: u8 = 0x02;
-const REG_NUM_BANDS: u8 = 0x0F;
-const REG_WIDTH: u8 = 0x10;
-const REG_HEIGHT: u8 = 0x11;
-const REG_FIFO_SIZE_0: u8 = 0x12;
-const REG_FIFO_SIZE_1: u8 = 0x13;
-const REG_FIFO_SIZE_2: u8 = 0x14;
-const REG_FIFO_READ: u8 = 0x20;
 
 const MAX_PIXELS: usize = 512 * 512;
 const MAX_HOTSPOTS: usize = 64;
@@ -113,80 +102,6 @@ struct AlertTlm {
     pass_number: u32,
 }
 
-/// Capture result: (width, height, num_bands).
-/// Band 0 = MWIR, Band 1 = LWIR (if present).
-trait ThermalSensor {
-    fn capture(&mut self, mwir: &mut [f32], lwir: &mut [f32]) -> Result<(u32, u32, u8), CfsError>;
-}
-
-struct SpiCamera {
-    spi: Spi,
-}
-
-impl SpiCamera {
-    fn read_reg(&mut self, reg: u8) -> u8 {
-        let tx = [reg, 0x00];
-        let mut rx = [0u8; 2];
-        self.spi.transfer(&tx, &mut rx, 2, 0, 8, true).ok();
-        rx[0]
-    }
-
-    fn write_reg(&mut self, reg: u8, val: u8) {
-        let tx = [reg | 0x80, val];
-        self.spi.write(&tx).ok();
-    }
-}
-
-impl ThermalSensor for SpiCamera {
-    fn capture(&mut self, mwir: &mut [f32], lwir: &mut [f32]) -> Result<(u32, u32, u8), CfsError> {
-        let status = self.read_reg(REG_STATUS);
-        if status & 0x02 == 0 {
-            return Err(CfsError::IncorrectState);
-        }
-
-        self.write_reg(REG_TRIGGER, 0x01);
-
-        let num_bands = self.read_reg(REG_NUM_BANDS).max(1);
-        let width = self.read_reg(REG_WIDTH) as u32;
-        let height = self.read_reg(REG_HEIGHT) as u32;
-
-        let s0 = self.read_reg(REG_FIFO_SIZE_0) as u32;
-        let s1 = self.read_reg(REG_FIFO_SIZE_1) as u32;
-        let s2 = self.read_reg(REG_FIFO_SIZE_2) as u32;
-        let fifo_bytes = s0 | (s1 << 8) | (s2 << 16);
-        let pixels_per_band = (width * height) as usize;
-        let total_pixels = (fifo_bytes / 4) as usize;
-
-        let mut bytes = [0u8; 4];
-
-        // Read MWIR band
-        let n_mwir = pixels_per_band.min(mwir.len()).min(total_pixels);
-        for pixel in mwir.iter_mut().take(n_mwir) {
-            for b in &mut bytes {
-                *b = self.read_reg(REG_FIFO_READ);
-            }
-            *pixel = f32::from_le_bytes(bytes);
-        }
-
-        // Read LWIR band (if present)
-        if num_bands >= 2 {
-            let remaining = total_pixels.saturating_sub(pixels_per_band);
-            let n_lwir = pixels_per_band.min(lwir.len()).min(remaining);
-            for pixel in lwir.iter_mut().take(n_lwir) {
-                for b in &mut bytes {
-                    *b = self.read_reg(REG_FIFO_READ);
-                }
-                *pixel = f32::from_le_bytes(bytes);
-            }
-        } else {
-            // Single band: use MWIR as LWIR estimate
-            let n = n_mwir.min(lwir.len());
-            lwir[..n].copy_from_slice(&mwir[..n]);
-        }
-
-        Ok((width, height, num_bands))
-    }
-}
 
 // ── Detection (using leodos-analysis) ───────────────────────
 
@@ -231,10 +146,8 @@ fn detect_hotspots(
     let mut max_temp = 0.0f32;
 
     for h in &hotspots[..n] {
-        let lat = cfg.aoi_north
-            - h.y as f32 / height as f32 * (cfg.aoi_north - cfg.aoi_south);
-        let lon = cfg.aoi_west
-            + h.x as f32 / width as f32 * (cfg.aoi_east - cfg.aoi_west);
+        let lat = cfg.aoi_north - h.y as f32 / height as f32 * (cfg.aoi_north - cfg.aoi_south);
+        let lon = cfg.aoi_west + h.x as f32 / width as f32 * (cfg.aoi_east - cfg.aoi_west);
         sum_lat += lat;
         sum_lon += lon;
         if h.t4 > max_temp {
@@ -296,13 +209,14 @@ pub extern "C" fn WILDFIRE_AppMain() {
             .header_overhead(SrsppDataPacket::HEADER_SIZE)
             .build();
         let origin = Address::satellite(0, 1);
-        let sender: SrsppSender<_, _, _, 8, 4096, 512> = SrsppSender::new(sender_config, origin, NoStore, AlwaysReachable);
+        let sender: SrsppSender<_, _, _, 8, 4096, 512> =
+            SrsppSender::new(sender_config, origin, NoStore, AlwaysReachable);
         let (mut tx, mut driver) = sender.split(FixedRto::new(RTO_MS));
 
         // Hardware
-        let mut camera = SpiCamera {
-            spi: Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8)?,
-        };
+        let mut camera = ThermalCamera::open(
+            Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8)?,
+        );
         let mut gps = Uart::open(c"/dev/ttyS1", 115_200, Access::ReadWrite)?;
 
         let mut was_over_aoi = false;
@@ -343,9 +257,12 @@ pub extern "C" fn WILDFIRE_AppMain() {
                         let mut mwir = [0.0f32; MAX_PIXELS];
                         let mut lwir = [0.0f32; MAX_PIXELS];
                         match camera.capture(&mut mwir, &mut lwir) {
-                            Ok((w, h, _bands)) => {
+                            Ok(info) => {
+                                let (w, h) = (info.width, info.height);
                                 let n = (w * h) as usize;
-                                if let Some(alert) = detect_hotspots(&mwir[..n], &lwir[..n], w, h, &cfg) {
+                                if let Some(alert) =
+                                    detect_hotspots(&mwir[..n], &lwir[..n], w, h, &cfg)
+                                {
                                     state.alerts_sent += 1;
                                     info!(
                                         "ALERT #{}: {} px, \
@@ -393,10 +310,17 @@ pub extern "C" fn WILDFIRE_AppMain() {
                                         &rice_cfg,
                                         &samples[..padded],
                                         &mut msg[TLM_SIZE..],
-                                    ).unwrap_or(0);
+                                    )
+                                    .unwrap_or(0);
                                     let total = TLM_SIZE + compressed_len;
-                                    tx.send(Address::Ground { station: 0 }, &msg[..total]).await.ok();
-                                    info!("Downlinked alert + {} hotspot temps ({} bytes compressed)", n_hot, compressed_len).ok();
+                                    tx.send(Address::Ground { station: 0 }, &msg[..total])
+                                        .await
+                                        .ok();
+                                    info!(
+                                        "Downlinked alert + {} hotspot temps ({} bytes compressed)",
+                                        n_hot, compressed_len
+                                    )
+                                    .ok();
                                 } else {
                                     info!("No fire detected").ok();
                                 }

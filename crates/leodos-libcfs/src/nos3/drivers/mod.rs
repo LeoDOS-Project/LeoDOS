@@ -18,3 +18,4 @@ pub mod torquer;
 pub mod thruster;
 pub mod novatel;
 pub mod arducam;
+pub mod thermal_cam;
