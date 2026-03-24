@@ -299,11 +299,10 @@ pub extern "C" fn WILDFIRE_AppMain() {
         let (mut tx, mut driver) = sender.split(FixedRto::new(RTO_MS));
 
         // Hardware
-        let mut camera: Option<SpiCamera> = Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8)
-            .map(|spi| SpiCamera { spi })
-            .ok();
-
-        let mut gps = Uart::open(c"/dev/ttyS1", 115_200, leodos_libcfs::nos3::buses::uart::Access::ReadWrite).ok();
+        let mut camera = SpiCamera {
+            spi: Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8)?,
+        };
+        let mut gps = Uart::open(c"/dev/ttyS1", 115_200, leodos_libcfs::nos3::buses::uart::Access::ReadWrite)?;
 
         let mut was_over_aoi = false;
 
@@ -322,17 +321,12 @@ pub extern "C" fn WILDFIRE_AppMain() {
                     Err(_) => WildfireConfig::default(),
                 };
 
-                let (lat, lon) = if let Some(ref mut dev) = gps {
-                    match novatel::request_data(dev) {
-                        Ok(d) => (d.lat, d.lon),
-                        Err(_) => {
-                            sleep(Duration::from_secs(cfg.poll_interval_s)).await;
-                            continue;
-                        }
+                let (lat, lon) = match novatel::request_data(&mut gps) {
+                    Ok(d) => (d.lat, d.lon),
+                    Err(_) => {
+                        sleep(Duration::from_secs(cfg.poll_interval_s)).await;
+                        continue;
                     }
-                } else {
-                    sleep(Duration::from_secs(cfg.poll_interval_s)).await;
-                    continue;
                 };
 
                 let over_aoi = lat >= cfg.aoi_south
@@ -344,10 +338,10 @@ pub extern "C" fn WILDFIRE_AppMain() {
                     state.pass_count += 1;
                     info!("Entering AOI pass {}", state.pass_count).ok();
 
-                    if let Some(ref mut cam) = camera {
+                    {
                         let mut mwir = [0.0f32; MAX_PIXELS];
                         let mut lwir = [0.0f32; MAX_PIXELS];
-                        match cam.capture(&mut mwir, &mut lwir) {
+                        match camera.capture(&mut mwir, &mut lwir) {
                             Ok((w, h, _bands)) => {
                                 let n = (w * h) as usize;
                                 if let Some(alert) = detect_hotspots(&mwir[..n], &lwir[..n], w, h, &cfg) {
