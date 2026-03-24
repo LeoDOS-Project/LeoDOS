@@ -66,9 +66,24 @@ pub struct SrsppReceiver<
     state: SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
 }
 
+#[bon::bon]
 impl<E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize> SrsppReceiver<E, R, MAX_STREAMS> {
     /// Creates a new multi-stream receiver.
-    pub fn new(config: ReceiverConfig) -> Self {
+    #[builder]
+    pub fn new(
+        local_address: Address,
+        apid: crate::network::spp::Apid,
+        #[builder(default)] function_code: u8,
+        #[builder(default)] immediate_ack: bool,
+        #[builder(default = 100)] ack_delay_ticks: u32,
+    ) -> Self {
+        let config = ReceiverConfig::builder()
+            .local_address(local_address)
+            .apid(apid)
+            .function_code(function_code)
+            .immediate_ack(immediate_ack)
+            .ack_delay_ticks(ack_delay_ticks)
+            .build();
         let ack_delay = Duration::from_millis(config.ack_delay_ticks);
         Self {
             state: SyncRefCell::new(MultiReceiverState {
