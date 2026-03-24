@@ -11,6 +11,7 @@ use leodos_libcfs::err;
 use leodos_libcfs::error::CfsError;
 use leodos_libcfs::info;
 use leodos_libcfs::nos3::buses::spi::Spi;
+use leodos_libcfs::nos3::buses::uart::Access;
 use leodos_libcfs::nos3::buses::uart::Uart;
 use leodos_libcfs::nos3::drivers::novatel;
 use leodos_libcfs::runtime::join::join;
@@ -302,7 +303,7 @@ pub extern "C" fn WILDFIRE_AppMain() {
         let mut camera = SpiCamera {
             spi: Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8)?,
         };
-        let mut gps = Uart::open(c"/dev/ttyS1", 115_200, leodos_libcfs::nos3::buses::uart::Access::ReadWrite)?;
+        let mut gps = Uart::open(c"/dev/ttyS1", 115_200, Access::ReadWrite)?;
 
         let mut was_over_aoi = false;
 
