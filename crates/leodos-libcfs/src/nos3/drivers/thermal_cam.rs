@@ -4,8 +4,8 @@
 //! NOS3 thermal camera simulator via SPI register access.
 //! Each pixel is a brightness temperature in Kelvin as f32.
 
-use crate::error::CfsError;
 use crate::nos3::buses::spi::Spi;
+use crate::nos3::buses::spi::SpiError;
 
 const REG_STATUS: u8 = 0x01;
 const REG_TRIGGER: u8 = 0x02;
@@ -17,6 +17,32 @@ const REG_FIFO_SIZE_1: u8 = 0x13;
 const REG_FIFO_SIZE_2: u8 = 0x14;
 const REG_FIFO_READ: u8 = 0x20;
 
+/// Thermal camera error.
+#[derive(Debug)]
+pub enum ThermalCamError {
+    /// Camera not ready (status register bit not set).
+    NotReady,
+    /// SPI bus error.
+    Spi(SpiError),
+}
+
+impl From<SpiError> for ThermalCamError {
+    fn from(e: SpiError) -> Self {
+        Self::Spi(e)
+    }
+}
+
+impl core::fmt::Display for ThermalCamError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NotReady => write!(f, "thermal camera not ready"),
+            Self::Spi(e) => write!(f, "SPI: {e}"),
+        }
+    }
+}
+
+impl core::error::Error for ThermalCamError {}
+
 /// Thermal camera handle.
 pub struct ThermalCamera {
     spi: Spi,
@@ -24,8 +50,11 @@ pub struct ThermalCamera {
 
 /// Capture result metadata.
 pub struct CaptureInfo {
+    /// Frame width in pixels.
     pub width: u32,
+    /// Frame height in pixels.
     pub height: u32,
+    /// Number of spectral bands (1 = MWIR only, 2 = MWIR + LWIR).
     pub num_bands: u8,
 }
 
@@ -35,16 +64,16 @@ impl ThermalCamera {
         Self { spi }
     }
 
-    fn read_reg(&mut self, reg: u8) -> u8 {
+    fn read_reg(&mut self, reg: u8) -> Result<u8, SpiError> {
         let tx = [reg, 0x00];
         let mut rx = [0u8; 2];
-        self.spi.transfer(&tx, &mut rx, 2, 0, 8, true).ok();
-        rx[0]
+        self.spi.transfer(&tx, &mut rx, 2, 0, 8, true)?;
+        Ok(rx[0])
     }
 
-    fn write_reg(&mut self, reg: u8, val: u8) {
+    fn write_reg(&mut self, reg: u8, val: u8) -> Result<(), SpiError> {
         let tx = [reg | 0x80, val];
-        self.spi.write(&tx).ok();
+        self.spi.write(&tx)
     }
 
     /// Captures a thermal frame into the provided MWIR/LWIR buffers.
@@ -55,21 +84,21 @@ impl ThermalCamera {
         &mut self,
         mwir: &mut [f32],
         lwir: &mut [f32],
-    ) -> Result<CaptureInfo, CfsError> {
-        let status = self.read_reg(REG_STATUS);
+    ) -> Result<CaptureInfo, ThermalCamError> {
+        let status = self.read_reg(REG_STATUS)?;
         if status & 0x02 == 0 {
-            return Err(CfsError::IncorrectState);
+            return Err(ThermalCamError::NotReady);
         }
 
-        self.write_reg(REG_TRIGGER, 0x01);
+        self.write_reg(REG_TRIGGER, 0x01)?;
 
-        let num_bands = self.read_reg(REG_NUM_BANDS).max(1);
-        let width = self.read_reg(REG_WIDTH) as u32;
-        let height = self.read_reg(REG_HEIGHT) as u32;
+        let num_bands = self.read_reg(REG_NUM_BANDS)?.max(1);
+        let width = self.read_reg(REG_WIDTH)? as u32;
+        let height = self.read_reg(REG_HEIGHT)? as u32;
 
-        let s0 = self.read_reg(REG_FIFO_SIZE_0) as u32;
-        let s1 = self.read_reg(REG_FIFO_SIZE_1) as u32;
-        let s2 = self.read_reg(REG_FIFO_SIZE_2) as u32;
+        let s0 = self.read_reg(REG_FIFO_SIZE_0)? as u32;
+        let s1 = self.read_reg(REG_FIFO_SIZE_1)? as u32;
+        let s2 = self.read_reg(REG_FIFO_SIZE_2)? as u32;
         let fifo_bytes = s0 | (s1 << 8) | (s2 << 16);
         let pixels_per_band = (width * height) as usize;
         let total_pixels = (fifo_bytes / 4) as usize;
@@ -79,7 +108,7 @@ impl ThermalCamera {
         let n_mwir = pixels_per_band.min(mwir.len()).min(total_pixels);
         for pixel in mwir.iter_mut().take(n_mwir) {
             for b in &mut bytes {
-                *b = self.read_reg(REG_FIFO_READ);
+                *b = self.read_reg(REG_FIFO_READ)?;
             }
             *pixel = f32::from_le_bytes(bytes);
         }
@@ -89,7 +118,7 @@ impl ThermalCamera {
             let n_lwir = pixels_per_band.min(lwir.len()).min(remaining);
             for pixel in lwir.iter_mut().take(n_lwir) {
                 for b in &mut bytes {
-                    *b = self.read_reg(REG_FIFO_READ);
+                    *b = self.read_reg(REG_FIFO_READ)?;
                 }
                 *pixel = f32::from_le_bytes(bytes);
             }
