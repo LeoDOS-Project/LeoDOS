@@ -1,0 +1,12 @@
+[package]
+name = "leodos-spacecomp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+leodos-protocols = { path = "../leodos-protocols", features = ["cfs"] }
+leodos-libcfs = { path = "../leodos-libcfs" }
+bon = { version = "3.9.1", default-features = false }
+heapless = "0.9"
+thiserror = { version = "2", default-features = false }
+zerocopy = { version = "0.8", features = ["derive"] }
