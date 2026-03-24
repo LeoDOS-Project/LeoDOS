@@ -6,7 +6,7 @@
 //! handling, and housekeeping telemetry.
 
 use crate::cfe::evs::event;
-use crate::cfe::sb::msg::{MessageRef, MsgId, TlmHeader};
+use crate::cfe::sb::msg::{CmdHeader, MessageRef, MsgId, TlmHeader};
 use crate::cfe::sb::pipe::Pipe;
 use crate::cfe::sb::send_buf::SendBuffer;
 use crate::error::Result;
@@ -158,15 +158,20 @@ impl App {
             }
 
             if msg_id == self.cmd_msg_id {
+                let cmd_hdr_size = core::mem::size_of::<CmdHeader>();
                 match msg.fcn_code()? {
-                    FCN_NOOP => {
+                    FCN_NOOP if msg.size()? == cmd_hdr_size => {
                         self.cmd_count = self.cmd_count.wrapping_add(1);
                         event::info(EVT_NOOP, self.version)?;
                     }
-                    FCN_RESET => {
+                    FCN_RESET if msg.size()? == cmd_hdr_size => {
                         self.cmd_count = 0;
                         self.err_count = 0;
                         event::info(EVT_RESET, "Counters reset")?;
+                    }
+                    FCN_NOOP | FCN_RESET => {
+                        self.err_count = self.err_count.wrapping_add(1);
+                        event::error(EVT_INVALID_CC, "Wrong message length")?;
                     }
                     _ => return Ok(MessageRef::new(&buf[..len])),
                 }
