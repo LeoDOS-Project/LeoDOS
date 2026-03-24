@@ -4,7 +4,7 @@ use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::error::CfsError;
-use leodos_libcfs::runtime::join::join;
+use leodos_libcfs::join;
 use leodos_libcfs::runtime::Runtime;
 use leodos_libcfs::{err, info};
 use leodos_protocols::application::spacecomp::job::Job;
@@ -137,7 +137,7 @@ pub extern "C" fn SPACECOMP_AppMain() {
             }
         };
 
-        let _ = join(app_task, driver.run()).await;
+        let _ = join!(app_task, driver.run()).await;
 
         Ok(())
     });

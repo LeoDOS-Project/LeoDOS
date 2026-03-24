@@ -3,7 +3,7 @@
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::error::Error;
 use leodos_libcfs::os::net::SocketAddr;
-use leodos_libcfs::runtime::join::join;
+use leodos_libcfs::join;
 use leodos_libcfs::runtime::Runtime;
 use leodos_protocols::datalink::link::cfs::udp::UdpDatalink;
 use leodos_protocols::network::isl::address::Address;
@@ -63,7 +63,7 @@ pub extern "C" fn SRSPP_RECEIVER_AppMain() {
             }
         };
 
-        let _ = join(recv_task, driver.run::<512>(&mut network)).await;
+        let _ = join!(recv_task, driver.run::<512>(&mut network)).await;
 
         Ok(())
     });

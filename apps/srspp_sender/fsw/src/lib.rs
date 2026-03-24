@@ -5,7 +5,7 @@ use leodos_libcfs::cfe::duration::Duration;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::error::Error;
 use leodos_libcfs::os::net::SocketAddr;
-use leodos_libcfs::runtime::join::join;
+use leodos_libcfs::join;
 use leodos_libcfs::runtime::time::sleep;
 use leodos_libcfs::runtime::Runtime;
 use leodos_protocols::datalink::link::cfs::udp::UdpDatalink;
@@ -90,7 +90,7 @@ pub extern "C" fn SRSPP_SENDER_AppMain() {
             }
         };
 
-        let _ = join(send_task, driver.run(&mut network)).await;
+        let _ = join!(send_task, driver.run(&mut network)).await;
 
         Ok(())
     });

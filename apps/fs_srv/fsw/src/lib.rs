@@ -7,7 +7,7 @@ use leodos_libcfs::err;
 use leodos_libcfs::error::CfsError;
 use leodos_libcfs::info;
 use leodos_libcfs::os::fs::{self, AccessMode, Directory, File, SeekFrom};
-use leodos_libcfs::runtime::join::join;
+use leodos_libcfs::join;
 use leodos_libcfs::runtime::Runtime;
 
 use leodos_protocols::datalink::link::cfs::sb::SbDatalink;
@@ -538,7 +538,7 @@ pub extern "C" fn FS_SRV_AppMain() {
             }
         };
 
-        let _ = join(workflow, driver.run()).await;
+        let _ = join!(workflow, driver.run()).await;
 
         Ok(())
     });
