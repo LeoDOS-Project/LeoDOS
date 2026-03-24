@@ -4,8 +4,10 @@
 //! NOS3 thermal camera simulator via SPI register access.
 //! Each pixel is a brightness temperature in Kelvin as f32.
 
+use crate::error::CfsError;
 use crate::nos3::buses::spi::Spi;
 use crate::nos3::buses::spi::SpiError;
+use crate::nos3::buses::BusError;
 
 const REG_STATUS: u8 = 0x01;
 const REG_TRIGGER: u8 = 0x02;
@@ -16,6 +18,9 @@ const REG_FIFO_SIZE_0: u8 = 0x12;
 const REG_FIFO_SIZE_1: u8 = 0x13;
 const REG_FIFO_SIZE_2: u8 = 0x14;
 const REG_FIFO_READ: u8 = 0x20;
+
+const STATUS_READY: u8 = 0x02;
+const TRIGGER_CAPTURE: u8 = 0x01;
 
 /// Thermal camera error.
 #[derive(Debug)]
@@ -43,27 +48,72 @@ impl core::fmt::Display for ThermalCamError {
 
 impl core::error::Error for ThermalCamError {}
 
-/// Thermal camera handle.
-pub struct ThermalCamera {
-    spi: Spi,
-}
-
-/// Capture result metadata.
-pub struct CaptureInfo {
+/// Capture result borrowing the camera's internal buffers.
+pub struct Frame<'a> {
+    /// MWIR brightness temperatures (Kelvin).
+    pub mwir: &'a [f32],
+    /// LWIR brightness temperatures (Kelvin).
+    pub lwir: &'a [f32],
     /// Frame width in pixels.
     pub width: u32,
     /// Frame height in pixels.
     pub height: u32,
-    /// Number of spectral bands (1 = MWIR only, 2 = MWIR + LWIR).
-    pub num_bands: u8,
 }
 
-impl ThermalCamera {
-    /// Opens the thermal camera on the given SPI bus.
-    pub fn open(spi: Spi) -> Self {
-        Self { spi }
-    }
+/// Thermal camera with owned pixel buffers.
+///
+/// `N` is the maximum number of pixels per band
+/// (width * height). Typical values: `64*64` for
+/// low-res, `512*512` for high-res.
+pub struct ThermalCamera<const N: usize> {
+    spi: Spi,
+    mwir: [f32; N],
+    lwir: [f32; N],
+}
 
+#[bon::bon]
+impl<const N: usize> ThermalCamera<N> {
+    /// Creates a new thermal camera on the given SPI bus.
+    ///
+    /// The builder can open the SPI device directly:
+    /// ```ignore
+    /// Camera::builder()
+    ///     .device(c"spi_3")
+    ///     .bus(0)
+    ///     .cs(3)
+    ///     .baudrate(1_000_000)
+    ///     .build()?;
+    /// ```
+    #[builder]
+    pub fn new(
+        device: &core::ffi::CStr,
+        #[builder(default)] bus: u8,
+        chip_select_line: u8,
+        baudrate: u32,
+        #[builder(default)] spi_mode: u8,
+        #[builder(default = 8)] bits_per_word: u8,
+    ) -> Result<Self, CfsError> {
+        let spi = Spi::open(device, bus, chip_select_line, baudrate, spi_mode, bits_per_word)
+            .map_err(BusError::from)?;
+        Ok(Self {
+            spi,
+            mwir: [0.0; N],
+            lwir: [0.0; N],
+        })
+    }
+}
+
+impl<const N: usize> From<Spi> for ThermalCamera<N> {
+    fn from(spi: Spi) -> Self {
+        Self {
+            spi,
+            mwir: [0.0; N],
+            lwir: [0.0; N],
+        }
+    }
+}
+
+impl<const N: usize> ThermalCamera<N> {
     fn read_reg(&mut self, reg: u8) -> Result<u8, SpiError> {
         let tx = [reg, 0x00];
         let mut rx = [0u8; 2];
@@ -71,26 +121,28 @@ impl ThermalCamera {
         Ok(rx[0])
     }
 
+    const WRITE_BIT: u8 = 0x80;
+
     fn write_reg(&mut self, reg: u8, val: u8) -> Result<(), SpiError> {
-        let tx = [reg | 0x80, val];
+        let tx = [reg | Self::WRITE_BIT, val];
         self.spi.write(&tx)
     }
 
-    /// Captures a thermal frame into the provided MWIR/LWIR buffers.
+    /// Captures a thermal frame into the internal buffers.
     ///
-    /// Returns capture metadata (width, height, band count).
-    /// If only one band is available, LWIR is filled with a copy of MWIR.
-    pub fn capture(
-        &mut self,
-        mwir: &mut [f32],
-        lwir: &mut [f32],
-    ) -> Result<CaptureInfo, ThermalCamError> {
-        let status = self.read_reg(REG_STATUS)?;
-        if status & 0x02 == 0 {
-            return Err(ThermalCamError::NotReady);
-        }
+    /// Yields until the camera is ready, then triggers a
+    /// capture and reads the FIFO. Returns a [`Frame`] that
+    /// borrows the MWIR/LWIR data. If only one band is
+    /// available, LWIR is a copy of MWIR.
+    pub async fn capture(&mut self) -> Result<Frame<'_>, ThermalCamError> {
+        core::future::poll_fn(|_| match self.read_reg(REG_STATUS) {
+            Ok(s) if s & STATUS_READY != 0 => core::task::Poll::Ready(Ok(())),
+            Ok(_) => core::task::Poll::Pending,
+            Err(e) => core::task::Poll::Ready(Err(ThermalCamError::from(e))),
+        })
+        .await?;
 
-        self.write_reg(REG_TRIGGER, 0x01)?;
+        self.write_reg(REG_TRIGGER, TRIGGER_CAPTURE)?;
 
         let num_bands = self.read_reg(REG_NUM_BANDS)?.max(1);
         let width = self.read_reg(REG_WIDTH)? as u32;
@@ -105,32 +157,34 @@ impl ThermalCamera {
 
         let mut bytes = [0u8; 4];
 
-        let n_mwir = pixels_per_band.min(mwir.len()).min(total_pixels);
-        for pixel in mwir.iter_mut().take(n_mwir) {
+        let n_mwir = pixels_per_band.min(N).min(total_pixels);
+        for i in 0..n_mwir {
             for b in &mut bytes {
                 *b = self.read_reg(REG_FIFO_READ)?;
             }
-            *pixel = f32::from_le_bytes(bytes);
+            self.mwir[i] = f32::from_le_bytes(bytes);
         }
 
         if num_bands >= 2 {
             let remaining = total_pixels.saturating_sub(pixels_per_band);
-            let n_lwir = pixels_per_band.min(lwir.len()).min(remaining);
-            for pixel in lwir.iter_mut().take(n_lwir) {
+            let n_lwir = pixels_per_band.min(N).min(remaining);
+            for i in 0..n_lwir {
                 for b in &mut bytes {
                     *b = self.read_reg(REG_FIFO_READ)?;
                 }
-                *pixel = f32::from_le_bytes(bytes);
+                self.lwir[i] = f32::from_le_bytes(bytes);
             }
         } else {
-            let n = n_mwir.min(lwir.len());
-            lwir[..n].copy_from_slice(&mwir[..n]);
+            for i in 0..n_mwir {
+                self.lwir[i] = self.mwir[i];
+            }
         }
 
-        Ok(CaptureInfo {
+        Ok(Frame {
+            mwir: &self.mwir[..n_mwir],
+            lwir: &self.lwir[..n_mwir],
             width,
             height,
-            num_bands,
         })
     }
 }
