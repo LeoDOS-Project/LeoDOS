@@ -75,7 +75,7 @@ endif
 
 # The "LOCALTGTS" defines the top-level targets that are implemented in this makefile
 # Any other target may also be given, in that case it will simply be passed through.
-LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov check docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test constellation-build constellation-gen constellation-up constellation-down wildfire-demo-build wildfire-demo-up wildfire-demo-down nos3-build nos3-config nos3-build-fsw nos3-build-sim nos3-launch nos3-stop nos3-shell eosim-gen
+LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov check docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test constellation-build constellation-gen constellation-up constellation-down nos3-prep wildfire-demo-build wildfire-demo-up wildfire-demo-down nos3-build nos3-config nos3-build-fsw nos3-build-sim nos3-launch nos3-stop nos3-shell eosim-gen
 OTHERTGTS := $(filter-out $(LOCALTGTS),$(MAKECMDGOALS))
 
 # As this makefile does not build any real files, treat everything as a PHONY target
@@ -160,7 +160,7 @@ osalguide:
 # that is used to indicate the prep step has been done.  This way
 # the prep step does not need to be done explicitly by the user
 # as long as the default options are sufficient.
-$(filter-out prep distclean check docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test constellation-build constellation-gen constellation-up constellation-down wildfire-demo-build wildfire-demo-up wildfire-demo-down nos3-build nos3-config nos3-build-fsw nos3-build-sim nos3-launch nos3-stop nos3-shell,$(LOCALTGTS)): $(O)/.prep
+$(filter-out prep distclean check docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test constellation-build constellation-gen constellation-up constellation-down nos3-prep wildfire-demo-build wildfire-demo-up wildfire-demo-down nos3-build nos3-config nos3-build-fsw nos3-build-sim nos3-launch nos3-stop nos3-shell,$(LOCALTGTS)): $(O)/.prep
 
 # Docker targets for building on macOS
 docker-build:
@@ -212,10 +212,13 @@ constellation-down:
 # Wildfire demo (NOS3 simulation with thermal camera + GPS)
 NOS3_RUN_STANDALONE = docker run --rm -v "$$(pwd):/cFS" -v "$${HOME}/.nos3:/root/.nos3" -w /cFS nos3-rust:latest
 
-wildfire-demo-build:
+nos3-prep:
 	docker build -f Dockerfile.nos3 -t nos3-rust:latest .
+	$(NOS3_RUN_STANDALONE) bash -c "cd libs/nos3 && make config && cd fsw && mkdir -p build && cd build && cmake $(PREP_OPTS) ../cfe"
+
+wildfire-demo-build: nos3-prep
 	$(NOS3_RUN_STANDALONE) bash -c "cd libs/42 && make clean && make 42PLATFORM=__linux__ GUIFLAG= SHADERFLAG= && mkdir -p /root/.nos3/42/NOS3InOut && tar --exclude=.git -cf - . | tar -xf - -C /root/.nos3/42/ && cp -r /cFS/libs/nos3/cfg/build/InOut/* /root/.nos3/42/NOS3InOut/"
-	$(NOS3_RUN_STANDALONE) bash -c "cd libs/nos3 && make config && make build-sim && make build-fsw"
+	$(NOS3_RUN_STANDALONE) bash -c "cd libs/nos3 && make build-sim && make build-fsw"
 
 wildfire-demo-up:
 	$(NOS3_DC) up -d
