@@ -5,6 +5,8 @@ use leodos_libcfs::cfe::es::cds::CdsBlock;
 use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::cfe::tbl::Table;
 use leodos_libcfs::cfe::tbl::TableOptions;
+use leodos_libcfs::cfe::tbl::Validate;
+
 use leodos_libcfs::err;
 use leodos_libcfs::error::CfsError;
 use leodos_libcfs::info;
@@ -59,7 +61,6 @@ struct WildfireConfig {
     aoi: GeoBounds,
     bt_threshold_k: f32,
     min_cluster_pixels: u32,
-    poll_interval_s: u32,
 }
 
 impl Default for WildfireConfig {
@@ -73,8 +74,16 @@ impl Default for WildfireConfig {
             },
             bt_threshold_k: 330.0,
             min_cluster_pixels: 3,
-            poll_interval_s: 2,
         }
+    }
+}
+
+impl Validate for WildfireConfig {
+    fn validate(&self) -> bool {
+        self.aoi.south < self.aoi.north
+            && self.aoi.west < self.aoi.east
+            && self.bt_threshold_k > 0.0
+            && self.min_cluster_pixels > 0
     }
 }
 
@@ -123,7 +132,7 @@ async fn main() -> Result<(), WildfireError> {
         .build()?;
 
     // Table config (ground-updatable)
-    let table = Table::<WildfireConfig>::new("WILDFIRE.Config", TableOptions::DEFAULT, None)?;
+    let table = Table::<WildfireConfig>::new("WILDFIRE.Config", TableOptions::DEFAULT)?;
 
     // CDS persistence
     let (cds, mut state) = CdsBlock::<WildfireState>::restore_or_default("WILDFIRE.State")?;

@@ -11,11 +11,24 @@ use core::marker::PhantomData;
 use core::mem::{size_of, MaybeUninit};
 use core::ops::{Deref, Drop};
 
-/// A type alias for the callback function used to validate table loads.
-///
-/// The function receives a pointer to the table data to be validated. It should
-/// return `CFE_SUCCESS` if the data is valid, or a negative error code otherwise.
+/// A type alias for the raw callback function used to validate table loads.
 pub type ValidationFn = ffi::CFE_TBL_CallbackFuncPtr_t;
+
+/// Table validation trait. Implement on your config struct
+/// to reject invalid ground loads.
+///
+/// The default implementation accepts all loads.
+pub trait Validate {
+    /// Returns `true` if this configuration is valid.
+    fn validate(&self) -> bool {
+        true
+    }
+}
+
+extern "C" fn validate_trampoline<T: Validate>(ptr: *mut c_void) -> i32 {
+    let t = unsafe { &*(ptr as *const T) };
+    if t.validate() { 0 } else { -1 }
+}
 
 /// A handle to a cFE table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,15 +136,12 @@ impl TableInfo {
 impl<T: Sized> Table<T> {
     /// Registers a new table with cFE Table Services.
     ///
-    /// This call can block. Must not be called from ISR context.
-    ///
-    /// # Arguments
-    /// * `name`: The application-local name for the table.
-    /// * `options`: Bitwise-ORed flags for table options (e.g., `TableOptions::DEFAULT`).
-    /// * `validation_fn`: An optional callback function to validate table loads.
-    pub fn new(name: &str, options: TableOptions, validation_fn: ValidationFn) -> Result<Self>
+    /// If `T` implements [`Validate`] with custom logic,
+    /// cFE will call it before activating any ground load.
+    /// The default `Validate` impl accepts all loads.
+    pub fn new(name: &str, options: TableOptions) -> Result<Self>
     where
-        T: Default,
+        T: Default + Validate,
     {
         let mut handle = MaybeUninit::uninit();
         let c_name = cstring::<{ ffi::CFE_MISSION_TBL_MAX_NAME_LENGTH as usize }>(name)
@@ -143,7 +153,7 @@ impl<T: Sized> Table<T> {
                 c_name.as_ptr(),
                 size_of::<T>(),
                 options.bits(),
-                validation_fn,
+                Some(validate_trampoline::<T> as _),
             )
         };
         check(status)?;
