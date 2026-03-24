@@ -3,7 +3,6 @@
 use leodos_libcfs::app::App;
 use leodos_libcfs::cfe::duration::Duration;
 use leodos_libcfs::cfe::es::cds::CdsBlock;
-use leodos_libcfs::cfe::es::cds::CdsInfo;
 use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::cfe::tbl::Table;
 use leodos_libcfs::cfe::tbl::TableOptions;
@@ -161,178 +160,175 @@ fn detect_hotspots(
 
 // ── App entry ───────────────────────────────────────────────
 
-#[no_mangle]
-pub extern "C" fn WILDFIRE_AppMain() {
-    Runtime::new().run(async {
-        let mut app = App::builder()
-            .name("WILDFIRE")
-            .cmd_topic(bindings::WILDFIRE_CMD_TOPICID as u16)
-            .send_hk_topic(bindings::WILDFIRE_SEND_HK_TOPICID as u16)
-            .hk_tlm_topic(bindings::WILDFIRE_HK_TLM_TOPICID as u16)
-            .version("0.1.0")
-            .build()?;
+async fn main() {
+    let mut app = App::builder()
+        .name("WILDFIRE")
+        .cmd_topic(bindings::WILDFIRE_CMD_TOPICID as u16)
+        .send_hk_topic(bindings::WILDFIRE_SEND_HK_TOPICID as u16)
+        .hk_tlm_topic(bindings::WILDFIRE_HK_TLM_TOPICID as u16)
+        .version("0.1.0")
+        .build()?;
 
-        // Table config (ground-updatable)
-        let table = Table::<WildfireConfig>::new("WILDFIRE.Config", TableOptions::DEFAULT, None)?;
-        table.load_from_slice(core::slice::from_ref(&WildfireConfig::default()))?;
+    // Table config (ground-updatable)
+    let table = Table::<WildfireConfig>::new("WILDFIRE.Config", TableOptions::DEFAULT, None)?;
+    table.load_from_slice(core::slice::from_ref(&WildfireConfig::default()))?;
 
-        // CDS persistence
-        let (cds, cds_info) = CdsBlock::<WildfireState>::new("WILDFIRE.State")?;
-        let mut state = match cds_info {
-            CdsInfo::Restored => cds.restore().unwrap_or_default(),
-            CdsInfo::Created => WildfireState::default(),
-        };
+    // CDS persistence
+    let (cds, mut state) = CdsBlock::<WildfireState>::restore_or_default("WILDFIRE.State")?;
 
-        // SRSPP transport via router app's Software Bus
-        let router_send = MsgId::from_local_cmd(bindings::WILDFIRE_CMD_TOPICID as u16);
-        let router_recv = MsgId::from_local_tlm(bindings::WILDFIRE_HK_TLM_TOPICID as u16);
-        let sb = SbDatalink::new("WF_SB", 8, router_recv, router_send)?;
-        let mut network = PointToPoint::new(sb);
+    // SRSPP transport via router app's Software Bus
+    let router_send = MsgId::from_local_cmd(bindings::WILDFIRE_CMD_TOPICID as u16);
+    let router_recv = MsgId::from_local_tlm(bindings::WILDFIRE_HK_TLM_TOPICID as u16);
+    let sb = SbDatalink::new("WF_SB", 8, router_recv, router_send)?;
+    let mut network = PointToPoint::new(sb);
 
-        let apid = Apid::new(bindings::WILDFIRE_APID as u16).unwrap();
-        let sender_config = SenderConfig::builder()
-            .source_address(Address::satellite(0, 1))
-            .apid(apid)
-            .function_code(0)
-            .rto_ticks(RTO_MS)
-            .max_retransmits(3)
-            .header_overhead(SrsppDataPacket::HEADER_SIZE)
-            .build();
-        let origin = Address::satellite(0, 1);
-        let sender: SrsppSender<_, _, _, 8, 4096, 512> =
-            SrsppSender::new(sender_config, origin, NoStore, AlwaysReachable);
-        let (mut tx, mut driver) = sender.split(FixedRto::new(RTO_MS));
+    let apid = Apid::new(bindings::WILDFIRE_APID as u16).unwrap();
+    let sender_config = SenderConfig::builder()
+        .source_address(Address::satellite(0, 1))
+        .apid(apid)
+        .function_code(0)
+        .rto_ticks(RTO_MS)
+        .max_retransmits(3)
+        .header_overhead(SrsppDataPacket::HEADER_SIZE)
+        .build();
+    let origin = Address::satellite(0, 1);
+    let sender: SrsppSender<_, _, _, 8, 4096, 512> =
+        SrsppSender::new(sender_config, origin, NoStore, AlwaysReachable);
+    let (mut tx, mut driver) = sender.split(FixedRto::new(RTO_MS));
 
-        // Hardware
-        let mut camera = ThermalCamera::open(Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8)?);
-        let mut gps = Uart::open(c"/dev/ttyS1", 115_200, Access::ReadWrite)?;
+    // Hardware
+    let mut camera = ThermalCamera::open(Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8)?);
+    let mut gps = Uart::open(c"/dev/ttyS1", 115_200, Access::ReadWrite)?;
 
-        let mut was_over_aoi = false;
+    let mut was_over_aoi = false;
 
-        let workflow = async {
-            let mut cmd_buf = [0u8; 256];
+    let workflow = async {
+        let mut cmd_buf = [0u8; 256];
 
-            loop {
-                // Check for commands (non-blocking via sleep)
-                // The App::recv handles NoOp, Reset, HK
-                // automatically. We use sleep for the poll loop.
+        loop {
+            // Check for commands (non-blocking via sleep)
+            // The App::recv handles NoOp, Reset, HK
+            // automatically. We use sleep for the poll loop.
 
-                table.manage().ok();
+            table.manage().ok();
 
-                let cfg = match table.get_accessor() {
-                    Ok(acc) => *acc,
-                    Err(_) => WildfireConfig::default(),
-                };
+            let cfg = match table.get_accessor() {
+                Ok(acc) => *acc,
+                Err(_) => WildfireConfig::default(),
+            };
 
-                let (lat, lon) = match novatel::request_data(&mut gps) {
-                    Ok(d) => (d.lat, d.lon),
-                    Err(_) => {
-                        sleep(Duration::from_secs(cfg.poll_interval_s)).await;
-                        continue;
-                    }
-                };
+            let (lat, lon) = match novatel::request_data(&mut gps) {
+                Ok(d) => (d.lat, d.lon),
+                Err(_) => {
+                    sleep(Duration::from_secs(cfg.poll_interval_s)).await;
+                    continue;
+                }
+            };
 
-                let over_aoi = lat >= cfg.aoi_south
-                    && lat <= cfg.aoi_north
-                    && lon >= cfg.aoi_west
-                    && lon <= cfg.aoi_east;
+            let over_aoi = lat >= cfg.aoi_south
+                && lat <= cfg.aoi_north
+                && lon >= cfg.aoi_west
+                && lon <= cfg.aoi_east;
 
-                if over_aoi && !was_over_aoi {
-                    state.pass_count += 1;
-                    info!("Entering AOI pass {}", state.pass_count).ok();
+            if over_aoi && !was_over_aoi {
+                state.pass_count += 1;
+                info!("Entering AOI pass {}", state.pass_count).ok();
 
-                    {
-                        let mut mwir = [0.0f32; MAX_PIXELS];
-                        let mut lwir = [0.0f32; MAX_PIXELS];
-                        match camera.capture(&mut mwir, &mut lwir) {
-                            Ok(info) => {
-                                let (w, h) = (info.width, info.height);
-                                let n = (w * h) as usize;
-                                if let Some(alert) =
-                                    detect_hotspots(&mwir[..n], &lwir[..n], w, h, &cfg)
-                                {
-                                    state.alerts_sent += 1;
-                                    info!(
-                                        "ALERT #{}: {} px, \
+                {
+                    let mut mwir = [0.0f32; MAX_PIXELS];
+                    let mut lwir = [0.0f32; MAX_PIXELS];
+                    match camera.capture(&mut mwir, &mut lwir) {
+                        Ok(info) => {
+                            let (w, h) = (info.width, info.height);
+                            let n = (w * h) as usize;
+                            if let Some(alert) = detect_hotspots(&mwir[..n], &lwir[..n], w, h, &cfg)
+                            {
+                                state.alerts_sent += 1;
+                                info!(
+                                    "ALERT #{}: {} px, \
                                          max {} K at ({},{})",
-                                        state.alerts_sent,
-                                        alert.hot_pixel_count,
-                                        alert.max_temp_k,
-                                        alert.lat,
-                                        alert.lon,
-                                    )
-                                    .ok();
+                                    state.alerts_sent,
+                                    alert.hot_pixel_count,
+                                    alert.max_temp_k,
+                                    alert.lat,
+                                    alert.lon,
+                                )
+                                .ok();
 
-                                    let tlm = AlertTlm {
-                                        lat: alert.lat,
-                                        lon: alert.lon,
-                                        hot_pixel_count: alert.hot_pixel_count,
-                                        max_temp_k: alert.max_temp_k,
-                                        pass_number: state.pass_count,
-                                    };
-                                    let tlm_bytes = unsafe {
-                                        core::slice::from_raw_parts(
-                                            &tlm as *const _ as *const u8,
-                                            core::mem::size_of::<AlertTlm>(),
-                                        )
-                                    };
+                                let tlm = AlertTlm {
+                                    lat: alert.lat,
+                                    lon: alert.lon,
+                                    hot_pixel_count: alert.hot_pixel_count,
+                                    max_temp_k: alert.max_temp_k,
+                                    pass_number: state.pass_count,
+                                };
+                                let tlm_bytes = unsafe {
+                                    core::slice::from_raw_parts(
+                                        &tlm as *const _ as *const u8,
+                                        core::mem::size_of::<AlertTlm>(),
+                                    )
+                                };
 
-                                    // Rice-compress hotspot temperatures
-                                    let n_hot = (alert.hot_pixel_count as usize).min(MAX_HOTSPOTS);
-                                    let padded = ((n_hot + 7) / 8) * 8;
-                                    let mut samples = [0u32; MAX_HOTSPOTS];
-                                    for (i, t) in alert.temps[..n_hot].iter().enumerate() {
-                                        samples[i] = ((t - QUANT_OFFSET) * QUANT_SCALE) as u32;
-                                    }
-                                    let rice_cfg = rice::Config {
-                                        bits_per_sample: 16,
-                                        block_size: 8,
-                                        ref_interval: 0,
-                                        preprocessor: true,
-                                    };
-                                    // Pack alert + compressed pixels into one message
-                                    const TLM_SIZE: usize = core::mem::size_of::<AlertTlm>();
-                                    let mut msg = [0u8; TLM_SIZE + 256];
-                                    msg[..TLM_SIZE].copy_from_slice(tlm_bytes);
-                                    let compressed_len = rice::compress(
-                                        &rice_cfg,
-                                        &samples[..padded],
-                                        &mut msg[TLM_SIZE..],
-                                    )
-                                    .unwrap_or(0);
-                                    let total = TLM_SIZE + compressed_len;
-                                    tx.send(Address::Ground { station: 0 }, &msg[..total])
-                                        .await
-                                        .ok();
-                                    info!(
-                                        "Downlinked alert + {} hotspot temps ({} bytes compressed)",
-                                        n_hot, compressed_len
-                                    )
-                                    .ok();
-                                } else {
-                                    info!("No fire detected").ok();
+                                // Rice-compress hotspot temperatures
+                                let n_hot = (alert.hot_pixel_count as usize).min(MAX_HOTSPOTS);
+                                let padded = ((n_hot + 7) / 8) * 8;
+                                let mut samples = [0u32; MAX_HOTSPOTS];
+                                for (i, t) in alert.temps[..n_hot].iter().enumerate() {
+                                    samples[i] = ((t - QUANT_OFFSET) * QUANT_SCALE) as u32;
                                 }
-                            }
-                            Err(e) => {
-                                err!("Capture: {}", e).ok();
+                                let rice_cfg = rice::Config {
+                                    bits_per_sample: 16,
+                                    block_size: 8,
+                                    ref_interval: 0,
+                                    preprocessor: true,
+                                };
+                                // Pack alert + compressed pixels into one message
+                                const TLM_SIZE: usize = core::mem::size_of::<AlertTlm>();
+                                let mut msg = [0u8; TLM_SIZE + 256];
+                                msg[..TLM_SIZE].copy_from_slice(tlm_bytes);
+                                let compressed_len = rice::compress(
+                                    &rice_cfg,
+                                    &samples[..padded],
+                                    &mut msg[TLM_SIZE..],
+                                )
+                                .unwrap_or(0);
+                                let total = TLM_SIZE + compressed_len;
+                                tx.send(Address::Ground { station: 0 }, &msg[..total])
+                                    .await
+                                    .ok();
+                                info!(
+                                    "Downlinked alert + {} hotspot temps ({} bytes compressed)",
+                                    n_hot, compressed_len
+                                )
+                                .ok();
+                            } else {
+                                info!("No fire detected").ok();
                             }
                         }
+                        Err(e) => {
+                            err!("Capture: {}", e).ok();
+                        }
                     }
-
-                    cds.store(&state).ok();
-                } else if !over_aoi && was_over_aoi {
-                    info!("Leaving AOI").ok();
                 }
 
-                was_over_aoi = over_aoi;
-                sleep(Duration::from_secs(cfg.poll_interval_s)).await;
+                cds.store(&state).ok();
+            } else if !over_aoi && was_over_aoi {
+                info!("Leaving AOI").ok();
             }
-        };
 
-        let _ = join(workflow, driver.run(&mut network)).await;
+            was_over_aoi = over_aoi;
+            sleep(Duration::from_secs(cfg.poll_interval_s)).await;
+        }
+    };
 
-        Ok(())
-    });
+    let _ = join(workflow, driver.run(&mut network)).await;
+
+    Ok(())
+}
+
+#[no_mangle]
+pub extern "C" fn WILDFIRE_AppMain() {
+    Runtime::new().run(main());
 }
 
 #[cfg(not(test))]

@@ -124,6 +124,20 @@ impl<T: Copy + Sized> CdsBlock<T> {
         Ok(())
     }
 
+    /// Creates a CDS block and restores previous state, or uses
+    /// `T::default()` if the block is new or corrupted.
+    pub fn restore_or_default(name: &str) -> Result<(Self, T)>
+    where
+        T: Default,
+    {
+        let (cds, info) = Self::new(name)?;
+        let state = match info {
+            CdsInfo::Restored => cds.restore().unwrap_or_default(),
+            CdsInfo::Created => T::default(),
+        };
+        Ok((cds, state))
+    }
+
     /// Restores the contents of the CDS block into a new instance of `T`.
     ///
     /// This will perform a raw byte copy from the CDS into the returned struct.
