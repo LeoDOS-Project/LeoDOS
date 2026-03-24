@@ -21,6 +21,7 @@ use leodos_libcfs::runtime::Runtime;
 use leodos_protocols::application::compression::rice;
 use leodos_protocols::datalink::link::cfs::sb::SbDatalink;
 use leodos_protocols::network::isl::address::Address;
+use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::api::cfs::SrsppSender;
@@ -40,6 +41,7 @@ mod bindings {
 
 const MAX_PIXELS: usize = 512 * 512;
 const MAX_HOTSPOTS: usize = 64;
+const NUM_SATS: u8 = 3;
 const RTO_MS: u32 = 1000;
 const QUANT_OFFSET: f32 = 200.0;
 const QUANT_SCALE: f32 = 100.0;
@@ -160,7 +162,7 @@ fn detect_hotspots(
 
 // ── App entry ───────────────────────────────────────────────
 
-async fn main() {
+async fn main() -> Result<(), CfsError> {
     let mut app = App::builder()
         .name("WILDFIRE")
         .cmd_topic(bindings::WILDFIRE_CMD_TOPICID as u16)
@@ -175,24 +177,26 @@ async fn main() {
     // CDS persistence
     let (cds, mut state) = CdsBlock::<WildfireState>::restore_or_default("WILDFIRE.State")?;
 
+    // Derive address from cFS spacecraft ID
+    let scid = SpacecraftId::new(leodos_libcfs::cfe::es::system::get_spacecraft_id());
+    let address = scid.to_address(NUM_SATS);
+
     // SRSPP transport via router app's Software Bus
-    let router_send = MsgId::from_local_cmd(bindings::WILDFIRE_CMD_TOPICID as u16);
-    let router_recv = MsgId::from_local_tlm(bindings::WILDFIRE_HK_TLM_TOPICID as u16);
+    let router_send = MsgId::local_cmd(bindings::WILDFIRE_CMD_TOPICID as u16);
+    let router_recv = MsgId::local_tlm(bindings::WILDFIRE_HK_TLM_TOPICID as u16);
     let sb = SbDatalink::new("WF_SB", 8, router_recv, router_send)?;
     let mut network = PointToPoint::new(sb);
 
-    let apid = Apid::new(bindings::WILDFIRE_APID as u16).unwrap();
     let sender_config = SenderConfig::builder()
-        .source_address(Address::satellite(0, 1))
-        .apid(apid)
+        .source_address(address)
+        .apid(Apid::new(bindings::WILDFIRE_APID as u16).unwrap())
         .function_code(0)
         .rto_ticks(RTO_MS)
         .max_retransmits(3)
         .header_overhead(SrsppDataPacket::HEADER_SIZE)
         .build();
-    let origin = Address::satellite(0, 1);
     let sender: SrsppSender<_, _, _, 8, 4096, 512> =
-        SrsppSender::new(sender_config, origin, NoStore, AlwaysReachable);
+        SrsppSender::new(sender_config, address, NoStore, AlwaysReachable);
     let (mut tx, mut driver) = sender.split(FixedRto::new(RTO_MS));
 
     // Hardware
