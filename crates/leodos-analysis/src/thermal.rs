@@ -10,7 +10,7 @@
 //! 4. Rejection tests for sun glint and false alarms
 
 /// A detected hotspot with its location and diagnostic fields.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct Hotspot {
     /// Pixel x coordinate.
     pub x: u16,
@@ -56,6 +56,12 @@ pub struct FireThresholds {
     /// Maximum T4 for a background pixel (K). Hotter pixels
     /// are excluded from the background calculation.
     pub bg_max_t4: f32,
+}
+
+impl Default for FireThresholds {
+    fn default() -> Self {
+        Self::day()
+    }
 }
 
 impl FireThresholds {

@@ -19,9 +19,6 @@ use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::time::sleep;
 use leodos_libcfs::runtime::Runtime;
 
-use FireThresholds;
-use Hotspot;
-use detect_fire;
 use leodos_protocols::application::compression::rice;
 use leodos_protocols::datalink::link::cfs::sb::SbDatalink;
 use leodos_protocols::network::isl::address::Address;
@@ -116,19 +113,10 @@ fn detect_hotspots(
 ) -> Option<Alert> {
     let thresholds = FireThresholds {
         t4_abs: cfg.bt_threshold_k,
-        ..FireThresholds::day()
+        ..Default::default()
     };
 
-    let mut hotspots = [Hotspot {
-        x: 0,
-        y: 0,
-        t4: 0.0,
-        t11: 0.0,
-        dt4: 0.0,
-        dt4_t11: 0.0,
-        frp: 0.0,
-        confidence: 0.0,
-    }; 64];
+    let mut hotspots = [Hotspot::default(); 64];
 
     let n = detect_fire(
         mwir,
