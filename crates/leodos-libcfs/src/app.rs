@@ -11,6 +11,11 @@ use crate::cfe::sb::pipe::Pipe;
 use crate::cfe::sb::send_buf::SendBuffer;
 use crate::error::Result;
 
+/// Function code for NoOp command.
+const FCN_NOOP: u16 = 0;
+/// Function code for counter reset command.
+const FCN_RESET: u16 = 1;
+
 /// Event ID for NoOp command acknowledgement.
 const EVT_NOOP: u16 = 0;
 /// Event ID for counter reset acknowledgement.
@@ -65,7 +70,6 @@ pub struct HkTlm {
 /// ```
 pub struct App {
     pipe: Pipe,
-    name: &'static str,
     version: &'static str,
     cmd_msg_id: MsgId,
     send_hk_msg_id: MsgId,
@@ -96,9 +100,9 @@ impl App {
         event::register(&[])?;
 
         let pipe = Pipe::new(name, pipe_depth)?;
-        let cmd_msg_id = MsgId::from_local_cmd(cmd_topic);
-        let send_hk_msg_id = MsgId::from_local_cmd(send_hk_topic);
-        let hk_tlm_msg_id = MsgId::from_local_tlm(hk_tlm_topic);
+        let cmd_msg_id = MsgId::local_cmd(cmd_topic);
+        let send_hk_msg_id = MsgId::local_cmd(send_hk_topic);
+        let hk_tlm_msg_id = MsgId::local_tlm(hk_tlm_topic);
 
         pipe.subscribe(cmd_msg_id)?;
         pipe.subscribe(send_hk_msg_id)?;
@@ -107,7 +111,6 @@ impl App {
 
         Ok(Self {
             pipe,
-            name,
             version,
             cmd_msg_id,
             send_hk_msg_id,
@@ -119,6 +122,20 @@ impl App {
 }
 
 impl App {
+    /// Processes standard commands (NoOp, Reset, HK) in a
+    /// loop. Rejects any unrecognized commands.
+    ///
+    /// Use this when the app has no custom commands. For
+    /// apps that need to handle their own function codes,
+    /// use [`recv`](Self::recv) instead.
+    pub async fn run(&mut self) -> Result<()> {
+        let mut buf = [0u8; 256];
+        loop {
+            let msg = self.recv(&mut buf).await?;
+            self.reject(msg)?;
+        }
+    }
+
     /// Receives the next app-specific command.
     ///
     /// Automatically handles:
@@ -141,24 +158,19 @@ impl App {
             }
 
             if msg_id == self.cmd_msg_id {
-                let fcn = msg.fcn_code()?;
-                match fcn {
-                    0 => {
+                match msg.fcn_code()? {
+                    FCN_NOOP => {
                         self.cmd_count = self.cmd_count.wrapping_add(1);
                         event::info(EVT_NOOP, self.version)?;
-                        continue;
                     }
-                    1 => {
+                    FCN_RESET => {
                         self.cmd_count = 0;
                         self.err_count = 0;
                         event::info(EVT_RESET, "Counters reset")?;
-                        continue;
                     }
-                    _ => {}
+                    _ => return Ok(MessageRef::new(&buf[..len])),
                 }
             }
-
-            return Ok(MessageRef::new(&buf[..len]));
         }
     }
 
@@ -176,26 +188,6 @@ impl App {
     pub fn reject(&mut self, _msg: MessageRef<'_>) -> Result<()> {
         self.err_count = self.err_count.wrapping_add(1);
         event::error(EVT_INVALID_CC, "Invalid command code")
-    }
-
-    /// Returns the current command counter.
-    pub fn cmd_count(&self) -> u16 {
-        self.cmd_count
-    }
-
-    /// Returns the current error counter.
-    pub fn err_count(&self) -> u16 {
-        self.err_count
-    }
-
-    /// Returns the application name.
-    pub fn name(&self) -> &'static str {
-        self.name
-    }
-
-    /// Returns the application version.
-    pub fn version(&self) -> &'static str {
-        self.version
     }
 
     /// Publishes base housekeeping telemetry with
