@@ -12,6 +12,8 @@ leodos-protocols = { path = "../../../crates/leodos-protocols", features = ["cfs
 leodos-libcfs = { path = "../../../crates/leodos-libcfs", features = ["nos3"] }
 leodos-analysis = { path = "../../../crates/leodos-analysis" }
 heapless = "0.9"
+zerocopy = { version = "0.8", features = ["derive"] }
+thiserror = { version = "2", default-features = false }
 
 [profile.release]
 lto = true

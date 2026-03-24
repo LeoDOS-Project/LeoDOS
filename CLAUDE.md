@@ -46,6 +46,9 @@ already exist.
   field so the router can evict the oldest packet instead
   of dropping incoming. Useful for telemetry freshness on
   congested links. SRSPP retransmits either way.
+- [ ] SB send ceremony — `SendBuffer::new` → `.view()` →
+  `.init()` → fill → `.send()` is 5 steps. Add a typed
+  publish helper, e.g. `pipe.publish(msg_id, &payload)?`.
 - [ ] Closure-based write API — `write` traits take `&[u8]`
   which can't represent RingBuffer wrap-around (two
   disjoint slices). A closure API like
