@@ -2,8 +2,8 @@
 
 use crate::cfe::sb::msg::MsgId;
 use crate::cfe::time::SysTime;
-use crate::error::{CfsError, Result, TblError};
 use crate::cstring;
+use crate::error::{CfsError, Result, TblError};
 use crate::status::check;
 use crate::{ffi, status};
 use core::ffi::c_void;
@@ -230,8 +230,17 @@ impl<T: Sized> Table<T> {
 
     /// Gets a read-only accessor to the table's data.
     /// The accessor locks the table and automatically releases it when dropped.
-    pub fn get_accessor(&self) -> Result<TableAccessor<'_, T>> {
+    pub fn get(&self) -> Result<TableAccessor<'_, T>> {
         TableAccessor::new(self.handle)
+    }
+
+    /// Returns the table data, or `T::default()` if the
+    /// table is not currently accessible.
+    pub fn get_or_default(&self) -> T
+    where
+        T: Default + Copy,
+    {
+        self.get().map(|a| *a).unwrap_or_default()
     }
 
     /// Returns the underlying `TableHandle`.
