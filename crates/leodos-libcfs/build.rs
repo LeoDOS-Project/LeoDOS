@@ -357,9 +357,22 @@ fn main() {
         fs::write(&compat_h, "\
 #include <stdint.h>\n\
 #if !defined(__linux__) && !defined(__rtems__)\n\
+/* CAN */\n\
+typedef uint32_t canid_t;\n\
 struct can_frame { uint32_t can_id; uint8_t can_dlc; \
 uint8_t __pad; uint8_t __res0; uint8_t __res1; \
 uint8_t data[8]; };\n\
+struct sockaddr_can { int can_family; int can_ifindex; };\n\
+#ifndef __APPLE__\n\
+struct ifreq { char ifr_name[16]; int ifr_ifindex; };\n\
+#endif\n\
+/* SPI */\n\
+struct spi_ioc_transfer { uint64_t tx_buf; uint64_t rx_buf; \
+uint32_t len; uint32_t speed_hz; uint16_t delay_usecs; \
+uint8_t bits_per_word; uint8_t cs_change; uint32_t pad; };\n\
+/* I2C */\n\
+struct i2c_msg { uint16_t addr; uint16_t flags; uint16_t len; uint8_t *buf; };\n\
+struct i2c_rdwr_ioctl_data { struct i2c_msg *msgs; uint32_t nmsgs; };\n\
 #endif\n").unwrap();
         builder = builder
             .clang_arg("-include")
