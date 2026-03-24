@@ -5,8 +5,9 @@
 //! bus voltages, temperatures, and per-switch status over I2C.
 
 use crate::ffi;
-use crate::nos3::buses::i2c::{check, I2cError};
+use crate::nos3::buses::i2c::check;
 use crate::nos3::buses::i2c::I2cBus;
+use crate::nos3::buses::i2c::I2cError;
 
 /// Per-switch telemetry.
 #[derive(Debug, Clone, Default)]
@@ -44,37 +45,18 @@ pub struct EpsHk {
 
 /// Computes the EPS 8-bit CRC over `payload`.
 pub fn crc8(payload: &[u8]) -> u8 {
-    unsafe {
-        ffi::GENERIC_EPS_CRC8(
-            payload.as_ptr() as *mut _,
-            payload.len() as u32,
-        )
-    }
+    unsafe { ffi::GENERIC_EPS_CRC8(payload.as_ptr() as *mut _, payload.len() as u32) }
 }
 
 /// Sends a register-write command to the EPS.
-pub fn command(
-    device: &mut I2cBus,
-    reg: u8,
-    value: u8,
-) -> Result<(), I2cError> {
-    check(unsafe {
-        ffi::GENERIC_EPS_CommandDevice(
-            &mut device.inner,
-            reg,
-            value,
-        )
-    })
+pub fn command(device: &mut I2cBus, reg: u8, value: u8) -> Result<(), I2cError> {
+    check(unsafe { ffi::GENERIC_EPS_CommandDevice(&mut device.inner, reg, value) })
 }
 
 /// Requests housekeeping telemetry from the EPS.
-pub fn request_hk(
-    device: &mut I2cBus,
-) -> Result<EpsHk, I2cError> {
+pub fn request_hk(device: &mut I2cBus) -> Result<EpsHk, I2cError> {
     let mut raw = ffi::GENERIC_EPS_Device_HK_tlm_t::default();
-    check(unsafe {
-        ffi::GENERIC_EPS_RequestHK(&mut device.inner, &mut raw)
-    })?;
+    check(unsafe { ffi::GENERIC_EPS_RequestHK(&mut device.inner, &mut raw) })?;
     let mut hk = EpsHk {
         battery_voltage: raw.BatteryVoltage,
         battery_temperature: raw.BatteryTemperature,
@@ -97,19 +79,10 @@ pub fn request_hk(
 }
 
 /// Toggles an EPS power switch and returns updated HK.
-pub fn command_switch(
-    device: &mut I2cBus,
-    switch_num: u8,
-    value: u8,
-) -> Result<EpsHk, I2cError> {
+pub fn command_switch(device: &mut I2cBus, switch_num: u8, value: u8) -> Result<EpsHk, I2cError> {
     let mut raw = ffi::GENERIC_EPS_Device_HK_tlm_t::default();
     check(unsafe {
-        ffi::GENERIC_EPS_CommandSwitch(
-            &mut device.inner,
-            switch_num,
-            value,
-            &mut raw,
-        )
+        ffi::GENERIC_EPS_CommandSwitch(&mut device.inner, switch_num, value, &mut raw)
     })?;
     let mut hk = EpsHk {
         battery_voltage: raw.BatteryVoltage,

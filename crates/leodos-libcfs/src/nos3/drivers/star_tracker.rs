@@ -5,8 +5,9 @@
 //! The primary attitude sensor for fine pointing. Uses UART.
 
 use crate::ffi;
-use crate::nos3::buses::uart::{check, UartError};
+use crate::nos3::buses::uart::check;
 use crate::nos3::buses::uart::Uart;
+use crate::nos3::buses::uart::UartError;
 
 /// Star tracker housekeeping telemetry.
 #[derive(Debug, Clone, Default)]
@@ -31,49 +32,23 @@ pub struct StarTrackerData {
 }
 
 /// Sends a command to the star tracker.
-pub fn command(
-    device: &mut Uart,
-    cmd: u8,
-    payload: u32,
-) -> Result<(), UartError> {
-    check(unsafe {
-        ffi::GENERIC_STAR_TRACKER_CommandDevice(
-            &mut device.inner,
-            cmd,
-            payload,
-        )
-    })
+pub fn command(device: &mut Uart, cmd: u8, payload: u32) -> Result<(), UartError> {
+    check(unsafe { ffi::GENERIC_STAR_TRACKER_CommandDevice(&mut device.inner, cmd, payload) })
 }
 
 /// Requests housekeeping telemetry from the star tracker.
-pub fn request_hk(
-    device: &mut Uart,
-) -> Result<StarTrackerHk, UartError> {
-    let mut raw =
-        ffi::GENERIC_STAR_TRACKER_Device_HK_tlm_t::default();
-    check(unsafe {
-        ffi::GENERIC_STAR_TRACKER_RequestHK(
-            &mut device.inner,
-            &mut raw,
-        )
-    })?;
+pub fn request_hk(device: &mut Uart) -> Result<StarTrackerHk, UartError> {
+    let mut raw = ffi::GENERIC_STAR_TRACKER_Device_HK_tlm_t::default();
+    check(unsafe { ffi::GENERIC_STAR_TRACKER_RequestHK(&mut device.inner, &mut raw) })?;
     Ok(StarTrackerHk {
         device_counter: raw.DeviceCounter,
     })
 }
 
 /// Requests quaternion data from the star tracker.
-pub fn request_data(
-    device: &mut Uart,
-) -> Result<StarTrackerData, UartError> {
-    let mut raw =
-        ffi::GENERIC_STAR_TRACKER_Device_Data_tlm_t::default();
-    check(unsafe {
-        ffi::GENERIC_STAR_TRACKER_RequestData(
-            &mut device.inner,
-            &mut raw,
-        )
-    })?;
+pub fn request_data(device: &mut Uart) -> Result<StarTrackerData, UartError> {
+    let mut raw = ffi::GENERIC_STAR_TRACKER_Device_Data_tlm_t::default();
+    check(unsafe { ffi::GENERIC_STAR_TRACKER_RequestData(&mut device.inner, &mut raw) })?;
     Ok(StarTrackerData {
         q0: raw.Q0,
         q1: raw.Q1,

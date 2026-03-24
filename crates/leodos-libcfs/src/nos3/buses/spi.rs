@@ -97,9 +97,7 @@ impl Spi {
         spi_mode: u8,
         bits_per_word: u8,
     ) -> Result<Self, SpiError> {
-        let mut info: ffi::spi_info_t = unsafe {
-            MaybeUninit::zeroed().assume_init()
-        };
+        let mut info: ffi::spi_info_t = unsafe { MaybeUninit::zeroed().assume_init() };
         info.deviceString = device.as_ptr();
         info.bus = bus;
         info.cs = cs;
@@ -114,26 +112,13 @@ impl Spi {
     /// Writes bytes to the SPI device.
     pub fn write(&mut self, data: &[u8]) -> Result<(), SpiError> {
         check(unsafe {
-            ffi::spi_write(
-                &mut self.inner,
-                data.as_ptr() as *mut u8,
-                data.len() as u32,
-            )
+            ffi::spi_write(&mut self.inner, data.as_ptr() as *mut u8, data.len() as u32)
         })
     }
 
     /// Reads bytes from the SPI device.
-    pub fn read(
-        &mut self,
-        buf: &mut [u8],
-    ) -> Result<(), SpiError> {
-        check(unsafe {
-            ffi::spi_read(
-                &mut self.inner,
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-            )
-        })
+    pub fn read(&mut self, buf: &mut [u8]) -> Result<(), SpiError> {
+        check(unsafe { ffi::spi_read(&mut self.inner, buf.as_mut_ptr(), buf.len() as u32) })
     }
 
     /// Performs a full-duplex SPI transaction.
@@ -183,14 +168,14 @@ impl Spi {
 
     /// Manually deasserts chip-select.
     pub fn deselect(&mut self) -> Result<(), SpiError> {
-        check(unsafe {
-            ffi::spi_unselect_chip(&mut self.inner)
-        })
+        check(unsafe { ffi::spi_unselect_chip(&mut self.inner) })
     }
 }
 
 impl Drop for Spi {
     fn drop(&mut self) {
-        unsafe { ffi::spi_close_device(&mut self.inner); }
+        unsafe {
+            ffi::spi_close_device(&mut self.inner);
+        }
     }
 }

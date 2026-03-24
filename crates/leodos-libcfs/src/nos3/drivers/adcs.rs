@@ -12,8 +12,7 @@ use crate::ffi;
 use core::mem::MaybeUninit;
 
 unsafe extern "C" {
-    fn fopen(path: *const libc::c_char, mode: *const libc::c_char)
-        -> *mut ffi::FILE;
+    fn fopen(path: *const libc::c_char, mode: *const libc::c_char) -> *mut ffi::FILE;
     fn fclose(fp: *mut ffi::FILE) -> libc::c_int;
 }
 
@@ -115,13 +114,9 @@ impl Adcs {
     ///
     /// The file format matches the NOS3 generic_adcs config
     /// (IMU filter alpha, GNC timestep, controller gains, etc.).
-    pub fn from_config(
-        path: &core::ffi::CStr,
-    ) -> Option<Self> {
+    pub fn from_config(path: &core::ffi::CStr) -> Option<Self> {
         let mode = c"r";
-        let fp = unsafe {
-            fopen(path.as_ptr(), mode.as_ptr())
-        };
+        let fp = unsafe { fopen(path.as_ptr(), mode.as_ptr()) };
         if fp.is_null() {
             return None;
         }
@@ -144,10 +139,7 @@ impl Adcs {
     ///
     /// Feeds sensor data through attitude determination then
     /// the active control law, returning actuator commands.
-    pub fn execute(
-        &mut self,
-        input: &SensorInput,
-    ) -> ActuatorCmd {
+    pub fn execute(&mut self, input: &SensorInput) -> ActuatorCmd {
         let mut di: ffi::Generic_ADCS_DI_Tlm_Payload_t =
             unsafe { MaybeUninit::zeroed().assume_init() };
 
@@ -179,7 +171,10 @@ impl Adcs {
 
         unsafe {
             ffi::Generic_ADCS_execute_attitude_determination_and_attitude_control(
-                &di, &mut self.ad, &mut self.gnc, &mut self.ac,
+                &di,
+                &mut self.ad,
+                &mut self.gnc,
+                &mut self.ac,
             );
         }
 

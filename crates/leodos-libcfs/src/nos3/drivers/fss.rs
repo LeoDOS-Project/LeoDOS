@@ -5,8 +5,9 @@
 //! Used for fine attitude determination. Communicates via SPI.
 
 use crate::ffi;
-use crate::nos3::buses::spi::{check, SpiError};
+use crate::nos3::buses::spi::check;
 use crate::nos3::buses::spi::Spi;
+use crate::nos3::buses::spi::SpiError;
 
 /// FSS measurement data.
 #[derive(Debug, Clone, Default)]
@@ -20,13 +21,9 @@ pub struct FssData {
 }
 
 /// Requests sun angle data from the FSS.
-pub fn request_data(
-    device: &mut Spi,
-) -> Result<FssData, SpiError> {
+pub fn request_data(device: &mut Spi) -> Result<FssData, SpiError> {
     let mut raw = ffi::GENERIC_FSS_Device_Data_tlm_t::default();
-    check(unsafe {
-        ffi::GENERIC_FSS_RequestData(&mut device.inner, &mut raw)
-    })?;
+    check(unsafe { ffi::GENERIC_FSS_RequestData(&mut device.inner, &mut raw) })?;
     Ok(FssData {
         alpha: raw.Alpha,
         beta: raw.Beta,

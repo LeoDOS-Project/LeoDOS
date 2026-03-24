@@ -3,7 +3,6 @@
 use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
-use crate::os::time::OsTime;
 use crate::cstring;
 use crate::string_from_c_buf;
 use crate::status::check;
@@ -12,6 +11,9 @@ use core::future::Future;
 use core::mem::MaybeUninit;
 use core::task::Poll;
 use heapless::String;
+
+#[cfg(not(feature = "nos3"))]
+use crate::os::time::OsTime;
 
 /// A wrapper for a CFE/OSAL socket address.
 #[derive(Clone)]

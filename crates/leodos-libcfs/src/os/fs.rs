@@ -8,7 +8,6 @@ use crate::cfe::time::SysTime;
 use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::os::id::OsalId;
-use crate::os::time::OsTime;
 use crate::os::util::c_path_from_str;
 use crate::status::{check, Status};
 use bitflags::bitflags;
@@ -18,6 +17,9 @@ use core::mem::MaybeUninit;
 use core::ops::Drop;
 use core::task::Poll;
 use heapless::CString;
+
+#[cfg(not(feature = "nos3"))]
+use crate::os::time::OsTime;
 
 bitflags! {
     /// File permission modes for `fs::chmod`.

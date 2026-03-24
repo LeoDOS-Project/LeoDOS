@@ -5,8 +5,9 @@
 //! manoeuvres. Communicates over UART.
 
 use crate::ffi;
-use crate::nos3::buses::uart::{check, UartError};
+use crate::nos3::buses::uart::check;
 use crate::nos3::buses::uart::Uart;
+use crate::nos3::buses::uart::UartError;
 
 /// Commands a thruster to a given duty percentage.
 pub fn set_percentage(

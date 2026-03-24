@@ -5,8 +5,9 @@
 //! command and returning telemetry.
 
 use crate::ffi;
-use crate::nos3::buses::trq::{check, TrqError};
+use crate::nos3::buses::trq::check;
 use crate::nos3::buses::trq::Torquer;
+use crate::nos3::buses::trq::TrqError;
 
 /// Torquer component telemetry.
 #[derive(Debug, Clone, Default)]
@@ -18,19 +19,10 @@ pub struct TorquerTlm {
 }
 
 /// Configures a torquer and returns updated telemetry.
-pub fn config(
-    torquer: &mut Torquer,
-    percent: u8,
-    direction: u8,
-) -> Result<TorquerTlm, TrqError> {
+pub fn config(torquer: &mut Torquer, percent: u8, direction: u8) -> Result<TorquerTlm, TrqError> {
     let mut raw = ffi::GENERIC_TORQUER_Device_tlm_t::default();
     check(unsafe {
-        ffi::GENERIC_TORQUER_Config(
-            &mut raw,
-            &mut torquer.inner,
-            percent,
-            direction,
-        )
+        ffi::GENERIC_TORQUER_Config(&mut raw, &mut torquer.inner, percent, direction)
     })?;
     Ok(TorquerTlm {
         direction: raw.Direction,

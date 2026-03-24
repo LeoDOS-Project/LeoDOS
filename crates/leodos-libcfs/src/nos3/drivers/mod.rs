@@ -6,16 +6,16 @@
 
 pub mod adcs;
 pub mod adcs_math;
-pub mod radio;
-pub mod eps;
+pub mod arducam;
 pub mod css;
+pub mod eps;
 pub mod fss;
 pub mod imu;
 pub mod mag;
-pub mod star_tracker;
-pub mod reaction_wheel;
-pub mod torquer;
-pub mod thruster;
 pub mod novatel;
-pub mod arducam;
+pub mod radio;
+pub mod reaction_wheel;
+pub mod star_tracker;
 pub mod thermal_cam;
+pub mod thruster;
+pub mod torquer;

@@ -5,8 +5,9 @@
 //! Communicates over a socket bus.
 
 use crate::ffi;
-use crate::nos3::buses::socket::{check, SocketError};
+use crate::nos3::buses::socket::check;
 use crate::nos3::buses::socket::Socket;
+use crate::nos3::buses::socket::SocketError;
 
 /// Radio housekeeping telemetry.
 #[derive(Debug, Clone, Default)]
@@ -20,24 +21,12 @@ pub struct RadioHk {
 }
 
 /// Sets the radio configuration.
-pub fn set_configuration(
-    device: &mut Socket,
-    config: u32,
-) -> Result<(), SocketError> {
-    check(unsafe {
-        ffi::GENERIC_RADIO_SetConfiguration(
-            &mut device.inner,
-            config,
-        )
-    })
+pub fn set_configuration(device: &mut Socket, config: u32) -> Result<(), SocketError> {
+    check(unsafe { ffi::GENERIC_RADIO_SetConfiguration(&mut device.inner, config) })
 }
 
 /// Forwards data via proximity link.
-pub fn proximity_forward(
-    device: &mut Socket,
-    scid: u16,
-    data: &[u8],
-) -> Result<(), SocketError> {
+pub fn proximity_forward(device: &mut Socket, scid: u16, data: &[u8]) -> Result<(), SocketError> {
     check(unsafe {
         ffi::GENERIC_RADIO_ProximityForward(
             &mut device.inner,
@@ -49,13 +38,9 @@ pub fn proximity_forward(
 }
 
 /// Requests housekeeping telemetry from the radio.
-pub fn request_hk(
-    device: &mut Socket,
-) -> Result<RadioHk, SocketError> {
+pub fn request_hk(device: &mut Socket) -> Result<RadioHk, SocketError> {
     let mut raw = ffi::GENERIC_RADIO_Device_HK_tlm_t::default();
-    check(unsafe {
-        ffi::GENERIC_RADIO_RequestHK(&mut device.inner, &mut raw)
-    })?;
+    check(unsafe { ffi::GENERIC_RADIO_RequestHK(&mut device.inner, &mut raw) })?;
     Ok(RadioHk {
         device_counter: raw.DeviceCounter,
         device_config: raw.DeviceConfig,

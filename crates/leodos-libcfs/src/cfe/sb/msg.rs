@@ -63,42 +63,42 @@ impl MsgId {
     }
 
     /// Creates a command `MsgId` from a mission-defined topic ID and a CPU instance number.
-    pub fn from_cmd(topic_id: u16, instance_num: u16) -> Self {
+    pub fn cmd(topic_id: u16, instance_num: u16) -> Self {
         Self(ffi::CFE_SB_MsgId_t {
             Value: unsafe { ffi::CFE_SB_CmdTopicIdToMsgId(topic_id, instance_num) },
         })
     }
 
     /// Creates a telemetry `MsgId` from a mission-defined topic ID and a CPU instance number.
-    pub fn from_tlm(topic_id: u16, instance_num: u16) -> Self {
+    pub fn tlm(topic_id: u16, instance_num: u16) -> Self {
         Self(ffi::CFE_SB_MsgId_t {
             Value: unsafe { ffi::CFE_SB_TlmTopicIdToMsgId(topic_id, instance_num) },
         })
     }
 
     /// Creates a global command `MsgId` from a mission-defined topic ID.
-    pub fn from_global_cmd(topic_id: u16) -> Self {
+    pub fn global_cmd(topic_id: u16) -> Self {
         Self(ffi::CFE_SB_MsgId_t {
             Value: unsafe { ffi::CFE_SB_GlobalCmdTopicIdToMsgId(topic_id) },
         })
     }
 
     /// Creates a global telemetry `MsgId` from a mission-defined topic ID.
-    pub fn from_global_tlm(topic_id: u16) -> Self {
+    pub fn global_tlm(topic_id: u16) -> Self {
         Self(ffi::CFE_SB_MsgId_t {
             Value: unsafe { ffi::CFE_SB_GlobalTlmTopicIdToMsgId(topic_id) },
         })
     }
 
     /// Creates a local command `MsgId` from a mission-defined topic ID for the current CPU.
-    pub fn from_local_cmd(topic_id: u16) -> Self {
+    pub fn local_cmd(topic_id: u16) -> Self {
         Self(ffi::CFE_SB_MsgId_t {
             Value: unsafe { ffi::CFE_SB_LocalCmdTopicIdToMsgId(topic_id) },
         })
     }
 
     /// Creates a local telemetry `MsgId` from a mission-defined topic ID for the current CPU.
-    pub fn from_local_tlm(topic_id: u16) -> Self {
+    pub fn local_tlm(topic_id: u16) -> Self {
         Self(ffi::CFE_SB_MsgId_t {
             Value: unsafe { ffi::CFE_SB_LocalTlmTopicIdToMsgId(topic_id) },
         })
