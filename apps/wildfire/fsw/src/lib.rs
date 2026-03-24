@@ -34,8 +34,6 @@ use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
 use leodos_protocols::transport::srspp::api::cfs::TransportError;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
 use leodos_protocols::transport::srspp::dtn::NoStore;
-use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
-use leodos_protocols::transport::srspp::packet::SrsppDataPacket;
 use leodos_protocols::transport::srspp::rto::FixedRto;
 
 use zerocopy::IntoBytes;
@@ -113,7 +111,7 @@ struct WildfireHk {
 
 #[repr(C)]
 #[derive(zerocopy::IntoBytes, zerocopy::Immutable)]
-struct AlertTlm {
+struct WildfireTlm {
     lat: f32,
     lon: f32,
     hot_pixel_count: u32,
@@ -161,16 +159,13 @@ async fn main() -> Result<(), WildfireError> {
     let sb = SbDatalink::new("WF_SB", 8, router_recv, router_send)?;
     let mut network = PointToPoint::new(sb);
 
-    let sender_config = SenderConfig::builder()
+    let sender: SrsppSender<_, _, _, 8, 4096, 512> = SrsppSender::builder()
         .source_address(address)
         .apid(Apid::new(bindings::WILDFIRE_APID as u16).unwrap())
-        .function_code(0)
         .rto_ticks(RTO_MS)
-        .max_retransmits(3)
-        .header_overhead(SrsppDataPacket::HEADER_SIZE)
+        .store(NoStore)
+        .reachable(AlwaysReachable)
         .build();
-    let sender: SrsppSender<_, _, _, 8, 4096, 512> =
-        SrsppSender::new(sender_config, address, NoStore, AlwaysReachable);
     let (mut tx, mut driver) = sender.split(FixedRto::new(RTO_MS));
 
     let mut camera = Camera::builder()
@@ -290,7 +285,7 @@ async fn scan_and_downlink(
         state.alerts_sent, det.count, det.max_temp, centroid.lat, centroid.lon,
     )?;
 
-    let tlm = AlertTlm {
+    let tlm = WildfireTlm {
         lat: centroid.lat,
         lon: centroid.lon,
         hot_pixel_count: det.count as u32,
@@ -298,8 +293,7 @@ async fn scan_and_downlink(
         pass_number: state.pass_count,
     };
 
-    tx.send(Address::Ground { station: 0 }, tlm.as_bytes())
-        .await?;
+    tx.send(Address::Ground { station: 0 }, &tlm).await?;
     info!("Downlinked alert ({} bytes)", tlm.as_bytes().len())?;
 
     Ok(())

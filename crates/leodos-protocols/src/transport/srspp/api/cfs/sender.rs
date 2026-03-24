@@ -14,6 +14,7 @@ use crate::application::spacecomp::io::writer::MessageSender;
 use crate::network::NetworkRead;
 use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
+use crate::network::spp::Apid;
 use crate::network::spp::SequenceCount;
 use crate::transport::srspp::api::cfs::TransportError;
 use crate::transport::srspp::dtn::AlwaysReachable;
@@ -76,11 +77,30 @@ pub(super) struct DtnContext<S, R> {
 pub type SimpleSender<E, const WIN: usize = 8, const BUF: usize = 4096, const MTU: usize = 512> =
     SrsppSender<E, NoStore, AlwaysReachable, WIN, BUF, MTU>;
 
+#[bon::bon]
 impl<E: Clone, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize>
     SrsppSender<E, S, R, WIN, BUF, MTU>
 {
     /// Creates a new sender.
-    pub fn new(config: SenderConfig, origin: Address, store: S, reachable: R) -> Self {
+    #[builder]
+    pub fn new(
+        source_address: Address,
+        apid: Apid,
+        #[builder(default)] function_code: u8,
+        rto_ticks: u32,
+        #[builder(default = 3)] max_retransmits: u8,
+        #[builder(default = SrsppDataPacket::HEADER_SIZE)] header_overhead: usize,
+        store: S,
+        reachable: R,
+    ) -> Self {
+        let config = SenderConfig::builder()
+            .source_address(source_address)
+            .apid(apid)
+            .function_code(function_code)
+            .rto_ticks(rto_ticks)
+            .max_retransmits(max_retransmits)
+            .header_overhead(header_overhead)
+            .build();
         Self {
             state: SyncRefCell::new(SenderState {
                 machine: SenderMachine::new(config),
@@ -90,7 +110,7 @@ impl<E: Clone, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize
                 error: None,
             }),
             dtn: SyncRefCell::new(DtnContext { store, reachable }),
-            origin,
+            origin: source_address,
         }
     }
 
