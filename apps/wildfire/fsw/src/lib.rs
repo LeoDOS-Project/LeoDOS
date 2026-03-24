@@ -19,6 +19,9 @@ use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::time::sleep;
 use leodos_libcfs::runtime::Runtime;
 
+use FireThresholds;
+use Hotspot;
+use detect_fire;
 use leodos_protocols::application::compression::rice;
 use leodos_protocols::datalink::link::cfs::sb::SbDatalink;
 use leodos_protocols::network::isl::address::Address;
@@ -102,7 +105,6 @@ struct AlertTlm {
     pass_number: u32,
 }
 
-
 // ── Detection (using leodos-analysis) ───────────────────────
 
 fn detect_hotspots(
@@ -112,12 +114,12 @@ fn detect_hotspots(
     height: u32,
     cfg: &WildfireConfig,
 ) -> Option<Alert> {
-    let thresholds = leodos_analysis::thermal::FireThresholds {
+    let thresholds = FireThresholds {
         t4_abs: cfg.bt_threshold_k,
-        ..leodos_analysis::thermal::FireThresholds::day()
+        ..FireThresholds::day()
     };
 
-    let mut hotspots = [leodos_analysis::thermal::Hotspot {
+    let mut hotspots = [Hotspot {
         x: 0,
         y: 0,
         t4: 0.0,
@@ -128,7 +130,7 @@ fn detect_hotspots(
         confidence: 0.0,
     }; 64];
 
-    let n = leodos_analysis::thermal::detect_fire(
+    let n = detect_fire(
         mwir,
         lwir,
         width as usize,
@@ -214,9 +216,7 @@ pub extern "C" fn WILDFIRE_AppMain() {
         let (mut tx, mut driver) = sender.split(FixedRto::new(RTO_MS));
 
         // Hardware
-        let mut camera = ThermalCamera::open(
-            Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8)?,
-        );
+        let mut camera = ThermalCamera::open(Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8)?);
         let mut gps = Uart::open(c"/dev/ttyS1", 115_200, Access::ReadWrite)?;
 
         let mut was_over_aoi = false;
