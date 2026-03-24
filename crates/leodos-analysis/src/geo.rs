@@ -31,6 +31,32 @@ impl LatLon {
     }
 }
 
+/// A geographic bounding box (west, south, east, north).
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct GeoBounds {
+    pub west: f32,
+    pub south: f32,
+    pub east: f32,
+    pub north: f32,
+}
+
+impl GeoBounds {
+    /// Returns `true` if the point lies within the bounds.
+    pub fn contains(&self, lat: f32, lon: f32) -> bool {
+        lat >= self.south && lat <= self.north && lon >= self.west && lon <= self.east
+    }
+
+    /// Maps a pixel coordinate to a geographic coordinate
+    /// within this bounding box (linear interpolation).
+    pub fn pixel_to_latlon(&self, px: f32, py: f32, width: f32, height: f32) -> LatLon {
+        LatLon {
+            lat: self.north - py / height * (self.north - self.south),
+            lon: self.west + px / width * (self.east - self.west),
+        }
+    }
+}
+
 /// Haversine distance between two points in meters.
 pub fn haversine_distance(a: LatLon, b: LatLon) -> f32 {
     let dlat = deg2rad(b.lat - a.lat);
