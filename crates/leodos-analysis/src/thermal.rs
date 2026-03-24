@@ -167,20 +167,32 @@ fn compute_background(
     }
 }
 
+/// Result of fire detection on a thermal image.
+pub struct FireDetection<'a> {
+    /// Detected hotspot pixels.
+    pub hotspots: &'a [Hotspot],
+    /// Number of hotspots detected.
+    pub count: usize,
+    /// Centroid X in pixel coordinates.
+    pub centroid_x: f32,
+    /// Centroid Y in pixel coordinates.
+    pub centroid_y: f32,
+    /// Maximum MIR brightness temperature (K).
+    pub max_temp: f32,
+}
+
 /// Run fire detection on a thermal image.
 ///
 /// `t4` — MIR brightness temperature band (e.g. MODIS band 21/22, ~3.9μm).
 /// `t11` — TIR brightness temperature band (e.g. MODIS band 31, ~11μm).
-///
-/// Returns the number of hotspots found.
-pub fn detect_fire(
+pub fn detect_fire<'a>(
     t4: &[f32],
     t11: &[f32],
     width: usize,
     height: usize,
     thresholds: &FireThresholds,
-    hotspots: &mut [Hotspot],
-) -> usize {
+    hotspots: &'a mut [Hotspot],
+) -> FireDetection<'a> {
     let mut count = 0;
 
     for y in 0..height {
@@ -226,7 +238,7 @@ pub fn detect_fire(
             };
 
             if count >= hotspots.len() {
-                return count;
+                break;
             }
 
             hotspots[count] = Hotspot {
@@ -243,7 +255,30 @@ pub fn detect_fire(
         }
     }
 
-    count
+    summarize(hotspots, count)
+}
+
+fn summarize(hotspots: &[Hotspot], count: usize) -> FireDetection<'_> {
+    let mut sum_x = 0.0f32;
+    let mut sum_y = 0.0f32;
+    let mut max_temp = 0.0f32;
+
+    for hs in &hotspots[..count] {
+        sum_x += hs.x as f32;
+        sum_y += hs.y as f32;
+        if hs.t4 > max_temp {
+            max_temp = hs.t4;
+        }
+    }
+
+    let n = (count as f32).max(1.0);
+    FireDetection {
+        hotspots: &hotspots[..count],
+        count,
+        centroid_x: sum_x / n,
+        centroid_y: sum_y / n,
+        max_temp,
+    }
 }
 
 /// Estimate Fire Radiative Power (MW) from MIR radiance.
@@ -283,11 +318,11 @@ mod tests {
             x: 0, y: 0, t4: 0.0, t11: 0.0,
             dt4: 0.0, dt4_t11: 0.0, frp: 0.0, confidence: 0.0,
         }; 8];
-        let n = detect_fire(&t4, &t11, 8, 8, &thresholds, &mut hotspots);
-        assert!(n >= 1);
-        assert_eq!(hotspots[0].x, 4);
-        assert_eq!(hotspots[0].y, 3);
-        assert!(hotspots[0].confidence > 0.5);
+        let det = detect_fire(&t4, &t11, 8, 8, &thresholds, &mut hotspots);
+        assert!(det.count >= 1);
+        assert_eq!(det.hotspots[0].x, 4);
+        assert_eq!(det.hotspots[0].y, 3);
+        assert!(det.hotspots[0].confidence > 0.5);
     }
 
     #[test]
@@ -298,8 +333,8 @@ mod tests {
             x: 0, y: 0, t4: 0.0, t11: 0.0,
             dt4: 0.0, dt4_t11: 0.0, frp: 0.0, confidence: 0.0,
         }; 8];
-        let n = detect_fire(&t4, &t11, 8, 8, &thresholds, &mut hotspots);
-        assert_eq!(n, 0);
+        let det = detect_fire(&t4, &t11, 8, 8, &thresholds, &mut hotspots);
+        assert_eq!(det.count, 0);
     }
 
     #[test]
@@ -324,7 +359,7 @@ mod tests {
             x: 0, y: 0, t4: 0.0, t11: 0.0,
             dt4: 0.0, dt4_t11: 0.0, frp: 0.0, confidence: 0.0,
         }; 8];
-        let n = detect_fire(&t4, &t11_mod, 8, 8, &thresholds, &mut hotspots);
-        assert_eq!(n, 0);
+        let det = detect_fire(&t4, &t11_mod, 8, 8, &thresholds, &mut hotspots);
+        assert_eq!(det.count, 0);
     }
 }
