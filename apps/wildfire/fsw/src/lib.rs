@@ -171,7 +171,6 @@ async fn main() {
 
     // Table config (ground-updatable)
     let table = Table::<WildfireConfig>::new("WILDFIRE.Config", TableOptions::DEFAULT, None)?;
-    table.load_from_slice(core::slice::from_ref(&WildfireConfig::default()))?;
 
     // CDS persistence
     let (cds, mut state) = CdsBlock::<WildfireState>::restore_or_default("WILDFIRE.State")?;

@@ -129,7 +129,10 @@ impl<T: Sized> Table<T> {
     /// * `name`: The application-local name for the table.
     /// * `options`: Bitwise-ORed flags for table options (e.g., `TableOptions::DEFAULT`).
     /// * `validation_fn`: An optional callback function to validate table loads.
-    pub fn new(name: &str, options: TableOptions, validation_fn: ValidationFn) -> Result<Self> {
+    pub fn new(name: &str, options: TableOptions, validation_fn: ValidationFn) -> Result<Self>
+    where
+        T: Default,
+    {
         let mut handle = MaybeUninit::uninit();
         let c_name = cstring::<{ ffi::CFE_MISSION_TBL_MAX_NAME_LENGTH as usize }>(name)
             .map_err(|_| CfsError::Tbl(TblError::InvalidName))?;
@@ -145,11 +148,16 @@ impl<T: Sized> Table<T> {
         };
         check(status)?;
 
-        Ok(Self {
+        let table = Self {
             handle: TableHandle(unsafe { handle.assume_init() }),
             is_owner: true,
             _phantom: PhantomData,
-        })
+        };
+
+        let default = T::default();
+        table.load_from_slice(core::slice::from_ref(&default))?;
+
+        Ok(table)
     }
 
     /// Obtains a handle to a table registered by another application.
