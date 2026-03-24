@@ -505,6 +505,11 @@ pub enum CfsError {
     #[error(transparent)]
     Osal(#[from] OsalError),
 
+    /// A hardware bus error (SPI, I2C, UART, CAN, GPIO, etc.).
+    #[cfg(feature = "nos3")]
+    #[error(transparent)]
+    Bus(#[from] crate::nos3::buses::BusError),
+
     // --- Generic CFE Status ---
     /// The message length is incorrect.
     #[error("CFE: Wrong Message Length")]
@@ -533,7 +538,6 @@ pub enum CfsError {
     /// The requested function is not implemented.
     #[error("CFE: Not Implemented")]
     NotImplemented,
-
     // --- Other Errors ---
     /// The string contains an interior null character.
     #[error("Invalid string: contains interior null character")]

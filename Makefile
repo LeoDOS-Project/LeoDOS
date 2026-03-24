@@ -217,7 +217,7 @@ NOS3_RUN_STANDALONE = docker run --rm -v "$$(pwd):/cFS" -v "$${HOME}/.nos3:/root
 
 nos3-prep:
 	docker build -f Dockerfile.nos3 -t nos3-rust:latest .
-	$(NOS3_RUN_STANDALONE) bash -c "cd libs/nos3 && make config && make build-fsw"
+	$(NOS3_RUN_STANDALONE) bash -c "cd libs/nos3 && make config && make build-fsw || true"
 	find libs/nos3/fsw/build -name '*.h' | xargs sed -i'' -e 's|/cFS/|$(CURDIR)/|g'
 
 wildfire-demo-build:

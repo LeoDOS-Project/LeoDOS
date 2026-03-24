@@ -18,9 +18,9 @@ use leodos_libcfs::runtime::join::join;
 use leodos_libcfs::runtime::time::sleep;
 use leodos_libcfs::runtime::Runtime;
 
+use leodos_analysis::thermal::detect_fire;
 use leodos_analysis::thermal::FireThresholds;
 use leodos_analysis::thermal::Hotspot;
-use leodos_analysis::thermal::detect_fire;
 use leodos_protocols::application::compression::rice;
 use leodos_protocols::datalink::link::cfs::sb::SbDatalink;
 use leodos_protocols::network::isl::address::Address;
@@ -28,11 +28,11 @@ use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::api::cfs::SrsppSender;
+use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
 use leodos_protocols::transport::srspp::dtn::NoStore;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
 use leodos_protocols::transport::srspp::packet::SrsppDataPacket;
-use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
 use leodos_protocols::transport::srspp::rto::FixedRto;
 
 type TxHandle<'a> = SrsppTxHandle<'a, CfsError, NoStore, AlwaysReachable, 8, 4096, 512>;
@@ -206,13 +206,16 @@ async fn main() -> Result<(), CfsError> {
     let (mut tx, mut driver) = sender.split(FixedRto::new(RTO_MS));
 
     // Hardware
-    let mut camera = ThermalCamera::open(Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8)?);
-    let mut gps = Uart::open(c"/dev/ttyS1", 115_200, Access::ReadWrite)?;
+    use leodos_libcfs::nos3::buses::BusError;
+    let mut camera =
+        ThermalCamera::open(Spi::open(c"spi_3", 0, 3, 1_000_000, 0, 8).map_err(BusError::from)?);
+    let mut gps = Uart::open(c"/dev/ttyS1", 115_200, Access::ReadWrite).map_err(BusError::from)?;
 
     let _ = join(
         workflow(&table, &cds, &mut state, &mut camera, &mut gps, &mut tx),
         driver.run(&mut network),
-    ).await;
+    )
+    .await;
 
     Ok(())
 }
@@ -239,7 +242,7 @@ async fn workflow(
             Err(_) => WildfireConfig::default(),
         };
 
-        let (lat, lon) = match novatel::request_data(&mut gps) {
+        let (lat, lon) = match novatel::request_data(gps) {
             Ok(d) => (d.lat, d.lon),
             Err(_) => {
                 sleep(Duration::from_secs(cfg.poll_interval_s)).await;
