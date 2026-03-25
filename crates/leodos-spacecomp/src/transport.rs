@@ -12,11 +12,13 @@ use leodos_protocols::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::SpaceCompError;
 
 /// Sends messages to a target address.
+#[allow(async_fn_in_trait)]
 pub trait Tx {
     async fn send(&mut self, target: Address, data: &[u8]) -> Result<(), SpaceCompError>;
 }
 
 /// Receives messages from remote sources.
+#[allow(async_fn_in_trait)]
 pub trait Rx {
     async fn recv(&mut self, buf: &mut [u8]) -> Result<(Address, usize), SpaceCompError>;
 

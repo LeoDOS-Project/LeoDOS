@@ -16,9 +16,7 @@ use leodos_spacecomp::bufwriter::BufWriter;
 use leodos_spacecomp::packet::OpCode;
 use leodos_spacecomp::packet::SpaceCompMessage;
 
-use leodos_spacecomp::node::RxHandle;
 use leodos_spacecomp::node::SpaceComp;
-use leodos_spacecomp::node::TxHandle;
 use leodos_spacecomp::SpaceCompConfig;
 use leodos_spacecomp::SpaceCompError;
 use leodos_spacecomp::SpaceCompNode;
@@ -173,7 +171,6 @@ impl SpaceComp for WildfireCompute {
 
             loop {
                 // Receive frame header
-                let mut hdr_buf = [0u8; 4];
                 let Ok(maybe_hdr) = rx
                     .recv_with(|data| -> Option<FrameHeader> {
                         let msg = SpaceCompMessage::parse(data).ok()?;
@@ -202,7 +199,7 @@ impl SpaceComp for WildfireCompute {
                                 return None;
                             }
                             let payload = msg.payload();
-                            let dst = mwir.as_bytes_mut();
+                            let dst = mwir.as_mut_bytes();
                             let n = payload.len().min(dst.len() - mwir_offset);
                             dst[mwir_offset..mwir_offset + n].copy_from_slice(&payload[..n]);
                             Some(n)
@@ -226,7 +223,7 @@ impl SpaceComp for WildfireCompute {
                                 return None;
                             }
                             let payload = msg.payload();
-                            let dst = lwir.as_bytes_mut();
+                            let dst = lwir.as_mut_bytes();
                             let n = payload.len().min(dst.len() - lwir_offset);
                             dst[lwir_offset..lwir_offset + n].copy_from_slice(&payload[..n]);
                             Some(n)

@@ -113,6 +113,7 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
         F: Fn(SrsppStream<'a, E, R, MAX_STREAMS>, SrsppTxHandle<'a, E, S, Re, WIN, BUF, MTU>) -> Fut,
         Fut: Future<Output = Result<(), TransportError<E>>>,
     {
+        #[allow(unused_mut)]
         let mut pool = FuturePool::<Fut, MAX_STREAMS>::new();
         let mut assigned: [Option<Address>; MAX_STREAMS] = [None; MAX_STREAMS];
         pin_utils::pin_mut!(pool);
