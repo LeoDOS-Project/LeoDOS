@@ -1,26 +1,24 @@
 //! SpaceCoMP library for distributed computation on cFS.
 //!
 //! Provides [`SpaceCompNode`] which handles SRSPP transport,
-//! message dispatch, coordinator orchestration, and phase
-//! signaling. The user provides three closures that define
-//! the computation at each stage.
+//! message dispatch, and coordinator orchestration. The app
+//! implements [`SpaceComp`] to define its computation.
 //!
 //! # Example
 //!
 //! ```ignore
+//! struct MyApp;
+//!
+//! impl SpaceComp for MyApp {
+//!     async fn collect(&self, tx, job_id, assign) { ... }
+//!     async fn map(&self, rx, tx, job_id, assign) { ... }
+//!     async fn reduce(&self, rx, tx, job_id, assign) { ... }
+//! }
+//!
 //! SpaceCompNode::builder()
 //!     .config(config)
-//!     .collect(|partition_id, tx, buf, job_id| async move {
-//!         // read sensor data, send chunks to mapper
-//!     })
-//!     .map(|rx, tx, buf, job_id, collector_count| async move {
-//!         // process data, send results to reducer
-//!     })
-//!     .reduce(|rx, tx, buf, job_id, mapper_count| async move {
-//!         // aggregate results, send final output
-//!     })
 //!     .build()
-//!     .run()
+//!     .run(&MyApp)
 //!     .await?;
 //! ```
 
@@ -33,4 +31,5 @@ pub mod node;
 
 pub use config::SpaceCompConfig;
 pub use error::SpaceCompError;
+pub use node::SpaceComp;
 pub use node::SpaceCompNode;

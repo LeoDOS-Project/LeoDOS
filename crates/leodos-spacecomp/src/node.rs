@@ -58,19 +58,41 @@ impl SpaceCompNode {
     }
 }
 
-impl SpaceCompNode {
-    /// Runs the node with the given role functions.
-    ///
-    /// The library handles SRSPP setup, the dispatch loop,
-    /// and coordinator logic (SubmitJob). When a role
-    /// assignment arrives, the corresponding function is
-    /// called.
-    pub async fn run(
+/// App-defined computation for each SpaceCoMP role.
+///
+/// Implement this to define what happens when this node
+/// is assigned as a collector, mapper, or reducer.
+pub trait SpaceComp {
+    /// Collects local data and sends it to the assigned mapper.
+    async fn collect(
         &self,
-        collect: impl AsyncFn(&mut TxHandle<'_>, &mut Buffers, u16, AssignCollectorPayload) -> Result<(), SpaceCompError>,
-        map: impl AsyncFn(&mut RxHandle<'_>, &mut TxHandle<'_>, &mut Buffers, u16, AssignMapperPayload) -> Result<(), SpaceCompError>,
-        reduce: impl AsyncFn(&mut RxHandle<'_>, &mut TxHandle<'_>, &mut Buffers, u16, AssignReducerPayload) -> Result<(), SpaceCompError>,
-    ) -> Result<(), SpaceCompError> {
+        tx: &mut TxHandle<'_>,
+        job_id: u16,
+        assign: AssignCollectorPayload,
+    ) -> Result<(), SpaceCompError>;
+
+    /// Processes data from collectors and sends results to the reducer.
+    async fn map(
+        &self,
+        rx: &mut RxHandle<'_>,
+        tx: &mut TxHandle<'_>,
+        job_id: u16,
+        assign: AssignMapperPayload,
+    ) -> Result<(), SpaceCompError>;
+
+    /// Aggregates results from mappers and sends the final output.
+    async fn reduce(
+        &self,
+        rx: &mut RxHandle<'_>,
+        tx: &mut TxHandle<'_>,
+        job_id: u16,
+        assign: AssignReducerPayload,
+    ) -> Result<(), SpaceCompError>;
+}
+
+impl SpaceCompNode {
+    /// Runs the node with the given app logic.
+    pub async fn run(&self, app: &impl SpaceComp) -> Result<(), SpaceCompError> {
         event::register(&[])?;
         info!("SpaceCoMP node starting")?;
 
@@ -120,9 +142,8 @@ impl SpaceCompNode {
                 let Ok((_source, len)) = rx.recv(&mut bufs.recv).await else {
                     break;
                 };
-                let msg = match SpaceCompMessage::parse(&bufs.recv[..len]) {
-                    Ok(m) => m,
-                    Err(_) => continue,
+                let Ok(msg) = SpaceCompMessage::parse(&bufs.recv[..len]) else {
+                    continue;
                 };
                 let Ok(op) = msg.op_code() else { continue };
                 let job_id = msg.job_id();
@@ -142,23 +163,32 @@ impl SpaceCompNode {
                     OpCode::AssignCollector => {
                         let p = match msg.parse_payload(ParseError::AssignCollector) {
                             Ok(p) => p,
-                            Err(e) => { err!("{}", e)?; continue; }
+                            Err(e) => {
+                                err!("{}", e)?;
+                                continue;
+                            }
                         };
-                        collect(&mut tx, &mut bufs, job_id, p).await
+                        app.collect(&mut tx, job_id, p).await
                     }
                     OpCode::AssignMapper => {
                         let p = match msg.parse_payload(ParseError::AssignMapper) {
                             Ok(p) => p,
-                            Err(e) => { err!("{}", e)?; continue; }
+                            Err(e) => {
+                                err!("{}", e)?;
+                                continue;
+                            }
                         };
-                        map(&mut rx, &mut tx, &mut bufs, job_id, p).await
+                        app.map(&mut rx, &mut tx, job_id, p).await
                     }
                     OpCode::AssignReducer => {
                         let p = match msg.parse_payload(ParseError::AssignReducer) {
                             Ok(p) => p,
-                            Err(e) => { err!("{}", e)?; continue; }
+                            Err(e) => {
+                                err!("{}", e)?;
+                                continue;
+                            }
                         };
-                        reduce(&mut rx, &mut tx, &mut bufs, job_id, p).await
+                        app.reduce(&mut rx, &mut tx, job_id, p).await
                     }
                     _ => continue,
                 };
