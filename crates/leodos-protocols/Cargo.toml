@@ -17,13 +17,14 @@ aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
 # Optional dependencies
 tokio = { version = "1.48.0", features = ["net", "rt-multi-thread", "macros", "time", "sync"], optional = true }
 leodos-libcfs = { path = "../leodos-libcfs", optional = true }
+leodos-utils = { path = "../leodos-utils", optional = true }
 
 [features]
 default = []
 
 std = []
 tokio = ["std", "dep:tokio"]
-cfs = ["dep:leodos-libcfs"]
+cfs = ["dep:leodos-libcfs", "dep:leodos-utils"]
 nos3 = ["cfs", "leodos-libcfs/nos3"]
 
 [dev-dependencies]

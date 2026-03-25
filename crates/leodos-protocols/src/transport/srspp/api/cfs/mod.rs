@@ -1,3 +1,5 @@
+/// Concurrent per-connection receive.
+mod listener;
 /// Combined sender/receiver SRSPP node.
 mod node;
 /// Multi-stream SRSPP receiver.
@@ -5,6 +7,7 @@ mod receiver;
 /// SRSPP sender with retransmission support.
 mod sender;
 
+pub use listener::SrsppStream;
 pub use node::{SrsppNode, SrsppNodeDriver};
 pub use receiver::{DeliveryToken, SrsppReceiver, SrsppReceiverDriver, SrsppRxHandle};
 pub use sender::{

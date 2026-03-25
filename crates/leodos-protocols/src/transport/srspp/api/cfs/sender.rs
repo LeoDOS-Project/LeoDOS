@@ -458,6 +458,19 @@ pub struct SrsppTxHandle<
     pub(super) origin: Address,
 }
 
+impl<'a, E, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize>
+    Clone for SrsppTxHandle<'a, E, S, R, WIN, BUF, MTU>
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a, E, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize>
+    Copy for SrsppTxHandle<'a, E, S, R, WIN, BUF, MTU>
+{
+}
+
 impl<
     'a,
     E: Clone,

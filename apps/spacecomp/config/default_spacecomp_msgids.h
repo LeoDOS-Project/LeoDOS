@@ -1,0 +1,8 @@
+#ifndef DEFAULT_SPACECOMP_MSGIDS_H
+#define DEFAULT_SPACECOMP_MSGIDS_H
+
+#define SPACECOMP_CMD_MID     0x18A0
+#define SPACECOMP_SEND_CC     0
+#define SPACECOMP_APID        0x60
+
+#endif
