@@ -13,9 +13,7 @@ use leodos_spacecomp::SpaceCompError;
 use leodos_spacecomp::SpaceCompNode;
 
 use heapless::index_map::FnvIndexMap;
-use leodos_protocols::application::spacecomp::packet::AssignCollectorPayload;
-use leodos_protocols::application::spacecomp::packet::AssignMapperPayload;
-use leodos_protocols::application::spacecomp::packet::AssignReducerPayload;
+use leodos_protocols::network::isl::address::Address;
 use zerocopy::network_endian::U32;
 use zerocopy::FromBytes;
 use zerocopy::Immutable;
@@ -94,10 +92,11 @@ impl SpaceComp for WordCount2 {
         &self,
         tx: &mut TxHandle<'_>,
         job_id: u16,
-        assign: AssignCollectorPayload,
+        mapper_addr: Address,
+        partition_id: u8,
     ) -> Result<(), SpaceCompError> {
         let mut buf = [0u8; 512];
-        let partition = partition_text(assign.partition_id());
+        let partition = partition_text(partition_id);
         for chunk in partition.chunks(MAX_CHUNK) {
             let m = SpaceCompMessage::builder()
                 .buffer(&mut buf)
@@ -106,7 +105,7 @@ impl SpaceComp for WordCount2 {
                 .payload_len(chunk.len())
                 .build()?;
             m.payload_mut().copy_from_slice(chunk);
-            tx.send(assign.mapper_addr(), m.as_bytes()).await.ok();
+            tx.send(mapper_addr, m.as_bytes()).await.ok();
         }
         Ok(())
     }
@@ -116,13 +115,14 @@ impl SpaceComp for WordCount2 {
         rx: &mut RxHandle<'_>,
         tx: &mut TxHandle<'_>,
         job_id: u16,
-        assign: AssignMapperPayload,
+        reducer_addr: Address,
+        collector_count: u8,
     ) -> Result<(), SpaceCompError> {
         let mut buf = [0u8; 512];
         let mut received = 0u8;
         {
             let mut writer = BufWriter::<WordCount, _>::new(
-                tx, &mut buf, assign.reducer_addr(), job_id, OpCode::DataChunk,
+                tx, &mut buf, reducer_addr, job_id, OpCode::DataChunk,
             );
             loop {
                 let mut payload = [0u8; MAX_CHUNK];
@@ -151,7 +151,7 @@ impl SpaceComp for WordCount2 {
                 writer.flush().await?;
 
                 received += 1;
-                if received >= assign.collector_count() {
+                if received >= collector_count {
                     break;
                 }
             }
@@ -162,7 +162,7 @@ impl SpaceComp for WordCount2 {
             .job_id(job_id)
             .payload_len(0)
             .build()?;
-        tx.send(assign.reducer_addr(), done.as_bytes()).await.ok();
+        tx.send(reducer_addr, done.as_bytes()).await.ok();
         Ok(())
     }
 
@@ -171,7 +171,8 @@ impl SpaceComp for WordCount2 {
         rx: &mut RxHandle<'_>,
         tx: &mut TxHandle<'_>,
         job_id: u16,
-        assign: AssignReducerPayload,
+        los_addr: Address,
+        mapper_count: u8,
     ) -> Result<(), SpaceCompError> {
         let mut buf = [0u8; 512];
         let mut counts: FnvIndexMap<[u8; 16], u32, 64> = FnvIndexMap::new();
@@ -202,9 +203,9 @@ impl SpaceComp for WordCount2 {
             };
             if op == Some(OpCode::PhaseDone) {
                 done_count += 1;
-                if done_count >= assign.mapper_count() {
+                if done_count >= mapper_count {
                     let mut writer = BufWriter::<WordCount, _>::new(
-                        tx, &mut buf, assign.los_addr(), job_id, OpCode::JobResult,
+                        tx, &mut buf, los_addr, job_id, OpCode::JobResult,
                     );
                     for (word, &count) in counts.iter() {
                         writer.write(&WordCount::new(word, count)).await?;

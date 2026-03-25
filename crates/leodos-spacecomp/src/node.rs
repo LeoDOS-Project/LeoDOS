@@ -68,7 +68,8 @@ pub trait SpaceComp {
         &self,
         tx: &mut TxHandle<'_>,
         job_id: u16,
-        assign: AssignCollectorPayload,
+        mapper_addr: Address,
+        partition_id: u8,
     ) -> Result<(), SpaceCompError>;
 
     /// Processes data from collectors and sends results to the reducer.
@@ -77,7 +78,8 @@ pub trait SpaceComp {
         rx: &mut RxHandle<'_>,
         tx: &mut TxHandle<'_>,
         job_id: u16,
-        assign: AssignMapperPayload,
+        reducer_addr: Address,
+        collector_count: u8,
     ) -> Result<(), SpaceCompError>;
 
     /// Aggregates results from mappers and sends the final output.
@@ -86,7 +88,8 @@ pub trait SpaceComp {
         rx: &mut RxHandle<'_>,
         tx: &mut TxHandle<'_>,
         job_id: u16,
-        assign: AssignReducerPayload,
+        los_addr: Address,
+        mapper_count: u8,
     ) -> Result<(), SpaceCompError>;
 }
 
@@ -161,34 +164,34 @@ impl SpaceCompNode {
                             .await
                     }
                     OpCode::AssignCollector => {
-                        let p = match msg.parse_payload(ParseError::AssignCollector) {
+                        let p: AssignCollectorPayload = match msg.parse_payload(ParseError::AssignCollector) {
                             Ok(p) => p,
                             Err(e) => {
                                 err!("{}", e)?;
                                 continue;
                             }
                         };
-                        app.collect(&mut tx, job_id, p).await
+                        app.collect(&mut tx, job_id, p.mapper_addr(), p.partition_id()).await
                     }
                     OpCode::AssignMapper => {
-                        let p = match msg.parse_payload(ParseError::AssignMapper) {
+                        let p: AssignMapperPayload = match msg.parse_payload(ParseError::AssignMapper) {
                             Ok(p) => p,
                             Err(e) => {
                                 err!("{}", e)?;
                                 continue;
                             }
                         };
-                        app.map(&mut rx, &mut tx, job_id, p).await
+                        app.map(&mut rx, &mut tx, job_id, p.reducer_addr(), p.collector_count()).await
                     }
                     OpCode::AssignReducer => {
-                        let p = match msg.parse_payload(ParseError::AssignReducer) {
+                        let p: AssignReducerPayload = match msg.parse_payload(ParseError::AssignReducer) {
                             Ok(p) => p,
                             Err(e) => {
                                 err!("{}", e)?;
                                 continue;
                             }
                         };
-                        app.reduce(&mut rx, &mut tx, job_id, p).await
+                        app.reduce(&mut rx, &mut tx, job_id, p.los_addr(), p.mapper_count()).await
                     }
                     _ => continue,
                 };
