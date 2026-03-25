@@ -10,13 +10,15 @@ use leodos_libcfs::info;
 use leodos_libcfs::join;
 
 use leodos_protocols::application::spacecomp::job::Job;
+use leodos_protocols::application::spacecomp::packet::AssignCollectorPayload;
+use leodos_protocols::application::spacecomp::packet::AssignMapperPayload;
+use leodos_protocols::application::spacecomp::packet::AssignReducerPayload;
 use leodos_protocols::application::spacecomp::packet::OpCode;
 use leodos_protocols::application::spacecomp::packet::ParseError;
 use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::datalink::link::cfs::sb::SbDatalink;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
-use leodos_protocols::network::isl::torus::Point;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
 use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
@@ -36,33 +38,14 @@ use crate::SpaceCompError;
 pub type RxHandle<'a> = SrsppRxHandle<'a, CfsError, ReceiverMachine<8, 4096, 8192>, 1>;
 pub type TxHandle<'a> = SrsppTxHandle<'a, CfsError, NoStore, AlwaysReachable, 8, 4096, 512>;
 
-/// Shared buffers passed to the dispatch handler.
+/// Shared buffers passed to role functions.
 pub struct Buffers {
     pub recv: [u8; 8192],
     pub msg: [u8; 512],
 }
 
-/// Dispatch context passed to the app's handler for each
-/// received message. The app matches on `op` and runs the
-/// appropriate role logic.
-pub struct Dispatch<'a> {
-    pub rx: &'a mut RxHandle<'a>,
-    pub tx: &'a mut TxHandle<'a>,
-    pub bufs: &'a mut Buffers,
-    pub point: Point,
-    pub source: Address,
-    pub op: OpCode,
-    pub job_id: u16,
-    pub msg: &'a SpaceCompMessage,
-}
-
 /// A SpaceCoMP node that handles SRSPP transport,
 /// message dispatch, and coordinator orchestration.
-///
-/// The library sets up the transport and dispatch loop.
-/// The coordinator (SubmitJob) is handled automatically.
-/// For collector/mapper/reducer assignments, call the
-/// provided `dispatch` callback.
 pub struct SpaceCompNode {
     config: SpaceCompConfig,
 }
@@ -76,64 +59,18 @@ impl SpaceCompNode {
 }
 
 impl SpaceCompNode {
-    /// Sets up SRSPP and runs the dispatch loop.
+    /// Runs the node with the given role functions.
     ///
-    /// Returns the rx/tx handles, buffers, and node point
-    /// so the caller can run their own dispatch logic.
-    /// The coordinator is handled automatically for
-    /// SubmitJob messages.
-    pub async fn setup(
+    /// The library handles SRSPP setup, the dispatch loop,
+    /// and coordinator logic (SubmitJob). When a role
+    /// assignment arrives, the corresponding function is
+    /// called.
+    pub async fn run(
         &self,
-    ) -> Result<
-        (
-            RxHandle<'_>,
-            TxHandle<'_>,
-            Buffers,
-            Point,
-        ),
-        SpaceCompError,
-    > {
-        // This approach won't work — the SRSPP node and
-        // network need to live longer than the returned
-        // handles. Let's use a different pattern.
-        todo!()
-    }
-
-    /// Runs the SpaceCoMP node. The caller provides a
-    /// `handler` async function that processes each
-    /// non-coordinator message (collector/mapper/reducer
-    /// assignments).
-    ///
-    /// The handler receives rx, tx, bufs, the local point,
-    /// source address, opcode, job_id, and the parsed
-    /// message. It should match on the opcode and run the
-    /// corresponding role logic.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// node.run(|rx, tx, bufs, point, source, op, job_id, msg| async move {
-    ///     match op {
-    ///         OpCode::AssignCollector => { ... }
-    ///         OpCode::AssignMapper => { ... }
-    ///         OpCode::AssignReducer => { ... }
-    ///         _ => {}
-    ///     }
-    ///     Ok(())
-    /// }).await?;
-    /// ```
-    pub async fn run_with<H, HF>(&self, mut handler: H) -> Result<(), SpaceCompError>
-    where
-        H: FnMut(
-            &mut RxHandle<'_>,
-            &mut TxHandle<'_>,
-            &mut Buffers,
-            Point,
-            Address,
-            usize,
-        ) -> HF,
-        HF: core::future::Future<Output = Result<(), SpaceCompError>>,
-    {
+        collect: impl AsyncFn(&mut TxHandle<'_>, &mut Buffers, u16, AssignCollectorPayload) -> Result<(), SpaceCompError>,
+        map: impl AsyncFn(&mut RxHandle<'_>, &mut TxHandle<'_>, &mut Buffers, u16, AssignMapperPayload) -> Result<(), SpaceCompError>,
+        reduce: impl AsyncFn(&mut RxHandle<'_>, &mut TxHandle<'_>, &mut Buffers, u16, AssignReducerPayload) -> Result<(), SpaceCompError>,
+    ) -> Result<(), SpaceCompError> {
         event::register(&[])?;
         info!("SpaceCoMP node starting")?;
 
@@ -180,7 +117,7 @@ impl SpaceCompNode {
 
         let dispatch = async {
             loop {
-                let Ok((source, len)) = rx.recv(&mut bufs.recv).await else {
+                let Ok((_source, len)) = rx.recv(&mut bufs.recv).await else {
                     break;
                 };
                 let msg = match SpaceCompMessage::parse(&bufs.recv[..len]) {
@@ -202,7 +139,28 @@ impl SpaceCompNode {
                         crate::coordinator::run(&mut tx, &mut bufs.msg, shell, point, job_id, job)
                             .await
                     }
-                    _ => handler(&mut rx, &mut tx, &mut bufs, point, source, len).await,
+                    OpCode::AssignCollector => {
+                        let p = match msg.parse_payload(ParseError::AssignCollector) {
+                            Ok(p) => p,
+                            Err(e) => { err!("{}", e)?; continue; }
+                        };
+                        collect(&mut tx, &mut bufs, job_id, p).await
+                    }
+                    OpCode::AssignMapper => {
+                        let p = match msg.parse_payload(ParseError::AssignMapper) {
+                            Ok(p) => p,
+                            Err(e) => { err!("{}", e)?; continue; }
+                        };
+                        map(&mut rx, &mut tx, &mut bufs, job_id, p).await
+                    }
+                    OpCode::AssignReducer => {
+                        let p = match msg.parse_payload(ParseError::AssignReducer) {
+                            Ok(p) => p,
+                            Err(e) => { err!("{}", e)?; continue; }
+                        };
+                        reduce(&mut rx, &mut tx, &mut bufs, job_id, p).await
+                    }
+                    _ => continue,
                 };
 
                 if let Err(e) = result {

@@ -5,12 +5,12 @@ use leodos_protocols::application::spacecomp::io::writer::BufWriter;
 use leodos_protocols::application::spacecomp::packet::OpCode;
 use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::network::spp::Apid;
-use leodos_spacecomp::SpaceCompConfig;
-use leodos_spacecomp::SpaceCompError;
-use leodos_spacecomp::SpaceCompNode;
 use leodos_spacecomp::node::Buffers;
 use leodos_spacecomp::node::RxHandle;
 use leodos_spacecomp::node::TxHandle;
+use leodos_spacecomp::SpaceCompConfig;
+use leodos_spacecomp::SpaceCompError;
+use leodos_spacecomp::SpaceCompNode;
 
 use heapless::index_map::FnvIndexMap;
 use leodos_protocols::application::spacecomp::packet::AssignCollectorPayload;
@@ -45,7 +45,10 @@ impl WordCount {
         let mut buf = [0u8; 16];
         let len = word.len().min(16);
         buf[..len].copy_from_slice(&word[..len]);
-        Self { word: buf, count: U32::new(count) }
+        Self {
+            word: buf,
+            count: U32::new(count),
+        }
     }
 }
 
@@ -82,7 +85,7 @@ fn partition_text(partition_id: u8) -> &'static [u8] {
     &SAMPLE_TEXT[start..end]
 }
 
-// ── Role implementations ────────────────────────────────────
+// ── Role functions ────────────────────────────────────────────────────
 
 async fn collect(
     tx: &mut TxHandle<'_>,
@@ -113,9 +116,13 @@ async fn map(
 ) -> Result<(), SpaceCompError> {
     let mut received = 0u8;
     {
-        let mut writer =
-            BufWriter::<WordCount, _>::new(tx, &mut bufs.msg, assign.reducer_addr(), job_id, OpCode::DataChunk);
-
+        let mut writer = BufWriter::<WordCount, _>::new(
+            tx,
+            &mut bufs.msg,
+            assign.reducer_addr(),
+            job_id,
+            OpCode::DataChunk,
+        );
         loop {
             let mut payload = [0u8; MAX_CHUNK];
             let Ok(maybe_len) = rx
@@ -138,8 +145,7 @@ async fn map(
                 if word.is_empty() || word.len() > 16 {
                     continue;
                 }
-                let wc = WordCount::new(word, 1);
-                writer.write(&wc).await?;
+                writer.write(&WordCount::new(word, 1)).await?;
             }
             writer.flush().await?;
 
@@ -149,7 +155,6 @@ async fn map(
             }
         }
     }
-
     let done = SpaceCompMessage::builder()
         .buffer(&mut bufs.msg)
         .op_code(OpCode::PhaseDone)
@@ -206,8 +211,7 @@ async fn reduce(
                     OpCode::JobResult,
                 );
                 for (word, &count) in counts.iter() {
-                    let wc = WordCount::new(word, count);
-                    writer.write(&wc).await?;
+                    writer.write(&WordCount::new(word, count)).await?;
                 }
                 writer.flush().await?;
                 return Ok(());
@@ -215,40 +219,6 @@ async fn reduce(
         }
     }
 }
-
-// ── Dispatch ─────────────────────────────────────────────────
-
-async fn handle(
-    rx: &mut RxHandle<'_>,
-    tx: &mut TxHandle<'_>,
-    bufs: &mut Buffers,
-    _point: leodos_protocols::network::isl::torus::Point,
-    _source: leodos_protocols::network::isl::address::Address,
-    len: usize,
-) -> Result<(), SpaceCompError> {
-    let msg = SpaceCompMessage::parse(&bufs.recv[..len])
-        .map_err(SpaceCompError::Parse)?;
-    let op = msg.op_code().map_err(SpaceCompError::Parse)?;
-    let job_id = msg.job_id();
-
-    match op {
-        OpCode::AssignCollector => {
-            let p = msg.parse_payload(leodos_protocols::application::spacecomp::packet::ParseError::AssignCollector)?;
-            collect(tx, bufs, job_id, p).await
-        }
-        OpCode::AssignMapper => {
-            let p = msg.parse_payload(leodos_protocols::application::spacecomp::packet::ParseError::AssignMapper)?;
-            map(rx, tx, bufs, job_id, p).await
-        }
-        OpCode::AssignReducer => {
-            let p = msg.parse_payload(leodos_protocols::application::spacecomp::packet::ParseError::AssignReducer)?;
-            reduce(rx, tx, bufs, job_id, p).await
-        }
-        _ => Ok(()),
-    }
-}
-
-// ── Entry point ─────────────────────────────────────────────
 
 #[no_mangle]
 pub extern "C" fn SPACECOMP_WORDCOUNT_AppMain() {
@@ -265,7 +235,7 @@ pub extern "C" fn SPACECOMP_WORDCOUNT_AppMain() {
         };
 
         let node = SpaceCompNode::builder().config(config).build();
-        node.run_with(handle).await
+        node.run(collect, map, reduce).await
     });
 }
 
