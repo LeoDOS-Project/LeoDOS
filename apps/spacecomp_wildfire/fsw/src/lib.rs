@@ -1,5 +1,6 @@
 #![no_std]
 
+use leodos_libcfs::error::CfsError;
 use leodos_libcfs::info;
 use leodos_libcfs::nos3::drivers::thermal_cam::ThermalCamera;
 use leodos_libcfs::runtime::Runtime;
@@ -72,7 +73,6 @@ impl HotspotRecord {
 // ── SpaceComp implementation ────────────────────────────────
 
 struct WildfireCompute {
-    camera: Camera,
     thresholds: FireThresholds,
     aoi: GeoBounds,
 }
@@ -86,15 +86,28 @@ impl SpaceComp for WildfireCompute {
         mapper_addr: Address,
         _partition_id: u8,
     ) -> Result<(), SpaceCompError> {
-        // Camera is &self but capture needs &mut — this is a design
-        // tension. For now, we can't call self.camera.capture() from
-        // &self. The collector would need &mut self or the camera
-        // behind a Cell/RefCell. Leaving as TODO.
-        //
-        // In a real deployment, the collector reads from a shared
-        // frame buffer that the camera DMA fills independently.
-        info!("Collector: would capture and send pixels to mapper")?;
-        let _ = (tx, job_id, mapper_addr);
+        let mut camera = Camera::builder()
+            .device(c"spi_3")
+            .chip_select_line(3)
+            .baudrate(1_000_000)
+            .build()?;
+        let frame = camera.capture().await
+            .map_err(|_| SpaceCompError::Cfs(CfsError::ExternalResourceFail))?;
+
+        // Send raw pixel data in chunks to mapper
+        let pixel_bytes = frame.mwir.as_bytes();
+        let mut buf = [0u8; 512];
+        for chunk in pixel_bytes.chunks(256) {
+            let m = SpaceCompMessage::builder()
+                .buffer(&mut buf)
+                .op_code(OpCode::DataChunk)
+                .job_id(job_id)
+                .payload_len(chunk.len())
+                .build()?;
+            m.payload_mut().copy_from_slice(chunk);
+            tx.send(mapper_addr, m.as_bytes()).await.ok();
+        }
+        info!("Collector: sent {} bytes of pixel data", pixel_bytes.len())?;
         Ok(())
     }
 
@@ -245,12 +258,6 @@ impl SpaceComp for WildfireCompute {
 #[no_mangle]
 pub extern "C" fn SPACECOMP_WILDFIRE_AppMain() {
     Runtime::new().run(async {
-        let camera = Camera::builder()
-            .device(c"spi_3")
-            .chip_select_line(3)
-            .baudrate(1_000_000)
-            .build()?;
-
         let config = SpaceCompConfig {
             num_orbits: bindings::SPACECOMP_WILDFIRE_NUM_ORBITS as u8,
             num_sats: NUM_SATS,
@@ -263,7 +270,6 @@ pub extern "C" fn SPACECOMP_WILDFIRE_AppMain() {
         };
 
         let app = WildfireCompute {
-            camera,
             thresholds: FireThresholds {
                 t4_abs: 330.0,
                 ..Default::default()

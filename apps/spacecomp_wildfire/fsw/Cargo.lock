@@ -421,6 +421,7 @@ dependencies = [
  "futures",
  "heapless",
  "leodos-libcfs",
+ "leodos-utils",
  "libm",
  "pin-utils",
  "thiserror",
@@ -435,9 +436,14 @@ dependencies = [
  "heapless",
  "leodos-libcfs",
  "leodos-protocols",
+ "libm",
  "thiserror",
  "zerocopy",
 ]
+
+[[package]]
+name = "leodos-utils"
+version = "0.1.0"
 
 [[package]]
 name = "libc"
