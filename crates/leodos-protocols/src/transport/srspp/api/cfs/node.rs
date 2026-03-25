@@ -7,6 +7,10 @@ use crate::network::NetworkRead;
 use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
 use crate::transport::srspp::api::cfs::TransportError;
+use crate::transport::srspp::dtn::AlwaysReachable;
+use crate::transport::srspp::dtn::MessageStore;
+use crate::transport::srspp::dtn::NoStore;
+use crate::transport::srspp::dtn::Reachable;
 use crate::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::transport::srspp::machine::receiver::ReceiverConfig;
 use crate::transport::srspp::machine::receiver::ReceiverMachine;
@@ -27,37 +31,38 @@ use super::sender::SenderState;
 use super::sender::SrsppSenderDriver;
 use super::sender::SrsppTxHandle;
 use super::sender::duration_until;
-use crate::transport::srspp::dtn::AlwaysReachable;
-use crate::transport::srspp::dtn::NoStore;
 
 /// Combined SRSPP sender and receiver over a single link.
 pub struct SrsppNode<
     E,
+    S: MessageStore = NoStore,
+    Re: Reachable = AlwaysReachable,
     R: ReceiverBackend = ReceiverMachine<8, 4096, 8192>,
     const WIN: usize = 8,
     const BUF: usize = 4096,
     const MTU: usize = 512,
     const MAX_STREAMS: usize = 1,
 > {
-    /// Interior-mutable sender state.
     pub(super) sender: SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
-    /// Interior-mutable multi-stream receiver state.
     pub(super) receiver: SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
-    /// No-op DTN context (node doesn't use DTN).
-    noop_dtn: SyncRefCell<DtnContext<NoStore, AlwaysReachable>>,
+    dtn: SyncRefCell<DtnContext<S, Re>>,
+    origin: Address,
 }
 
 impl<
     E: Clone,
+    S: MessageStore,
+    Re: Reachable,
     R: ReceiverBackend,
     const WIN: usize,
     const BUF: usize,
     const MTU: usize,
     const MAX_STREAMS: usize,
-> SrsppNode<E, R, WIN, BUF, MTU, MAX_STREAMS>
+> SrsppNode<E, S, Re, R, WIN, BUF, MTU, MAX_STREAMS>
 {
     /// Creates a new node with sender and receiver configurations.
-    pub fn new(sender_config: SenderConfig, receiver_config: ReceiverConfig) -> Self {
+    pub fn new(sender_config: SenderConfig, receiver_config: ReceiverConfig, store: S, reachable: Re) -> Self {
+        let origin = sender_config.source_address;
         let ack_delay = Duration::from_millis(receiver_config.ack_delay_ticks);
         Self {
             sender: SyncRefCell::new(SenderState {
@@ -74,10 +79,8 @@ impl<
                 closed: false,
                 error: None,
             }),
-            noop_dtn: SyncRefCell::new(DtnContext {
-                store: NoStore,
-                reachable: AlwaysReachable,
-            }),
+            dtn: SyncRefCell::new(DtnContext { store, reachable }),
+            origin,
         }
     }
 
@@ -88,8 +91,8 @@ impl<
         rto_policy: P,
     ) -> (
         SrsppRxHandle<'_, E, R, MAX_STREAMS>,
-        SrsppTxHandle<'_, E, NoStore, AlwaysReachable, WIN, BUF, MTU>,
-        SrsppNodeDriver<'_, L, P, E, R, WIN, BUF, MTU, MAX_STREAMS>,
+        SrsppTxHandle<'_, E, S, Re, WIN, BUF, MTU>,
+        SrsppNodeDriver<'_, L, P, E, S, Re, R, WIN, BUF, MTU, MAX_STREAMS>,
     ) {
         (
             SrsppRxHandle {
@@ -97,16 +100,16 @@ impl<
             },
             SrsppTxHandle {
                 sender: &self.sender,
-                dtn: &self.noop_dtn,
-                origin: Address::ground(0),
+                dtn: &self.dtn,
+                origin: self.origin,
             },
             SrsppNodeDriver {
                 link,
                 sender: SrsppSenderDriver::new(
                     rto_policy,
                     &self.sender,
-                    &self.noop_dtn,
-                    Address::ground(0),
+                    &self.dtn,
+                    self.origin,
                 ),
                 receiver: SrsppReceiverDriver::new(&self.receiver),
                 recv_buffer: [0u8; MTU],
@@ -121,19 +124,17 @@ pub struct SrsppNodeDriver<
     L,
     P: RtoPolicy,
     E,
+    S: MessageStore,
+    Re: Reachable,
     R: ReceiverBackend,
     const WIN: usize,
     const BUF: usize,
     const MTU: usize,
     const MAX_STREAMS: usize,
 > {
-    /// Network link for bidirectional packet I/O.
     link: L,
-    /// Sender driver (handles transmit, ACK, retransmit, DTN drain).
-    sender: SrsppSenderDriver<'a, P, E, NoStore, AlwaysReachable, WIN, BUF, MTU>,
-    /// Receiver driver (handles data, ACK sending, timeouts).
+    sender: SrsppSenderDriver<'a, P, E, S, Re, WIN, BUF, MTU>,
     receiver: SrsppReceiverDriver<'a, E, R, MAX_STREAMS>,
-    /// Buffer for receiving packets from the link.
     recv_buffer: [u8; MTU],
 }
 
@@ -142,12 +143,14 @@ impl<
     L: NetworkWrite<Error = E> + NetworkRead<Error = E>,
     P: RtoPolicy,
     E: Clone,
+    S: MessageStore,
+    Re: Reachable,
     R: ReceiverBackend,
     const WIN: usize,
     const BUF: usize,
     const MTU: usize,
     const MAX_STREAMS: usize,
-> SrsppNodeDriver<'a, L, P, E, R, WIN, BUF, MTU, MAX_STREAMS>
+> SrsppNodeDriver<'a, L, P, E, S, Re, R, WIN, BUF, MTU, MAX_STREAMS>
 {
     /// Runs the combined send/receive I/O loop.
     pub async fn run(&mut self) -> Result<(), TransportError<E>> {
@@ -197,7 +200,6 @@ impl<
         }
     }
 
-    /// Dispatches an incoming packet to the ACK or data handler.
     async fn handle_incoming(&mut self, len: usize) -> Result<(), TransportError<E>> {
         let packet = &self.recv_buffer[..len];
         let Ok(parsed) = SrsppPacket::parse(packet) else {

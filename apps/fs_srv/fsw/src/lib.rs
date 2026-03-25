@@ -15,6 +15,8 @@ use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
+use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
+use leodos_protocols::transport::srspp::dtn::NoStore;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
 use leodos_protocols::transport::srspp::packet::SrsppDataPacket;
@@ -352,7 +354,7 @@ pub extern "C" fn FS_SRV_AppMain() {
             .build();
 
         let node: SrsppNode<CfsError> =
-            SrsppNode::new(sender_config, receiver_config);
+            SrsppNode::new(sender_config, receiver_config, NoStore, AlwaysReachable);
         let (mut rx, mut tx, mut driver) =
             node.split(network, FixedRto::new(RTO_MS));
 

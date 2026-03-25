@@ -28,6 +28,7 @@ use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
 use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
 use leodos_protocols::transport::srspp::api::cfs::TransportError;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
+use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
 use leodos_protocols::transport::srspp::dtn::NoStore;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverMachine;
@@ -118,7 +119,7 @@ pub extern "C" fn SPACECOMP_AppMain() {
             .ack_delay_ticks(100)
             .build();
 
-        let node = SrsppNode::new(sender_config, receiver_config);
+        let node = SrsppNode::new(sender_config, receiver_config, NoStore, AlwaysReachable);
         let (mut rx, mut tx, mut driver) = node.split(network, FixedRto::new(RTO_MS));
 
         let mut bufs = Buffers {

@@ -24,7 +24,9 @@ use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
 use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
 use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
+use leodos_protocols::transport::srspp::dtn::MessageStore;
 use leodos_protocols::transport::srspp::dtn::NoStore;
+use leodos_protocols::transport::srspp::dtn::Reachable;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverMachine;
 use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
@@ -42,7 +44,15 @@ pub type TxHandle<'a> = SrsppTxHandle<'a, CfsError, NoStore, AlwaysReachable, 8,
 
 /// A SpaceCoMP node that handles SRSPP transport,
 /// message dispatch, and coordinator orchestration.
+///
+/// Type parameters:
+/// - `S`: message store for DTN (default: [`NoStore`])
+/// - `R`: reachability oracle for DTN (default: [`AlwaysReachable`])
+///
+/// Const parameters control SRSPP buffer sizes (all have defaults).
 pub struct SpaceCompNode<
+    S: MessageStore = NoStore,
+    R: Reachable = AlwaysReachable,
     const WIN: usize = 8,
     const BUF: usize = 4096,
     const MTU: usize = 512,
@@ -50,13 +60,21 @@ pub struct SpaceCompNode<
     const MAX_STREAMS: usize = 1,
 > {
     config: SpaceCompConfig,
+    store: S,
+    reachable: R,
 }
 
 #[bon::bon]
-impl SpaceCompNode {
+impl<S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize, const RX_BUF: usize, const MAX_STREAMS: usize>
+    SpaceCompNode<S, R, WIN, BUF, MTU, RX_BUF, MAX_STREAMS>
+{
     #[builder]
-    pub fn new(config: SpaceCompConfig) -> Self {
-        Self { config }
+    pub fn new(config: SpaceCompConfig, store: S, reachable: R) -> Self {
+        Self {
+            config,
+            store,
+            reachable,
+        }
     }
 }
 
@@ -64,7 +82,15 @@ impl SpaceCompNode {
 ///
 /// Implement this to define what happens when this node
 /// is assigned as a collector, mapper, or reducer.
-pub trait SpaceComp {
+pub trait SpaceComp<
+    S: MessageStore = NoStore,
+    Re: Reachable = AlwaysReachable,
+    const WIN: usize = 8,
+    const BUF: usize = 4096,
+    const MTU: usize = 512,
+    const RX_BUF: usize = 8192,
+    const MAX_STREAMS: usize = 1,
+> {
     /// Collects local data and sends it to the assigned mapper.
     async fn collect(
         &self,
@@ -95,9 +121,18 @@ pub trait SpaceComp {
     ) -> Result<(), SpaceCompError>;
 }
 
-impl SpaceCompNode {
+impl<
+        S: MessageStore,
+        R: Reachable,
+        const WIN: usize,
+        const BUF: usize,
+        const MTU: usize,
+        const RX_BUF: usize,
+        const MAX_STREAMS: usize,
+    > SpaceCompNode<S, R, WIN, BUF, MTU, RX_BUF, MAX_STREAMS>
+{
     /// Runs the node with the given app logic.
-    pub async fn run(&self, app: &impl SpaceComp) -> Result<(), SpaceCompError> {
+    pub async fn run(&self, app: &impl SpaceComp<S, R, WIN, BUF, MTU, RX_BUF, MAX_STREAMS>) -> Result<(), SpaceCompError> {
         event::register(&[])?;
         info!("SpaceCoMP node starting")?;
 
@@ -133,12 +168,18 @@ impl SpaceCompNode {
             .ack_delay_ticks(100)
             .build();
 
-        let srspp: SrsppNode<CfsError> = SrsppNode::new(sender_config, receiver_config);
+        let srspp: SrsppNode<CfsError> =
+            SrsppNode::new(sender_config, receiver_config, NoStore, AlwaysReachable);
         let (mut rx, mut tx, mut driver) = srspp.split(network, FixedRto::new(rto));
 
         let shell = self.config.shell();
-        let mut recv_buf = [0u8; 8192];
-        let mut msg_buf = [0u8; 512];
+        // Max dispatch message: SpaceComp header (4) + Job payload (41)
+        const MAX_DISPATCH_MSG: usize = SpaceCompMessage::HEADER_SIZE + core::mem::size_of::<Job>();
+        // Max coordinator send: SpaceComp header (4) + assignment payload (5)
+        const MAX_ASSIGN_MSG: usize = SpaceCompMessage::HEADER_SIZE + 5;
+
+        let mut recv_buf = [0u8; MAX_DISPATCH_MSG];
+        let mut msg_buf = [0u8; MAX_ASSIGN_MSG];
 
         let dispatch = async {
             loop {
@@ -164,34 +205,46 @@ impl SpaceCompNode {
                             .await
                     }
                     OpCode::AssignCollector => {
-                        let p: AssignCollectorPayload = match msg.parse_payload(ParseError::AssignCollector) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                err!("{}", e)?;
-                                continue;
-                            }
-                        };
-                        app.collect(&mut tx, job_id, p.mapper_addr(), p.partition_id()).await
+                        let p: AssignCollectorPayload =
+                            match msg.parse_payload(ParseError::AssignCollector) {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    err!("{}", e)?;
+                                    continue;
+                                }
+                            };
+                        app.collect(&mut tx, job_id, p.mapper_addr(), p.partition_id())
+                            .await
                     }
                     OpCode::AssignMapper => {
-                        let p: AssignMapperPayload = match msg.parse_payload(ParseError::AssignMapper) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                err!("{}", e)?;
-                                continue;
-                            }
-                        };
-                        app.map(&mut rx, &mut tx, job_id, p.reducer_addr(), p.collector_count()).await
+                        let p: AssignMapperPayload =
+                            match msg.parse_payload(ParseError::AssignMapper) {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    err!("{}", e)?;
+                                    continue;
+                                }
+                            };
+                        app.map(
+                            &mut rx,
+                            &mut tx,
+                            job_id,
+                            p.reducer_addr(),
+                            p.collector_count(),
+                        )
+                        .await
                     }
                     OpCode::AssignReducer => {
-                        let p: AssignReducerPayload = match msg.parse_payload(ParseError::AssignReducer) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                err!("{}", e)?;
-                                continue;
-                            }
-                        };
-                        app.reduce(&mut rx, &mut tx, job_id, p.los_addr(), p.mapper_count()).await
+                        let p: AssignReducerPayload =
+                            match msg.parse_payload(ParseError::AssignReducer) {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    err!("{}", e)?;
+                                    continue;
+                                }
+                            };
+                        app.reduce(&mut rx, &mut tx, job_id, p.los_addr(), p.mapper_count())
+                            .await
                     }
                     _ => continue,
                 };

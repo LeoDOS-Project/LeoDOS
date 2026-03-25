@@ -232,7 +232,11 @@ pub extern "C" fn SPACECOMP_WORDCOUNT_AppMain() {
             router_recv_topic: 0,
         };
 
-        let node = SpaceCompNode::builder().config(config).build();
+        let node = SpaceCompNode::builder()
+            .config(config)
+            .store(leodos_protocols::transport::srspp::dtn::NoStore)
+            .reachable(leodos_protocols::transport::srspp::dtn::AlwaysReachable)
+            .build();
         node.run(&WordCount2).await
     });
 }
