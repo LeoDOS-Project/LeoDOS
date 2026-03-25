@@ -7,13 +7,13 @@ use zerocopy::IntoBytes;
 use crate::packet::BuildError;
 use crate::packet::OpCode;
 use crate::packet::SpaceCompMessage;
-use crate::node::TxHandle;
+use crate::transport::Tx;
 use leodos_protocols::network::isl::address::Address;
 
 /// Batched record writer that packs fixed-size records into
-/// a SpaceCoMP message buffer and flushes via SRSPP.
-pub struct BufWriter<'a, 'tx, T> {
-    tx: &'a mut TxHandle<'tx>,
+/// a SpaceCoMP message buffer and flushes via a [`Tx`] sender.
+pub struct BufWriter<'a, T, S: Tx> {
+    tx: &'a mut S,
     buf: &'a mut [u8],
     target: Address,
     job_id: u16,
@@ -22,9 +22,9 @@ pub struct BufWriter<'a, 'tx, T> {
     _record: PhantomData<T>,
 }
 
-impl<'a, 'tx, T: IntoBytes + Immutable> BufWriter<'a, 'tx, T> {
+impl<'a, T: IntoBytes + Immutable, S: Tx> BufWriter<'a, T, S> {
     pub fn new(
-        tx: &'a mut TxHandle<'tx>,
+        tx: &'a mut S,
         buf: &'a mut [u8],
         target: Address,
         job_id: u16,

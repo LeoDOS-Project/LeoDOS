@@ -1,5 +1,6 @@
 //! [`SpaceCompNode`] — the main entry point for running
 //! a SpaceCoMP computation on a cFS satellite.
+#![allow(async_fn_in_trait)]
 
 use core::time::Duration;
 use leodos_libcfs::cfe::es::system;
@@ -49,8 +50,8 @@ pub type RxHandle<
 /// SRSPP transmit handle.
 pub type TxHandle<
     'a,
-    S: MessageStore = NoStore,
-    Re: Reachable = AlwaysReachable,
+    S = NoStore,
+    Re = AlwaysReachable,
     const WIN: usize = 8,
     const BUF: usize = 4096,
     const MTU: usize = 512,
@@ -64,6 +65,7 @@ pub type TxHandle<
 /// - `R`: reachability oracle for DTN (default: [`AlwaysReachable`])
 ///
 /// Const parameters control SRSPP buffer sizes (all have defaults).
+#[derive(bon::Builder)]
 pub struct SpaceCompNode<
     S: MessageStore = NoStore,
     R: Reachable = AlwaysReachable,
@@ -78,37 +80,15 @@ pub struct SpaceCompNode<
     reachable: R,
 }
 
-#[bon::bon]
-impl<S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize, const RX_BUF: usize, const MAX_STREAMS: usize>
-    SpaceCompNode<S, R, WIN, BUF, MTU, RX_BUF, MAX_STREAMS>
-{
-    #[builder]
-    pub fn new(config: SpaceCompConfig, store: S, reachable: R) -> Self {
-        Self {
-            config,
-            store,
-            reachable,
-        }
-    }
-}
-
 /// App-defined computation for each SpaceCoMP role.
 ///
 /// Implement this to define what happens when this node
 /// is assigned as a collector, mapper, or reducer.
-pub trait SpaceComp<
-    S: MessageStore = NoStore,
-    Re: Reachable = AlwaysReachable,
-    const WIN: usize = 8,
-    const BUF: usize = 4096,
-    const MTU: usize = 512,
-    const RX_BUF: usize = 8192,
-    const MAX_STREAMS: usize = 1,
-> {
+pub trait SpaceComp {
     /// Collects local data and sends it to the assigned mapper.
     async fn collect(
         &self,
-        tx: &mut TxHandle<'_, S, Re, WIN, BUF, MTU>,
+        tx: &mut impl crate::transport::Tx,
         job_id: u16,
         mapper_addr: Address,
         partition_id: u8,
@@ -117,8 +97,8 @@ pub trait SpaceComp<
     /// Processes data from collectors and sends results to the reducer.
     async fn map(
         &self,
-        rx: &mut RxHandle<'_, WIN, BUF, RX_BUF, MAX_STREAMS>,
-        tx: &mut TxHandle<'_, S, Re, WIN, BUF, MTU>,
+        rx: &mut impl crate::transport::Rx,
+        tx: &mut impl crate::transport::Tx,
         job_id: u16,
         reducer_addr: Address,
         collector_count: u8,
@@ -127,8 +107,8 @@ pub trait SpaceComp<
     /// Aggregates results from mappers and sends the final output.
     async fn reduce(
         &self,
-        rx: &mut RxHandle<'_, WIN, BUF, RX_BUF, MAX_STREAMS>,
-        tx: &mut TxHandle<'_, S, Re, WIN, BUF, MTU>,
+        rx: &mut impl crate::transport::Rx,
+        tx: &mut impl crate::transport::Tx,
         job_id: u16,
         los_addr: Address,
         mapper_count: u8,
@@ -146,7 +126,10 @@ impl<
     > SpaceCompNode<S, R, WIN, BUF, MTU, RX_BUF, MAX_STREAMS>
 {
     /// Runs the node with the given app logic.
-    pub async fn run(self, app: &impl SpaceComp<S, R, WIN, BUF, MTU, RX_BUF, MAX_STREAMS>) -> Result<(), SpaceCompError> {
+    pub async fn run(
+        self,
+        app: &impl SpaceComp,
+    ) -> Result<(), SpaceCompError> {
         event::register(&[])?;
         info!("SpaceCoMP node starting")?;
 
@@ -182,8 +165,16 @@ impl<
             .ack_delay_ticks(100)
             .build();
 
-        let srspp: SrsppNode<CfsError, S, R, ReceiverMachine<WIN, BUF, RX_BUF>, WIN, BUF, MTU, MAX_STREAMS> =
-            SrsppNode::new(sender_config, receiver_config, self.store, self.reachable);
+        let srspp: SrsppNode<
+            CfsError,
+            S,
+            R,
+            ReceiverMachine<WIN, BUF, RX_BUF>,
+            WIN,
+            BUF,
+            MTU,
+            MAX_STREAMS,
+        > = SrsppNode::new(sender_config, receiver_config, self.store, self.reachable);
         let (mut rx, mut tx, mut driver) = srspp.split(network, FixedRto::new(rto));
 
         system::wait_for_startup_sync(Duration::from_millis(10_000));

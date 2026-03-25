@@ -89,7 +89,7 @@ struct WildfireCompute {
 impl SpaceComp for WildfireCompute {
     async fn collect(
         &self,
-        tx: &mut TxHandle<'_>,
+        tx: &mut impl leodos_spacecomp::transport::Tx,
         job_id: u16,
         mapper_addr: Address,
         _partition_id: u8,
@@ -154,8 +154,8 @@ impl SpaceComp for WildfireCompute {
 
     async fn map(
         &self,
-        rx: &mut RxHandle<'_>,
-        tx: &mut TxHandle<'_>,
+        rx: &mut impl leodos_spacecomp::transport::Rx,
+        tx: &mut impl leodos_spacecomp::transport::Tx,
         job_id: u16,
         reducer_addr: Address,
         collector_count: u8,
@@ -163,7 +163,7 @@ impl SpaceComp for WildfireCompute {
         let mut buf = [0u8; 512];
         let mut received = 0u8;
         {
-            let mut writer = BufWriter::<HotspotRecord>::new(
+            let mut writer = BufWriter::<HotspotRecord, _>::new(
                 tx,
                 &mut buf,
                 reducer_addr,
@@ -269,8 +269,8 @@ impl SpaceComp for WildfireCompute {
 
     async fn reduce(
         &self,
-        rx: &mut RxHandle<'_>,
-        tx: &mut TxHandle<'_>,
+        rx: &mut impl leodos_spacecomp::transport::Rx,
+        tx: &mut impl leodos_spacecomp::transport::Tx,
         job_id: u16,
         los_addr: Address,
         mapper_count: u8,
@@ -332,7 +332,7 @@ impl SpaceComp for WildfireCompute {
                         total, mapper_count, max_temp, centroid.lat, centroid.lon,
                     )?;
 
-                    let mut writer = BufWriter::<HotspotRecord>::new(
+                    let mut writer = BufWriter::<HotspotRecord, _>::new(
                         tx, &mut buf, los_addr, job_id, OpCode::JobResult,
                     );
                     for rec in &all_hotspots[..total] {
@@ -375,13 +375,12 @@ pub extern "C" fn SPACECOMP_WILDFIRE_AppMain() {
             },
         };
 
-        SpaceCompNode::builder()
+        let node: SpaceCompNode = SpaceCompNode::builder()
             .config(config)
             .store(leodos_protocols::transport::srspp::dtn::NoStore)
             .reachable(leodos_protocols::transport::srspp::dtn::AlwaysReachable)
-            .build()
-            .run(&app)
-            .await
+            .build();
+        node.run(&app).await
     });
 }
 

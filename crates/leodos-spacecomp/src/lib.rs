@@ -33,6 +33,7 @@ pub mod node;
 pub mod packet;
 pub mod plan;
 pub mod reader;
+pub mod transport;
 
 pub use config::SpaceCompConfig;
 pub use error::SpaceCompError;

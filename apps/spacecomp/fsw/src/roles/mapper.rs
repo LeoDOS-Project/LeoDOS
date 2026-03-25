@@ -20,7 +20,7 @@ pub async fn run(
 ) -> Result<(), SpaceCompError> {
     let mut received = 0u8;
     {
-        let mut writer = BufWriter::<WordCount>::new(
+        let mut writer = BufWriter::<WordCount, _>::new(
             tx,
             &mut bufs.msg,
             assign.reducer_addr(),
