@@ -12,22 +12,26 @@ use leodos_analysis::thermal::Hotspot;
 
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::spp::Apid;
+use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
+use leodos_protocols::transport::srspp::dtn::NoStore;
+
 use leodos_spacecomp::bufwriter::BufWriter;
+use leodos_spacecomp::node::SpaceComp;
 use leodos_spacecomp::packet::OpCode;
 use leodos_spacecomp::packet::SpaceCompMessage;
-
-use leodos_spacecomp::node::SpaceComp;
+use leodos_spacecomp::transport::Rx;
+use leodos_spacecomp::transport::Tx;
 use leodos_spacecomp::SpaceCompConfig;
 use leodos_spacecomp::SpaceCompError;
 use leodos_spacecomp::SpaceCompNode;
 
-use zerocopy::network_endian::U16;
-use zerocopy::network_endian::U32;
 use zerocopy::FromBytes;
 use zerocopy::Immutable;
 use zerocopy::IntoBytes;
 use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
+use zerocopy::network_endian::U16;
+use zerocopy::network_endian::U32;
 
 mod bindings {
     #![allow(non_upper_case_globals)]
@@ -46,7 +50,6 @@ type Camera = ThermalCamera<MAX_PIXELS>;
 
 // ── Wire types ──────────────────────────────────────────────
 
-/// Frame header sent before pixel data.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 struct FrameHeader {
@@ -54,7 +57,6 @@ struct FrameHeader {
     height: U16,
 }
 
-/// A hotspot record sent from mapper to reducer.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 struct HotspotRecord {
@@ -77,6 +79,58 @@ impl HotspotRecord {
     }
 }
 
+// ── Helpers ─────────────────────────────────────────────────
+
+async fn send_chunks(
+    tx: &mut impl Tx,
+    buf: &mut [u8],
+    data: &[u8],
+    job_id: u16,
+    target: Address,
+) -> Result<(), SpaceCompError> {
+    for chunk in data.chunks(CHUNK_SIZE) {
+        let m = SpaceCompMessage::builder()
+            .buffer(buf)
+            .op_code(OpCode::DataChunk)
+            .job_id(job_id)
+            .payload_len(chunk.len())
+            .build()?;
+        m.payload_mut().copy_from_slice(chunk);
+        tx.send(target, m.as_bytes()).await.ok();
+    }
+    Ok(())
+}
+
+async fn recv_pixels(
+    rx: &mut impl Rx,
+    dst: &mut [f32],
+    n_pixels: usize,
+) -> Result<(), SpaceCompError> {
+    let mut offset = 0;
+    let total_bytes = n_pixels * 4;
+    while offset < total_bytes {
+        let Ok(maybe_len) = rx
+            .recv_with(|data| -> Option<usize> {
+                let msg = SpaceCompMessage::parse(data).ok()?;
+                if msg.op_code() != Ok(OpCode::DataChunk) {
+                    return None;
+                }
+                let payload = msg.payload();
+                let bytes = dst.as_mut_bytes();
+                let n = payload.len().min(bytes.len() - offset);
+                bytes[offset..offset + n].copy_from_slice(&payload[..n]);
+                Some(n)
+            })
+            .await
+        else {
+            return Ok(());
+        };
+        let Some(n) = maybe_len else { continue };
+        offset += n;
+    }
+    Ok(())
+}
+
 // ── SpaceComp implementation ────────────────────────────────
 
 struct WildfireCompute {
@@ -87,7 +141,7 @@ struct WildfireCompute {
 impl SpaceComp for WildfireCompute {
     async fn collect(
         &self,
-        mut tx: impl leodos_spacecomp::transport::Tx,
+        mut tx: impl Tx,
         job_id: u16,
         mapper_addr: Address,
         _partition_id: u8,
@@ -102,12 +156,13 @@ impl SpaceComp for WildfireCompute {
             .await
             .map_err(|_| SpaceCompError::Cfs(CfsError::ExternalResourceFail))?;
 
-        // Send frame header (width, height)
+        let mut buf = [0u8; 512];
+
+        // Send frame header
         let header = FrameHeader {
             width: U16::new(frame.width as u16),
             height: U16::new(frame.height as u16),
         };
-        let mut buf = [0u8; 512];
         let m = SpaceCompMessage::builder()
             .buffer(&mut buf)
             .op_code(OpCode::DataChunk)
@@ -117,29 +172,9 @@ impl SpaceComp for WildfireCompute {
         m.payload_mut().copy_from_slice(header.as_bytes());
         tx.send(mapper_addr, m.as_bytes()).await.ok();
 
-        // Send MWIR pixels
-        for chunk in frame.mwir.as_bytes().chunks(CHUNK_SIZE) {
-            let m = SpaceCompMessage::builder()
-                .buffer(&mut buf)
-                .op_code(OpCode::DataChunk)
-                .job_id(job_id)
-                .payload_len(chunk.len())
-                .build()?;
-            m.payload_mut().copy_from_slice(chunk);
-            tx.send(mapper_addr, m.as_bytes()).await.ok();
-        }
-
-        // Send LWIR pixels
-        for chunk in frame.lwir.as_bytes().chunks(CHUNK_SIZE) {
-            let m = SpaceCompMessage::builder()
-                .buffer(&mut buf)
-                .op_code(OpCode::DataChunk)
-                .job_id(job_id)
-                .payload_len(chunk.len())
-                .build()?;
-            m.payload_mut().copy_from_slice(chunk);
-            tx.send(mapper_addr, m.as_bytes()).await.ok();
-        }
+        // Send MWIR + LWIR pixels
+        send_chunks(&mut tx, &mut buf, frame.mwir.as_bytes(), job_id, mapper_addr).await?;
+        send_chunks(&mut tx, &mut buf, frame.lwir.as_bytes(), job_id, mapper_addr).await?;
 
         info!(
             "Collector: sent {}x{} frame ({} bytes)",
@@ -152,8 +187,8 @@ impl SpaceComp for WildfireCompute {
 
     async fn map(
         &self,
-        mut rx: impl leodos_spacecomp::transport::Rx,
-        mut tx: impl leodos_spacecomp::transport::Tx,
+        mut rx: impl Rx,
+        mut tx: impl Tx,
         job_id: u16,
         reducer_addr: Address,
         collector_count: u8,
@@ -162,11 +197,7 @@ impl SpaceComp for WildfireCompute {
         let mut received = 0u8;
         {
             let mut writer = BufWriter::<HotspotRecord, _>::new(
-                &mut tx,
-                &mut buf,
-                reducer_addr,
-                job_id,
-                OpCode::DataChunk,
+                &mut tx, &mut buf, reducer_addr, job_id, OpCode::DataChunk,
             );
 
             loop {
@@ -188,53 +219,11 @@ impl SpaceComp for WildfireCompute {
                 let h = hdr.height.get() as usize;
                 let n_pixels = w * h;
 
-                // Receive MWIR pixels
+                // Receive MWIR + LWIR pixels
                 let mut mwir = [0.0f32; MAX_PIXELS];
-                let mut mwir_offset = 0;
-                while mwir_offset < n_pixels * 4 {
-                    let Ok(maybe_len) = rx
-                        .recv_with(|data| -> Option<usize> {
-                            let msg = SpaceCompMessage::parse(data).ok()?;
-                            if msg.op_code() != Ok(OpCode::DataChunk) {
-                                return None;
-                            }
-                            let payload = msg.payload();
-                            let dst = mwir.as_mut_bytes();
-                            let n = payload.len().min(dst.len() - mwir_offset);
-                            dst[mwir_offset..mwir_offset + n].copy_from_slice(&payload[..n]);
-                            Some(n)
-                        })
-                        .await
-                    else {
-                        return Ok(());
-                    };
-                    let Some(n) = maybe_len else { continue };
-                    mwir_offset += n;
-                }
-
-                // Receive LWIR pixels
+                recv_pixels(&mut rx, &mut mwir, n_pixels).await?;
                 let mut lwir = [0.0f32; MAX_PIXELS];
-                let mut lwir_offset = 0;
-                while lwir_offset < n_pixels * 4 {
-                    let Ok(maybe_len) = rx
-                        .recv_with(|data| -> Option<usize> {
-                            let msg = SpaceCompMessage::parse(data).ok()?;
-                            if msg.op_code() != Ok(OpCode::DataChunk) {
-                                return None;
-                            }
-                            let payload = msg.payload();
-                            let dst = lwir.as_mut_bytes();
-                            let n = payload.len().min(dst.len() - lwir_offset);
-                            dst[lwir_offset..lwir_offset + n].copy_from_slice(&payload[..n]);
-                            Some(n)
-                        })
-                        .await
-                    else {
-                        return Ok(());
-                    };
-                    let Some(n) = maybe_len else { continue };
-                    lwir_offset += n;
-                }
+                recv_pixels(&mut rx, &mut lwir, n_pixels).await?;
 
                 // Run fire detection
                 let mut hotspots = [Hotspot::default(); MAX_HOTSPOTS];
@@ -266,8 +255,8 @@ impl SpaceComp for WildfireCompute {
 
     async fn reduce(
         &self,
-        mut rx: impl leodos_spacecomp::transport::Rx,
-        mut tx: impl leodos_spacecomp::transport::Tx,
+        mut rx: impl Rx,
+        mut tx: impl Tx,
         job_id: u16,
         los_addr: Address,
         mapper_count: u8,
@@ -309,7 +298,6 @@ impl SpaceComp for WildfireCompute {
             if op == Some(OpCode::PhaseDone) {
                 done_count += 1;
                 if done_count >= mapper_count {
-                    // Compute centroid and max temp
                     let mut max_temp = 0.0f32;
                     let mut sum_x = 0.0f32;
                     let mut sum_y = 0.0f32;
@@ -374,8 +362,8 @@ pub extern "C" fn SPACECOMP_WILDFIRE_AppMain() {
 
         let node: SpaceCompNode = SpaceCompNode::builder()
             .config(config)
-            .store(leodos_protocols::transport::srspp::dtn::NoStore)
-            .reachable(leodos_protocols::transport::srspp::dtn::AlwaysReachable)
+            .store(NoStore)
+            .reachable(AlwaysReachable)
             .build();
         node.run(&app).await
     });
