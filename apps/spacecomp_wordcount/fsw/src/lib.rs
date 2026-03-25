@@ -121,7 +121,7 @@ impl SpaceComp for WordCount2 {
         let mut buf = [0u8; 512];
         let mut received = 0u8;
         {
-            let mut writer = BufWriter::<WordCount, _>::new(
+            let mut writer = BufWriter::<WordCount>::new(
                 tx, &mut buf, reducer_addr, job_id, OpCode::DataChunk,
             );
             loop {
@@ -204,7 +204,7 @@ impl SpaceComp for WordCount2 {
             if op == Some(OpCode::PhaseDone) {
                 done_count += 1;
                 if done_count >= mapper_count {
-                    let mut writer = BufWriter::<WordCount, _>::new(
+                    let mut writer = BufWriter::<WordCount>::new(
                         tx, &mut buf, los_addr, job_id, OpCode::JobResult,
                     );
                     for (word, &count) in counts.iter() {

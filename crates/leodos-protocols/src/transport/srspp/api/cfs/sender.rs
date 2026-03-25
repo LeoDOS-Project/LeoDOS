@@ -10,7 +10,6 @@ use leodos_libcfs::cfe::duration::Duration;
 use leodos_libcfs::cfe::time::SysTime;
 use leodos_libcfs::runtime::time::sleep;
 
-use crate::application::spacecomp::io::writer::MessageSender;
 use crate::network::NetworkRead;
 use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
@@ -545,22 +544,5 @@ impl<
     /// Check if all data has been acknowledged.
     pub fn is_idle(&self) -> bool {
         self.sender.with(|s| s.machine.is_idle())
-    }
-}
-
-impl<
-    'a,
-    E: Clone,
-    S: MessageStore,
-    R: Reachable,
-    const WIN: usize,
-    const BUF: usize,
-    const MTU: usize,
-> MessageSender for SrsppTxHandle<'a, E, S, R, WIN, BUF, MTU>
-{
-    type Error = TransportError<E>;
-
-    async fn send_message(&mut self, target: Address, data: &[u8]) -> Result<(), Self::Error> {
-        self.send(target, data).await
     }
 }

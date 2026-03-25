@@ -10,11 +10,11 @@ use leodos_analysis::thermal::detect_fire;
 use leodos_analysis::thermal::FireThresholds;
 use leodos_analysis::thermal::Hotspot;
 
+use leodos_protocols::network::isl::address::Address;
+use leodos_protocols::network::spp::Apid;
 use leodos_spacecomp::bufwriter::BufWriter;
 use leodos_spacecomp::packet::OpCode;
 use leodos_spacecomp::packet::SpaceCompMessage;
-use leodos_protocols::network::isl::address::Address;
-use leodos_protocols::network::spp::Apid;
 
 use leodos_spacecomp::node::RxHandle;
 use leodos_spacecomp::node::SpaceComp;
@@ -23,13 +23,13 @@ use leodos_spacecomp::SpaceCompConfig;
 use leodos_spacecomp::SpaceCompError;
 use leodos_spacecomp::SpaceCompNode;
 
+use zerocopy::network_endian::U16;
+use zerocopy::network_endian::U32;
 use zerocopy::FromBytes;
 use zerocopy::Immutable;
 use zerocopy::IntoBytes;
 use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
-use zerocopy::network_endian::U16;
-use zerocopy::network_endian::U32;
 
 mod bindings {
     #![allow(non_upper_case_globals)]
@@ -41,11 +41,20 @@ mod bindings {
 
 const MAX_PIXELS: usize = 512 * 512;
 const MAX_HOTSPOTS: usize = 64;
+const CHUNK_SIZE: usize = 256;
 const NUM_SATS: u8 = bindings::SPACECOMP_WILDFIRE_NUM_SATS as u8;
 
 type Camera = ThermalCamera<MAX_PIXELS>;
 
 // ── Wire types ──────────────────────────────────────────────
+
+/// Frame header sent before pixel data.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
+struct FrameHeader {
+    width: U16,
+    height: U16,
+}
 
 /// A hotspot record sent from mapper to reducer.
 #[repr(C)]
@@ -78,7 +87,6 @@ struct WildfireCompute {
 }
 
 impl SpaceComp for WildfireCompute {
-    /// Captures a thermal frame and sends pixel data to mapper.
     async fn collect(
         &self,
         tx: &mut TxHandle<'_>,
@@ -91,13 +99,28 @@ impl SpaceComp for WildfireCompute {
             .chip_select_line(3)
             .baudrate(1_000_000)
             .build()?;
-        let frame = camera.capture().await
+        let frame = camera
+            .capture()
+            .await
             .map_err(|_| SpaceCompError::Cfs(CfsError::ExternalResourceFail))?;
 
-        // Send raw pixel data in chunks to mapper
-        let pixel_bytes = frame.mwir.as_bytes();
+        // Send frame header (width, height)
+        let header = FrameHeader {
+            width: U16::new(frame.width as u16),
+            height: U16::new(frame.height as u16),
+        };
         let mut buf = [0u8; 512];
-        for chunk in pixel_bytes.chunks(256) {
+        let m = SpaceCompMessage::builder()
+            .buffer(&mut buf)
+            .op_code(OpCode::DataChunk)
+            .job_id(job_id)
+            .payload_len(header.as_bytes().len())
+            .build()?;
+        m.payload_mut().copy_from_slice(header.as_bytes());
+        tx.send(mapper_addr, m.as_bytes()).await.ok();
+
+        // Send MWIR pixels
+        for chunk in frame.mwir.as_bytes().chunks(CHUNK_SIZE) {
             let m = SpaceCompMessage::builder()
                 .buffer(&mut buf)
                 .op_code(OpCode::DataChunk)
@@ -107,11 +130,28 @@ impl SpaceComp for WildfireCompute {
             m.payload_mut().copy_from_slice(chunk);
             tx.send(mapper_addr, m.as_bytes()).await.ok();
         }
-        info!("Collector: sent {} bytes of pixel data", pixel_bytes.len())?;
+
+        // Send LWIR pixels
+        for chunk in frame.lwir.as_bytes().chunks(CHUNK_SIZE) {
+            let m = SpaceCompMessage::builder()
+                .buffer(&mut buf)
+                .op_code(OpCode::DataChunk)
+                .job_id(job_id)
+                .payload_len(chunk.len())
+                .build()?;
+            m.payload_mut().copy_from_slice(chunk);
+            tx.send(mapper_addr, m.as_bytes()).await.ok();
+        }
+
+        info!(
+            "Collector: sent {}x{} frame ({} bytes)",
+            frame.width,
+            frame.height,
+            frame.mwir.as_bytes().len() * 2,
+        )?;
         Ok(())
     }
 
-    /// Runs fire detection on received pixel data.
     async fn map(
         &self,
         rx: &mut RxHandle<'_>,
@@ -123,45 +163,92 @@ impl SpaceComp for WildfireCompute {
         let mut buf = [0u8; 512];
         let mut received = 0u8;
         {
-            let mut writer = BufWriter::<HotspotRecord, _>::new(
-                tx, &mut buf, reducer_addr, job_id, OpCode::DataChunk,
+            let mut writer = BufWriter::<HotspotRecord>::new(
+                tx,
+                &mut buf,
+                reducer_addr,
+                job_id,
+                OpCode::DataChunk,
             );
 
             loop {
-                let mut pixel_buf = [0u8; 256];
-                let Ok(maybe_len) = rx
-                    .recv_with(|data| -> Option<usize> {
+                // Receive frame header
+                let mut hdr_buf = [0u8; 4];
+                let Ok(maybe_hdr) = rx
+                    .recv_with(|data| -> Option<FrameHeader> {
                         let msg = SpaceCompMessage::parse(data).ok()?;
                         if msg.op_code() != Ok(OpCode::DataChunk) {
                             return None;
                         }
-                        let n = msg.payload().len().min(pixel_buf.len());
-                        pixel_buf[..n].copy_from_slice(&msg.payload()[..n]);
-                        Some(n)
+                        FrameHeader::read_from_bytes(msg.payload()).ok()
                     })
                     .await
                 else {
                     return Ok(());
                 };
-                let Some(_len) = maybe_len else { continue };
+                let Some(hdr) = maybe_hdr else { continue };
+                let w = hdr.width.get() as usize;
+                let h = hdr.height.get() as usize;
+                let n_pixels = w * h;
 
-                // In a full implementation, pixel_buf contains raw
-                // thermal pixels. We'd reconstruct mwir/lwir arrays
-                // and run detect_fire. For now, demonstrate the flow:
+                // Receive MWIR pixels
+                let mut mwir = [0.0f32; MAX_PIXELS];
+                let mut mwir_offset = 0;
+                while mwir_offset < n_pixels * 4 {
+                    let Ok(maybe_len) = rx
+                        .recv_with(|data| -> Option<usize> {
+                            let msg = SpaceCompMessage::parse(data).ok()?;
+                            if msg.op_code() != Ok(OpCode::DataChunk) {
+                                return None;
+                            }
+                            let payload = msg.payload();
+                            let dst = mwir.as_bytes_mut();
+                            let n = payload.len().min(dst.len() - mwir_offset);
+                            dst[mwir_offset..mwir_offset + n].copy_from_slice(&payload[..n]);
+                            Some(n)
+                        })
+                        .await
+                    else {
+                        return Ok(());
+                    };
+                    let Some(n) = maybe_len else { continue };
+                    mwir_offset += n;
+                }
+
+                // Receive LWIR pixels
+                let mut lwir = [0.0f32; MAX_PIXELS];
+                let mut lwir_offset = 0;
+                while lwir_offset < n_pixels * 4 {
+                    let Ok(maybe_len) = rx
+                        .recv_with(|data| -> Option<usize> {
+                            let msg = SpaceCompMessage::parse(data).ok()?;
+                            if msg.op_code() != Ok(OpCode::DataChunk) {
+                                return None;
+                            }
+                            let payload = msg.payload();
+                            let dst = lwir.as_bytes_mut();
+                            let n = payload.len().min(dst.len() - lwir_offset);
+                            dst[lwir_offset..lwir_offset + n].copy_from_slice(&payload[..n]);
+                            Some(n)
+                        })
+                        .await
+                    else {
+                        return Ok(());
+                    };
+                    let Some(n) = maybe_len else { continue };
+                    lwir_offset += n;
+                }
+
+                // Run fire detection
                 let mut hotspots = [Hotspot::default(); MAX_HOTSPOTS];
-                let det = detect_fire(
-                    &[0.0f32; 64], // placeholder
-                    &[0.0f32; 64],
-                    8,
-                    8,
-                    &self.thresholds,
-                    &mut hotspots,
-                );
+                let det = detect_fire(&mwir[..n_pixels], &lwir[..n_pixels], w, h, &self.thresholds, &mut hotspots);
 
                 for hs in det.hotspots {
                     writer.write(&HotspotRecord::from_hotspot(hs)).await?;
                 }
                 writer.flush().await?;
+
+                info!("Mapper: detected {} hotspots in {}x{} frame", det.count, w, h)?;
 
                 received += 1;
                 if received >= collector_count {
@@ -180,7 +267,6 @@ impl SpaceComp for WildfireCompute {
         Ok(())
     }
 
-    /// Merges hotspot detections from multiple mappers.
     async fn reduce(
         &self,
         rx: &mut RxHandle<'_>,
@@ -226,20 +312,27 @@ impl SpaceComp for WildfireCompute {
             if op == Some(OpCode::PhaseDone) {
                 done_count += 1;
                 if done_count >= mapper_count {
+                    // Compute centroid and max temp
                     let mut max_temp = 0.0f32;
+                    let mut sum_x = 0.0f32;
+                    let mut sum_y = 0.0f32;
                     for rec in &all_hotspots[..total] {
                         let t = rec.temp();
                         if t > max_temp {
                             max_temp = t;
                         }
+                        sum_x += rec.x.get() as f32;
+                        sum_y += rec.y.get() as f32;
                     }
+                    let n = (total as f32).max(1.0);
+                    let centroid = self.aoi.pixel_to_latlon(sum_x / n, sum_y / n, 512.0, 512.0);
 
                     info!(
-                        "Reduced: {} hotspots from {} mappers, max {} K",
-                        total, mapper_count, max_temp,
+                        "Reduced: {} hotspots from {} mappers, max {} K at ({},{})",
+                        total, mapper_count, max_temp, centroid.lat, centroid.lon,
                     )?;
 
-                    let mut writer = BufWriter::<HotspotRecord, _>::new(
+                    let mut writer = BufWriter::<HotspotRecord>::new(
                         tx, &mut buf, los_addr, job_id, OpCode::JobResult,
                     );
                     for rec in &all_hotspots[..total] {

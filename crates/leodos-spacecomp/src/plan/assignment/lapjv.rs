@@ -286,7 +286,7 @@ mod tests {
         let mut jv = JonkerVolgenant::<u32, 8>::new();
         let result_jv = jv.solve(&cost, 5);
 
-        let mut hungarian = crate::application::spacecomp::plan::Hungarian::<u32, 8>::new();
+        let mut hungarian = crate::plan::Hungarian::<u32, 8>::new();
         let result_h = hungarian.solve(&cost, 5);
 
         let total_jv: u32 = result_jv.iter().enumerate().map(|(i, &j)| cost[i][j]).sum();

@@ -32,6 +32,7 @@ pub mod job;
 pub mod node;
 pub mod packet;
 pub mod plan;
+pub mod reader;
 
 pub use config::SpaceCompConfig;
 pub use error::SpaceCompError;

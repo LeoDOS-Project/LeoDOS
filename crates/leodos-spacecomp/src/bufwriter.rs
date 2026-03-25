@@ -1,18 +1,19 @@
 use core::marker::PhantomData;
 use core::mem::size_of;
 
-use zerocopy::{Immutable, IntoBytes};
+use zerocopy::Immutable;
+use zerocopy::IntoBytes;
 
 use crate::packet::BuildError;
 use crate::packet::OpCode;
 use crate::packet::SpaceCompMessage;
-use leodos_protocols::application::spacecomp::io::writer::MessageSender;
+use crate::node::TxHandle;
 use leodos_protocols::network::isl::address::Address;
 
-/// Batched record writer that packs fixed-size records directly
-/// into a SpaceCoMP message buffer and flushes via a [`MessageSender`].
-pub struct BufWriter<'a, T, S> {
-    sender: &'a mut S,
+/// Batched record writer that packs fixed-size records into
+/// a SpaceCoMP message buffer and flushes via SRSPP.
+pub struct BufWriter<'a, 'tx, T> {
+    tx: &'a mut TxHandle<'tx>,
     buf: &'a mut [u8],
     target: Address,
     job_id: u16,
@@ -21,17 +22,16 @@ pub struct BufWriter<'a, T, S> {
     _record: PhantomData<T>,
 }
 
-impl<'a, T: IntoBytes + Immutable, S: MessageSender> BufWriter<'a, T, S> {
-    /// Creates a new writer that batches records of type `T`.
+impl<'a, 'tx, T: IntoBytes + Immutable> BufWriter<'a, 'tx, T> {
     pub fn new(
-        sender: &'a mut S,
+        tx: &'a mut TxHandle<'tx>,
         buf: &'a mut [u8],
         target: Address,
         job_id: u16,
         op_code: OpCode,
     ) -> Self {
         Self {
-            sender,
+            tx,
             buf,
             target,
             job_id,
@@ -45,7 +45,6 @@ impl<'a, T: IntoBytes + Immutable, S: MessageSender> BufWriter<'a, T, S> {
         (self.buf.len() - SpaceCompMessage::HEADER_SIZE) / size_of::<T>()
     }
 
-    /// Buffers a record, flushing automatically when full.
     pub async fn write(&mut self, record: &T) -> Result<(), BuildError> {
         let offset = SpaceCompMessage::HEADER_SIZE + self.len * size_of::<T>();
         self.buf[offset..offset + size_of::<T>()].copy_from_slice(record.as_bytes());
@@ -57,7 +56,6 @@ impl<'a, T: IntoBytes + Immutable, S: MessageSender> BufWriter<'a, T, S> {
         Ok(())
     }
 
-    /// Sends any buffered records as a SpaceCoMP message.
     pub async fn flush(&mut self) -> Result<(), BuildError> {
         if self.len == 0 {
             return Ok(());
@@ -69,10 +67,7 @@ impl<'a, T: IntoBytes + Immutable, S: MessageSender> BufWriter<'a, T, S> {
             .job_id(self.job_id)
             .payload_len(payload_len)
             .build()?;
-        self.sender
-            .send_message(self.target, msg.as_bytes())
-            .await
-            .ok();
+        self.tx.send(self.target, msg.as_bytes()).await.ok();
         self.len = 0;
         Ok(())
     }

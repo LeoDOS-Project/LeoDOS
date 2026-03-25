@@ -10,7 +10,7 @@ use heapless::Vec;
 use super::geo::{Ecef, GeoAoi, LatLon};
 use super::shell::Shell;
 use super::torus::Point;
-use crate::application::spacecomp::plan::aoi::Aoi;
+use super::aoi::Aoi;
 
 /// Sidereal day in seconds (Earth's rotation period relative
 /// to the stars).

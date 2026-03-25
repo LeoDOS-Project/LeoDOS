@@ -1,5 +1,7 @@
 /// ISL network addressing (satellite, ground, service area).
 pub mod address;
+/// Area of interest on the satellite grid.
+pub mod aoi;
 /// Geographic coordinate conversions for AOI mapping.
 pub mod geo;
 /// Epidemic gossip protocol for constellation-wide broadcast.

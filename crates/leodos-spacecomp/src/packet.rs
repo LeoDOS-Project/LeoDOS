@@ -140,8 +140,8 @@ impl SpaceCompMessage {
     /// Iterates over fixed-size `T` records in the payload.
     pub fn records<'a, T: FromBytes + Immutable + KnownLayout + 'a>(
         &'a self,
-    ) -> leodos_protocols::application::spacecomp::io::reader::RecordIter<'a, T> {
-        leodos_protocols::application::spacecomp::io::reader::RecordIter::new(&self.payload)
+    ) -> crate::reader::RecordIter<'a, T> {
+        crate::reader::RecordIter::new(&self.payload)
     }
 
     /// Returns a reference to the message header.

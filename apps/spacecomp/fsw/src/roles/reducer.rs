@@ -48,7 +48,7 @@ pub async fn run(
         if op == Some(OpCode::PhaseDone) {
             done_count += 1;
             if done_count >= assign.mapper_count() {
-                let mut writer = BufWriter::<WordCount, _>::new(
+                let mut writer = BufWriter::<WordCount>::new(
                     tx,
                     &mut bufs.msg,
                     assign.los_addr(),

@@ -11,7 +11,7 @@ pub mod cost;
 /// Point-to-point distance/cost models for the assignment solver.
 pub mod distance;
 
-pub use leodos_protocols::application::spacecomp::plan::aoi::Aoi;
+pub use leodos_protocols::network::isl::aoi::Aoi;
 pub use assignment::hungarian::Hungarian;
 pub use assignment::lapjv::JonkerVolgenant;
 pub use assignment::{Bounded, Solver};
