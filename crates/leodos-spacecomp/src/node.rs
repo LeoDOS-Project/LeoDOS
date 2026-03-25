@@ -34,19 +34,21 @@ use leodos_protocols::transport::srspp::rto::FixedRto;
 use crate::SpaceCompConfig;
 use crate::SpaceCompError;
 
-/// SRSPP handle types used by role functions.
+/// SRSPP receive handle (default parameters).
 pub type RxHandle<'a> = SrsppRxHandle<'a, CfsError, ReceiverMachine<8, 4096, 8192>, 1>;
-pub type TxHandle<'a> = SrsppTxHandle<'a, CfsError, NoStore, AlwaysReachable, 8, 4096, 512>;
 
-/// Shared buffers passed to role functions.
-pub struct Buffers {
-    pub recv: [u8; 8192],
-    pub msg: [u8; 512],
-}
+/// SRSPP transmit handle (default parameters).
+pub type TxHandle<'a> = SrsppTxHandle<'a, CfsError, NoStore, AlwaysReachable, 8, 4096, 512>;
 
 /// A SpaceCoMP node that handles SRSPP transport,
 /// message dispatch, and coordinator orchestration.
-pub struct SpaceCompNode {
+pub struct SpaceCompNode<
+    const WIN: usize = 8,
+    const BUF: usize = 4096,
+    const MTU: usize = 512,
+    const RX_BUF: usize = 8192,
+    const MAX_STREAMS: usize = 1,
+> {
     config: SpaceCompConfig,
 }
 
@@ -135,17 +137,15 @@ impl SpaceCompNode {
         let (mut rx, mut tx, mut driver) = srspp.split(network, FixedRto::new(rto));
 
         let shell = self.config.shell();
-        let mut bufs = Buffers {
-            recv: [0u8; 8192],
-            msg: [0u8; 512],
-        };
+        let mut recv_buf = [0u8; 8192];
+        let mut msg_buf = [0u8; 512];
 
         let dispatch = async {
             loop {
-                let Ok((_source, len)) = rx.recv(&mut bufs.recv).await else {
+                let Ok((_source, len)) = rx.recv(&mut recv_buf).await else {
                     break;
                 };
-                let Ok(msg) = SpaceCompMessage::parse(&bufs.recv[..len]) else {
+                let Ok(msg) = SpaceCompMessage::parse(&recv_buf[..len]) else {
                     continue;
                 };
                 let Ok(op) = msg.op_code() else { continue };
@@ -160,7 +160,7 @@ impl SpaceCompNode {
                                 continue;
                             }
                         };
-                        crate::coordinator::run(&mut tx, &mut bufs.msg, shell, point, job_id, job)
+                        crate::coordinator::run(&mut tx, &mut msg_buf, shell, point, job_id, job)
                             .await
                     }
                     OpCode::AssignCollector => {
