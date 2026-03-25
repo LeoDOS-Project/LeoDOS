@@ -1,0 +1,7 @@
+[env]
+CFE_DIR = { value = "../../../libs/nos3/fsw/cfe/", relative = true }
+OSAL_DIR = { value = "../../../libs/nos3/fsw/osal/", relative = true }
+PSP_DIR = { value = "../../../libs/nos3/fsw/psp/", relative = true }
+BUILD_DIR = { value = "../../../libs/nos3/fsw/build/", relative = true }
+HWLIB_DIR = { value = "../../../libs/nos3/fsw/apps/hwlib/", relative = true }
+NOS3_COMPONENTS_DIR = { value = "../../../libs/nos3/components/", relative = true }
