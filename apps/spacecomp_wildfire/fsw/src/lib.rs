@@ -89,7 +89,7 @@ struct WildfireCompute {
 impl SpaceComp for WildfireCompute {
     async fn collect(
         &self,
-        tx: &mut impl leodos_spacecomp::transport::Tx,
+        mut tx: impl leodos_spacecomp::transport::Tx,
         job_id: u16,
         mapper_addr: Address,
         _partition_id: u8,
@@ -154,8 +154,8 @@ impl SpaceComp for WildfireCompute {
 
     async fn map(
         &self,
-        rx: &mut impl leodos_spacecomp::transport::Rx,
-        tx: &mut impl leodos_spacecomp::transport::Tx,
+        mut rx: impl leodos_spacecomp::transport::Rx,
+        mut tx: impl leodos_spacecomp::transport::Tx,
         job_id: u16,
         reducer_addr: Address,
         collector_count: u8,
@@ -164,7 +164,7 @@ impl SpaceComp for WildfireCompute {
         let mut received = 0u8;
         {
             let mut writer = BufWriter::<HotspotRecord, _>::new(
-                tx,
+                &mut tx,
                 &mut buf,
                 reducer_addr,
                 job_id,
@@ -269,8 +269,8 @@ impl SpaceComp for WildfireCompute {
 
     async fn reduce(
         &self,
-        rx: &mut impl leodos_spacecomp::transport::Rx,
-        tx: &mut impl leodos_spacecomp::transport::Tx,
+        mut rx: impl leodos_spacecomp::transport::Rx,
+        mut tx: impl leodos_spacecomp::transport::Tx,
         job_id: u16,
         los_addr: Address,
         mapper_count: u8,
@@ -333,7 +333,7 @@ impl SpaceComp for WildfireCompute {
                     )?;
 
                     let mut writer = BufWriter::<HotspotRecord, _>::new(
-                        tx, &mut buf, los_addr, job_id, OpCode::JobResult,
+                        &mut tx, &mut buf, los_addr, job_id, OpCode::JobResult,
                     );
                     for rec in &all_hotspots[..total] {
                         writer.write(rec).await?;

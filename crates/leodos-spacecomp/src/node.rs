@@ -18,6 +18,8 @@ use crate::packet::AssignReducerPayload;
 use crate::packet::OpCode;
 use crate::packet::ParseError;
 use crate::packet::SpaceCompMessage;
+use crate::transport::Rx;
+use crate::transport::Tx;
 use leodos_protocols::datalink::link::cfs::sb::SbDatalink;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
@@ -88,7 +90,7 @@ pub trait SpaceComp {
     /// Collects local data and sends it to the assigned mapper.
     async fn collect(
         &self,
-        tx: &mut impl crate::transport::Tx,
+        tx: impl Tx,
         job_id: u16,
         mapper_addr: Address,
         partition_id: u8,
@@ -97,8 +99,8 @@ pub trait SpaceComp {
     /// Processes data from collectors and sends results to the reducer.
     async fn map(
         &self,
-        rx: &mut impl crate::transport::Rx,
-        tx: &mut impl crate::transport::Tx,
+        rx: impl Rx,
+        tx: impl Tx,
         job_id: u16,
         reducer_addr: Address,
         collector_count: u8,
@@ -107,8 +109,8 @@ pub trait SpaceComp {
     /// Aggregates results from mappers and sends the final output.
     async fn reduce(
         &self,
-        rx: &mut impl crate::transport::Rx,
-        tx: &mut impl crate::transport::Tx,
+        rx: impl Rx,
+        tx: impl Tx,
         job_id: u16,
         los_addr: Address,
         mapper_count: u8,
@@ -126,10 +128,7 @@ impl<
     > SpaceCompNode<S, R, WIN, BUF, MTU, RX_BUF, MAX_STREAMS>
 {
     /// Runs the node with the given app logic.
-    pub async fn run(
-        self,
-        app: &impl SpaceComp,
-    ) -> Result<(), SpaceCompError> {
+    pub async fn run(self, app: &impl SpaceComp) -> Result<(), SpaceCompError> {
         event::register(&[])?;
         info!("SpaceCoMP node starting")?;
 
@@ -220,7 +219,7 @@ impl<
                                     continue;
                                 }
                             };
-                        app.collect(&mut tx, job_id, p.mapper_addr(), p.partition_id())
+                        app.collect(tx, job_id, p.mapper_addr(), p.partition_id())
                             .await
                     }
                     OpCode::AssignMapper => {
@@ -234,7 +233,7 @@ impl<
                             };
                         app.map(
                             &mut rx,
-                            &mut tx,
+                            tx,
                             job_id,
                             p.reducer_addr(),
                             p.collector_count(),
@@ -250,7 +249,7 @@ impl<
                                     continue;
                                 }
                             };
-                        app.reduce(&mut rx, &mut tx, job_id, p.los_addr(), p.mapper_count())
+                        app.reduce(&mut rx, tx, job_id, p.los_addr(), p.mapper_count())
                             .await
                     }
                     _ => continue,

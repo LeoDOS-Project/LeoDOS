@@ -90,7 +90,7 @@ struct WordCount2;
 impl SpaceComp for WordCount2 {
     async fn collect(
         &self,
-        tx: &mut impl leodos_spacecomp::transport::Tx,
+        mut tx: impl leodos_spacecomp::transport::Tx,
         job_id: u16,
         mapper_addr: Address,
         partition_id: u8,
@@ -112,8 +112,8 @@ impl SpaceComp for WordCount2 {
 
     async fn map(
         &self,
-        rx: &mut impl leodos_spacecomp::transport::Rx,
-        tx: &mut impl leodos_spacecomp::transport::Tx,
+        mut rx: impl leodos_spacecomp::transport::Rx,
+        mut tx: impl leodos_spacecomp::transport::Tx,
         job_id: u16,
         reducer_addr: Address,
         collector_count: u8,
@@ -122,7 +122,7 @@ impl SpaceComp for WordCount2 {
         let mut received = 0u8;
         {
             let mut writer = BufWriter::<WordCount, _>::new(
-                tx, &mut buf, reducer_addr, job_id, OpCode::DataChunk,
+                &mut tx, &mut buf, reducer_addr, job_id, OpCode::DataChunk,
             );
             loop {
                 let mut payload = [0u8; MAX_CHUNK];
@@ -168,8 +168,8 @@ impl SpaceComp for WordCount2 {
 
     async fn reduce(
         &self,
-        rx: &mut impl leodos_spacecomp::transport::Rx,
-        tx: &mut impl leodos_spacecomp::transport::Tx,
+        mut rx: impl leodos_spacecomp::transport::Rx,
+        mut tx: impl leodos_spacecomp::transport::Tx,
         job_id: u16,
         los_addr: Address,
         mapper_count: u8,
@@ -205,7 +205,7 @@ impl SpaceComp for WordCount2 {
                 done_count += 1;
                 if done_count >= mapper_count {
                     let mut writer = BufWriter::<WordCount, _>::new(
-                        tx, &mut buf, los_addr, job_id, OpCode::JobResult,
+                        &mut tx, &mut buf, los_addr, job_id, OpCode::JobResult,
                     );
                     for (word, &count) in counts.iter() {
                         writer.write(&WordCount::new(word, count)).await?;
