@@ -115,6 +115,7 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     {
         let mut pool = FuturePool::<Fut, MAX_STREAMS>::new();
         let mut assigned: [Option<Address>; MAX_STREAMS] = [None; MAX_STREAMS];
+        pin_utils::pin_mut!(pool);
 
         core::future::poll_fn(|cx| {
             // Check for global error
@@ -124,7 +125,6 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
             }
 
             // Accept: find new unassigned sources
-            // Collect new sources first (can't spawn inside with() borrow)
             let mut new_sources: [Option<Address>; MAX_STREAMS] = [None; MAX_STREAMS];
             let mut new_count = 0;
             self.receiver.with(|s| {
@@ -132,7 +132,7 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
                     if assigned.contains(&Some(*source)) {
                         continue;
                     }
-                    if !pool.has_free_slot() {
+                    if !pool.as_ref().has_free_slot() {
                         break;
                     }
                     if new_count < MAX_STREAMS {
@@ -151,11 +151,11 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
                     receiver: self.receiver,
                     source: addr,
                 };
-                pool.try_spawn(handler(stream, tx));
+                pool.as_mut().try_spawn(handler(stream, tx));
             }
 
             // Poll active handlers
-            pool.poll_all(cx);
+            pool.as_mut().poll_all(cx);
 
             Poll::Pending
         })

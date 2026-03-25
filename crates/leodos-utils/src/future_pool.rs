@@ -6,16 +6,15 @@
 //!
 //! ```ignore
 //! let mut pool = FuturePool::<MyFut, 4>::new();
-//! pool.try_spawn(handler(conn1));
-//! pool.try_spawn(handler(conn2));
-//! // poll from an outer poll_fn or Future impl
-//! pool.poll_all(cx);
+//! pin_mut!(pool);
+//! pool.as_mut().try_spawn(handler(conn1));
+//! pool.as_mut().try_spawn(handler(conn2));
+//! pool.as_mut().poll_all(cx);
 //! ```
 
 use core::future::Future;
 use core::pin::Pin;
 use core::task::Context;
-use core::task::Poll;
 
 /// A fixed-capacity pool of concurrent futures of type `F`.
 pub struct FuturePool<F, const N: usize> {
@@ -44,30 +43,30 @@ impl<F, const N: usize> FuturePool<F, N> {
 impl<F: Future, const N: usize> FuturePool<F, N> {
     /// Spawns a future into a free slot.
     ///
-    /// Returns `false` if all slots are occupied.
-    pub fn try_spawn(&mut self, fut: F) -> bool {
-        let Some(slot) = self.slots.iter_mut().find(|s| s.is_none()) else {
-            return false;
+    /// Returns `Some(fut)` if all slots are occupied.
+    /// Writing to an empty slot does not move any existing
+    /// pinned future — only the `None` variant is overwritten.
+    pub fn try_spawn(self: Pin<&mut Self>, fut: F) -> Option<F> {
+        // SAFETY: We only write to a slot that is currently None.
+        // No pinned future is moved or accessed.
+        let this = unsafe { self.get_unchecked_mut() };
+        let Some(slot) = this.slots.iter_mut().find(|s| s.is_none()) else {
+            return Some(fut);
         };
         *slot = Some(fut);
-        true
+        None
     }
 
     /// Polls all active futures. Completed futures are
     /// removed from their slot.
-    ///
-    /// Must only be called when `self` is pinned (i.e.,
-    /// from within a pinned `Future::poll` or `poll_fn`
-    /// that captures `&mut self`). The pool must not be
-    /// moved after the first call to `poll_all`.
-    pub fn poll_all(&mut self, cx: &mut Context<'_>) {
-        for slot in &mut self.slots {
+    pub fn poll_all(self: Pin<&mut Self>, cx: &mut Context<'_>) {
+        // SAFETY: self is pinned, so the slots array has a
+        // stable address. We never move a future out of a
+        // slot — completed futures are dropped in-place by
+        // assigning None. Each slot is accessed independently.
+        let this = unsafe { self.get_unchecked_mut() };
+        for slot in &mut this.slots {
             let Some(ref mut fut) = slot else { continue };
-            // SAFETY: The FuturePool is intended to be used inside
-            // a pinned context (async fn, poll_fn, or a struct that
-            // implements Future). Once the containing future is
-            // pinned, this array won't move. Futures are never moved
-            // out of slots — only dropped in-place via `*slot = None`.
             let pinned = unsafe { Pin::new_unchecked(fut) };
             if pinned.poll(cx).is_ready() {
                 *slot = None;
