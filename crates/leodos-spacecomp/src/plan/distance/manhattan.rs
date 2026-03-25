@@ -3,7 +3,7 @@
 //! Computes cost as the number of hops (Manhattan distance) on the torus,
 //! multiplied by a configurable per-hop cost.
 
-use crate::network::isl::torus::{Point, Torus};
+use leodos_protocols::network::isl::torus::{Point, Torus};
 
 use super::CostModel;
 

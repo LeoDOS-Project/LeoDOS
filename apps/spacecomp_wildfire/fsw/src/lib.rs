@@ -9,9 +9,9 @@ use leodos_analysis::thermal::detect_fire;
 use leodos_analysis::thermal::FireThresholds;
 use leodos_analysis::thermal::Hotspot;
 
-use leodos_protocols::application::spacecomp::io::writer::BufWriter;
-use leodos_protocols::application::spacecomp::packet::OpCode;
-use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
+use leodos_spacecomp::bufwriter::BufWriter;
+use leodos_spacecomp::packet::OpCode;
+use leodos_spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::spp::Apid;
 

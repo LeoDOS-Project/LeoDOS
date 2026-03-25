@@ -1,9 +1,9 @@
 #![no_std]
 
 use leodos_libcfs::runtime::Runtime;
-use leodos_protocols::application::spacecomp::io::writer::BufWriter;
-use leodos_protocols::application::spacecomp::packet::OpCode;
-use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
+use leodos_spacecomp::bufwriter::BufWriter;
+use leodos_spacecomp::packet::OpCode;
+use leodos_spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::network::spp::Apid;
 use leodos_spacecomp::node::RxHandle;
 use leodos_spacecomp::node::SpaceComp;

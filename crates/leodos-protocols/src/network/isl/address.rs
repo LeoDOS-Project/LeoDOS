@@ -50,7 +50,8 @@ impl SpacecraftId {
 #[derive(
     FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable, Copy, Clone, Debug, PartialEq, Eq, Hash,
 )]
-pub(crate) struct RawAddress {
+/// Wire-format address for zerocopy serialization.
+pub struct RawAddress {
     ground_or_orb: u8,
     station_or_sat: u8,
 }
@@ -73,7 +74,8 @@ pub enum Address {
 }
 
 impl RawAddress {
-    pub(crate) fn parse(&self) -> Address {
+    /// Converts the wire-format address to an [`Address`].
+    pub fn parse(&self) -> Address {
         if self.ground_or_orb == 0 {
             Address::Ground {
                 station: self.station_or_sat,

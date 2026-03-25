@@ -17,10 +17,10 @@ use zerocopy::Unaligned;
 use zerocopy::network_endian::U32;
 use zerocopy::network_endian::U64;
 
-use crate::network::isl::geo::GeoAoi;
-use crate::network::isl::geo::LatLon;
-use crate::utils::get_bits_u8;
-use crate::utils::set_bits_u8;
+use leodos_protocols::network::isl::geo::GeoAoi;
+use leodos_protocols::network::isl::geo::LatLon;
+use leodos_protocols::utils::get_bits_u8;
+use leodos_protocols::utils::set_bits_u8;
 
 /// Which assignment algorithm to use for collector-to-mapper matching.
 #[repr(u8)]

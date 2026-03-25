@@ -22,7 +22,7 @@
 //! N = k_B × T × B
 //! ```
 
-use crate::network::isl::torus::{Point, Torus};
+use leodos_protocols::network::isl::torus::{Point, Torus};
 
 use super::CostModel;
 

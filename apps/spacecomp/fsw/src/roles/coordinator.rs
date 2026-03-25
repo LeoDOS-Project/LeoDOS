@@ -1,14 +1,14 @@
 use core::mem::size_of;
 
-use leodos_protocols::application::spacecomp::job::Job;
-use leodos_protocols::application::spacecomp::packet::AssignCollectorPayload;
-use leodos_protocols::application::spacecomp::packet::AssignMapperPayload;
-use leodos_protocols::application::spacecomp::packet::AssignReducerPayload;
-use leodos_protocols::application::spacecomp::packet::OpCode;
-use leodos_protocols::application::spacecomp::packet::ParseError;
-use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
-use leodos_protocols::application::spacecomp::plan::Plan;
-use leodos_protocols::application::spacecomp::plan::ReducerPlacement;
+use leodos_spacecomp::job::Job;
+use leodos_spacecomp::packet::AssignCollectorPayload;
+use leodos_spacecomp::packet::AssignMapperPayload;
+use leodos_spacecomp::packet::AssignReducerPayload;
+use leodos_spacecomp::packet::OpCode;
+use leodos_spacecomp::packet::ParseError;
+use leodos_spacecomp::packet::SpaceCompMessage;
+use leodos_spacecomp::plan::Plan;
+use leodos_spacecomp::plan::ReducerPlacement;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::torus::Point;
 use zerocopy::IntoBytes;

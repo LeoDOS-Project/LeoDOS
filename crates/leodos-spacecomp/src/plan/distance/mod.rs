@@ -7,7 +7,7 @@
 pub mod manhattan;
 pub mod spacecomp;
 
-use crate::network::isl::torus::{Point, Torus};
+use leodos_protocols::network::isl::torus::{Point, Torus};
 use super::assignment::Bounded;
 
 /// Computes the cost of assigning a task to a processor.

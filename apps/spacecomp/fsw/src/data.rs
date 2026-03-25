@@ -1,5 +1,5 @@
 use bon::bon;
-use leodos_protocols::application::spacecomp::packet::{BuildError, OpCode, SpaceCompMessage};
+use leodos_spacecomp::packet::{BuildError, OpCode, SpaceCompMessage};
 use zerocopy::network_endian::U32;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 

@@ -1,4 +1,4 @@
-use leodos_protocols::application::spacecomp::packet::{
+use leodos_spacecomp::packet::{
     AssignCollectorPayload, OpCode, SpaceCompMessage,
 };
 

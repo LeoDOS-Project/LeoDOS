@@ -1,8 +1,8 @@
 use heapless::index_map::FnvIndexMap;
-use leodos_protocols::application::spacecomp::io::writer::BufWriter;
-use leodos_protocols::application::spacecomp::packet::AssignReducerPayload;
-use leodos_protocols::application::spacecomp::packet::OpCode;
-use leodos_protocols::application::spacecomp::packet::SpaceCompMessage;
+use leodos_spacecomp::bufwriter::BufWriter;
+use leodos_spacecomp::packet::AssignReducerPayload;
+use leodos_spacecomp::packet::OpCode;
+use leodos_spacecomp::packet::SpaceCompMessage;
 
 use crate::data::WordCount;
 use crate::Buffers;

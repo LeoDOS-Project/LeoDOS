@@ -13,7 +13,7 @@ use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
 use zerocopy::network_endian::U16;
 
-use crate::network::isl::address::{Address, RawAddress};
+use leodos_protocols::network::isl::address::{Address, RawAddress};
 
 /// Operation codes for the SpaceCoMP MapReduce protocol.
 ///
@@ -140,8 +140,8 @@ impl SpaceCompMessage {
     /// Iterates over fixed-size `T` records in the payload.
     pub fn records<'a, T: FromBytes + Immutable + KnownLayout + 'a>(
         &'a self,
-    ) -> crate::application::spacecomp::io::reader::RecordIter<'a, T> {
-        crate::application::spacecomp::io::reader::RecordIter::new(&self.payload)
+    ) -> leodos_protocols::application::spacecomp::io::reader::RecordIter<'a, T> {
+        leodos_protocols::application::spacecomp::io::reader::RecordIter::new(&self.payload)
     }
 
     /// Returns a reference to the message header.

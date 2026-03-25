@@ -10,8 +10,8 @@
 //! C_r = r_p × K + S(V/F_R, d_red→los) + Σ S(V/F_M, d_map→red)
 //! ```
 
-use crate::application::spacecomp::job::Job;
-use crate::network::isl::torus::{Point, Torus};
+use crate::job::Job;
+use leodos_protocols::network::isl::torus::{Point, Torus};
 
 const HOP_OVERHEAD_US: u64 = 100;
 const BASE_PROCESSING_US: u64 = 1000;
@@ -91,7 +91,7 @@ impl Job {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::isl::geo::{GeoAoi, LatLon};
+    use leodos_protocols::network::isl::geo::{GeoAoi, LatLon};
 
     fn test_job() -> Job {
         Job::builder()
