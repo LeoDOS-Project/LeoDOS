@@ -1,6 +1,7 @@
 //! [`SpaceCompNode`] — the main entry point for running
 //! a SpaceCoMP computation on a cFS satellite.
 
+use core::time::Duration;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
@@ -184,6 +185,8 @@ impl<
         let srspp: SrsppNode<CfsError, S, R, ReceiverMachine<WIN, BUF, RX_BUF>, WIN, BUF, MTU, MAX_STREAMS> =
             SrsppNode::new(sender_config, receiver_config, self.store, self.reachable);
         let (mut rx, mut tx, mut driver) = srspp.split(network, FixedRto::new(rto));
+
+        system::wait_for_startup_sync(Duration::from_millis(10_000));
 
         let shell = self.config.shell();
         // Max dispatch message: SpaceComp header (4) + Job payload (41)
