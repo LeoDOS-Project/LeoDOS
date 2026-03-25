@@ -37,18 +37,6 @@ struct WordCount {
     count: U32,
 }
 
-impl WordCount {
-    fn new(word: &[u8], count: u32) -> Self {
-        let mut buf = [0u8; 16];
-        let len = word.len().min(16);
-        buf[..len].copy_from_slice(&word[..len]);
-        Self {
-            word: buf,
-            count: U32::new(count),
-        }
-    }
-}
-
 impl Schema for WordCount {
     type Key<'a> = [u8; 16];
     fn key<'a>(pkt: &Ref<&'a [u8], Self>) -> Self::Key<'a> {
@@ -68,22 +56,63 @@ the brown fox and the brown dog are friends \
 jump jump the fox can jump very high \
 the quick dog chased the lazy fox home";
 
-fn partition_text(partition_id: u8, total_partitions: u8) -> &'static [u8] {
-    let chunk_size = SAMPLE_TEXT.len() / total_partitions as usize;
-    let start = partition_id as usize * chunk_size;
-    if start >= SAMPLE_TEXT.len() {
-        return &[];
+// ── Text source: yields one WordCount per word ──────────────
+
+struct TextSource {
+    data: &'static [u8],
+    offset: usize,
+}
+
+impl TextSource {
+    fn from_partition(partition_id: u8, total: u8) -> Self {
+        let chunk_size = SAMPLE_TEXT.len() / total as usize;
+        let start = partition_id as usize * chunk_size;
+        let end = if partition_id == total - 1 {
+            SAMPLE_TEXT.len()
+        } else {
+            let mut e = (start + chunk_size).min(SAMPLE_TEXT.len());
+            while e < SAMPLE_TEXT.len() && SAMPLE_TEXT[e] != b' ' {
+                e += 1;
+            }
+            e
+        };
+        let data = if start < SAMPLE_TEXT.len() {
+            &SAMPLE_TEXT[start..end]
+        } else {
+            &[]
+        };
+        Self { data, offset: 0 }
     }
-    let end = if partition_id == total_partitions - 1 {
-        SAMPLE_TEXT.len()
-    } else {
-        let mut e = start + chunk_size;
-        while e < SAMPLE_TEXT.len() && SAMPLE_TEXT[e] != b' ' {
-            e += 1;
+
+    fn next_word(&mut self) -> Option<WordCount> {
+        while self.offset < self.data.len() && self.data[self.offset] == b' ' {
+            self.offset += 1;
         }
-        e.min(SAMPLE_TEXT.len())
-    };
-    &SAMPLE_TEXT[start..end]
+        if self.offset >= self.data.len() {
+            return None;
+        }
+        let start = self.offset;
+        while self.offset < self.data.len() && self.data[self.offset] != b' ' {
+            self.offset += 1;
+        }
+        let word = &self.data[start..self.offset];
+        let mut buf = [0u8; 16];
+        let len = word.len().min(16);
+        buf[..len].copy_from_slice(&word[..len]);
+        Some(WordCount {
+            word: buf,
+            count: U32::new(1),
+        })
+    }
+}
+
+impl leodos_spacecomp::Source for TextSource {
+    type Output = WordCount;
+    type Error = core::convert::Infallible;
+
+    async fn read(&mut self) -> Option<Result<WordCount, Self::Error>> {
+        self.next_word().map(Ok)
+    }
 }
 
 // ── SpaceCompJob implementation ─────────────────────────────

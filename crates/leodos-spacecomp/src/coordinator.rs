@@ -24,14 +24,17 @@ use crate::SpaceCompError;
 const MAX_SATELLITES: usize = 64;
 
 /// Runs the coordinator role for a submitted job.
-pub async fn run<Tx: MessageSender<Error = SpaceCompError>>(
+pub async fn run<Tx: MessageSender>(
     tx: &mut Tx,
     buf: &mut [u8],
     shell: Shell,
     local_point: Point,
     job_id: u16,
     job: Job,
-) -> Result<(), SpaceCompError> {
+) -> Result<(), SpaceCompError>
+where
+    SpaceCompError: From<Tx::Error>,
+{
     let plan: Plan<MAX_SATELLITES> = job
         .plan(shell, ReducerPlacement::CenterOfAoi, local_point)
         .map_err(SpaceCompError::Plan)?;
