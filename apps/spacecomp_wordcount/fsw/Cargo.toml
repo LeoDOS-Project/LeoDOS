@@ -1,0 +1,27 @@
+[package]
+name = "spacecomp-wordcount"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "spacecomp_wordcount"
+crate-type = ["cdylib"]
+
+[dependencies]
+leodos-spacecomp = { path = "../../../crates/leodos-spacecomp" }
+leodos-protocols = { path = "../../../crates/leodos-protocols", features = ["cfs"] }
+leodos-libcfs = { path = "../../../crates/leodos-libcfs" }
+bon = { version = "3.9.1", default-features = false }
+heapless = "0.9"
+zerocopy = { version = "0.8", features = ["derive"] }
+
+[profile.release]
+lto = true
+panic = "abort"
+opt-level = "z"
+
+[profile.dev]
+panic = "abort"
+
+[build-dependencies]
+bindgen = "0.72.1"

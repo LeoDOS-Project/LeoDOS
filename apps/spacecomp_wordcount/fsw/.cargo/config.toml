@@ -1,0 +1,5 @@
+[env]
+CFE_DIR = { value = "../../../cfe/", relative = true }
+OSAL_DIR = { value = "../../../osal/", relative = true }
+PSP_DIR = { value = "../../../psp/", relative = true }
+BUILD_DIR = { value = "../../../build/", relative = true }
