@@ -43,34 +43,57 @@ mod bindings {
 
 const MAX_PIXELS: usize = 512 * 512;
 const MAX_HOTSPOTS: usize = 64;
-const CHUNK_SIZE: usize = 256;
 const NUM_SATS: u8 = bindings::SPACECOMP_WILDFIRE_NUM_SATS as u8;
+
+/// Tile size for splitting frames across mappers.
+const TILE_SIZE: usize = 64;
+/// Overlap border for contextual fire detection (bg_radius).
+const TILE_OVERLAP: usize = 5;
+/// Full tile side including overlap.
+const TILE_FULL: usize = TILE_SIZE + 2 * TILE_OVERLAP;
+/// Max pixels in a tile (both bands).
+const MAX_TILE_PIXELS: usize = TILE_FULL * TILE_FULL;
 
 type Camera = ThermalCamera<MAX_PIXELS>;
 
 // ── Wire types ──────────────────────────────────────────────
 
+/// Tile header: position in the full frame + dimensions.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
-struct FrameHeader {
+struct TileHeader {
+    /// Tile X offset in the full frame (inner region).
+    tile_x: U16,
+    /// Tile Y offset in the full frame (inner region).
+    tile_y: U16,
+    /// Tile width including overlap.
     width: U16,
+    /// Tile height including overlap.
     height: U16,
+    /// Inner tile width (without overlap).
+    inner_w: U16,
+    /// Inner tile height (without overlap).
+    inner_h: U16,
 }
 
+/// A hotspot record sent from mapper to reducer.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
 struct HotspotRecord {
+    /// X position in the full frame.
     x: U16,
+    /// Y position in the full frame.
     y: U16,
+    /// MIR brightness temperature (f32 bits).
     t4: U32,
 }
 
 impl HotspotRecord {
-    fn from_hotspot(h: &Hotspot) -> Self {
+    fn new(x: u16, y: u16, t4: f32) -> Self {
         Self {
-            x: U16::new(h.x),
-            y: U16::new(h.y),
-            t4: U32::new(h.t4.to_bits()),
+            x: U16::new(x),
+            y: U16::new(y),
+            t4: U32::new(t4.to_bits()),
         }
     }
 
@@ -79,56 +102,30 @@ impl HotspotRecord {
     }
 }
 
-// ── Helpers ─────────────────────────────────────────────────
+// ── Tile extraction ─────────────────────────────────────────
 
-async fn send_chunks(
-    tx: &mut impl Tx,
-    buf: &mut [u8],
-    data: &[u8],
-    job_id: u16,
-    target: Address,
-) -> Result<(), SpaceCompError> {
-    for chunk in data.chunks(CHUNK_SIZE) {
-        let m = SpaceCompMessage::builder()
-            .buffer(buf)
-            .op_code(OpCode::DataChunk)
-            .job_id(job_id)
-            .payload_len(chunk.len())
-            .build()?;
-        m.payload_mut().copy_from_slice(chunk);
-        tx.send(target, m.as_bytes()).await.ok();
-    }
-    Ok(())
-}
-
-async fn recv_pixels(
-    rx: &mut impl Rx,
+/// Extracts a tile from a full frame with overlap border.
+fn extract_tile(
+    src: &[f32],
+    frame_w: usize,
+    frame_h: usize,
+    tile_x: usize,
+    tile_y: usize,
     dst: &mut [f32],
-    n_pixels: usize,
-) -> Result<(), SpaceCompError> {
-    let mut offset = 0;
-    let total_bytes = n_pixels * 4;
-    while offset < total_bytes {
-        let Ok(maybe_len) = rx
-            .recv_with(|data| -> Option<usize> {
-                let msg = SpaceCompMessage::parse(data).ok()?;
-                if msg.op_code() != Ok(OpCode::DataChunk) {
-                    return None;
-                }
-                let payload = msg.payload();
-                let bytes = dst.as_mut_bytes();
-                let n = payload.len().min(bytes.len() - offset);
-                bytes[offset..offset + n].copy_from_slice(&payload[..n]);
-                Some(n)
-            })
-            .await
-        else {
-            return Ok(());
-        };
-        let Some(n) = maybe_len else { continue };
-        offset += n;
+) -> (usize, usize) {
+    let x0 = tile_x.saturating_sub(TILE_OVERLAP);
+    let y0 = tile_y.saturating_sub(TILE_OVERLAP);
+    let x1 = (tile_x + TILE_SIZE + TILE_OVERLAP).min(frame_w);
+    let y1 = (tile_y + TILE_SIZE + TILE_OVERLAP).min(frame_h);
+    let w = x1 - x0;
+    let h = y1 - y0;
+
+    for row in 0..h {
+        let src_off = (y0 + row) * frame_w + x0;
+        let dst_off = row * w;
+        dst[dst_off..dst_off + w].copy_from_slice(&src[src_off..src_off + w]);
     }
-    Ok(())
+    (w, h)
 }
 
 // ── SpaceComp implementation ────────────────────────────────
@@ -139,6 +136,8 @@ struct WildfireCompute {
 }
 
 impl SpaceComp for WildfireCompute {
+    /// Captures a frame, splits into tiles, sends each tile
+    /// as a TileHeader + MWIR + LWIR payload to the mapper.
     async fn collect(
         &self,
         mut tx: impl Tx,
@@ -156,35 +155,65 @@ impl SpaceComp for WildfireCompute {
             .await
             .map_err(|_| SpaceCompError::Cfs(CfsError::ExternalResourceFail))?;
 
-        let mut buf = [0u8; 512];
+        let fw = frame.width as usize;
+        let fh = frame.height as usize;
+        let mut tile_mwir = [0.0f32; MAX_TILE_PIXELS];
+        let mut tile_lwir = [0.0f32; MAX_TILE_PIXELS];
+        let mut buf = [0u8; 8192];
+        let mut tile_count = 0u16;
 
-        // Send frame header
-        let header = FrameHeader {
-            width: U16::new(frame.width as u16),
-            height: U16::new(frame.height as u16),
-        };
-        let m = SpaceCompMessage::builder()
-            .buffer(&mut buf)
-            .op_code(OpCode::DataChunk)
-            .job_id(job_id)
-            .payload_len(header.as_bytes().len())
-            .build()?;
-        m.payload_mut().copy_from_slice(header.as_bytes());
-        tx.send(mapper_addr, m.as_bytes()).await.ok();
+        let mut ty = 0;
+        while ty < fh {
+            let mut tx_pos = 0;
+            while tx_pos < fw {
+                let (tw, th) = extract_tile(frame.mwir, fw, fh, tx_pos, ty, &mut tile_mwir);
+                extract_tile(frame.lwir, fw, fh, tx_pos, ty, &mut tile_lwir);
 
-        // Send MWIR + LWIR pixels
-        send_chunks(&mut tx, &mut buf, frame.mwir.as_bytes(), job_id, mapper_addr).await?;
-        send_chunks(&mut tx, &mut buf, frame.lwir.as_bytes(), job_id, mapper_addr).await?;
+                let inner_w = TILE_SIZE.min(fw - tx_pos) as u16;
+                let inner_h = TILE_SIZE.min(fh - ty) as u16;
 
-        info!(
-            "Collector: sent {}x{} frame ({} bytes)",
-            frame.width,
-            frame.height,
-            frame.mwir.as_bytes().len() * 2,
-        )?;
+                let header = TileHeader {
+                    tile_x: U16::new(tx_pos as u16),
+                    tile_y: U16::new(ty as u16),
+                    width: U16::new(tw as u16),
+                    height: U16::new(th as u16),
+                    inner_w: U16::new(inner_w),
+                    inner_h: U16::new(inner_h),
+                };
+
+                let n = tw * th;
+                let hdr_bytes = header.as_bytes();
+                let mwir_bytes = tile_mwir[..n].as_bytes();
+                let lwir_bytes = tile_lwir[..n].as_bytes();
+                let total = hdr_bytes.len() + mwir_bytes.len() + lwir_bytes.len();
+
+                let m = SpaceCompMessage::builder()
+                    .buffer(&mut buf)
+                    .op_code(OpCode::DataChunk)
+                    .job_id(job_id)
+                    .payload_len(total)
+                    .build()?;
+                let p = m.payload_mut();
+                let mut off = 0;
+                p[off..off + hdr_bytes.len()].copy_from_slice(hdr_bytes);
+                off += hdr_bytes.len();
+                p[off..off + mwir_bytes.len()].copy_from_slice(mwir_bytes);
+                off += mwir_bytes.len();
+                p[off..off + lwir_bytes.len()].copy_from_slice(lwir_bytes);
+                tx.send(mapper_addr, m.as_bytes()).await.ok();
+
+                tile_count += 1;
+                tx_pos += TILE_SIZE;
+            }
+            ty += TILE_SIZE;
+        }
+
+        info!("Collector: sent {} tiles from {}x{} frame", tile_count, fw, fh)?;
         Ok(())
     }
 
+    /// Receives tiles, runs detection on each, reports
+    /// hotspots with full-frame coordinates to reducer.
     async fn map(
         &self,
         mut rx: impl Rx,
@@ -194,6 +223,7 @@ impl SpaceComp for WildfireCompute {
         collector_count: u8,
     ) -> Result<(), SpaceCompError> {
         let mut buf = [0u8; 512];
+        let mut total_hotspots = 0usize;
         let mut received = 0u8;
         {
             let mut writer = BufWriter::<HotspotRecord, _>::new(
@@ -201,45 +231,80 @@ impl SpaceComp for WildfireCompute {
             );
 
             loop {
-                // Receive frame header
-                let Ok(maybe_hdr) = rx
-                    .recv_with(|data| -> Option<FrameHeader> {
+                let mut tile_buf = [0u8; 8192];
+                let Ok(maybe_len) = rx
+                    .recv_with(|data| -> Option<usize> {
                         let msg = SpaceCompMessage::parse(data).ok()?;
                         if msg.op_code() != Ok(OpCode::DataChunk) {
                             return None;
                         }
-                        FrameHeader::read_from_bytes(msg.payload()).ok()
+                        let n = msg.payload().len().min(tile_buf.len());
+                        tile_buf[..n].copy_from_slice(&msg.payload()[..n]);
+                        Some(n)
                     })
                     .await
                 else {
-                    return Ok(());
+                    break;
                 };
-                let Some(hdr) = maybe_hdr else { continue };
-                let w = hdr.width.get() as usize;
-                let h = hdr.height.get() as usize;
-                let n_pixels = w * h;
+                let Some(_len) = maybe_len else {
+                    received += 1;
+                    if received >= collector_count {
+                        break;
+                    }
+                    continue;
+                };
 
-                // Receive MWIR + LWIR pixels
-                let mut mwir = [0.0f32; MAX_PIXELS];
-                recv_pixels(&mut rx, &mut mwir, n_pixels).await?;
-                let mut lwir = [0.0f32; MAX_PIXELS];
-                recv_pixels(&mut rx, &mut lwir, n_pixels).await?;
+                // Parse tile
+                let hdr_size = core::mem::size_of::<TileHeader>();
+                let Ok(hdr) = TileHeader::read_from_bytes(&tile_buf[..hdr_size]) else {
+                    continue;
+                };
+                let tw = hdr.width.get() as usize;
+                let th = hdr.height.get() as usize;
+                let n = tw * th;
+                let pixel_bytes = n * 4;
 
-                // Run fire detection
+                let mwir_start = hdr_size;
+                let lwir_start = mwir_start + pixel_bytes;
+
+                let Ok(mwir) = <[f32]>::ref_from_bytes(&tile_buf[mwir_start..mwir_start + pixel_bytes]) else {
+                    continue;
+                };
+                let Ok(lwir) = <[f32]>::ref_from_bytes(&tile_buf[lwir_start..lwir_start + pixel_bytes]) else {
+                    continue;
+                };
+
+                // Detect on tile
                 let mut hotspots = [Hotspot::default(); MAX_HOTSPOTS];
-                let det = detect_fire(&mwir[..n_pixels], &lwir[..n_pixels], w, h, &self.thresholds, &mut hotspots);
+                let det = detect_fire(mwir, lwir, tw, th, &self.thresholds, &mut hotspots);
+
+                // Convert tile-local coords to full-frame coords,
+                // only report hotspots in the inner region
+                let ox = if hdr.tile_x.get() >= TILE_OVERLAP as u16 {
+                    TILE_OVERLAP as u16
+                } else {
+                    hdr.tile_x.get()
+                };
+                let oy = if hdr.tile_y.get() >= TILE_OVERLAP as u16 {
+                    TILE_OVERLAP as u16
+                } else {
+                    hdr.tile_y.get()
+                };
 
                 for hs in det.hotspots {
-                    writer.write(&HotspotRecord::from_hotspot(hs)).await?;
+                    // Only report if in inner region
+                    if hs.x >= ox && hs.x < ox + hdr.inner_w.get()
+                        && hs.y >= oy && hs.y < oy + hdr.inner_h.get()
+                    {
+                        let frame_x = hdr.tile_x.get() + (hs.x - ox);
+                        let frame_y = hdr.tile_y.get() + (hs.y - oy);
+                        writer
+                            .write(&HotspotRecord::new(frame_x, frame_y, hs.t4))
+                            .await?;
+                        total_hotspots += 1;
+                    }
                 }
                 writer.flush().await?;
-
-                info!("Mapper: detected {} hotspots in {}x{} frame", det.count, w, h)?;
-
-                received += 1;
-                if received >= collector_count {
-                    break;
-                }
             }
         }
 
@@ -250,9 +315,11 @@ impl SpaceComp for WildfireCompute {
             .payload_len(0)
             .build()?;
         tx.send(reducer_addr, done.as_bytes()).await.ok();
+        info!("Mapper: forwarded {} hotspots", total_hotspots)?;
         Ok(())
     }
 
+    /// Merges hotspots from all mappers, geo-locates, downlinks.
     async fn reduce(
         &self,
         mut rx: impl Rx,
@@ -262,11 +329,7 @@ impl SpaceComp for WildfireCompute {
         mapper_count: u8,
     ) -> Result<(), SpaceCompError> {
         let mut buf = [0u8; 512];
-        let mut all_hotspots = [HotspotRecord {
-            x: U16::new(0),
-            y: U16::new(0),
-            t4: U32::new(0),
-        }; MAX_HOTSPOTS];
+        let mut all_hotspots = [HotspotRecord::new(0, 0, 0.0); MAX_HOTSPOTS];
         let mut total = 0usize;
         let mut done_count = 0u8;
 
