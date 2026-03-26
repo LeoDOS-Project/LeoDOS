@@ -12,6 +12,7 @@ leodos-spacecomp = { path = "../../../crates/leodos-spacecomp" }
 leodos-protocols = { path = "../../../crates/leodos-protocols", features = ["cfs"] }
 leodos-libcfs = { path = "../../../crates/leodos-libcfs", features = ["nos3"] }
 leodos-analysis = { path = "../../../crates/leodos-analysis" }
+leodos-utils = { path = "../../../crates/leodos-utils" }
 heapless = "0.9"
 zerocopy = { version = "0.8", features = ["derive"] }
 

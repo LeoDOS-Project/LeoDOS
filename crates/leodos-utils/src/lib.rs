@@ -7,3 +7,4 @@
 #![no_std]
 
 pub mod future_pool;
+pub mod lending_iterator;
