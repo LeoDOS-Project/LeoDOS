@@ -15,7 +15,6 @@ use leodos_libcfs::error::CfsError;
 use leodos_libcfs::info;
 use leodos_libcfs::join;
 use leodos_libcfs::nos3::drivers::novatel::Gps;
-use leodos_libcfs::nos3::drivers::thermal_cam::ThermalCamError;
 use leodos_libcfs::nos3::drivers::thermal_cam::ThermalCamera;
 use leodos_libcfs::runtime::Runtime;
 
@@ -127,8 +126,6 @@ enum WildfireError {
     Cfs(#[from] CfsError),
     #[error(transparent)]
     Transport(#[from] TransportError<CfsError>),
-    #[error(transparent)]
-    Camera(#[from] ThermalCamError),
 }
 
 // ── App entry ───────────────────────────────────────────────

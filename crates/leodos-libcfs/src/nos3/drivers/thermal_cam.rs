@@ -114,18 +114,19 @@ impl<const N: usize> From<Spi> for ThermalCamera<N> {
 }
 
 impl<const N: usize> ThermalCamera<N> {
-    fn read_reg(&mut self, reg: u8) -> Result<u8, SpiError> {
+    fn read_reg(&mut self, reg: u8) -> Result<u8, CfsError> {
         let tx = [reg, 0x00];
         let mut rx = [0u8; 2];
-        self.spi.transfer(&tx, &mut rx, 2, 0, 8, true)?;
+        self.spi.transfer(&tx, &mut rx, 2, 0, 8, true).map_err(BusError::from)?;
         Ok(rx[0])
     }
 
     const WRITE_BIT: u8 = 0x80;
 
-    fn write_reg(&mut self, reg: u8, val: u8) -> Result<(), SpiError> {
+    fn write_reg(&mut self, reg: u8, val: u8) -> Result<(), CfsError> {
         let tx = [reg | Self::WRITE_BIT, val];
-        self.spi.write(&tx)
+        self.spi.write(&tx).map_err(BusError::from)?;
+        Ok(())
     }
 
     /// Captures a thermal frame into the internal buffers.
@@ -134,11 +135,11 @@ impl<const N: usize> ThermalCamera<N> {
     /// capture and reads the FIFO. Returns a [`Frame`] that
     /// borrows the MWIR/LWIR data. If only one band is
     /// available, LWIR is a copy of MWIR.
-    pub async fn capture(&mut self) -> Result<Frame<'_>, ThermalCamError> {
+    pub async fn capture(&mut self) -> Result<Frame<'_>, CfsError> {
         core::future::poll_fn(|_| match self.read_reg(REG_STATUS) {
             Ok(s) if s & STATUS_READY != 0 => core::task::Poll::Ready(Ok(())),
             Ok(_) => core::task::Poll::Pending,
-            Err(e) => core::task::Poll::Ready(Err(ThermalCamError::from(e))),
+            Err(e) => core::task::Poll::Ready(Err(e)),
         })
         .await?;
 

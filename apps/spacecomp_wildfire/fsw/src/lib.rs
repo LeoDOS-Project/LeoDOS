@@ -1,6 +1,5 @@
 #![no_std]
 
-use leodos_libcfs::error::CfsError;
 use leodos_libcfs::info;
 use leodos_libcfs::nos3::drivers::thermal_cam::ThermalCamera;
 
@@ -149,10 +148,7 @@ impl SpaceComp for WildfireCompute {
             .chip_select_line(3)
             .baudrate(1_000_000)
             .build()?;
-        let frame = camera
-            .capture()
-            .await
-            .map_err(|_| SpaceCompError::Cfs(CfsError::ExternalResourceFail))?;
+        let frame = camera.capture().await?;
 
         let fw = frame.width as usize;
         let fh = frame.height as usize;
