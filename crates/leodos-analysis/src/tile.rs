@@ -82,6 +82,81 @@ pub fn extract_tile(
     }
 }
 
+/// Computes tile layout with overlap border for contextual algorithms.
+///
+/// Each tile's region is expanded by `overlap` pixels in each direction
+/// (clamped to image bounds). The `x`, `y`, `width`, `height` fields
+/// reflect the expanded region. `inner_x`, `inner_y` mark the original
+/// tile origin within the expanded region.
+pub fn compute_tiles_with_overlap(
+    image_width: usize,
+    image_height: usize,
+    tile_size: usize,
+    overlap: usize,
+    tiles: &mut [OverlapTile],
+) -> usize {
+    let cols = (image_width + tile_size - 1) / tile_size;
+    let rows = (image_height + tile_size - 1) / tile_size;
+    let mut count = 0;
+
+    for row in 0..rows {
+        for col in 0..cols {
+            if count >= tiles.len() {
+                return count;
+            }
+            let orig_x = col * tile_size;
+            let orig_y = row * tile_size;
+            let inner_w = tile_size.min(image_width - orig_x);
+            let inner_h = tile_size.min(image_height - orig_y);
+
+            let x0 = orig_x.saturating_sub(overlap);
+            let y0 = orig_y.saturating_sub(overlap);
+            let x1 = (orig_x + inner_w + overlap).min(image_width);
+            let y1 = (orig_y + inner_h + overlap).min(image_height);
+
+            tiles[count] = OverlapTile {
+                x: x0,
+                y: y0,
+                width: x1 - x0,
+                height: y1 - y0,
+                inner_x: orig_x - x0,
+                inner_y: orig_y - y0,
+                inner_w,
+                inner_h,
+                frame_x: orig_x,
+                frame_y: orig_y,
+            };
+            count += 1;
+        }
+    }
+    count
+}
+
+/// A tile region with overlap border.
+#[derive(Debug, Copy, Clone)]
+pub struct OverlapTile {
+    /// Top-left X of the expanded region.
+    pub x: usize,
+    /// Top-left Y of the expanded region.
+    pub y: usize,
+    /// Width of the expanded region (including overlap).
+    pub width: usize,
+    /// Height of the expanded region (including overlap).
+    pub height: usize,
+    /// X offset of the inner region within the expanded tile.
+    pub inner_x: usize,
+    /// Y offset of the inner region within the expanded tile.
+    pub inner_y: usize,
+    /// Width of the inner region (no overlap).
+    pub inner_w: usize,
+    /// Height of the inner region (no overlap).
+    pub inner_h: usize,
+    /// X position of the inner region in the full frame.
+    pub frame_x: usize,
+    /// Y position of the inner region in the full frame.
+    pub frame_y: usize,
+}
+
 /// Write a tile's data back into a flat image buffer.
 pub fn insert_tile(
     tile_data: &[f32],

@@ -7,6 +7,9 @@ use leodos_analysis::geo::GeoBounds;
 use leodos_analysis::thermal::detect_fire;
 use leodos_analysis::thermal::FireThresholds;
 use leodos_analysis::thermal::Hotspot;
+use leodos_analysis::tile::OverlapTile;
+use leodos_analysis::tile::compute_tiles_with_overlap;
+use leodos_analysis::tile::extract_tile;
 
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
@@ -81,30 +84,6 @@ impl HotspotRecord {
     }
 }
 
-// ── Tile helpers ────────────────────────────────────────────
-
-fn extract_tile(
-    src: &[f32],
-    frame_w: usize,
-    frame_h: usize,
-    tile_x: usize,
-    tile_y: usize,
-    dst: &mut [f32],
-) -> (usize, usize) {
-    let x0 = tile_x.saturating_sub(TILE_OVERLAP);
-    let y0 = tile_y.saturating_sub(TILE_OVERLAP);
-    let x1 = (tile_x + TILE_SIZE + TILE_OVERLAP).min(frame_w);
-    let y1 = (tile_y + TILE_SIZE + TILE_OVERLAP).min(frame_h);
-    let w = x1 - x0;
-    let h = y1 - y0;
-    for row in 0..h {
-        let src_off = (y0 + row) * frame_w + x0;
-        let dst_off = row * w;
-        dst[dst_off..dst_off + w].copy_from_slice(&src[src_off..src_off + w]);
-    }
-    (w, h)
-}
-
 // ── SpaceComp implementation ────────────────────────────────
 
 struct WildfireCompute {
@@ -123,52 +102,51 @@ impl SpaceComp for WildfireCompute {
 
         let fw = frame.width as usize;
         let fh = frame.height as usize;
+
+        // Compute tile layout with overlap
+        let mut tiles = [OverlapTile { x: 0, y: 0, width: 0, height: 0, inner_x: 0, inner_y: 0, inner_w: 0, inner_h: 0, frame_x: 0, frame_y: 0 }; 256];
+        let n_tiles = compute_tiles_with_overlap(fw, fh, TILE_SIZE, TILE_OVERLAP, &mut tiles);
+
         let mut tile_mwir = [0.0f32; MAX_TILE_PIXELS];
         let mut tile_lwir = [0.0f32; MAX_TILE_PIXELS];
-        let mut tile_count = 0u16;
 
-        let mut ty = 0;
-        while ty < fh {
-            let mut tx_pos = 0;
-            while tx_pos < fw {
-                let (tw, th) = extract_tile(frame.mwir, fw, fh, tx_pos, ty, &mut tile_mwir);
-                extract_tile(frame.lwir, fw, fh, tx_pos, ty, &mut tile_lwir);
+        for tile in &tiles[..n_tiles] {
+            // Use Tile (without overlap info) for extract_tile
+            let geom = leodos_analysis::tile::Tile {
+                col: 0, row: 0,
+                x: tile.x, y: tile.y,
+                width: tile.width, height: tile.height,
+            };
+            extract_tile(frame.mwir, fw, &geom, &mut tile_mwir);
+            extract_tile(frame.lwir, fw, &geom, &mut tile_lwir);
 
-                let inner_w = TILE_SIZE.min(fw - tx_pos) as u16;
-                let inner_h = TILE_SIZE.min(fh - ty) as u16;
+            // Pack header + mwir + lwir
+            let n = tile.width * tile.height;
+            let header = TileHeader {
+                tile_x: U16::new(tile.frame_x as u16),
+                tile_y: U16::new(tile.frame_y as u16),
+                width: U16::new(tile.width as u16),
+                height: U16::new(tile.height as u16),
+                inner_w: U16::new(tile.inner_w as u16),
+                inner_h: U16::new(tile.inner_h as u16),
+            };
 
-                let header = TileHeader {
-                    tile_x: U16::new(tx_pos as u16),
-                    tile_y: U16::new(ty as u16),
-                    width: U16::new(tw as u16),
-                    height: U16::new(th as u16),
-                    inner_w: U16::new(inner_w),
-                    inner_h: U16::new(inner_h),
-                };
+            let hdr_bytes = header.as_bytes();
+            let mwir_bytes = tile_mwir[..n].as_bytes();
+            let lwir_bytes = tile_lwir[..n].as_bytes();
+            let total = hdr_bytes.len() + mwir_bytes.len() + lwir_bytes.len();
+            let mut payload = [0u8; 8192];
+            let mut off = 0;
+            payload[off..off + hdr_bytes.len()].copy_from_slice(hdr_bytes);
+            off += hdr_bytes.len();
+            payload[off..off + mwir_bytes.len()].copy_from_slice(mwir_bytes);
+            off += mwir_bytes.len();
+            payload[off..off + lwir_bytes.len()].copy_from_slice(lwir_bytes);
 
-                // Pack header + mwir + lwir into one payload
-                let n = tw * th;
-                let hdr_bytes = header.as_bytes();
-                let mwir_bytes = tile_mwir[..n].as_bytes();
-                let lwir_bytes = tile_lwir[..n].as_bytes();
-                let total = hdr_bytes.len() + mwir_bytes.len() + lwir_bytes.len();
-                let mut payload = [0u8; 8192];
-                let mut off = 0;
-                payload[off..off + hdr_bytes.len()].copy_from_slice(hdr_bytes);
-                off += hdr_bytes.len();
-                payload[off..off + mwir_bytes.len()].copy_from_slice(mwir_bytes);
-                off += mwir_bytes.len();
-                payload[off..off + lwir_bytes.len()].copy_from_slice(lwir_bytes);
-
-                tx.send(&payload[..total]).await?;
-
-                tile_count += 1;
-                tx_pos += TILE_SIZE;
-            }
-            ty += TILE_SIZE;
+            tx.send(&payload[..total]).await?;
         }
 
-        info!("Collector: sent {} tiles from {}x{} frame", tile_count, fw, fh)?;
+        info!("Collector: sent {} tiles from {}x{} frame", n_tiles, fw, fh)?;
         Ok(())
     }
 
