@@ -18,6 +18,8 @@ pub mod geo;
 pub mod indices;
 /// Image statistics and histogram analysis.
 pub mod stats;
+/// Dual-band thermal image frame.
+pub mod frame;
 /// Thermal analysis and hotspot detection.
 pub mod thermal;
 /// Image tiling for distributed processing.

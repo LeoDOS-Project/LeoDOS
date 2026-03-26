@@ -48,17 +48,7 @@ impl core::fmt::Display for ThermalCamError {
 
 impl core::error::Error for ThermalCamError {}
 
-/// Capture result borrowing the camera's internal buffers.
-pub struct Frame<'a> {
-    /// MWIR brightness temperatures (Kelvin).
-    pub mwir: &'a [f32],
-    /// LWIR brightness temperatures (Kelvin).
-    pub lwir: &'a [f32],
-    /// Frame width in pixels.
-    pub width: u32,
-    /// Frame height in pixels.
-    pub height: u32,
-}
+pub use leodos_analysis::frame::Frame;
 
 /// Thermal camera with owned pixel buffers.
 ///

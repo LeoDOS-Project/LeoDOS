@@ -390,6 +390,7 @@ name = "leodos-analysis"
 version = "0.1.0"
 dependencies = [
  "libm",
+ "zerocopy",
 ]
 
 [[package]]
@@ -403,6 +404,7 @@ dependencies = [
  "futures",
  "heapless",
  "lazy_static",
+ "leodos-analysis",
  "libc",
  "pin-project",
  "pin-utils",

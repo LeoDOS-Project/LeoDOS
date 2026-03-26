@@ -6,3 +6,4 @@ description = "On-board data analysis algorithms for LEO earth observation"
 
 [dependencies]
 libm = "0.2"
+zerocopy = { version = "0.8", features = ["derive"] }

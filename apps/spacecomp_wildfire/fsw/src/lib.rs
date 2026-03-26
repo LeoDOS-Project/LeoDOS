@@ -3,13 +3,11 @@
 use leodos_libcfs::info;
 use leodos_libcfs::nos3::drivers::thermal_cam::ThermalCamera;
 
+use leodos_analysis::frame::ReceivedTile;
 use leodos_analysis::geo::GeoBounds;
 use leodos_analysis::thermal::detect_fire;
 use leodos_analysis::thermal::FireThresholds;
 use leodos_analysis::thermal::Hotspot;
-use leodos_analysis::tile::OverlapTile;
-use leodos_analysis::tile::compute_tiles_with_overlap;
-use leodos_analysis::tile::extract_tile;
 
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
@@ -51,16 +49,6 @@ type Camera = ThermalCamera<MAX_PIXELS>;
 
 // ── Wire types ──────────────────────────────────────────────
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
-struct TileHeader {
-    tile_x: U16,
-    tile_y: U16,
-    width: U16,
-    height: U16,
-    inner_w: U16,
-    inner_h: U16,
-}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable)]
@@ -100,53 +88,19 @@ impl SpaceComp for WildfireCompute {
             .build()?;
         let frame = camera.capture().await?;
 
-        let fw = frame.width as usize;
-        let fh = frame.height as usize;
+        let mut mwir_buf = [0.0f32; MAX_TILE_PIXELS];
+        let mut lwir_buf = [0.0f32; MAX_TILE_PIXELS];
+        let mut send_buf = [0u8; 8192];
+        let mut tile_count = 0u32;
 
-        // Compute tile layout with overlap
-        let mut tiles = [OverlapTile { x: 0, y: 0, width: 0, height: 0, inner_x: 0, inner_y: 0, inner_w: 0, inner_h: 0, frame_x: 0, frame_y: 0 }; 256];
-        let n_tiles = compute_tiles_with_overlap(fw, fh, TILE_SIZE, TILE_OVERLAP, &mut tiles);
-
-        let mut tile_mwir = [0.0f32; MAX_TILE_PIXELS];
-        let mut tile_lwir = [0.0f32; MAX_TILE_PIXELS];
-
-        for tile in &tiles[..n_tiles] {
-            // Use Tile (without overlap info) for extract_tile
-            let geom = leodos_analysis::tile::Tile {
-                col: 0, row: 0,
-                x: tile.x, y: tile.y,
-                width: tile.width, height: tile.height,
-            };
-            extract_tile(frame.mwir, fw, &geom, &mut tile_mwir);
-            extract_tile(frame.lwir, fw, &geom, &mut tile_lwir);
-
-            // Pack header + mwir + lwir
-            let n = tile.width * tile.height;
-            let header = TileHeader {
-                tile_x: U16::new(tile.frame_x as u16),
-                tile_y: U16::new(tile.frame_y as u16),
-                width: U16::new(tile.width as u16),
-                height: U16::new(tile.height as u16),
-                inner_w: U16::new(tile.inner_w as u16),
-                inner_h: U16::new(tile.inner_h as u16),
-            };
-
-            let hdr_bytes = header.as_bytes();
-            let mwir_bytes = tile_mwir[..n].as_bytes();
-            let lwir_bytes = tile_lwir[..n].as_bytes();
-            let total = hdr_bytes.len() + mwir_bytes.len() + lwir_bytes.len();
-            let mut payload = [0u8; 8192];
-            let mut off = 0;
-            payload[off..off + hdr_bytes.len()].copy_from_slice(hdr_bytes);
-            off += hdr_bytes.len();
-            payload[off..off + mwir_bytes.len()].copy_from_slice(mwir_bytes);
-            off += mwir_bytes.len();
-            payload[off..off + lwir_bytes.len()].copy_from_slice(lwir_bytes);
-
-            tx.send(&payload[..total]).await?;
+        let mut tiles = frame.tiles(TILE_SIZE, TILE_OVERLAP, &mut mwir_buf, &mut lwir_buf);
+        while let Some(tile) = tiles.next() {
+            let len = tile.write_to(&mut send_buf);
+            tx.send(&send_buf[..len]).await?;
+            tile_count += 1;
         }
 
-        info!("Collector: sent {} tiles from {}x{} frame", n_tiles, fw, fh)?;
+        info!("Collector: sent {} tiles from {}x{} frame", tile_count, frame.width, frame.height)?;
         Ok(())
     }
 
@@ -155,37 +109,25 @@ impl SpaceComp for WildfireCompute {
         let mut total_hotspots = 0usize;
         let mut tile_buf = [0u8; 8192];
 
-        while let Some(Ok(_len)) = rx.recv(&mut tile_buf).await {
-            let hdr_size = core::mem::size_of::<TileHeader>();
-            let Ok(hdr) = TileHeader::read_from_bytes(&tile_buf[..hdr_size]) else {
+        while let Some(Ok(len)) = rx.recv(&mut tile_buf).await {
+            let Some(tile) = ReceivedTile::from_bytes(&tile_buf[..len]) else {
                 continue;
             };
-            let tw = hdr.width.get() as usize;
-            let th = hdr.height.get() as usize;
-            let n = tw * th;
-            let pixel_bytes = n * 4;
-            let mwir_start = hdr_size;
-            let lwir_start = mwir_start + pixel_bytes;
-
-            let Ok(mwir) = <[f32]>::ref_from_bytes(&tile_buf[mwir_start..mwir_start + pixel_bytes]) else {
-                continue;
-            };
-            let Ok(lwir) = <[f32]>::ref_from_bytes(&tile_buf[lwir_start..lwir_start + pixel_bytes]) else {
-                continue;
-            };
+            let tw = tile.header.width as usize;
+            let th = tile.header.height as usize;
 
             let mut hotspots = [Hotspot::default(); MAX_HOTSPOTS];
-            let det = detect_fire(mwir, lwir, tw, th, &self.thresholds, &mut hotspots);
+            let det = detect_fire(tile.mwir, tile.lwir, tw, th, &self.thresholds, &mut hotspots);
 
-            let ox = if hdr.tile_x.get() >= TILE_OVERLAP as u16 { TILE_OVERLAP as u16 } else { hdr.tile_x.get() };
-            let oy = if hdr.tile_y.get() >= TILE_OVERLAP as u16 { TILE_OVERLAP as u16 } else { hdr.tile_y.get() };
+            let ox = tile.overlap_x();
+            let oy = tile.overlap_y();
 
             for hs in det.hotspots {
-                if hs.x >= ox && hs.x < ox + hdr.inner_w.get()
-                    && hs.y >= oy && hs.y < oy + hdr.inner_h.get()
+                if hs.x >= ox && hs.x < ox + tile.header.inner_w
+                    && hs.y >= oy && hs.y < oy + tile.header.inner_h
                 {
-                    let frame_x = hdr.tile_x.get() + (hs.x - ox);
-                    let frame_y = hdr.tile_y.get() + (hs.y - oy);
+                    let frame_x = tile.header.frame_x + (hs.x - ox);
+                    let frame_y = tile.header.frame_y + (hs.y - oy);
                     writer.write(&HotspotRecord::new(frame_x, frame_y, hs.t4)).await?;
                     total_hotspots += 1;
                 }
