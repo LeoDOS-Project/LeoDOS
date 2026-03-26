@@ -23,13 +23,13 @@ use leodos_spacecomp::SpaceCompConfig;
 use leodos_spacecomp::SpaceCompError;
 use leodos_spacecomp::SpaceCompNode;
 
+use zerocopy::network_endian::U16;
+use zerocopy::network_endian::U32;
 use zerocopy::FromBytes;
 use zerocopy::Immutable;
 use zerocopy::IntoBytes;
 use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
-use zerocopy::network_endian::U16;
-use zerocopy::network_endian::U32;
 
 mod bindings {
     #![allow(non_upper_case_globals)]
@@ -203,7 +203,10 @@ impl SpaceComp for WildfireCompute {
             ty += TILE_SIZE;
         }
 
-        info!("Collector: sent {} tiles from {}x{} frame", tile_count, fw, fh)?;
+        info!(
+            "Collector: sent {} tiles from {}x{} frame",
+            tile_count, fw, fh
+        )?;
         Ok(())
     }
 
@@ -222,7 +225,11 @@ impl SpaceComp for WildfireCompute {
         let mut received = 0u8;
         {
             let mut writer = BufWriter::<HotspotRecord, _>::new(
-                &mut tx, &mut buf, reducer_addr, job_id, OpCode::DataChunk,
+                &mut tx,
+                &mut buf,
+                reducer_addr,
+                job_id,
+                OpCode::DataChunk,
             );
 
             loop {
@@ -262,10 +269,14 @@ impl SpaceComp for WildfireCompute {
                 let mwir_start = hdr_size;
                 let lwir_start = mwir_start + pixel_bytes;
 
-                let Ok(mwir) = <[f32]>::ref_from_bytes(&tile_buf[mwir_start..mwir_start + pixel_bytes]) else {
+                let Ok(mwir) =
+                    <[f32]>::ref_from_bytes(&tile_buf[mwir_start..mwir_start + pixel_bytes])
+                else {
                     continue;
                 };
-                let Ok(lwir) = <[f32]>::ref_from_bytes(&tile_buf[lwir_start..lwir_start + pixel_bytes]) else {
+                let Ok(lwir) =
+                    <[f32]>::ref_from_bytes(&tile_buf[lwir_start..lwir_start + pixel_bytes])
+                else {
                     continue;
                 };
 
@@ -288,8 +299,10 @@ impl SpaceComp for WildfireCompute {
 
                 for hs in det.hotspots {
                     // Only report if in inner region
-                    if hs.x >= ox && hs.x < ox + hdr.inner_w.get()
-                        && hs.y >= oy && hs.y < oy + hdr.inner_h.get()
+                    if hs.x >= ox
+                        && hs.x < ox + hdr.inner_w.get()
+                        && hs.y >= oy
+                        && hs.y < oy + hdr.inner_h.get()
                     {
                         let frame_x = hdr.tile_x.get() + (hs.x - ox);
                         let frame_y = hdr.tile_y.get() + (hs.y - oy);
@@ -376,7 +389,11 @@ impl SpaceComp for WildfireCompute {
                     )?;
 
                     let mut writer = BufWriter::<HotspotRecord, _>::new(
-                        &mut tx, &mut buf, los_addr, job_id, OpCode::JobResult,
+                        &mut tx,
+                        &mut buf,
+                        los_addr,
+                        job_id,
+                        OpCode::JobResult,
                     );
                     for rec in &all_hotspots[..total] {
                         writer.write(rec).await?;
