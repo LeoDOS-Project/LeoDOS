@@ -4,7 +4,6 @@ use leodos_libcfs::info;
 use leodos_libcfs::nos3::drivers::thermal_cam::ThermalCamera;
 
 use leodos_analysis::frame::ReceivedTile;
-use leodos_utils::lending_iterator::LendingIterator;
 use leodos_analysis::geo::GeoBounds;
 use leodos_analysis::thermal::detect_fire;
 use leodos_analysis::thermal::FireThresholds;

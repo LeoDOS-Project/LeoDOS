@@ -6,14 +6,9 @@ version = 4
 name = "leodos-analysis"
 version = "0.1.0"
 dependencies = [
- "leodos-utils",
  "libm",
  "zerocopy",
 ]
-
-[[package]]
-name = "leodos-utils"
-version = "0.1.0"
 
 [[package]]
 name = "libm"

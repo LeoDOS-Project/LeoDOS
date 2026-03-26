@@ -122,10 +122,9 @@ pub struct TileIter<'frame, 'buf> {
     lwir: &'buf mut [f32],
 }
 
-impl<'frame, 'buf> leodos_utils::lending_iterator::LendingIterator for TileIter<'frame, 'buf> {
-    type Item<'a> = DualBandTile<'a> where Self: 'a;
-
-    fn next(&mut self) -> Option<DualBandTile<'_>> {
+impl<'frame, 'buf> TileIter<'frame, 'buf> {
+    /// Returns the next tile, or `None` if done.
+    pub fn next(&mut self) -> Option<DualBandTile<'_>> {
         if self.index >= self.count {
             return None;
         }
