@@ -167,49 +167,67 @@ fn compute_background(
     }
 }
 
-/// Result of fire detection on a thermal image.
-pub struct FireDetection<'a> {
-    /// Detected hotspot pixels.
-    pub hotspots: &'a [Hotspot],
-    /// Number of hotspots detected.
-    pub count: usize,
-    /// Centroid X in pixel coordinates.
-    pub centroid_x: f32,
-    /// Centroid Y in pixel coordinates.
-    pub centroid_y: f32,
-    /// Maximum MIR brightness temperature (K).
-    pub max_temp: f32,
+use crate::frame::TileMessage;
+use crate::geo::Location;
+use crate::geo::pixel_to_latlon;
+
+/// A geo-located fire detection.
+#[derive(Debug, Copy, Clone)]
+pub struct GeoHotspot {
+    pub lat: f32,
+    pub lon: f32,
+    pub t4: f32,
+    pub confidence: f32,
 }
 
-/// Run fire detection on a thermal image.
+/// Lazily detects fire pixels in a received tile.
 ///
-/// `t4` — MIR brightness temperature band (e.g. MODIS band 21/22, ~3.9μm).
-/// `t11` — TIR brightness temperature band (e.g. MODIS band 31, ~11μm).
+/// Yields only hotspots in the tile's inner region (overlap
+/// border pixels are filtered out). Coordinates are geo-located
+/// using the tile's nadir + GSD.
 pub fn detect_fire<'a>(
-    t4: &[f32],
-    t11: &[f32],
+    tile: &'a TileMessage<'a>,
+    thresholds: &'a FireThresholds,
+) -> impl Iterator<Item = GeoHotspot> + 'a {
+    let nadir = Location::new(tile.nadir_lat(), tile.nadir_lon());
+    let gsd = tile.gsd();
+    let fw = tile.header.width as f32;
+    let fh = tile.header.height as f32;
+    let cx = fw / 2.0;
+    let cy = fh / 2.0;
+
+    detect_fire_raw(tile.mwir, tile.lwir, tile.width(), tile.height(), thresholds)
+        .filter_map(move |hs| {
+            let (fx, fy) = tile.to_frame_coords(hs.x, hs.y)?;
+            let loc = pixel_to_latlon(fx as f32, fy as f32, cx, cy, nadir, gsd);
+            Some(GeoHotspot {
+                lat: loc.lat,
+                lon: loc.lon,
+                t4: hs.t4,
+                confidence: hs.confidence,
+            })
+        })
+}
+
+fn detect_fire_raw<'a>(
+    t4: &'a [f32],
+    t11: &'a [f32],
     width: usize,
     height: usize,
-    thresholds: &FireThresholds,
-    hotspots: &'a mut [Hotspot],
-) -> FireDetection<'a> {
-    let mut count = 0;
-
-    for y in 0..height {
-        for x in 0..width {
+    thresholds: &'a FireThresholds,
+) -> impl Iterator<Item = Hotspot> + 'a {
+    (0..height).flat_map(move |y| {
+        (0..width).filter_map(move |x| {
             let idx = y * width + x;
             let v4 = t4[idx];
             let v11 = t11[idx];
             let dt = v4 - v11;
 
-            // Test 1: absolute MIR threshold
             if v4 < thresholds.t4_abs {
-                continue;
+                return None;
             }
-
-            // Test 2: absolute split-window threshold
             if dt < thresholds.t4_t11_abs {
-                continue;
+                return None;
             }
 
             let bg = compute_background(t4, t11, width, height, x, y, thresholds);
@@ -218,30 +236,20 @@ pub fn detect_fire<'a>(
                 let dt4 = v4 - bg.mean_t4;
                 let dt4_t11 = dt - bg.mean_dt;
 
-                // Test 3: contextual MIR anomaly
                 let t4_pass = dt4 > thresholds.dt4_threshold.max(3.0 * bg.std_t4);
-
-                // Test 4: contextual split-window anomaly
                 let dt_pass = dt4_t11 > thresholds.dt4_t11_threshold.max(3.0 * bg.std_dt);
 
                 if !t4_pass || !dt_pass {
-                    continue;
+                    return None;
                 }
 
-                // Confidence: higher anomaly = higher confidence
                 let conf = ((dt4 / 50.0).min(1.0) + (dt4_t11 / 30.0).min(1.0)) / 2.0;
                 (dt4, dt4_t11, conf)
             } else {
-                // Not enough background pixels — use absolute only
-                // with reduced confidence
                 (v4 - thresholds.t4_abs, dt, 0.3)
             };
 
-            if count >= hotspots.len() {
-                break;
-            }
-
-            hotspots[count] = Hotspot {
+            Some(Hotspot {
                 x: x as u16,
                 y: y as u16,
                 t4: v4,
@@ -250,35 +258,9 @@ pub fn detect_fire<'a>(
                 dt4_t11,
                 frp: estimate_frp(v4, bg.mean_t4),
                 confidence,
-            };
-            count += 1;
-        }
-    }
-
-    summarize(hotspots, count)
-}
-
-fn summarize(hotspots: &[Hotspot], count: usize) -> FireDetection<'_> {
-    let mut sum_x = 0.0f32;
-    let mut sum_y = 0.0f32;
-    let mut max_temp = 0.0f32;
-
-    for hs in &hotspots[..count] {
-        sum_x += hs.x as f32;
-        sum_y += hs.y as f32;
-        if hs.t4 > max_temp {
-            max_temp = hs.t4;
-        }
-    }
-
-    let n = (count as f32).max(1.0);
-    FireDetection {
-        hotspots: &hotspots[..count],
-        count,
-        centroid_x: sum_x / n,
-        centroid_y: sum_y / n,
-        max_temp,
-    }
+            })
+        })
+    })
 }
 
 /// Estimate Fire Radiative Power (MW) from MIR radiance.
@@ -309,32 +291,21 @@ mod tests {
     #[test]
     fn detects_strong_fire() {
         let (mut t4, mut t11) = make_scene(8, 8, 290.0, 285.0);
-        // Place a fire pixel
         t4[3 * 8 + 4] = 360.0;
         t11[3 * 8 + 4] = 310.0;
 
         let thresholds = FireThresholds::day();
-        let mut hotspots = [Hotspot {
-            x: 0, y: 0, t4: 0.0, t11: 0.0,
-            dt4: 0.0, dt4_t11: 0.0, frp: 0.0, confidence: 0.0,
-        }; 8];
-        let det = detect_fire(&t4, &t11, 8, 8, &thresholds, &mut hotspots);
-        assert!(det.count >= 1);
-        assert_eq!(det.hotspots[0].x, 4);
-        assert_eq!(det.hotspots[0].y, 3);
-        assert!(det.hotspots[0].confidence > 0.5);
+        let hs = detect_fire_raw(&t4, &t11, 8, 8, &thresholds).next().unwrap();
+        assert_eq!(hs.x, 4);
+        assert_eq!(hs.y, 3);
+        assert!(hs.confidence > 0.5);
     }
 
     #[test]
     fn no_fire_in_cool_scene() {
         let (t4, t11) = make_scene(8, 8, 290.0, 285.0);
         let thresholds = FireThresholds::day();
-        let mut hotspots = [Hotspot {
-            x: 0, y: 0, t4: 0.0, t11: 0.0,
-            dt4: 0.0, dt4_t11: 0.0, frp: 0.0, confidence: 0.0,
-        }; 8];
-        let det = detect_fire(&t4, &t11, 8, 8, &thresholds, &mut hotspots);
-        assert_eq!(det.count, 0);
+        assert_eq!(detect_fire_raw(&t4, &t11, 8, 8, &thresholds).count(), 0);
     }
 
     #[test]
@@ -347,19 +318,11 @@ mod tests {
     #[test]
     fn warm_pixel_without_split_window_rejected() {
         let (mut t4, t11) = make_scene(8, 8, 290.0, 285.0);
-        // Warm but T4-T11 is small (not fire-like)
         t4[3 * 8 + 4] = 315.0;
-        // t11 stays at 285, so dt = 30 which passes t4_t11_abs
-        // But let's make t11 close to t4
         let mut t11_mod = t11;
-        t11_mod[3 * 8 + 4] = 312.0; // dt = 3, below t4_t11_abs=10
+        t11_mod[3 * 8 + 4] = 312.0;
 
         let thresholds = FireThresholds::day();
-        let mut hotspots = [Hotspot {
-            x: 0, y: 0, t4: 0.0, t11: 0.0,
-            dt4: 0.0, dt4_t11: 0.0, frp: 0.0, confidence: 0.0,
-        }; 8];
-        let det = detect_fire(&t4, &t11_mod, 8, 8, &thresholds, &mut hotspots);
-        assert_eq!(det.count, 0);
+        assert_eq!(detect_fire_raw(&t4, &t11_mod, 8, 8, &thresholds).count(), 0);
     }
 }

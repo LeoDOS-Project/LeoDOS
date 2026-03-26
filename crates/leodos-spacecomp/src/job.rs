@@ -9,13 +9,13 @@
 
 use bon::bon;
 
+use zerocopy::network_endian::U32;
+use zerocopy::network_endian::U64;
 use zerocopy::FromBytes;
 use zerocopy::Immutable;
 use zerocopy::IntoBytes;
 use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
-use zerocopy::network_endian::U32;
-use zerocopy::network_endian::U64;
 
 use leodos_protocols::network::isl::geo::GeoAoi;
 use leodos_protocols::network::isl::geo::LatLon;
@@ -99,7 +99,11 @@ impl Job {
         #[builder(default)] solver: AssignmentSolver,
     ) -> Self {
         let mut flags = 0u8;
-        set_bits_u8(&mut flags, bitmask::ASCENDING_ONLY_MASK, ascending_only as u8);
+        set_bits_u8(
+            &mut flags,
+            bitmask::ASCENDING_ONLY_MASK,
+            ascending_only as u8,
+        );
         set_bits_u8(&mut flags, bitmask::SOLVER_MASK, solver as u8);
         Self {
             upper_left_lat: U32::new(geo_aoi.upper_left.lat_deg.to_bits()),

@@ -17,14 +17,14 @@ pub fn rad2deg(rad: f32) -> f32 {
 
 /// A geographic coordinate.
 #[derive(Debug, Copy, Clone)]
-pub struct LatLon {
+pub struct Location {
     /// Latitude in degrees (-90 to 90).
     pub lat: f32,
     /// Longitude in degrees (-180 to 180).
     pub lon: f32,
 }
 
-impl LatLon {
+impl Location {
     /// Creates a new coordinate.
     pub fn new(lat: f32, lon: f32) -> Self {
         Self { lat, lon }
@@ -49,8 +49,8 @@ impl GeoBounds {
 
     /// Maps a pixel coordinate to a geographic coordinate
     /// within this bounding box (linear interpolation).
-    pub fn pixel_to_latlon(&self, px: f32, py: f32, width: f32, height: f32) -> LatLon {
-        LatLon {
+    pub fn pixel_to_location(&self, px: f32, py: f32, width: f32, height: f32) -> Location {
+        Location {
             lat: self.north - py / height * (self.north - self.south),
             lon: self.west + px / width * (self.east - self.west),
         }
@@ -58,7 +58,7 @@ impl GeoBounds {
 }
 
 /// Haversine distance between two points in meters.
-pub fn haversine_distance(a: LatLon, b: LatLon) -> f32 {
+pub fn haversine_distance(a: Location, b: Location) -> f32 {
     let dlat = deg2rad(b.lat - a.lat);
     let dlon = deg2rad(b.lon - a.lon);
     let lat1 = deg2rad(a.lat);
@@ -96,16 +96,16 @@ pub fn pixel_to_latlon(
     py: f32,
     center_px: f32,
     center_py: f32,
-    nadir: LatLon,
+    nadir: Location,
     gsd: f32,
-) -> LatLon {
+) -> Location {
     let dx_m = (px - center_px) * gsd;
     let dy_m = (py - center_py) * gsd;
 
     let dlat = rad2deg(dy_m / EARTH_RADIUS_M);
     let dlon = rad2deg(dx_m / (EARTH_RADIUS_M * libm::cosf(deg2rad(nadir.lat))));
 
-    LatLon::new(nadir.lat - dlat, nadir.lon + dlon)
+    Location::new(nadir.lat - dlat, nadir.lon + dlon)
 }
 
 #[cfg(test)]
@@ -114,15 +114,15 @@ mod tests {
 
     #[test]
     fn haversine_same_point() {
-        let p = LatLon::new(59.3293, 18.0686);
+        let p = Location::new(59.3293, 18.0686);
         let d = haversine_distance(p, p);
         assert!(d < 1.0);
     }
 
     #[test]
     fn haversine_stockholm_gothenburg() {
-        let sthlm = LatLon::new(59.3293, 18.0686);
-        let gbg = LatLon::new(57.7089, 11.9746);
+        let sthlm = Location::new(59.3293, 18.0686);
+        let gbg = Location::new(57.7089, 11.9746);
         let d = haversine_distance(sthlm, gbg);
         assert!((d - 398_000.0).abs() < 10_000.0);
     }
@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn pixel_to_latlon_center() {
-        let nadir = LatLon::new(59.0, 18.0);
+        let nadir = Location::new(59.0, 18.0);
         let ll = pixel_to_latlon(512.0, 512.0, 512.0, 512.0, nadir, 10.0);
         assert!((ll.lat - 59.0).abs() < 0.001);
         assert!((ll.lon - 18.0).abs() < 0.001);

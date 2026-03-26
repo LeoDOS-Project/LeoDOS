@@ -10,6 +10,8 @@
 pub mod calibration;
 /// Change detection between multi-temporal images.
 pub mod change;
+/// Union-find clustering for spatial data.
+pub mod cluster;
 /// Cloud masking and pixel quality filtering.
 pub mod cloud;
 /// Geospatial coordinate transforms and utilities.

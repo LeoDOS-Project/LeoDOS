@@ -24,6 +24,7 @@ bon = { version = "3.9.1", default-features = false }
 [build-dependencies]
 bindgen = "0.72.1"
 cc = "1.2.57"
+indoc = "2"
 regex = "1.12.3"
 lazy_static = "1.5.0"
 walkdir = "2.5.0"

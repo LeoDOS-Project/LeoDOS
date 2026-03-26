@@ -5,6 +5,7 @@ use leodos_protocols::network::isl::torus::Torus;
 use leodos_protocols::network::spp::Apid;
 
 /// Configuration for a SpaceCoMP node.
+#[derive(bon::Builder)]
 pub struct SpaceCompConfig {
     /// Number of orbital planes.
     pub num_orbits: u8,

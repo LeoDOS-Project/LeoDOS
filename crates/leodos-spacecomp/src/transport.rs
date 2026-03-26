@@ -9,8 +9,15 @@ use leodos_protocols::transport::srspp::dtn::MessageStore;
 use leodos_protocols::transport::srspp::dtn::Reachable;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverBackend;
 
+use zerocopy::FromBytes;
+use zerocopy::Immutable;
+use zerocopy::IntoBytes;
+use zerocopy::KnownLayout;
+
+use crate::bufwriter::BufWriter;
 use crate::packet::OpCode;
 use crate::packet::SpaceCompMessage;
+use crate::reader::RecordIter;
 use crate::SpaceCompError;
 
 /// Sends data to the assigned next-stage node.
@@ -24,6 +31,25 @@ pub trait Tx {
     async fn done(&mut self) -> Result<(), SpaceCompError>;
     /// Returns the partition/collector ID for this role.
     fn partition_id(&self) -> u8;
+    /// Returns a batched writer for fixed-size records.
+    fn batched<T: IntoBytes + Immutable>(&mut self) -> BufWriter<'_, T, Self>
+    where
+        Self: Sized,
+    {
+        BufWriter::new(self)
+    }
+}
+
+impl<T: Tx> Tx for &mut T {
+    async fn send(&mut self, data: &[u8]) -> Result<(), SpaceCompError> {
+        T::send(self, data).await
+    }
+    async fn done(&mut self) -> Result<(), SpaceCompError> {
+        T::done(self).await
+    }
+    fn partition_id(&self) -> u8 {
+        T::partition_id(self)
+    }
 }
 
 /// Receives data from upstream nodes.
@@ -36,6 +62,17 @@ pub trait Rx {
         &mut self,
         f: impl FnMut(&[u8]) -> T,
     ) -> Option<Result<T, SpaceCompError>>;
+    /// Receives a batch and returns an iterator over fixed-size records.
+    async fn recv_batch<'b, T: FromBytes + Immutable + KnownLayout + 'b>(
+        &mut self,
+        buf: &'b mut [u8],
+    ) -> Option<Result<RecordIter<'b, T>, SpaceCompError>> {
+        match self.recv(buf).await {
+            None => None,
+            Some(Err(e)) => Some(Err(e)),
+            Some(Ok(len)) => Some(Ok(RecordIter::new(&buf[..len]))),
+        }
+    }
 }
 
 // ── Contextualized SRSPP channels ───────────────────────────

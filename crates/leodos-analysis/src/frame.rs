@@ -6,11 +6,8 @@ use zerocopy::IntoBytes;
 use zerocopy::KnownLayout;
 
 use crate::tile::OverlapTile;
-use crate::tile::Tile;
-use crate::tile::compute_tiles_with_overlap;
-use crate::tile::extract_tile;
 
-/// A dual-band thermal image frame.
+/// A dual-band thermal image frame (raw pixels).
 pub struct Frame<'a> {
     /// MWIR brightness temperatures (Kelvin).
     pub mwir: &'a [f32],
@@ -22,7 +19,15 @@ pub struct Frame<'a> {
     pub height: u32,
 }
 
-/// Wire-format tile header (12 bytes).
+/// A geo-located dual-band frame.
+pub struct GeoFrame<'a> {
+    pub frame: Frame<'a>,
+    pub nadir_lat: f32,
+    pub nadir_lon: f32,
+    pub gsd: f32,
+}
+
+/// Wire-format tile header.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, KnownLayout, Immutable)]
 pub struct TileHeader {
@@ -32,16 +37,53 @@ pub struct TileHeader {
     pub height: u16,
     pub inner_w: u16,
     pub inner_h: u16,
+    pub nadir_lat: f32,
+    pub nadir_lon: f32,
+    pub gsd: f32,
 }
 
-/// A tile with extracted dual-band pixel data.
-pub struct DualBandTile<'a> {
-    pub geo: &'a OverlapTile,
+/// A parsed tile received from a remote collector.
+pub struct TileMessage<'a> {
+    pub header: TileHeader,
     pub mwir: &'a [f32],
     pub lwir: &'a [f32],
 }
 
+/// A zero-copy view of a tile within a dual-band frame.
+///
+/// Owns the tile geometry; pixel data is accessed through
+/// the frame reference. No intermediate buffers needed.
+pub struct DualBandTile<'a> {
+    pub geo: OverlapTile,
+    mwir: &'a [f32],
+    lwir: &'a [f32],
+    frame_width: usize,
+    pub nadir_lat: f32,
+    pub nadir_lon: f32,
+    pub gsd: f32,
+}
+
 impl DualBandTile<'_> {
+    /// Iterator over MWIR pixel rows for this tile.
+    pub fn mwir_rows(&self) -> impl Iterator<Item = &[f32]> {
+        self.rows(self.mwir)
+    }
+
+    /// Iterator over LWIR pixel rows for this tile.
+    pub fn lwir_rows(&self) -> impl Iterator<Item = &[f32]> {
+        self.rows(self.lwir)
+    }
+
+    fn rows<'a>(&'a self, band: &'a [f32]) -> impl Iterator<Item = &'a [f32]> {
+        let x = self.geo.x;
+        let w = self.geo.width;
+        let fw = self.frame_width;
+        (0..self.geo.height).map(move |row| {
+            let start = (self.geo.y + row) * fw + x;
+            &band[start..start + w]
+        })
+    }
+
     /// Serializes header + MWIR + LWIR into `buf`.
     /// Returns the number of bytes written.
     pub fn write_to(&self, buf: &mut [u8]) -> usize {
@@ -52,30 +94,30 @@ impl DualBandTile<'_> {
             height: self.geo.height as u16,
             inner_w: self.geo.inner_w as u16,
             inner_h: self.geo.inner_h as u16,
+            nadir_lat: self.nadir_lat,
+            nadir_lon: self.nadir_lon,
+            gsd: self.gsd,
         };
         let hdr = header.as_bytes();
-        let mwir = self.mwir.as_bytes();
-        let lwir = self.lwir.as_bytes();
-
         let mut off = 0;
         buf[off..off + hdr.len()].copy_from_slice(hdr);
         off += hdr.len();
-        buf[off..off + mwir.len()].copy_from_slice(mwir);
-        off += mwir.len();
-        buf[off..off + lwir.len()].copy_from_slice(lwir);
-        off += lwir.len();
+
+        for row in self.mwir_rows() {
+            let bytes = row.as_bytes();
+            buf[off..off + bytes.len()].copy_from_slice(bytes);
+            off += bytes.len();
+        }
+        for row in self.lwir_rows() {
+            let bytes = row.as_bytes();
+            buf[off..off + bytes.len()].copy_from_slice(bytes);
+            off += bytes.len();
+        }
         off
     }
 }
 
-/// A parsed tile received from a remote collector.
-pub struct ReceivedTile<'a> {
-    pub header: TileHeader,
-    pub mwir: &'a [f32],
-    pub lwir: &'a [f32],
-}
-
-impl<'a> ReceivedTile<'a> {
+impl<'a> TileMessage<'a> {
     /// Parses a tile from a byte buffer (header + MWIR + LWIR).
     pub fn from_bytes(data: &'a [u8]) -> Option<Self> {
         let (header, _) = TileHeader::read_from_prefix(data).ok()?;
@@ -89,8 +131,42 @@ impl<'a> ReceivedTile<'a> {
         Some(Self { header, mwir, lwir })
     }
 
-    /// Overlap offset X (pixels from tile edge to inner region).
-    pub fn overlap_x(&self) -> u16 {
+    pub fn width(&self) -> usize {
+        self.header.width as usize
+    }
+
+    pub fn height(&self) -> usize {
+        self.header.height as usize
+    }
+
+    pub fn nadir_lat(&self) -> f32 {
+        self.header.nadir_lat
+    }
+
+    pub fn nadir_lon(&self) -> f32 {
+        self.header.nadir_lon
+    }
+
+    pub fn gsd(&self) -> f32 {
+        self.header.gsd
+    }
+
+    /// Maps tile-local coordinates to frame coordinates.
+    ///
+    /// Returns `None` if the point falls in the overlap border.
+    pub fn to_frame_coords(&self, x: u16, y: u16) -> Option<(u16, u16)> {
+        let ox = self.overlap_x();
+        let oy = self.overlap_y();
+        (x >= ox && x < ox + self.header.inner_w && y >= oy && y < oy + self.header.inner_h).then(
+            || {
+                let fx = self.header.frame_x + (x - ox);
+                let fy = self.header.frame_y + (y - oy);
+                (fx, fy)
+            },
+        )
+    }
+
+    fn overlap_x(&self) -> u16 {
         if self.header.frame_x >= self.header.width - self.header.inner_w {
             (self.header.width - self.header.inner_w).min(self.header.frame_x)
         } else {
@@ -98,8 +174,7 @@ impl<'a> ReceivedTile<'a> {
         }
     }
 
-    /// Overlap offset Y.
-    pub fn overlap_y(&self) -> u16 {
+    fn overlap_y(&self) -> u16 {
         if self.header.frame_y >= self.header.height - self.header.inner_h {
             (self.header.height - self.header.inner_h).min(self.header.frame_y)
         } else {
@@ -108,86 +183,109 @@ impl<'a> ReceivedTile<'a> {
     }
 }
 
-/// Lending iterator over tiles of a frame.
-///
-/// The caller owns the scratch buffers. Each call to
-/// `next()` extracts pixel data into them and returns
-/// a `DualBandTile` borrowing the buffers.
-pub struct TileIter<'frame, 'buf> {
-    frame: &'frame Frame<'frame>,
-    tiles: [OverlapTile; 256],
-    count: usize,
+/// Iterator over tiles of a frame. Computes tile geometry on the fly.
+pub struct TileIter<'frame> {
+    mwir: &'frame [f32],
+    lwir: &'frame [f32],
+    frame_width: usize,
+    frame_height: usize,
+    tile_size: usize,
+    overlap: usize,
+    nadir_lat: f32,
+    nadir_lon: f32,
+    gsd: f32,
+    cols: usize,
+    total: usize,
     index: usize,
-    mwir: &'buf mut [f32],
-    lwir: &'buf mut [f32],
 }
 
-impl<'frame, 'buf> TileIter<'frame, 'buf> {
-    /// Returns the next tile, or `None` if done.
-    pub fn next(&mut self) -> Option<DualBandTile<'_>> {
-        if self.index >= self.count {
+impl<'frame> Iterator for TileIter<'frame> {
+    type Item = DualBandTile<'frame>;
+
+    fn next(&mut self) -> Option<DualBandTile<'frame>> {
+        if self.index >= self.total {
             return None;
         }
-        let tile = &self.tiles[self.index];
-        let geom = Tile {
-            col: 0, row: 0,
-            x: tile.x, y: tile.y,
-            width: tile.width, height: tile.height,
-        };
-        let w = self.frame.width as usize;
-        extract_tile(self.frame.mwir, w, &geom, self.mwir);
-        extract_tile(self.frame.lwir, w, &geom, self.lwir);
-
-        let npx = tile.width * tile.height;
+        let col = self.index % self.cols;
+        let row = self.index / self.cols;
         self.index += 1;
+
+        let orig_x = col * self.tile_size;
+        let orig_y = row * self.tile_size;
+        let inner_w = self.tile_size.min(self.frame_width - orig_x);
+        let inner_h = self.tile_size.min(self.frame_height - orig_y);
+        let x0 = orig_x.saturating_sub(self.overlap);
+        let y0 = orig_y.saturating_sub(self.overlap);
+        let x1 = (orig_x + inner_w + self.overlap).min(self.frame_width);
+        let y1 = (orig_y + inner_h + self.overlap).min(self.frame_height);
+
         Some(DualBandTile {
-            geo: tile,
-            mwir: &self.mwir[..npx],
-            lwir: &self.lwir[..npx],
+            geo: OverlapTile {
+                x: x0,
+                y: y0,
+                width: x1 - x0,
+                height: y1 - y0,
+                inner_x: orig_x - x0,
+                inner_y: orig_y - y0,
+                inner_w,
+                inner_h,
+                frame_x: orig_x,
+                frame_y: orig_y,
+            },
+            mwir: self.mwir,
+            lwir: self.lwir,
+            frame_width: self.frame_width,
+            nadir_lat: self.nadir_lat,
+            nadir_lon: self.nadir_lon,
+            gsd: self.gsd,
         })
     }
 }
 
-const DEFAULT_TILE: OverlapTile = OverlapTile {
-    x: 0, y: 0, width: 0, height: 0,
-    inner_x: 0, inner_y: 0, inner_w: 0, inner_h: 0,
-    frame_x: 0, frame_y: 0,
-};
-
 impl<'a> Frame<'a> {
-    /// Number of tiles for the given tile size.
-    pub fn tile_count(&self, tile_size: usize) -> usize {
-        let cols = (self.width as usize + tile_size - 1) / tile_size;
-        let rows = (self.height as usize + tile_size - 1) / tile_size;
-        cols * rows
-    }
-
-    /// Creates a tile iterator over this frame.
-    ///
-    /// The caller provides scratch buffers for pixel extraction.
-    /// Each buffer must be at least `(tile_size + 2*overlap)^2` floats.
-    pub fn tiles<'buf>(
-        &'a self,
-        tile_size: usize,
-        overlap: usize,
-        mwir_buf: &'buf mut [f32],
-        lwir_buf: &'buf mut [f32],
-    ) -> TileIter<'a, 'buf> {
-        let mut tiles = [DEFAULT_TILE; 256];
-        let count = compute_tiles_with_overlap(
-            self.width as usize,
-            self.height as usize,
+    /// Returns an iterator over tiles (without geo context).
+    pub fn tiles(&'a self, tile_size: usize, overlap: usize) -> TileIter<'a> {
+        let w = self.width as usize;
+        let h = self.height as usize;
+        let cols = (w + tile_size - 1) / tile_size;
+        let rows = (h + tile_size - 1) / tile_size;
+        TileIter {
+            mwir: self.mwir,
+            lwir: self.lwir,
+            frame_width: w,
+            frame_height: h,
             tile_size,
             overlap,
-            &mut tiles,
-        );
-        TileIter {
-            frame: self,
-            tiles,
-            count,
+            nadir_lat: 0.0,
+            nadir_lon: 0.0,
+            gsd: 0.0,
+            cols,
+            total: cols * rows,
             index: 0,
-            mwir: mwir_buf,
-            lwir: lwir_buf,
+        }
+    }
+}
+
+impl<'a> GeoFrame<'a> {
+    /// Returns an iterator over geo-located tiles.
+    pub fn tiles(&'a self, tile_size: usize, overlap: usize) -> TileIter<'a> {
+        let w = self.frame.width as usize;
+        let h = self.frame.height as usize;
+        let cols = (w + tile_size - 1) / tile_size;
+        let rows = (h + tile_size - 1) / tile_size;
+        TileIter {
+            mwir: self.frame.mwir,
+            lwir: self.frame.lwir,
+            frame_width: w,
+            frame_height: h,
+            tile_size,
+            overlap,
+            nadir_lat: self.nadir_lat,
+            nadir_lon: self.nadir_lon,
+            gsd: self.gsd,
+            cols,
+            total: cols * rows,
+            index: 0,
         }
     }
 }

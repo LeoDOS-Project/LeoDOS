@@ -63,20 +63,14 @@ pub type TxHandle<
 /// message dispatch, and coordinator orchestration.
 ///
 /// Type parameters:
+/// - `F`: closure that constructs the app after startup sync
 /// - `S`: message store for DTN (default: [`NoStore`])
 /// - `R`: reachability oracle for DTN (default: [`AlwaysReachable`])
 ///
 /// Const parameters control SRSPP buffer sizes (all have defaults).
 #[derive(bon::Builder)]
-pub struct SpaceCompNode<
-    S: MessageStore = NoStore,
-    R: Reachable = AlwaysReachable,
-    const WIN: usize = 8,
-    const BUF: usize = 4096,
-    const MTU: usize = 512,
-    const RX_BUF: usize = 8192,
-    const MAX_STREAMS: usize = 1,
-> {
+pub struct SpaceCompNode<F, S: MessageStore = NoStore, R: Reachable = AlwaysReachable> {
+    app_fn: F,
     config: SpaceCompConfig,
     store: S,
     reachable: R,
@@ -88,33 +82,38 @@ pub struct SpaceCompNode<
 /// is assigned as a collector, mapper, or reducer.
 pub trait SpaceComp {
     /// Collects local data and sends it to the assigned mapper.
-    async fn collect(&self, tx: impl Tx) -> Result<(), SpaceCompError>;
+    async fn collect(&mut self, tx: impl Tx) -> Result<(), SpaceCompError>;
 
-    /// Processes data from collectors and sends results to the reducer.
-    async fn map(&self, rx: impl Rx, tx: impl Tx) -> Result<(), SpaceCompError>;
+    /// Processes one message from a collector. Called once per received chunk.
+    async fn map(&mut self, data: &[u8], tx: impl Tx) -> Result<(), SpaceCompError>;
 
     /// Aggregates results from mappers and sends the final output.
-    async fn reduce(&self, rx: impl Rx, tx: impl Tx) -> Result<(), SpaceCompError>;
+    async fn reduce(&mut self, rx: impl Rx, tx: impl Tx) -> Result<(), SpaceCompError>;
 }
 
-impl<
-        S: MessageStore,
-        R: Reachable,
+impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
+    /// Starts the node with default SRSPP buffer sizes.
+    pub fn start<A: SpaceComp>(self) -> !
+    where
+        F: FnOnce() -> Result<A, SpaceCompError>,
+    {
+        leodos_libcfs::runtime::Runtime::new().run(self.run::<A, 8, 4096, 512, 8192, 1>())
+    }
+
+    /// Runs the node with custom SRSPP buffer sizes.
+    pub async fn run<
+        A: SpaceComp,
         const WIN: usize,
         const BUF: usize,
         const MTU: usize,
         const RX_BUF: usize,
         const MAX_STREAMS: usize,
-    > SpaceCompNode<S, R, WIN, BUF, MTU, RX_BUF, MAX_STREAMS>
-{
-    /// Starts the node, blocking forever. Handles the cFS
-    /// runtime lifecycle internally.
-    pub fn start(self, app: &impl SpaceComp) -> ! {
-        leodos_libcfs::runtime::Runtime::new().run(self.run(app))
-    }
-
-    /// Runs the node with the given app logic.
-    pub async fn run(self, app: &impl SpaceComp) -> Result<(), SpaceCompError> {
+    >(
+        self,
+    ) -> Result<(), SpaceCompError>
+    where
+        F: FnOnce() -> Result<A, SpaceCompError>,
+    {
         event::register(&[])?;
         info!("SpaceCoMP node starting")?;
 
@@ -164,14 +163,10 @@ impl<
 
         system::wait_for_startup_sync(Duration::from_millis(10_000));
 
+        let mut app = (self.app_fn)()?;
         let shell = self.config.shell();
-        // Max dispatch message: SpaceComp header (4) + Job payload (41)
-        const MAX_DISPATCH_MSG: usize = SpaceCompMessage::HEADER_SIZE + core::mem::size_of::<Job>();
-        // Max coordinator send: SpaceComp header (4) + assignment payload (5)
-        const MAX_ASSIGN_MSG: usize = SpaceCompMessage::HEADER_SIZE + 5;
-
-        let mut recv_buf = [0u8; MAX_DISPATCH_MSG];
-        let mut msg_buf = [0u8; MAX_ASSIGN_MSG];
+        let mut recv_buf = [0u8; SpaceCompMessage::MAX_DISPATCH_SIZE];
+        let mut msg_buf = [0u8; SpaceCompMessage::MAX_ASSIGN_SIZE];
 
         let dispatch = async {
             loop {
@@ -205,7 +200,12 @@ impl<
                                     continue;
                                 }
                             };
-                        let stx = crate::transport::SpaceCompTx::new(tx, p.mapper_addr(), job_id, p.partition_id());
+                        let stx = crate::transport::SpaceCompTx::new(
+                            tx,
+                            p.mapper_addr(),
+                            job_id,
+                            p.partition_id(),
+                        );
                         app.collect(stx).await
                     }
                     OpCode::AssignMapper => {
@@ -217,9 +217,27 @@ impl<
                                     continue;
                                 }
                             };
-                        let srx = crate::transport::SpaceCompRx::new(&mut rx, job_id, p.collector_count());
-                        let stx = crate::transport::SpaceCompTx::new(tx, p.reducer_addr(), job_id, 0);
-                        app.map(srx, stx).await
+                        let mut srx = crate::transport::SpaceCompRx::new(
+                            &mut rx,
+                            job_id,
+                            p.collector_count(),
+                        );
+                        let mut stx =
+                            crate::transport::SpaceCompTx::new(tx, p.reducer_addr(), job_id, 0);
+                        let mut map_buf = [0u8; 8192];
+                        let result = loop {
+                            match srx.recv(&mut map_buf).await {
+                                None => break Ok(()),
+                                Some(Err(e)) => break Err(e),
+                                Some(Ok(len)) => {
+                                    if let Err(e) = app.map(&map_buf[..len], &mut stx).await {
+                                        break Err(e);
+                                    }
+                                }
+                            }
+                        };
+                        stx.done().await?;
+                        result
                     }
                     OpCode::AssignReducer => {
                         let p: AssignReducerPayload =
@@ -230,7 +248,8 @@ impl<
                                     continue;
                                 }
                             };
-                        let srx = crate::transport::SpaceCompRx::new(&mut rx, job_id, p.mapper_count());
+                        let srx =
+                            crate::transport::SpaceCompRx::new(&mut rx, job_id, p.mapper_count());
                         let stx = crate::transport::SpaceCompTx::new(tx, p.los_addr(), job_id, 0);
                         app.reduce(srx, stx).await
                     }

@@ -84,7 +84,7 @@ fn partition_text(partition_id: u8) -> &'static [u8] {
 struct WordCount2;
 
 impl SpaceComp for WordCount2 {
-    async fn collect(&self, mut tx: impl Tx) -> Result<(), SpaceCompError> {
+    async fn collect(&mut self, mut tx: impl Tx) -> Result<(), SpaceCompError> {
         let partition = partition_text(tx.partition_id());
         for chunk in partition.chunks(MAX_CHUNK) {
             tx.send(chunk).await?;
@@ -92,25 +92,19 @@ impl SpaceComp for WordCount2 {
         Ok(())
     }
 
-    async fn map(&self, mut rx: impl Rx, mut tx: impl Tx) -> Result<(), SpaceCompError> {
-        let mut writer = BufWriter::<WordCount, _>::new(&mut tx);
-        let mut payload = [0u8; MAX_CHUNK];
-
-        while let Some(Ok(len)) = rx.recv(&mut payload).await {
-            for word in payload[..len].split(|&b| b == b' ' || b == b'\n' || b == b'\t') {
-                if word.is_empty() || word.len() > 16 {
-                    continue;
-                }
-                writer.write(&WordCount::new(word, 1)).await?;
+    async fn map(&mut self, data: &[u8], mut tx: impl Tx) -> Result<(), SpaceCompError> {
+        let mut writer = tx.batched::<WordCount>();
+        for word in data.split(|&b| b == b' ' || b == b'\n' || b == b'\t') {
+            if word.is_empty() || word.len() > 16 {
+                continue;
             }
-            writer.flush().await?;
+            writer.write(&WordCount::new(word, 1)).await?;
         }
-
-        tx.done().await?;
+        writer.flush().await?;
         Ok(())
     }
 
-    async fn reduce(&self, mut rx: impl Rx, mut tx: impl Tx) -> Result<(), SpaceCompError> {
+    async fn reduce(&mut self, mut rx: impl Rx, mut tx: impl Tx) -> Result<(), SpaceCompError> {
         let mut counts: FnvIndexMap<[u8; 16], u32, 64> = FnvIndexMap::new();
         let mut recv_buf = [0u8; 512];
 
@@ -137,23 +131,24 @@ impl SpaceComp for WordCount2 {
 
 #[no_mangle]
 pub extern "C" fn SPACECOMP_WORDCOUNT_AppMain() {
-    let config = SpaceCompConfig {
-        num_orbits: bindings::SPACECOMP_WORDCOUNT_NUM_ORBITS as u8,
-        num_sats: NUM_SATS,
-        altitude_m: 550_000.0,
-        inclination_deg: 87.0,
-        apid: Apid::new(bindings::SPACECOMP_WORDCOUNT_APID as u16).unwrap(),
-        rto_ms: 1000,
-        router_send_topic: 0,
-        router_recv_topic: 0,
-    };
-
-    let node: SpaceCompNode = SpaceCompNode::builder()
-        .config(config)
+    SpaceCompNode::builder()
+        .app_fn(|| Ok(WordCount2))
+        .config(
+            SpaceCompConfig::builder()
+                .num_orbits(bindings::SPACECOMP_WORDCOUNT_NUM_ORBITS as u8)
+                .num_sats(NUM_SATS)
+                .altitude_m(550_000.0)
+                .inclination_deg(87.0)
+                .apid(Apid::new(bindings::SPACECOMP_WORDCOUNT_APID as u16).unwrap())
+                .rto_ms(1000)
+                .router_send_topic(0)
+                .router_recv_topic(0)
+                .build(),
+        )
         .store(leodos_protocols::transport::srspp::dtn::NoStore)
         .reachable(leodos_protocols::transport::srspp::dtn::AlwaysReachable)
-        .build();
-    node.start(&WordCount2);
+        .build()
+        .start();
 }
 
 #[cfg(not(test))]

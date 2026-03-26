@@ -58,6 +58,19 @@ already exist.
   DatalinkWrite::write, NetworkWrite::write.
 
 
+- [ ] Tile geo-registration — collector captures GPS nadir
+  at image time and includes lat/lon + GSD in each
+  TileHeader. Enables mapper/reducer to geo-locate
+  hotspots precisely, and supports shuffling tiles to
+  multiple mappers (each tile self-contained).
+- [ ] Job AOI propagation — pass Job's GeoAoi to the
+  SpaceComp trait methods so the collector can check GPS
+  against the AOI before capturing (like the standalone
+  wildfire app does).
+- [ ] Tile source coding — Rice-encode quantized delta
+  temperatures in DualBandTile::write_to for ~2-3×
+  compression on the ISL.
+
 ### Missing CCSDS protocols
 
 Protocols from CCSDS 130.0-G-4 not yet implemented:

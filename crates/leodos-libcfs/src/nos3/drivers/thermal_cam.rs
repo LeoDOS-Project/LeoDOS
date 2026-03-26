@@ -50,19 +50,13 @@ impl core::error::Error for ThermalCamError {}
 
 pub use leodos_analysis::frame::Frame;
 
-/// Thermal camera with owned pixel buffers.
-///
-/// `N` is the maximum number of pixels per band
-/// (width * height). Typical values: `64*64` for
-/// low-res, `512*512` for high-res.
-pub struct ThermalCamera<const N: usize> {
+/// Thermal camera driver over SPI.
+pub struct ThermalCamera {
     spi: Spi,
-    mwir: [f32; N],
-    lwir: [f32; N],
 }
 
 #[bon::bon]
-impl<const N: usize> ThermalCamera<N> {
+impl ThermalCamera {
     /// Creates a new thermal camera on the given SPI bus.
     ///
     /// The builder can open the SPI device directly:
@@ -83,31 +77,32 @@ impl<const N: usize> ThermalCamera<N> {
         #[builder(default)] spi_mode: u8,
         #[builder(default = 8)] bits_per_word: u8,
     ) -> Result<Self, CfsError> {
-        let spi = Spi::open(device, bus, chip_select_line, baudrate, spi_mode, bits_per_word)
-            .map_err(BusError::from)?;
-        Ok(Self {
-            spi,
-            mwir: [0.0; N],
-            lwir: [0.0; N],
-        })
+        let spi = Spi::open(
+            device,
+            bus,
+            chip_select_line,
+            baudrate,
+            spi_mode,
+            bits_per_word,
+        )
+        .map_err(BusError::from)?;
+        Ok(Self { spi })
     }
 }
 
-impl<const N: usize> From<Spi> for ThermalCamera<N> {
+impl From<Spi> for ThermalCamera {
     fn from(spi: Spi) -> Self {
-        Self {
-            spi,
-            mwir: [0.0; N],
-            lwir: [0.0; N],
-        }
+        Self { spi }
     }
 }
 
-impl<const N: usize> ThermalCamera<N> {
+impl ThermalCamera {
     fn read_reg(&mut self, reg: u8) -> Result<u8, CfsError> {
         let tx = [reg, 0x00];
         let mut rx = [0u8; 2];
-        self.spi.transfer(&tx, &mut rx, 2, 0, 8, true).map_err(BusError::from)?;
+        self.spi
+            .transfer(&tx, &mut rx, 2, 0, 8, true)
+            .map_err(BusError::from)?;
         Ok(rx[0])
     }
 
@@ -119,13 +114,17 @@ impl<const N: usize> ThermalCamera<N> {
         Ok(())
     }
 
-    /// Captures a thermal frame into the internal buffers.
+    /// Captures a thermal frame into caller-provided buffers.
     ///
     /// Yields until the camera is ready, then triggers a
     /// capture and reads the FIFO. Returns a [`Frame`] that
     /// borrows the MWIR/LWIR data. If only one band is
     /// available, LWIR is a copy of MWIR.
-    pub async fn capture(&mut self) -> Result<Frame<'_>, CfsError> {
+    pub async fn capture<'a>(
+        &mut self,
+        mwir: &'a mut [f32],
+        lwir: &'a mut [f32],
+    ) -> Result<Frame<'a>, CfsError> {
         core::future::poll_fn(|_| match self.read_reg(REG_STATUS) {
             Ok(s) if s & STATUS_READY != 0 => core::task::Poll::Ready(Ok(())),
             Ok(_) => core::task::Poll::Pending,
@@ -145,35 +144,36 @@ impl<const N: usize> ThermalCamera<N> {
         let fifo_bytes = s0 | (s1 << 8) | (s2 << 16);
         let pixels_per_band = (width * height) as usize;
         let total_pixels = (fifo_bytes / 4) as usize;
+        let n = mwir.len().min(lwir.len());
 
         let mut bytes = [0u8; 4];
 
-        let n_mwir = pixels_per_band.min(N).min(total_pixels);
+        let n_mwir = pixels_per_band.min(n).min(total_pixels);
         for i in 0..n_mwir {
             for b in &mut bytes {
                 *b = self.read_reg(REG_FIFO_READ)?;
             }
-            self.mwir[i] = f32::from_le_bytes(bytes);
+            mwir[i] = f32::from_le_bytes(bytes);
         }
 
         if num_bands >= 2 {
             let remaining = total_pixels.saturating_sub(pixels_per_band);
-            let n_lwir = pixels_per_band.min(N).min(remaining);
+            let n_lwir = pixels_per_band.min(n).min(remaining);
             for i in 0..n_lwir {
                 for b in &mut bytes {
                     *b = self.read_reg(REG_FIFO_READ)?;
                 }
-                self.lwir[i] = f32::from_le_bytes(bytes);
+                lwir[i] = f32::from_le_bytes(bytes);
             }
         } else {
             for i in 0..n_mwir {
-                self.lwir[i] = self.mwir[i];
+                lwir[i] = mwir[i];
             }
         }
 
         Ok(Frame {
-            mwir: &self.mwir[..n_mwir],
-            lwir: &self.lwir[..n_mwir],
+            mwir: &mwir[..n_mwir],
+            lwir: &lwir[..n_mwir],
             width,
             height,
         })

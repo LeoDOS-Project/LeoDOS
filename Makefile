@@ -186,8 +186,12 @@ docker-test:
 		"[ -f build/.prep ] || make SIMULATION=native prep && cd crates/leodos-protocols && cargo test --features=cfs"
 
 check:
-	cd crates/leodos-protocols && cargo check --features=cfs && cargo test --features=cfs
+	cd crates/leodos-analysis && cargo check --tests
+	cd crates/leodos-protocols && cargo check --tests --features=cfs
 	cd crates/leodos-libcfs && cargo check
+	cd crates/leodos-spacecomp && cargo check --tests
+	cd apps/spacecomp_wildfire/fsw && cargo check
+	cd apps/spacecomp_wordcount/fsw && cargo check
 
 check-nos3: nos3-prep
 	$(NOS3_RUN_STANDALONE) bash -c "cd apps/wildfire/fsw && cargo check"

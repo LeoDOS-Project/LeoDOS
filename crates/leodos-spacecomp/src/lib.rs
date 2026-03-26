@@ -10,16 +10,16 @@
 //! struct MyApp;
 //!
 //! impl SpaceComp for MyApp {
-//!     async fn collect(&self, tx, job_id, assign) { ... }
-//!     async fn map(&self, rx, tx, job_id, assign) { ... }
-//!     async fn reduce(&self, rx, tx, job_id, assign) { ... }
+//!     async fn collect(&mut self, tx: impl Tx) { ... }
+//!     async fn map(&mut self, data: &[u8], tx: impl Tx) { ... }
+//!     async fn reduce(&mut self, rx: impl Rx, tx: impl Tx) { ... }
 //! }
 //!
 //! SpaceCompNode::builder()
+//!     .app_fn(|| Ok(MyApp))
 //!     .config(config)
 //!     .build()
-//!     .run(&MyApp)
-//!     .await?;
+//!     .start();
 //! ```
 
 #![no_std]

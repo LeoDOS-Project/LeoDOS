@@ -10,6 +10,7 @@ pub mod arducam;
 pub mod css;
 pub mod eps;
 pub mod fss;
+pub mod geo_camera;
 pub mod imu;
 pub mod mag;
 pub mod novatel;

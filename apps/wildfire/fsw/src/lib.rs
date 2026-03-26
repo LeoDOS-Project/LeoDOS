@@ -38,7 +38,7 @@ use leodos_protocols::transport::srspp::rto::FixedRto;
 use zerocopy::IntoBytes;
 
 type TxHandle<'a> = SrsppTxHandle<'a, CfsError, NoStore, AlwaysReachable, 8, 4096, 512>;
-type Camera = ThermalCamera<MAX_PIXELS>;
+type Camera = ThermalCamera;
 
 mod bindings {
     #![allow(non_upper_case_globals)]
@@ -217,6 +217,8 @@ async fn workflow(
     tx: &mut TxHandle<'_>,
 ) -> Result<(), WildfireError> {
     let mut was_over_aoi = false;
+    let mut mwir = [0.0f32; MAX_PIXELS];
+    let mut lwir = [0.0f32; MAX_PIXELS];
 
     loop {
         table.manage()?;
@@ -229,7 +231,8 @@ async fn workflow(
             let mut s = state.get();
             s.pass_count += 1;
             info!("Entering AOI pass {}", s.pass_count)?;
-            if let Err(e) = scan_and_downlink(camera, &cfg, &mut s, tx).await {
+            if let Err(e) = scan_and_downlink(camera, &mut mwir, &mut lwir, &cfg, &mut s, tx).await
+            {
                 err!("Scan failed: {}", e)?;
             }
             state.set(s);
@@ -244,11 +247,13 @@ async fn workflow(
 
 async fn scan_and_downlink(
     camera: &mut Camera,
+    mwir: &mut [f32],
+    lwir: &mut [f32],
     cfg: &WildfireConfig,
     state: &mut WildfireState,
     tx: &mut TxHandle<'_>,
 ) -> Result<(), WildfireError> {
-    let frame = camera.capture().await?;
+    let frame = camera.capture(mwir, lwir).await?;
 
     let thresholds = FireThresholds {
         t4_abs: cfg.bt_threshold_k,

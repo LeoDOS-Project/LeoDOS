@@ -6,14 +6,18 @@
 use bon::bon;
 use core::mem::size_of;
 
+use zerocopy::network_endian::U16;
 use zerocopy::FromBytes;
 use zerocopy::Immutable;
 use zerocopy::IntoBytes;
 use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
-use zerocopy::network_endian::U16;
 
-use leodos_protocols::network::isl::address::{Address, RawAddress};
+use leodos_protocols::network::isl::address::Address;
+use leodos_protocols::network::isl::address::RawAddress;
+
+/// Payload for [`OpCode::SubmitJob`].
+pub type SubmitJobPayload = crate::job::Job;
 
 /// Operation codes for the SpaceCoMP MapReduce protocol.
 ///
@@ -94,9 +98,38 @@ pub struct SpaceCompMessage {
     payload: [u8],
 }
 
+const fn const_max(sizes: &[usize]) -> usize {
+    let mut max = 0;
+    let mut i = 0;
+    while i < sizes.len() {
+        if sizes[i] > max {
+            max = sizes[i];
+        }
+        i += 1;
+    }
+    max
+}
+
 impl SpaceCompMessage {
     /// Size of the fixed SpaceCoMP header in bytes.
     pub const HEADER_SIZE: usize = size_of::<SpaceCompHeader>();
+
+    /// Max message size for dispatch (header + largest receivable payload).
+    pub const MAX_DISPATCH_SIZE: usize = Self::HEADER_SIZE
+        + const_max(&[
+            size_of::<SubmitJobPayload>(),
+            size_of::<AssignCollectorPayload>(),
+            size_of::<AssignMapperPayload>(),
+            size_of::<AssignReducerPayload>(),
+        ]);
+
+    /// Max message size for assignment commands (header + largest assignment payload).
+    pub const MAX_ASSIGN_SIZE: usize = Self::HEADER_SIZE
+        + const_max(&[
+            size_of::<AssignCollectorPayload>(),
+            size_of::<AssignMapperPayload>(),
+            size_of::<AssignReducerPayload>(),
+        ]);
 
     /// Parses a SpaceCoMP message from a byte slice.
     pub fn parse(bytes: &[u8]) -> Result<&Self, ParseError> {
@@ -370,56 +403,6 @@ impl BuildError {
     }
 }
 
-/// The role a satellite was assigned in a MapReduce job.
-#[repr(u8)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Role {
-    /// Collects raw sensor data from the satellite's instruments.
-    Collector = 1,
-    /// Processes and transforms collected data.
-    Mapper = 2,
-    /// Aggregates mapped results into a final output.
-    Reducer = 3,
-}
-
-impl TryFrom<u8> for Role {
-    type Error = ();
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Collector),
-            2 => Ok(Self::Mapper),
-            3 => Ok(Self::Reducer),
-            _ => Err(()),
-        }
-    }
-}
-
-/// Payload for [`OpCode::PhaseDone`].
-#[repr(C)]
-#[derive(Debug, FromBytes, IntoBytes, Unaligned, KnownLayout, Immutable, Clone, Copy)]
-pub struct PhaseDonePayload {
-    role: u8,
-}
-
-#[bon]
-impl PhaseDonePayload {
-    #[builder]
-    /// Creates a new phase-done payload for the given role.
-    pub fn new(role: Role) -> Self {
-        Self { role: role as u8 }
-    }
-
-    /// Returns the role that completed its phase.
-    pub fn role(&self) -> Result<Role, ()> {
-        self.role.try_into()
-    }
-
-    /// Sets the role that completed its phase.
-    pub fn set_role(&mut self, role: Role) {
-        self.role = role as u8;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,7 +418,7 @@ mod tests {
         buf[..SpaceCompMessage::HEADER_SIZE].copy_from_slice(hdr.as_bytes());
 
         let assign = AssignCollectorPayload::builder()
-            .mapper_addr(crate::network::isl::address::Address::satellite(1, 5))
+            .mapper_addr(Address::satellite(1, 5))
             .partition_id(3)
             .build();
         buf[SpaceCompMessage::HEADER_SIZE..total].copy_from_slice(assign.as_bytes());
