@@ -1,16 +1,15 @@
 #![no_std]
 
-use leodos_spacecomp::bufwriter::BufWriter;
-use leodos_spacecomp::packet::OpCode;
-use leodos_spacecomp::packet::SpaceCompMessage;
 use leodos_protocols::network::spp::Apid;
+use leodos_spacecomp::bufwriter::BufWriter;
 use leodos_spacecomp::node::SpaceComp;
+use leodos_spacecomp::transport::Rx;
+use leodos_spacecomp::transport::Tx;
 use leodos_spacecomp::SpaceCompConfig;
 use leodos_spacecomp::SpaceCompError;
 use leodos_spacecomp::SpaceCompNode;
 
 use heapless::index_map::FnvIndexMap;
-use leodos_protocols::network::isl::address::Address;
 use zerocopy::network_endian::U32;
 use zerocopy::FromBytes;
 use zerocopy::Immutable;
@@ -85,133 +84,54 @@ fn partition_text(partition_id: u8) -> &'static [u8] {
 struct WordCount2;
 
 impl SpaceComp for WordCount2 {
-    async fn collect(
-        &self,
-        mut tx: impl leodos_spacecomp::transport::Tx,
-        job_id: u16,
-        mapper_addr: Address,
-        partition_id: u8,
-    ) -> Result<(), SpaceCompError> {
-        let mut buf = [0u8; 512];
-        let partition = partition_text(partition_id);
+    async fn collect(&self, mut tx: impl Tx) -> Result<(), SpaceCompError> {
+        let partition = partition_text(tx.partition_id());
         for chunk in partition.chunks(MAX_CHUNK) {
-            let m = SpaceCompMessage::builder()
-                .buffer(&mut buf)
-                .op_code(OpCode::DataChunk)
-                .job_id(job_id)
-                .payload_len(chunk.len())
-                .build()?;
-            m.payload_mut().copy_from_slice(chunk);
-            tx.send(mapper_addr, m.as_bytes()).await.ok();
+            tx.send(chunk).await?;
         }
         Ok(())
     }
 
-    async fn map(
-        &self,
-        mut rx: impl leodos_spacecomp::transport::Rx,
-        mut tx: impl leodos_spacecomp::transport::Tx,
-        job_id: u16,
-        reducer_addr: Address,
-        collector_count: u8,
-    ) -> Result<(), SpaceCompError> {
-        let mut buf = [0u8; 512];
-        let mut received = 0u8;
-        {
-            let mut writer = BufWriter::<WordCount, _>::new(
-                &mut tx, &mut buf, reducer_addr, job_id, OpCode::DataChunk,
-            );
-            loop {
-                let mut payload = [0u8; MAX_CHUNK];
-                let Ok(maybe_len) = rx
-                    .recv_with(|data| -> Option<usize> {
-                        let msg = SpaceCompMessage::parse(data).ok()?;
-                        if msg.op_code() != Ok(OpCode::DataChunk) {
-                            return None;
-                        }
-                        let n = msg.payload().len().min(MAX_CHUNK);
-                        payload[..n].copy_from_slice(&msg.payload()[..n]);
-                        Some(n)
-                    })
-                    .await
-                else {
-                    return Ok(());
-                };
-                let Some(len) = maybe_len else { continue };
+    async fn map(&self, mut rx: impl Rx, mut tx: impl Tx) -> Result<(), SpaceCompError> {
+        let mut writer = BufWriter::<WordCount, _>::new(&mut tx);
+        let mut payload = [0u8; MAX_CHUNK];
 
-                for word in payload[..len].split(|&b| b == b' ' || b == b'\n' || b == b'\t') {
-                    if word.is_empty() || word.len() > 16 {
-                        continue;
-                    }
-                    writer.write(&WordCount::new(word, 1)).await?;
+        while let Some(Ok(len)) = rx.recv(&mut payload).await {
+            for word in payload[..len].split(|&b| b == b' ' || b == b'\n' || b == b'\t') {
+                if word.is_empty() || word.len() > 16 {
+                    continue;
                 }
-                writer.flush().await?;
-
-                received += 1;
-                if received >= collector_count {
-                    break;
-                }
+                writer.write(&WordCount::new(word, 1)).await?;
             }
+            writer.flush().await?;
         }
-        let done = SpaceCompMessage::builder()
-            .buffer(&mut buf)
-            .op_code(OpCode::PhaseDone)
-            .job_id(job_id)
-            .payload_len(0)
-            .build()?;
-        tx.send(reducer_addr, done.as_bytes()).await.ok();
+
+        tx.done().await?;
         Ok(())
     }
 
-    async fn reduce(
-        &self,
-        mut rx: impl leodos_spacecomp::transport::Rx,
-        mut tx: impl leodos_spacecomp::transport::Tx,
-        job_id: u16,
-        los_addr: Address,
-        mapper_count: u8,
-    ) -> Result<(), SpaceCompError> {
-        let mut buf = [0u8; 512];
+    async fn reduce(&self, mut rx: impl Rx, mut tx: impl Tx) -> Result<(), SpaceCompError> {
         let mut counts: FnvIndexMap<[u8; 16], u32, 64> = FnvIndexMap::new();
-        let mut done_count = 0u8;
+        let mut recv_buf = [0u8; 512];
 
-        loop {
-            let Ok(op) = rx
-                .recv_with(|data| {
-                    let Ok(msg) = SpaceCompMessage::parse(data) else { return None };
-                    match msg.op_code() {
-                        Ok(OpCode::DataChunk) => {
-                            for wc in msg.records::<WordCount>() {
-                                counts
-                                    .entry(wc.word)
-                                    .and_modify(|c| *c += wc.count.get())
-                                    .or_insert_with(|| wc.count.get())
-                                    .ok();
-                            }
-                            None
-                        }
-                        Ok(op) => Some(op),
-                        _ => None,
-                    }
-                })
-                .await
-            else {
-                return Ok(());
-            };
-            if op == Some(OpCode::PhaseDone) {
-                done_count += 1;
-                if done_count >= mapper_count {
-                    let mut writer = BufWriter::<WordCount, _>::new(
-                        &mut tx, &mut buf, los_addr, job_id, OpCode::JobResult,
-                    );
-                    for (word, &count) in counts.iter() {
-                        writer.write(&WordCount::new(word, count)).await?;
-                    }
-                    writer.flush().await?;
-                    return Ok(());
-                }
+        while let Some(Ok(len)) = rx.recv(&mut recv_buf).await {
+            let rec_size = core::mem::size_of::<WordCount>();
+            for wc_bytes in recv_buf[..len].chunks_exact(rec_size) {
+                let Ok(wc) = WordCount::read_from_bytes(wc_bytes) else { continue };
+                counts
+                    .entry(wc.word)
+                    .and_modify(|c| *c += wc.count.get())
+                    .or_insert_with(|| wc.count.get())
+                    .ok();
             }
         }
+
+        let mut writer = BufWriter::<WordCount, _>::new(&mut tx);
+        for (word, &count) in counts.iter() {
+            writer.write(&WordCount::new(word, count)).await?;
+        }
+        writer.flush().await?;
+        Ok(())
     }
 }
 

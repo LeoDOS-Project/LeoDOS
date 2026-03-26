@@ -88,33 +88,13 @@ pub struct SpaceCompNode<
 /// is assigned as a collector, mapper, or reducer.
 pub trait SpaceComp {
     /// Collects local data and sends it to the assigned mapper.
-    async fn collect(
-        &self,
-        tx: impl Tx,
-        job_id: u16,
-        mapper_addr: Address,
-        partition_id: u8,
-    ) -> Result<(), SpaceCompError>;
+    async fn collect(&self, tx: impl Tx) -> Result<(), SpaceCompError>;
 
     /// Processes data from collectors and sends results to the reducer.
-    async fn map(
-        &self,
-        rx: impl Rx,
-        tx: impl Tx,
-        job_id: u16,
-        reducer_addr: Address,
-        collector_count: u8,
-    ) -> Result<(), SpaceCompError>;
+    async fn map(&self, rx: impl Rx, tx: impl Tx) -> Result<(), SpaceCompError>;
 
     /// Aggregates results from mappers and sends the final output.
-    async fn reduce(
-        &self,
-        rx: impl Rx,
-        tx: impl Tx,
-        job_id: u16,
-        los_addr: Address,
-        mapper_count: u8,
-    ) -> Result<(), SpaceCompError>;
+    async fn reduce(&self, rx: impl Rx, tx: impl Tx) -> Result<(), SpaceCompError>;
 }
 
 impl<
@@ -225,8 +205,8 @@ impl<
                                     continue;
                                 }
                             };
-                        app.collect(tx, job_id, p.mapper_addr(), p.partition_id())
-                            .await
+                        let stx = crate::transport::SpaceCompTx::new(tx, p.mapper_addr(), job_id, p.partition_id());
+                        app.collect(stx).await
                     }
                     OpCode::AssignMapper => {
                         let p: AssignMapperPayload =
@@ -237,14 +217,9 @@ impl<
                                     continue;
                                 }
                             };
-                        app.map(
-                            &mut rx,
-                            tx,
-                            job_id,
-                            p.reducer_addr(),
-                            p.collector_count(),
-                        )
-                        .await
+                        let srx = crate::transport::SpaceCompRx::new(&mut rx, job_id, p.collector_count());
+                        let stx = crate::transport::SpaceCompTx::new(tx, p.reducer_addr(), job_id, 0);
+                        app.map(srx, stx).await
                     }
                     OpCode::AssignReducer => {
                         let p: AssignReducerPayload =
@@ -255,8 +230,9 @@ impl<
                                     continue;
                                 }
                             };
-                        app.reduce(&mut rx, tx, job_id, p.los_addr(), p.mapper_count())
-                            .await
+                        let srx = crate::transport::SpaceCompRx::new(&mut rx, job_id, p.mapper_count());
+                        let stx = crate::transport::SpaceCompTx::new(tx, p.los_addr(), job_id, 0);
+                        app.reduce(srx, stx).await
                     }
                     _ => continue,
                 };
