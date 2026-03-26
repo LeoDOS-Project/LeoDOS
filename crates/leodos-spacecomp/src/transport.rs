@@ -20,7 +20,7 @@ pub trait Tx {
 pub trait Rx {
     async fn recv(&mut self, buf: &mut [u8]) -> Result<(Address, usize), SpaceCompError>;
 
-    async fn recv_with<Ret>(&mut self, f: impl FnOnce(&[u8]) -> Ret) -> Result<Ret, SpaceCompError>;
+    async fn recv_with<T>(&mut self, f: impl FnOnce(&[u8]) -> T) -> Result<T, SpaceCompError>;
 }
 
 impl<'a, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize> Tx
@@ -39,7 +39,7 @@ impl<'a, R: ReceiverBackend, const MAX_STREAMS: usize> Rx
         Ok(SrsppRxHandle::recv(self, buf).await?)
     }
 
-    async fn recv_with<Ret>(&mut self, f: impl FnOnce(&[u8]) -> Ret) -> Result<Ret, SpaceCompError> {
+    async fn recv_with<T>(&mut self, f: impl FnOnce(&[u8]) -> T) -> Result<T, SpaceCompError> {
         Ok(SrsppRxHandle::recv_with(self, f).await?)
     }
 }
@@ -51,7 +51,7 @@ impl<'a, R: ReceiverBackend, const MAX_STREAMS: usize> Rx
         Ok(SrsppRxHandle::recv(*self, buf).await?)
     }
 
-    async fn recv_with<Ret>(&mut self, f: impl FnOnce(&[u8]) -> Ret) -> Result<Ret, SpaceCompError> {
+    async fn recv_with<T>(&mut self, f: impl FnOnce(&[u8]) -> T) -> Result<T, SpaceCompError> {
         Ok(SrsppRxHandle::recv_with(*self, f).await?)
     }
 }

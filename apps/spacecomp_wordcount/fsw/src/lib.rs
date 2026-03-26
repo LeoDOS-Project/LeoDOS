@@ -1,6 +1,5 @@
 #![no_std]
 
-use leodos_libcfs::runtime::Runtime;
 use leodos_spacecomp::bufwriter::BufWriter;
 use leodos_spacecomp::packet::OpCode;
 use leodos_spacecomp::packet::SpaceCompMessage;
@@ -218,25 +217,23 @@ impl SpaceComp for WordCount2 {
 
 #[no_mangle]
 pub extern "C" fn SPACECOMP_WORDCOUNT_AppMain() {
-    Runtime::new().run(async {
-        let config = SpaceCompConfig {
-            num_orbits: bindings::SPACECOMP_WORDCOUNT_NUM_ORBITS as u8,
-            num_sats: NUM_SATS,
-            altitude_m: 550_000.0,
-            inclination_deg: 87.0,
-            apid: Apid::new(bindings::SPACECOMP_WORDCOUNT_APID as u16).unwrap(),
-            rto_ms: 1000,
-            router_send_topic: 0,
-            router_recv_topic: 0,
-        };
+    let config = SpaceCompConfig {
+        num_orbits: bindings::SPACECOMP_WORDCOUNT_NUM_ORBITS as u8,
+        num_sats: NUM_SATS,
+        altitude_m: 550_000.0,
+        inclination_deg: 87.0,
+        apid: Apid::new(bindings::SPACECOMP_WORDCOUNT_APID as u16).unwrap(),
+        rto_ms: 1000,
+        router_send_topic: 0,
+        router_recv_topic: 0,
+    };
 
-        let node: SpaceCompNode = SpaceCompNode::builder()
-            .config(config)
-            .store(leodos_protocols::transport::srspp::dtn::NoStore)
-            .reachable(leodos_protocols::transport::srspp::dtn::AlwaysReachable)
-            .build();
-        node.run(&WordCount2).await
-    });
+    let node: SpaceCompNode = SpaceCompNode::builder()
+        .config(config)
+        .store(leodos_protocols::transport::srspp::dtn::NoStore)
+        .reachable(leodos_protocols::transport::srspp::dtn::AlwaysReachable)
+        .build();
+    node.start(&WordCount2);
 }
 
 #[cfg(not(test))]

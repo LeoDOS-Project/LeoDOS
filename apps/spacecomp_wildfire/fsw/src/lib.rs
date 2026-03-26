@@ -3,7 +3,6 @@
 use leodos_libcfs::error::CfsError;
 use leodos_libcfs::info;
 use leodos_libcfs::nos3::drivers::thermal_cam::ThermalCamera;
-use leodos_libcfs::runtime::Runtime;
 
 use leodos_analysis::geo::GeoBounds;
 use leodos_analysis::thermal::detect_fire;
@@ -398,38 +397,36 @@ impl SpaceComp for WildfireCompute {
 
 #[no_mangle]
 pub extern "C" fn SPACECOMP_WILDFIRE_AppMain() {
-    Runtime::new().run(async {
-        let config = SpaceCompConfig {
-            num_orbits: bindings::SPACECOMP_WILDFIRE_NUM_ORBITS as u8,
-            num_sats: NUM_SATS,
-            altitude_m: 550_000.0,
-            inclination_deg: 87.0,
-            apid: Apid::new(bindings::SPACECOMP_WILDFIRE_APID as u16).unwrap(),
-            rto_ms: 1000,
-            router_send_topic: 0,
-            router_recv_topic: 0,
-        };
+    let config = SpaceCompConfig {
+        num_orbits: bindings::SPACECOMP_WILDFIRE_NUM_ORBITS as u8,
+        num_sats: NUM_SATS,
+        altitude_m: 550_000.0,
+        inclination_deg: 87.0,
+        apid: Apid::new(bindings::SPACECOMP_WILDFIRE_APID as u16).unwrap(),
+        rto_ms: 1000,
+        router_send_topic: 0,
+        router_recv_topic: 0,
+    };
 
-        let app = WildfireCompute {
-            thresholds: FireThresholds {
-                t4_abs: 330.0,
-                ..Default::default()
-            },
-            aoi: GeoBounds {
-                west: -122.5,
-                south: 38.0,
-                east: -121.5,
-                north: 39.0,
-            },
-        };
+    let app = WildfireCompute {
+        thresholds: FireThresholds {
+            t4_abs: 330.0,
+            ..Default::default()
+        },
+        aoi: GeoBounds {
+            west: -122.5,
+            south: 38.0,
+            east: -121.5,
+            north: 39.0,
+        },
+    };
 
-        let node: SpaceCompNode = SpaceCompNode::builder()
-            .config(config)
-            .store(NoStore)
-            .reachable(AlwaysReachable)
-            .build();
-        node.run(&app).await
-    });
+    let node: SpaceCompNode = SpaceCompNode::builder()
+        .config(config)
+        .store(NoStore)
+        .reachable(AlwaysReachable)
+        .build();
+    node.start(&app);
 }
 
 #[cfg(not(test))]

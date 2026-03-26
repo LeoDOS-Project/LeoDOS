@@ -127,6 +127,12 @@ impl<
         const MAX_STREAMS: usize,
     > SpaceCompNode<S, R, WIN, BUF, MTU, RX_BUF, MAX_STREAMS>
 {
+    /// Starts the node, blocking forever. Handles the cFS
+    /// runtime lifecycle internally.
+    pub fn start(self, app: &impl SpaceComp) -> ! {
+        leodos_libcfs::runtime::Runtime::new().run(self.run(app))
+    }
+
     /// Runs the node with the given app logic.
     pub async fn run(self, app: &impl SpaceComp) -> Result<(), SpaceCompError> {
         event::register(&[])?;
