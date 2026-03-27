@@ -127,6 +127,12 @@ pub const SYSLOG_MAX_MSG_SIZE: usize = ffi::CFE_PLATFORM_ES_SYSTEM_LOG_SIZE as u
 /// The `log!` macro provides a more convenient, `println!`-like interface
 /// for this functionality.
 pub fn syslog(message: &str) -> Result<()> {
+    #[cfg(feature = "nos3")]
+    {
+        stdout_write(message);
+        stdout_write("\n");
+    }
+
     let mut c_string = CString::<256>::new();
     c_string
         .extend_from_bytes(message.as_bytes())
@@ -134,6 +140,14 @@ pub fn syslog(message: &str) -> Result<()> {
 
     check(unsafe { ffi::CFE_ES_WriteToSysLog(c_string.as_ptr()) })?;
     Ok(())
+}
+
+#[cfg(feature = "nos3")]
+fn stdout_write(s: &str) {
+    extern "C" {
+        fn write(fd: i32, buf: *const u8, count: usize) -> isize;
+    }
+    unsafe { write(1, s.as_ptr(), s.len()); }
 }
 
 /// A macro to write a formatted string to the OSAL console (`OS_printf`).
