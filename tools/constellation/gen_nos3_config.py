@@ -51,49 +51,45 @@ def copy_sc_file(src_dir: Path, sc_index: int, sats_per_orbit: int,
     (dest_dir / f"SC_{sc_index}.txt").write_text("".join(lines))
 
 
-def generate_inp_sim(num_orbits: int, sats_per_orbit: int) -> str:
-    total = num_orbits * sats_per_orbit
-    orbit_lines = []
-    for i in range(num_orbits):
-        orbit_lines.append(f"TRUE   Orb_{i}.txt              !  Input file name for Orb {i}")
+def generate_inp_sim(src_dir: Path, num_orbits: int, sats_per_orbit: int) -> str:
+    """Reads the original Inp_Sim.txt and patches orbit/SC counts and filenames."""
+    src = src_dir / "Inp_Sim.txt"
+    if not src.exists():
+        raise FileNotFoundError(f"Template not found: {src}")
 
-    sc_lines = []
-    for sc in range(total):
-        orbit_ref = sc // sats_per_orbit
-        sc_lines.append(f"TRUE  {orbit_ref} SC_{sc}.txt             !  Existence, RefOrb, Input file for SC {sc}")
+    lines = src.read_text().splitlines(keepends=True)
+    result = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
 
-    return dedent(f"""\
-        <<<<<<<<<<<<<<<<<  42: The Mostly Harmless Simulator  >>>>>>>>>>>>>>>>>
-        ************************** Simulation Control **************************
-        NOS3                            !  Time Mode (FAST, REAL, EXTERNAL, or NOS3)
-        604800.0   0.01                 !  Sim Duration, Step Size [sec]
-        1.0                             !  File Output Interval [sec]
-        0                               !  RNG Seed
-        FALSE                           !  Graphics Front End?
-        Inp_Cmd.txt                     !  Command Script File Name
-        **************************  Reference Orbits  **************************
-        {num_orbits}                               !  Number of Reference Orbits
-        {chr(10).join(orbit_lines)}
-        *****************************  Spacecraft  *****************************
-        {total}                               !  Number of Spacecraft
-        {chr(10).join(sc_lines)}
-        ***************************** Environment  *****************************
-        10 20 2025                      !  Date (UTC) (Month, Day, Year)
-        17 43 20.00                     !  Time (UTC) (Hr,Min,Sec)
-        37.0                            !  Leap Seconds (sec)
-        USER                            !  F10.7, Ap (USER, NOMINAL or TWOSIGMA)
-        230.0                           !  USER-provided F10.7
-        100.0                           !  USER-provided Ap
-        IGRF                            !  Magfield (NONE,DIPOLE,IGRF)
-        8   8                           !  IGRF Degree and Order (<=10)
-        8   8                           !  Earth Gravity Model N and M (<=18)
-        2   0                           !  Mars Gravity Model N and M (<=18)
-        2   0                           !  Luna Gravity Model N and M (<=18)
-        FALSE   FALSE                   !  Aerodynamic Forces & Torques (Shadows)
-        FALSE                           !  Gravity Gradient Torques
-        FALSE   FALSE                   !  Solar Pressure Forces & Torques (Shadows)
-        FALSE                           !  Residual Magnetic Moment Torques
-    """)
+        # Patch number of reference orbits
+        if "Number of Reference Orbits" in line:
+            result.append(f"{num_orbits}                               !  Number of Reference Orbits\n")
+            i += 1
+            # Skip old orbit lines, write new ones
+            while i < len(lines) and "***" not in lines[i] and lines[i].strip():
+                i += 1
+            for o in range(num_orbits):
+                result.append(f"TRUE   Orb_{o}.txt              !  Input file name for Orb {o}\n")
+            continue
+
+        # Patch number of spacecraft
+        if "Number of Spacecraft" in line:
+            total = num_orbits * sats_per_orbit
+            result.append(f"{total}                               !  Number of Spacecraft\n")
+            i += 1
+            while i < len(lines) and "***" not in lines[i] and lines[i].strip():
+                i += 1
+            for sc in range(total):
+                orb_ref = sc // sats_per_orbit
+                result.append(f"TRUE  {orb_ref} SC_{sc}.txt             !  Existence, RefOrb, Input file for SC {sc}\n")
+            continue
+
+        result.append(line)
+        i += 1
+
+    return "".join(result)
 
 
 def generate_simulator_xml(num_orbits: int, sats_per_orbit: int) -> str:
@@ -211,7 +207,7 @@ def main():
     src_42 = Path(args.template_dir)
 
     # 42 configs
-    inp_sim = generate_inp_sim(args.orbits, args.sats_per_orbit)
+    inp_sim = generate_inp_sim(src_42, args.orbits, args.sats_per_orbit)
     (inout / "Inp_Sim.txt").write_text(inp_sim)
 
     for i in range(args.orbits):
