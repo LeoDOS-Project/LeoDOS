@@ -151,7 +151,7 @@ pub extern "C" fn ROUTER_AppMain() {
         let address = scid.to_address(NUM_SATS);
         let Address::Satellite(point) = address else {
             err!("Invalid spacecraft ID")?;
-            return Ok(());
+            return Ok::<(), CfsError>(());
         };
 
         let mut gateway_table = GatewayTable::<4>::new(5.0);
