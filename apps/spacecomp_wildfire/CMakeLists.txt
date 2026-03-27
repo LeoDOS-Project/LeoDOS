@@ -4,9 +4,9 @@ get_filename_component(REAL_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR} REALPATH)
 
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c "typedef int placeholder;\n")
 
-add_cfe_app(spacecomp_wildfire ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c)
+add_cfe_app(sc_wildfire ${CMAKE_CURRENT_BINARY_DIR}/placeholder.c)
 
-set(OUTPUT_LIB ${CMAKE_CURRENT_BINARY_DIR}/cargo_build/release/libspacecomp_wildfire.so)
+set(OUTPUT_LIB ${CMAKE_CURRENT_BINARY_DIR}/cargo_build/release/libsc_wildfire.so)
 
 add_custom_command(
     OUTPUT ${OUTPUT_LIB}
@@ -20,19 +20,19 @@ add_custom_command(
         CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR}/cargo_build
         cargo build --release --manifest-path=${REAL_SOURCE_DIR}/fsw/Cargo.toml
     WORKING_DIRECTORY ${REAL_SOURCE_DIR}/fsw
-    COMMENT "Building spacecomp_wildfire with Cargo"
+    COMMENT "Building sc_wildfire with Cargo"
     DEPENDS ${REAL_SOURCE_DIR}/fsw/Cargo.toml
             ${REAL_SOURCE_DIR}/fsw/src/lib.rs
     VERBATIM
 )
 
-add_custom_target(spacecomp_wildfire_lib ALL DEPENDS ${OUTPUT_LIB})
+add_custom_target(sc_wildfire_lib ALL DEPENDS ${OUTPUT_LIB})
 
-add_dependencies(spacecomp_wildfire spacecomp_wildfire_lib)
+add_dependencies(sc_wildfire sc_wildfire_lib)
 
-add_custom_command(TARGET spacecomp_wildfire POST_BUILD
+add_custom_command(TARGET sc_wildfire POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         ${OUTPUT_LIB}
-        $<TARGET_FILE:spacecomp_wildfire>
+        $<TARGET_FILE:sc_wildfire>
     COMMENT "Copying Cargo-built library to target"
 )
