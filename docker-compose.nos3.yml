@@ -93,7 +93,7 @@ services:
     working_dir: /cFS/libs/nos3/fsw/build/exe/cpu1
     environment:
       - LD_LIBRARY_PATH=/cFS/libs/nos3/fsw/build/exe/cpu1:/cFS/libs/nos3/fsw/build/exe/cpu1/cf:/usr/lib:/usr/local/lib
-      - LD_PRELOAD=/cFS/libs/nos3/fsw/build/exe/cpu1/cf/novatel_oem615.so
+      #- LD_PRELOAD removed
       - CFE_DIR=/cFS/cfe
       - OSAL_DIR=/cFS/osal
       - PSP_DIR=/cFS/psp
