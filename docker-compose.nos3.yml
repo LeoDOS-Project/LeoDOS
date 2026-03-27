@@ -1,14 +1,9 @@
-# NOS3 simulation environment.
-#
-# Runs the NOS Engine server, component simulators, and
-# Rust-based flight software in a connected Docker network.
+# NOS3 multi-satellite wildfire demo.
 #
 # Usage:
-#   make nos3-prep     # pull image, build nos3 Docker image
-#   make nos3-config   # generate NOS3 build configuration
-#   make nos3-build    # build simulators + flight software
-#   make nos3-launch   # start all containers
-#   make nos3-stop     # stop all containers
+#   make demo-build    # build Docker image + sims + FSW
+#   make demo-up       # generate configs + launch
+#   make demo-down     # stop everything
 
 x-nos3-common: &nos3-common
   image: nos3-rust:latest
@@ -41,66 +36,22 @@ services:
     command: ./42 NOS3InOut
     depends_on:
       - nos-engine-server
-      - time-driver
+      - sims
 
-  # Truth data provider — connects to 42 for orbital state.
-  truth42sim:
+  # All simulators (time, truth, GPS×N, camera×N).
+  sims:
     <<: *nos3-common
-    hostname: truth42sim
-    container_name: nos3-truth42sim
-    volumes:
-      - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
-    working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: sh -c "sleep 10 && ./nos3-single-simulator -f nos3-simulator.xml -s truth42sim"
-    depends_on:
-      - nos-engine-server
-      - fortytwo
-
-  # GPS simulator.
-  gps-sim:
-    <<: *nos3-common
-    hostname: gps-sim
-    container_name: nos3-gps-sim
-    volumes:
-      - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
-    working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: sh -c "sleep 10 && ./nos3-single-simulator -f nos3-simulator.xml -s gps"
-    depends_on:
-      - nos-engine-server
-      - truth42sim
-
-  # Thermal camera simulator.
-  thermal-cam-sim:
-    <<: *nos3-common
-    hostname: thermal-cam-sim
-    container_name: nos3-thermal-cam-sim
+    hostname: nos3-sims
+    container_name: nos3-sims
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
       - ./tools/eosim/output:/sim/thermal_data:ro
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: sh -c "sleep 10 && ./nos3-single-simulator -f nos3-simulator.xml -s thermal-cam-sim"
-    depends_on:
-      - nos-engine-server
-      - truth42sim
-
-  # NOS3 time driver — starts after NOS Engine, before 42.
-  # Drives the simulation clock; 42 blocks until ticks arrive.
-  time-driver:
-    <<: *nos3-common
-    hostname: nos-time-driver
-    container_name: nos3-time-driver
-    environment:
-      - TERM=xterm
-    volumes:
-      - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
-    working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: ./nos3-single-simulator -f nos3-simulator.xml -s time
+    command: sh -c "sleep 5 && ./nos3-simulator-terminal -f nos3-simulator.xml"
     depends_on:
       - nos-engine-server
 
-  # Flight software (cFS with Rust apps).
-  # Built with NOS3 toolchain — hwlib routes bus calls
-  # through NOS Engine to the simulators.
+  # Flight software — launches N cFS processes (one per satellite).
   fsw:
     <<: *nos3-common
     hostname: nos-fsw
@@ -117,7 +68,23 @@ services:
       - BUILD_DIR=/cFS/build
       - HWLIB_DIR=/cFS/libs/nos3/fsw/apps/hwlib
       - NOS3_COMPONENTS_DIR=/cFS/libs/nos3/components
-    command: ./core-cpu1 -R PO
+      - MAX_ORB=${MAX_ORB:-3}
+      - MAX_SAT=${MAX_SAT:-3}
+    command: >-
+      bash -c '
+        BASE=$$(pwd); pids=();
+        for orb in $$(seq 0 $$((MAX_ORB - 1))); do
+          for sat in $$(seq 1 $$MAX_SAT); do
+            SCID=$$(( (orb + 1) * 1000 + sat ));
+            INST=/cFS/run/sat_$$SCID;
+            mkdir -p $$INST && cp -a $$BASE/. $$INST/;
+            echo "Launching SCID=$$SCID";
+            (cd $$INST && ./core-cpu1 --scid $$SCID) &
+            pids+=($$!);
+          done;
+        done;
+        trap "kill $${pids[*]} 2>/dev/null; wait" SIGTERM SIGINT;
+        wait'
     sysctls:
       - fs.mqueue.msg_max=10000
     ulimits:
@@ -126,9 +93,7 @@ services:
       - SYS_NICE
     depends_on:
       - nos-engine-server
-      - truth42sim
-      - gps-sim
-      - thermal-cam-sim
+      - sims
 
 networks:
   nos3:

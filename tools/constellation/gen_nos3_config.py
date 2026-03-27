@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 """Generate NOS3 configuration for a multi-satellite constellation.
 
-Creates 42 orbit/spacecraft files, NOS3 simulator XML with per-spacecraft
-bus names, and a start script that launches sims + N cFS processes.
+Creates 42 orbit/spacecraft files and NOS3 simulator XML with
+per-spacecraft bus names (spi_sc0, usart_sc0, etc.).
 
 Usage:
     python3 tools/constellation/gen_nos3_config.py \
-        --orbits 3 --sats-per-orbit 3 \
-        --altitude 550 --inclination 87 \
-        --output-dir tools/constellation/generated
+        --orbits 3 --sats-per-orbit 3
 """
 
 import argparse
-import os
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from textwrap import dedent
 
@@ -64,8 +60,7 @@ def generate_sc_file(sc_index: int, sats_per_orbit: int) -> str:
     """)
 
 
-def generate_inp_sim(num_orbits: int, sats_per_orbit: int,
-                     altitude_km: float, inclination_deg: float) -> str:
+def generate_inp_sim(num_orbits: int, sats_per_orbit: int) -> str:
     total = num_orbits * sats_per_orbit
     orbit_lines = []
     for i in range(num_orbits):
@@ -234,51 +229,6 @@ def generate_simulator_xml(num_orbits: int, sats_per_orbit: int) -> str:
     """)
 
 
-def generate_start_script(num_orbits: int, sats_per_orbit: int) -> str:
-    total = num_orbits * sats_per_orbit
-    return dedent(f"""\
-        #!/bin/bash
-        set -e
-
-        TOTAL={total}
-        NUM_ORBITS={num_orbits}
-        SATS_PER_ORBIT={sats_per_orbit}
-        BASE=/cFS/libs/nos3/fsw/build/exe/cpu1
-
-        echo "Starting $TOTAL satellites ($NUM_ORBITS orbits x $SATS_PER_ORBIT sats)"
-
-        # Wait for sims to be ready
-        sleep 15
-
-        pids=()
-        for orb in $(seq 0 $((NUM_ORBITS - 1))); do
-            for sat in $(seq 1 $SATS_PER_ORBIT); do
-                SCID=$(( (orb + 1) * 1000 + sat ))
-                INST=/cFS/run/sat_$SCID
-                mkdir -p "$INST"
-                cp -a "$BASE"/. "$INST"/
-                echo "Launching SCID=$SCID (orbit=$orb, sat=$sat)"
-                cd "$INST"
-                ./core-cpu1 --scid "$SCID" &
-                pids+=($!)
-            done
-        done
-
-        echo "All $TOTAL satellites launched."
-
-        cleanup() {{
-            echo "Shutting down..."
-            for pid in "${{pids[@]}}"; do
-                kill "$pid" 2>/dev/null || true
-            done
-            wait
-        }}
-
-        trap cleanup SIGTERM SIGINT
-        wait
-    """)
-
-
 def main():
     parser = argparse.ArgumentParser(description="Generate NOS3 constellation config")
     parser.add_argument("--orbits", type=int, default=3)
@@ -296,8 +246,7 @@ def main():
     inout.mkdir(parents=True, exist_ok=True)
 
     # 42 configs
-    inp_sim = generate_inp_sim(args.orbits, args.sats_per_orbit,
-                               args.altitude, args.inclination)
+    inp_sim = generate_inp_sim(args.orbits, args.sats_per_orbit)
     (inout / "Inp_Sim.txt").write_text(inp_sim)
 
     for i in range(args.orbits):
@@ -313,17 +262,10 @@ def main():
     sim_xml = generate_simulator_xml(args.orbits, args.sats_per_orbit)
     (out / "nos3-simulator.xml").write_text(sim_xml)
 
-    # Start script
-    start_sh = generate_start_script(args.orbits, args.sats_per_orbit)
-    start_path = out / "start_constellation.sh"
-    start_path.write_text(start_sh)
-    start_path.chmod(0o755)
-
     print(f"Generated config for {total} satellites "
           f"({args.orbits} orbits x {args.sats_per_orbit} sats)")
     print(f"  42 configs:     {inout}/")
     print(f"  Simulator XML:  {out}/nos3-simulator.xml")
-    print(f"  Start script:   {start_path}")
 
 
 if __name__ == "__main__":
