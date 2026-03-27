@@ -192,8 +192,8 @@ pub extern "C" fn SPACECOMP_WILDFIRE_AppMain() {
                 .inclination_deg(87.0)
                 .apid(Apid::new(bindings::SPACECOMP_WILDFIRE_APID as u16).unwrap())
                 .rto_ms(1000)
-                .router_send_topic(0)
-                .router_recv_topic(0)
+                .router_send_topic(bindings::ROUTER_SEND_TOPICID as u16)
+                .router_recv_topic(bindings::ROUTER_RECV_TOPICID as u16)
                 .build(),
         )
         .store(NoStore)

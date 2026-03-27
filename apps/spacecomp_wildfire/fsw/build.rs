@@ -5,11 +5,10 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     let apps_dir = PathBuf::from("../..");
+    let build_dir = env::var("BUILD_DIR").unwrap_or_default();
+    let out_dir = env::var("OUT_DIR").unwrap();
     let mut builder = bindgen::Builder::default()
-        .clang_arg(format!(
-            "-I{}/inc",
-            env::var("BUILD_DIR").unwrap_or_default()
-        ))
+        .clang_arg(format!("-I{build_dir}/inc"))
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
 
     for app in ["spacecomp_wildfire", "router"] {
@@ -30,8 +29,7 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings for app config");
 
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     bindings
-        .write_to_file(out_path.join("config.rs"))
+        .write_to_file(format!("{out_dir}/config.rs"))
         .expect("Couldn't write config bindings!");
 }
