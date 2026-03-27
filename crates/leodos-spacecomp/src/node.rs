@@ -6,9 +6,8 @@ use core::time::Duration;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
-use leodos_libcfs::err;
 use leodos_libcfs::error::CfsError;
-use leodos_libcfs::info;
+use leodos_libcfs::log;
 use leodos_libcfs::join;
 
 use crate::job::Job;
@@ -115,12 +114,12 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
         F: FnOnce() -> Result<A, SpaceCompError>,
     {
         event::register(&[])?;
-        info!("SpaceCoMP node starting")?;
+        log!("SpaceCoMP node starting")?;
 
         let scid = SpacecraftId::new(system::get_spacecraft_id());
         let address = scid.to_address(self.config.num_sats);
         let Address::Satellite(point) = address else {
-            err!("Invalid spacecraft ID")?;
+            log!("Invalid spacecraft ID")?;
             return Ok(());
         };
 
@@ -184,7 +183,7 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
                         let job: Job = match msg.parse_payload(ParseError::SubmitJob) {
                             Ok(j) => j,
                             Err(e) => {
-                                err!("SubmitJob: {}", e)?;
+                                log!("SubmitJob: {}", e)?;
                                 continue;
                             }
                         };
@@ -196,7 +195,7 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
                             match msg.parse_payload(ParseError::AssignCollector) {
                                 Ok(p) => p,
                                 Err(e) => {
-                                    err!("{}", e)?;
+                                    log!("{}", e)?;
                                     continue;
                                 }
                             };
@@ -213,7 +212,7 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
                             match msg.parse_payload(ParseError::AssignMapper) {
                                 Ok(p) => p,
                                 Err(e) => {
-                                    err!("{}", e)?;
+                                    log!("{}", e)?;
                                     continue;
                                 }
                             };
@@ -244,7 +243,7 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
                             match msg.parse_payload(ParseError::AssignReducer) {
                                 Ok(p) => p,
                                 Err(e) => {
-                                    err!("{}", e)?;
+                                    log!("{}", e)?;
                                     continue;
                                 }
                             };
@@ -257,7 +256,7 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
                 };
 
                 if let Err(e) = result {
-                    err!("SpaceCoMP: {}", e)?;
+                    log!("SpaceCoMP: {}", e)?;
                 }
             }
             Ok::<(), SpaceCompError>(())

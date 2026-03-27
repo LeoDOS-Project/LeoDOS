@@ -9,7 +9,7 @@ use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
 use leodos_libcfs::error::CfsError;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::Runtime;
-use leodos_libcfs::{err, info};
+use leodos_libcfs::{err, log};
 
 use leodos_protocols::datalink::link::cfs::udp::UdpDatalink;
 use leodos_protocols::network::isl::address::{Address, SpacecraftId};
@@ -145,12 +145,12 @@ fn ground_link(point: Point) -> Result<UdpDatalink, CfsError> {
 pub extern "C" fn ROUTER_AppMain() {
     Runtime::new().run(async {
         event::register(&[])?;
-        info!("Router app starting")?;
+        log!("Router app starting")?;
 
         let scid = SpacecraftId::new(system::get_spacecraft_id());
         let address = scid.to_address(NUM_SATS);
         let Address::Satellite(point) = address else {
-            err!("Invalid spacecraft ID")?;
+            log!("Invalid spacecraft ID")?;
             return Ok::<(), CfsError>(());
         };
 
@@ -171,14 +171,14 @@ pub extern "C" fn ROUTER_AppMain() {
             .build();
 
         let (routes, route_count) = build_routing_table();
-        info!("Loaded {route_count} APID routes")?;
+        log!("Loaded {route_count} APID routes")?;
 
         let send_mid = MsgId::local_cmd(bindings::ROUTER_SEND_TOPICID as u16);
 
         let mut pipe = Pipe::new("ROUTER_SB", 32)?;
         pipe.subscribe(send_mid)?;
 
-        info!("Router ready, bridging SB and ISL")?;
+        log!("Router ready, bridging SB and ISL")?;
 
         let mut from_net = [0u8; MTU];
         let mut from_sb = [0u8; MTU + SB_HEADER_SIZE];

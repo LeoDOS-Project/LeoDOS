@@ -1,7 +1,7 @@
 #![no_std]
 
 use leodos_libcfs::cfe::es::system;
-use leodos_libcfs::info;
+use leodos_libcfs::log;
 use leodos_libcfs::nos3::drivers::geo_camera::GeoCamera;
 
 use leodos_analysis::cluster::SpatialClusterer;
@@ -9,7 +9,6 @@ use leodos_analysis::frame::TileMessage;
 use leodos_analysis::thermal::detect_fire;
 use leodos_analysis::thermal::FireThresholds;
 
-use leodos_libcfs::warn;
 use leodos_protocols::fmt_cstr;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
@@ -136,7 +135,7 @@ impl SpaceComp for WildfireApp {
             tile_count += 1;
         }
 
-        info!("Collector: sent {} tiles", tile_count)?;
+        log!("Collector: sent {} tiles", tile_count)?;
         Ok(())
     }
 
@@ -162,7 +161,7 @@ impl SpaceComp for WildfireApp {
                     .add(hr.lat.get(), hr.lon.get(), hr.t4.get())
                     .is_err()
                 {
-                    warn!("Reducer: Clusterer full, skipping remaining hotspots")?;
+                    log!("Reducer: Clusterer full, skipping remaining hotspots")?;
                     break;
                 }
             }
@@ -182,7 +181,7 @@ impl SpaceComp for WildfireApp {
         }
         w.flush().await?;
 
-        info!("Reducer: Clustered {} fires", fire_count)?;
+        log!("Reducer: Clustered {} fires", fire_count)?;
         Ok(())
     }
 }

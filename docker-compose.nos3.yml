@@ -7,6 +7,7 @@
 
 x-nos3-common: &nos3-common
   image: nos3-rust:latest
+  pull_policy: never
   networks:
     - nos3
 
@@ -106,7 +107,7 @@ services:
             INST=/cFS/run/sat_$$SCID;
             mkdir -p $$INST && cp -a $$BASE/. $$INST/;
             echo "Launching SCID=$$SCID";
-            (cd $$INST && ./core-cpu1 --scid $$SCID) &
+            (cd $$INST && exec ./core-cpu1 --scid $$SCID) &
             pids+=($$!);
           done;
         done;
