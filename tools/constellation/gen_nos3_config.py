@@ -63,6 +63,12 @@ def generate_inp_sim(src_dir: Path, num_orbits: int, sats_per_orbit: int) -> str
     while i < len(lines):
         line = lines[i]
 
+        # Disable graphics for headless Docker
+        if "Graphics Front End" in line:
+            result.append("FALSE                           !  Graphics Front End?\n")
+            i += 1
+            continue
+
         # Patch number of reference orbits
         if "Number of Reference Orbits" in line:
             result.append(f"{num_orbits}                               !  Number of Reference Orbits\n")

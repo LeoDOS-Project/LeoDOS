@@ -78,7 +78,7 @@ services:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
       - ./tools/eosim/output:/sim/thermal_data:ro
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: ["sh", "-c", "sleep 15; while read sim; do echo Starting $$sim; ./nos3-single-simulator -f nos3-simulator.xml -s $$sim & done < sim-names.txt; wait"]
+    command: ["sh", "-c", "sleep 30; while read sim; do echo Starting $$sim; ./nos3-single-simulator -f nos3-simulator.xml -s $$sim & done < sim-names.txt; wait"]
     depends_on:
       - nos-engine-server
       - truth42sim
@@ -104,7 +104,7 @@ services:
       - MAX_SAT=${MAX_SAT:-3}
     command: >-
       bash -c '
-        echo "Waiting for NOS Engine..."; sleep 20;
+        echo "Waiting for sims..."; sleep 45;
         BASE=$$(pwd); pids=();
         for orb in $$(seq 0 $$((MAX_ORB - 1))); do
           for sat in $$(seq 1 $$MAX_SAT); do
