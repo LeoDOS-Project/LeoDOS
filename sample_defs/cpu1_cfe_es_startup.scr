@@ -1,10 +1,9 @@
-CFE_LIB, cfe_assert,      CFE_Assert_LibInit,   ASSERT_LIB,       0,       0, 0x0, 0;
-CFE_APP, ci_lab,          CI_LAB_AppMain,       CI_LAB_APP,      60,   65536, 0x0, 0;
-CFE_APP, to_lab,          TO_LAB_AppMain,       TO_LAB_APP,      70,   65536, 0x0, 0;
-CFE_APP, sch_lab,         SCH_LAB_AppMain,      SCH_LAB_APP,     80,   65536, 0x0, 0;
-CFE_APP, router,          ROUTER_AppMain,       ROUTER_APP,      85,   65536, 0x0, 0;
-CFE_APP, spacecomp,       SPACECOMP_AppMain,    SPACECOMP_APP,   95,   65536, 0x0, 0;
-CFE_APP, wildfire,        WILDFIRE_AppMain,     WILDFIRE_APP,    100,   65536, 0x0, 0;
+CFE_LIB, cfe_assert,           CFE_Assert_LibInit,           ASSERT_LIB,       0,       0, 0x0, 0;
+CFE_APP, ci_lab,               CI_LAB_AppMain,               CI_LAB_APP,      60,   65536, 0x0, 0;
+CFE_APP, to_lab,               TO_LAB_AppMain,               TO_LAB_APP,      70,   65536, 0x0, 0;
+CFE_APP, sch_lab,              SCH_LAB_AppMain,              SCH_LAB_APP,     80,   65536, 0x0, 0;
+CFE_APP, router,               ROUTER_AppMain,               ROUTER_APP,      85,   65536, 0x0, 0;
+CFE_APP, spacecomp_wildfire,   SPACECOMP_WILDFIRE_AppMain,   WILDFIRE_APP,    95, 4194304, 0x0, 0;
 !
 ! Startup script fields:
 ! 1. Object Type      -- CFE_APP for an Application, or CFE_LIB for a library.
