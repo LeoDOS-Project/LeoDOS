@@ -100,8 +100,13 @@ def generate_simulator_xml(src_dir: Path, num_orbits: int, sats_per_orbit: int) 
         raise FileNotFoundError(f"Template not found: {src}")
     content = src.read_text()
 
-    # Remove existing gps and thermal-cam-sim entries
     import re
+
+    # Use port 12000 for all connections (same as FSW PSP)
+    content = content.replace(
+        "nos-engine-server:12001", "nos-engine-server:12000")
+
+    # Remove existing gps and thermal-cam-sim entries
     content = re.sub(
         r'<simulator>\s*<name>(gps|thermal-cam-sim)</name>.*?</simulator>',
         '', content, flags=re.DOTALL)

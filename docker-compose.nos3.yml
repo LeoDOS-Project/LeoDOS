@@ -98,6 +98,7 @@ services:
       - MAX_SAT=${MAX_SAT:-3}
     command: >-
       bash -c '
+        echo "Waiting for NOS Engine..."; sleep 20;
         BASE=$$(pwd); pids=();
         for orb in $$(seq 0 $$((MAX_ORB - 1))); do
           for sat in $$(seq 1 $$MAX_SAT); do

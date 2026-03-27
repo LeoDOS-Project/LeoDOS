@@ -211,6 +211,7 @@ demo-up:
 	cp tools/constellation/generated/InOut/* ~/.nos3/42/NOS3InOut/ 2>/dev/null || true
 	cp tools/constellation/generated/nos3-simulator.xml libs/nos3/sims/build/bin/ 2>/dev/null || true
 	cp tools/constellation/generated/sim-names.txt libs/nos3/sims/build/bin/ 2>/dev/null || true
+	@echo '{"plugins":["uart"],"server_uris":[{"name":"all","server_uri":"tcp://nos-engine-server:12000"}]}' > libs/nos3/sims/build/bin/nos_engine_server_config.json
 	$(NOS3_DC) up -d
 
 demo-down:
