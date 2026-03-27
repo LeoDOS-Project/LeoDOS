@@ -79,7 +79,7 @@ impl TableInfo {
     }
 
     /// Returns the file creation time from the last file loaded into the table.
-    #[cfg(not(feature = "nos3"))]
+    #[cfg(not(nos3_cfe))]
     pub fn file_time(&self) -> SysTime {
         SysTime(self.0.FileTime)
     }

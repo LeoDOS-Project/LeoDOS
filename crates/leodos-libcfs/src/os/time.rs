@@ -21,7 +21,7 @@ impl OsTime {
     /// Creates an `OsTime` instance from a relative duration in milliseconds.
     ///
     /// This is a safe wrapper for `OS_TimeFromRelativeMilliseconds`.
-    #[cfg(not(feature = "nos3"))]
+    #[cfg(not(nos3_cfe))]
     pub fn from_relative_millis(millis: i32) -> Self {
         Self(unsafe { ffi::OS_TimeFromRelativeMilliseconds(millis) })
     }
@@ -31,7 +31,7 @@ impl OsTime {
     /// This is a safe wrapper for `OS_TimeToRelativeMilliseconds`.
     /// Returns `OS_CHECK` (0) if the time is in the past, or `OS_PEND` (-1) if
     /// the time is too far in the future to be represented.
-    #[cfg(not(feature = "nos3"))]
+    #[cfg(not(nos3_cfe))]
     pub fn to_relative_millis(&self) -> i32 {
         unsafe { ffi::OS_TimeToRelativeMilliseconds(self.0) }
     }
