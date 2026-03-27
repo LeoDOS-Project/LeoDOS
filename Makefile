@@ -216,6 +216,11 @@ constellation-up:
 constellation-down:
 	docker stop leodos-constellation 2>/dev/null || true
 
+constellation-gen:
+	python3 tools/constellation/gen_nos3_config.py \
+		--orbits $(MAX_ORB) --sats-per-orbit $(MAX_SAT) \
+		--output-dir tools/constellation/generated
+
 # Wildfire demo (NOS3 simulation with thermal camera + GPS)
 NOS3_RUN_STANDALONE = docker run --rm -v "$$(pwd):/cFS" -v "$${HOME}/.nos3:/root/.nos3" -w /cFS nos3-rust:latest
 
