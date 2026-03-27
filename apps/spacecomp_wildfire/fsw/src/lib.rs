@@ -1,5 +1,6 @@
 #![no_std]
 
+use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::info;
 use leodos_libcfs::nos3::drivers::geo_camera::GeoCamera;
 
@@ -9,6 +10,7 @@ use leodos_analysis::thermal::detect_fire;
 use leodos_analysis::thermal::FireThresholds;
 
 use leodos_libcfs::warn;
+use leodos_protocols::fmt_cstr;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
 use leodos_protocols::transport::srspp::dtn::NoStore;
@@ -88,14 +90,25 @@ struct WildfireApp {
     thresholds: FireThresholds,
 }
 
+/// Converts SCID (e.g. 1001, 2003) to 0-based linear index.
+fn scid_to_index(scid: u32, num_sats: u32) -> u32 {
+    let orbit = scid / 1000 - 1;
+    let sat = scid % 1000 - 1;
+    orbit * num_sats + sat
+}
+
 impl WildfireApp {
     fn new() -> Result<Self, SpaceCompError> {
+        let scid = system::get_spacecraft_id();
+        let num_sats = bindings::SPACECOMP_WILDFIRE_NUM_SATS as u32;
+        let sc_index = scid_to_index(scid, num_sats);
+
         Ok(Self {
             camera: GeoCamera::builder()
-                .device(c"spi_3")
+                .device(&fmt_cstr!(32, "spi_sc{}", sc_index)?)
                 .chip_select_line(3)
                 .baudrate(1_000_000)
-                .gps_device(c"/dev/ttyS1")
+                .gps_device(&fmt_cstr!(32, "usart_sc{}", sc_index)?)
                 .gps_baud(115_200)
                 .altitude_m(ALTITUDE_M)
                 .focal_length_mm(FOCAL_LENGTH_MM)
@@ -179,7 +192,6 @@ impl SpaceComp for WildfireApp {
 #[no_mangle]
 pub extern "C" fn SPACECOMP_WILDFIRE_AppMain() {
     SpaceCompNode::builder()
-        .app_fn(move || WildfireApp::new())
         .config(
             SpaceCompConfig::builder()
                 .num_orbits(bindings::SPACECOMP_WILDFIRE_NUM_ORBITS as u8)
@@ -192,6 +204,7 @@ pub extern "C" fn SPACECOMP_WILDFIRE_AppMain() {
                 .router_recv_topic(bindings::ROUTER_RECV_TOPICID as u16)
                 .build(),
         )
+        .app_fn(WildfireApp::new)
         .store(NoStore)
         .reachable(AlwaysReachable)
         .build()

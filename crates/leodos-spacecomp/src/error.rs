@@ -18,4 +18,12 @@ pub enum SpaceCompError {
     Transport(#[from] TransportError<CfsError>),
     #[error("plan: {0}")]
     Plan(&'static str),
+    #[error("init failed")]
+    Init,
+}
+
+impl From<core::fmt::Error> for SpaceCompError {
+    fn from(_: core::fmt::Error) -> Self {
+        Self::Init
+    }
 }
