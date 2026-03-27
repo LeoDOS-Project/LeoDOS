@@ -14,50 +14,41 @@ from pathlib import Path
 from textwrap import dedent
 
 
-def generate_orbit_file(orbit_index: int, num_orbits: int,
-                        altitude_km: float, inclination_deg: float) -> str:
+def copy_orbit_file(src_dir: Path, orbit_index: int, num_orbits: int,
+                    dest_dir: Path) -> None:
+    """Copies the existing orbit template, adjusting RAAN for the orbit plane."""
+    src = src_dir / "Orb_LEO.txt"
+    if not src.exists():
+        raise FileNotFoundError(f"Orbit template not found: {src}")
+    content = src.read_text()
     raan = orbit_index * (360.0 / num_orbits)
-    return dedent(f"""\
-        <<<<<<<<<<<<<<<<<  42: Orbit Description File   >>>>>>>>>>>>>>>>>
-        Orbit {orbit_index}                    !  Description
-        CENTRAL                       !  Orbit Type (ZERO, FLIGHT, CENTRAL, THREE_BODY)
-        ::::::::::::::  Use these lines if ZERO           :::::::::::::::::
-        MINORBODY_2                   !  World
-        FALSE                         ! Use Polyhedron Gravity
-        ::::::::::::::  Use these lines if FLIGHT         :::::::::::::::::
-        0                             !  Region Number
-        FALSE                         ! Use Polyhedron Gravity
-        ::::::::::::::  Use these lines if CENTRAL        :::::::::::::::::
-        EARTH                         !  Orbit Center
-        FALSE                         !  Secular Orbit Drift Due to J2
-        KEP                           !  Use Keplerian elements (KEP) or (RV) or FILE
-        PA                            !  Use Peri/Apoapsis (PA) or min alt/ecc (AE)
-        {altitude_km:.1f}      {altitude_km:.1f}              !  Periapsis & Apoapsis Altitude, km
-        {altitude_km:.1f}  0.0                    !  Min Altitude (km), Eccentricity
-        {inclination_deg:.1f}                          !  Inclination (deg)
-        {raan:.1f}                         !  Right Ascension of Ascending Node (deg)
-        0.0                           !  Argument of Periapsis (deg)
-        0.0                           !  True Anomaly (deg)
-    """)
+    # Replace the RAAN line (follows "Inclination" line)
+    lines = content.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if "Right Ascension" in line:
+            parts = line.split("!")
+            lines[i] = f"{raan:.1f}                         !{parts[1]}"
+            break
+    (dest_dir / f"Orb_{orbit_index}.txt").write_text("".join(lines))
 
 
-def generate_sc_file(sc_index: int, sats_per_orbit: int) -> str:
-    """Generate a minimal 42 spacecraft file.
-
-    Offsets the true anomaly so satellites within the same orbit
-    are evenly spaced.
-    """
+def copy_sc_file(src_dir: Path, sc_index: int, sats_per_orbit: int,
+                 dest_dir: Path) -> None:
+    """Copies the existing SC template, adjusting true anomaly for spacing."""
+    src = src_dir / "SC_NOS3.txt"
+    if not src.exists():
+        raise FileNotFoundError(f"SC template not found: {src}")
+    content = src.read_text()
     sat_in_orbit = sc_index % sats_per_orbit
     true_anomaly = sat_in_orbit * (360.0 / sats_per_orbit)
-
-    # Read the template SC file and modify the true anomaly
-    # For now, generate a minimal config referencing standard 42 body files
-    return dedent(f"""\
-        <<<<<<<<<<<<<<<<<  42: Spacecraft Description File  >>>>>>>>>>>>>>>>>
-        SC_{sc_index}                         !  Description
-        ************************* Orbit Parameters ****************************
-        {true_anomaly:.1f}                          !  True Anomaly (deg) - offset for spacing
-    """)
+    # Replace the initial true anomaly (usually "True Anomaly" line in orbit section)
+    lines = content.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if "True Anomaly" in line and "Initial" in line:
+            parts = line.split("!")
+            lines[i] = f"{true_anomaly:.1f}                           !{parts[1]}"
+            break
+    (dest_dir / f"SC_{sc_index}.txt").write_text("".join(lines))
 
 
 def generate_inp_sim(num_orbits: int, sats_per_orbit: int) -> str:
@@ -197,32 +188,6 @@ def generate_simulator_xml(num_orbits: int, sats_per_orbit: int) -> str:
                 </connection>
             </common>
             <simulators>
-                <simulator>
-                    <name>time</name>
-                    <active>true</active>
-                    <library>libtime_driver.so</library>
-                    <hardware-model>
-                        <type>NOS_TIME_DRIVER</type>
-                        <real-time-factor>1.0</real-time-factor>
-                    </hardware-model>
-                </simulator>
-
-                <simulator>
-                    <name>truth42sim</name>
-                    <active>true</active>
-                    <library>libtruth_42_sim.so</library>
-                    <hardware-model>
-                        <type>TRUTH42SIM</type>
-                        <data-provider>
-                            <type>TRUTH42PROVIDER</type>
-                            <hostname>fortytwo</hostname>
-                            <port>4245</port>
-                            <max-connection-attempts>30</max-connection-attempts>
-                            <retry-wait-seconds>1</retry-wait-seconds>
-                        </data-provider>
-                    </hardware-model>
-                </simulator>
-
         {"".join(sims)}
             </simulators>
         </nos3-configuration>
@@ -233,30 +198,28 @@ def main():
     parser = argparse.ArgumentParser(description="Generate NOS3 constellation config")
     parser.add_argument("--orbits", type=int, default=3)
     parser.add_argument("--sats-per-orbit", type=int, default=3)
-    parser.add_argument("--altitude", type=float, default=550.0,
-                        help="Orbital altitude in km")
-    parser.add_argument("--inclination", type=float, default=87.0,
-                        help="Orbital inclination in degrees")
     parser.add_argument("--output-dir", type=str,
                         default="tools/constellation/generated")
+    parser.add_argument("--template-dir", type=str,
+                        default="libs/nos3/cfg/InOut",
+                        help="Path to existing 42 InOut directory with templates")
     args = parser.parse_args()
 
     out = Path(args.output_dir)
     inout = out / "InOut"
     inout.mkdir(parents=True, exist_ok=True)
+    src_42 = Path(args.template_dir)
 
     # 42 configs
     inp_sim = generate_inp_sim(args.orbits, args.sats_per_orbit)
     (inout / "Inp_Sim.txt").write_text(inp_sim)
 
     for i in range(args.orbits):
-        orb = generate_orbit_file(i, args.orbits, args.altitude, args.inclination)
-        (inout / f"Orb_{i}.txt").write_text(orb)
+        copy_orbit_file(src_42, i, args.orbits, inout)
 
     total = args.orbits * args.sats_per_orbit
     for sc in range(total):
-        sc_file = generate_sc_file(sc, args.sats_per_orbit)
-        (inout / f"SC_{sc}.txt").write_text(sc_file)
+        copy_sc_file(src_42, sc, args.sats_per_orbit, inout)
 
     # NOS3 simulator XML
     sim_xml = generate_simulator_xml(args.orbits, args.sats_per_orbit)
