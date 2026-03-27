@@ -5,6 +5,10 @@
 
 use crate::ffi;
 
+const IPN_SCHEME: u64 = 2;
+const IPN_SSP_2DIGIT: u64 = 2;
+const IPN_SSP_3DIGIT: u64 = 3;
+
 /// A bundle endpoint identifier.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
@@ -14,8 +18,8 @@ impl Eid {
     /// Creates a new IPN-scheme EID with 2-digit format.
     pub fn ipn(node: u64, service: u64) -> Self {
         Self(ffi::BPLib_EID_t {
-            Scheme: 2, // IPN
-            IpnSspFormat: 2,
+            Scheme: IPN_SCHEME,
+            IpnSspFormat: IPN_SSP_2DIGIT,
             Allocator: 0,
             Node: node,
             Service: service,
@@ -25,8 +29,8 @@ impl Eid {
     /// Creates a new IPN-scheme EID with 3-digit format (allocator.node.service).
     pub fn ipn3(allocator: u64, node: u64, service: u64) -> Self {
         Self(ffi::BPLib_EID_t {
-            Scheme: 2,
-            IpnSspFormat: 3,
+            Scheme: IPN_SCHEME,
+            IpnSspFormat: IPN_SSP_3DIGIT,
             Allocator: allocator,
             Node: node,
             Service: service,
@@ -55,12 +59,7 @@ impl Eid {
 
     /// Checks whether this EID matches another EID.
     pub fn matches(&self, other: &Eid) -> bool {
-        unsafe {
-            ffi::BPLib_EID_IsMatch(
-                &self.0 as *const _,
-                &other.0 as *const _,
-            )
-        }
+        unsafe { ffi::BPLib_EID_IsMatch(&self.0 as *const _, &other.0 as *const _) }
     }
 }
 
@@ -76,8 +75,8 @@ impl EidPattern {
     /// Creates a pattern that matches a specific node (any service).
     pub fn node(node: u64) -> Self {
         Self(ffi::BPLib_EID_Pattern_t {
-            Scheme: 2,
-            IpnSspFormat: 2,
+            Scheme: IPN_SCHEME,
+            IpnSspFormat: IPN_SSP_2DIGIT,
             MaxAllocator: u64::MAX,
             MinAllocator: 0,
             MaxNode: node,
@@ -90,8 +89,8 @@ impl EidPattern {
     /// Creates a pattern that matches a specific node and service.
     pub fn exact(node: u64, service: u64) -> Self {
         Self(ffi::BPLib_EID_Pattern_t {
-            Scheme: 2,
-            IpnSspFormat: 2,
+            Scheme: IPN_SCHEME,
+            IpnSspFormat: IPN_SSP_2DIGIT,
             MaxAllocator: u64::MAX,
             MinAllocator: 0,
             MaxNode: node,

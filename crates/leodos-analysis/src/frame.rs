@@ -25,6 +25,7 @@ pub struct GeoFrame<'a> {
     pub nadir_lat: f32,
     pub nadir_lon: f32,
     pub gsd: f32,
+    pub timestamp_s: f64,
 }
 
 /// Wire-format tile header.
@@ -40,6 +41,7 @@ pub struct TileHeader {
     pub nadir_lat: f32,
     pub nadir_lon: f32,
     pub gsd: f32,
+    pub timestamp_s: f64,
 }
 
 /// A parsed tile received from a remote collector.
@@ -61,6 +63,7 @@ pub struct DualBandTile<'a> {
     pub nadir_lat: f32,
     pub nadir_lon: f32,
     pub gsd: f32,
+    pub timestamp_s: f64,
 }
 
 impl DualBandTile<'_> {
@@ -97,6 +100,7 @@ impl DualBandTile<'_> {
             nadir_lat: self.nadir_lat,
             nadir_lon: self.nadir_lon,
             gsd: self.gsd,
+            timestamp_s: self.timestamp_s,
         };
         let hdr = header.as_bytes();
         let mut off = 0;
@@ -151,6 +155,10 @@ impl<'a> TileMessage<'a> {
         self.header.gsd
     }
 
+    pub fn timestamp_s(&self) -> f64 {
+        self.header.timestamp_s
+    }
+
     /// Maps tile-local coordinates to frame coordinates.
     ///
     /// Returns `None` if the point falls in the overlap border.
@@ -194,6 +202,7 @@ pub struct TileIter<'frame> {
     nadir_lat: f32,
     nadir_lon: f32,
     gsd: f32,
+    timestamp_s: f64,
     cols: usize,
     total: usize,
     index: usize,
@@ -238,6 +247,7 @@ impl<'frame> Iterator for TileIter<'frame> {
             nadir_lat: self.nadir_lat,
             nadir_lon: self.nadir_lon,
             gsd: self.gsd,
+            timestamp_s: self.timestamp_s,
         })
     }
 }
@@ -259,6 +269,7 @@ impl<'a> Frame<'a> {
             nadir_lat: 0.0,
             nadir_lon: 0.0,
             gsd: 0.0,
+            timestamp_s: 0.0,
             cols,
             total: cols * rows,
             index: 0,
@@ -283,6 +294,7 @@ impl<'a> GeoFrame<'a> {
             nadir_lat: self.nadir_lat,
             nadir_lon: self.nadir_lon,
             gsd: self.gsd,
+            timestamp_s: self.timestamp_s,
             cols,
             total: cols * rows,
             index: 0,

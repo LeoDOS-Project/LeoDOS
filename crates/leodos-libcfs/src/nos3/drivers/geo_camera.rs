@@ -50,6 +50,11 @@ impl GeoCamera {
 
 impl GeoCamera {
     /// Captures a GPS fix and thermal frame, returning a geo-located frame.
+    ///
+    /// ## Aruments
+    ///
+    /// - `mwir`: Mid-Wave Infrared buffer.
+    /// - `lwir`: Long-Wave Infrared buffer.
     pub async fn capture<'a>(
         &mut self,
         mwir: &'a mut [f32],
@@ -57,11 +62,15 @@ impl GeoCamera {
     ) -> Result<GeoFrame<'a>, CfsError> {
         let fix = self.gps.request_data().await?;
         let frame = self.camera.capture(mwir, lwir).await?;
+        let gps_epoch_s = fix.weeks as f64 * 604_800.0
+            + fix.seconds_into_week as f64
+            + fix.fractions;
         Ok(GeoFrame {
             frame,
             nadir_lat: fix.lat,
             nadir_lon: fix.lon,
             gsd: ground_sample_distance(self.altitude_m, self.focal_length_mm, self.pixel_pitch_um),
+            timestamp_s: gps_epoch_s,
         })
     }
 }

@@ -29,10 +29,6 @@ use zerocopy::KnownLayout;
 use zerocopy::Unaligned;
 
 mod bindings {
-    #![allow(non_upper_case_globals)]
-    #![allow(non_camel_case_types)]
-    #![allow(non_snake_case)]
-    #![allow(dead_code)]
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
 
@@ -115,11 +111,11 @@ impl WildfireApp {
 
 impl SpaceComp for WildfireApp {
     async fn collect(&mut self, mut tx: impl Tx) -> Result<(), SpaceCompError> {
+        let mut buf = [0u8; 8192];
         let mut mwir = [0.0f32; MAX_PIXELS];
         let mut lwir = [0.0f32; MAX_PIXELS];
         let geo_frame = self.camera.capture(&mut mwir, &mut lwir).await?;
 
-        let mut buf = [0u8; 8192];
         let mut tile_count = 0;
         for tile in geo_frame.tiles(TILE_SIZE, TILE_OVERLAP) {
             let len = tile.write_to(&mut buf);
@@ -132,22 +128,21 @@ impl SpaceComp for WildfireApp {
     }
 
     async fn map(&mut self, data: &[u8], mut tx: impl Tx) -> Result<(), SpaceCompError> {
+        let mut buf = [0u8; 4096];
         let Some(tile) = TileMessage::from_bytes(data) else {
             return Ok(());
         };
-        let mut tx = tx.batched::<HotspotRecord>();
-        for hs in detect_fire(&tile, &self.thresholds) {
-            tx.write(&HotspotRecord::new(hs.lat, hs.lon, hs.t4)).await?;
+        let mut w = tx.batched::<HotspotRecord>(&mut buf);
+        for h in detect_fire(&tile, &self.thresholds) {
+            w.write(&HotspotRecord::new(h.lat, h.lon, h.t4)).await?;
         }
-        tx.flush().await?;
+        w.flush().await?;
         Ok(())
     }
 
     async fn reduce(&mut self, mut rx: impl Rx, mut tx: impl Tx) -> Result<(), SpaceCompError> {
-        let mut tx = tx.batched::<WildfireEvent>();
-        let mut clusterer = SpatialClusterer::<MAX_HOTSPOTS>::new(CLUSTER_RADIUS_DEG);
-
         let mut buf = [0u8; 4096];
+        let mut clusterer = SpatialClusterer::<MAX_HOTSPOTS>::new(CLUSTER_RADIUS_DEG);
         while let Some(Ok(records)) = rx.recv_batch::<HotspotRecord>(&mut buf).await {
             for hr in records {
                 if clusterer
@@ -160,9 +155,10 @@ impl SpaceComp for WildfireApp {
             }
         }
 
+        let mut w = tx.batched::<WildfireEvent>(&mut buf);
         let mut fire_count = 0;
         for c in clusterer.clusters() {
-            tx.write(&WildfireEvent::new(
+            w.write(&WildfireEvent::new(
                 c.centroid_x,
                 c.centroid_y,
                 c.max_value,
@@ -171,7 +167,7 @@ impl SpaceComp for WildfireApp {
             .await?;
             fire_count += 1;
         }
-        tx.flush().await?;
+        w.flush().await?;
 
         info!("Reducer: Clustered {} fires", fire_count)?;
         Ok(())

@@ -32,11 +32,14 @@ pub trait Tx {
     /// Returns the partition/collector ID for this role.
     fn partition_id(&self) -> u8;
     /// Returns a batched writer for fixed-size records.
-    fn batched<T: IntoBytes + Immutable>(&mut self) -> BufWriter<'_, T, Self>
+    fn batched<'a, 'b, T: IntoBytes + Immutable>(
+        &'a mut self,
+        buf: &'b mut [u8],
+    ) -> BufWriter<'a, 'b, T, Self>
     where
         Self: Sized,
     {
-        BufWriter::new(self)
+        BufWriter::new(self, buf)
     }
 }
 
@@ -168,6 +171,9 @@ impl<'a, 'rx, R: ReceiverBackend, const MAX_STREAMS: usize> SpaceCompRx<'a, 'rx,
 
 impl<R: ReceiverBackend, const MAX_STREAMS: usize> Rx for SpaceCompRx<'_, '_, R, MAX_STREAMS> {
     async fn recv(&mut self, buf: &mut [u8]) -> Option<Result<usize, SpaceCompError>> {
+        if self.done_count == self.expected_done {
+            return None;
+        }
         loop {
             let result = self.rx.recv_with(|data| {
                 let msg = SpaceCompMessage::parse(data).ok()?;
@@ -189,13 +195,12 @@ impl<R: ReceiverBackend, const MAX_STREAMS: usize> Rx for SpaceCompRx<'_, '_, R,
                 return Some(Err(SpaceCompError::Cfs(CfsError::ExternalResourceFail)));
             };
             let Some(inner) = maybe else { continue };
-            match inner {
-                Some(len) => return Some(Ok(len)),
-                None => {
-                    self.done_count += 1;
-                    if self.done_count >= self.expected_done {
-                        return None;
-                    }
+            if let Some(len) = inner {
+                return Some(Ok(len));
+            } else {
+                self.done_count += 1;
+                if self.done_count == self.expected_done {
+                    return None;
                 }
             }
         }

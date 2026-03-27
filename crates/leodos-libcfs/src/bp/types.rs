@@ -2,8 +2,35 @@
 
 use crate::ffi;
 
-/// bplib status code.
-pub type Status = ffi::BPLib_Status_t;
+/// BP library error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum BpError {
+    /// Generic failure (status < 0).
+    #[error("bplib error: {0}")]
+    Failed(i32),
+    /// Timeout waiting for bundle.
+    #[error("bplib timeout")]
+    Timeout,
+    /// No data available.
+    #[error("bplib no data")]
+    NoData,
+}
+
+const TIMEOUT_STATUS: i32 = -2;
+const NO_DATA_STATUS: i32 = -3;
+
+pub(crate) fn check_status(status: i32) -> Result<(), BpError> {
+    match status {
+        s if s >= 0 => Ok(()),
+        TIMEOUT_STATUS => Err(BpError::Timeout),
+        NO_DATA_STATUS => Err(BpError::NoData),
+        s => Err(BpError::Failed(s)),
+    }
+}
+
+pub(crate) fn check_status_with_size(status: i32, size: usize) -> Result<usize, BpError> {
+    check_status(status).map(|()| size)
+}
 
 /// Bundle block type codes per BPv7 section 9.1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

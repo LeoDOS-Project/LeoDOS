@@ -8,3 +8,10 @@ pub mod eid;
 pub mod channel;
 pub mod contact;
 pub mod instance;
+
+pub use channel::Channel;
+pub use contact::Contact;
+pub use eid::Eid;
+pub use eid::EidPattern;
+pub use instance::BpNode;
+pub use types::BpError;

@@ -1,7 +1,6 @@
 #![no_std]
 
 use leodos_protocols::network::spp::Apid;
-use leodos_spacecomp::bufwriter::BufWriter;
 use leodos_spacecomp::node::SpaceComp;
 use leodos_spacecomp::transport::Rx;
 use leodos_spacecomp::transport::Tx;
@@ -93,7 +92,8 @@ impl SpaceComp for WordCount2 {
     }
 
     async fn map(&mut self, data: &[u8], mut tx: impl Tx) -> Result<(), SpaceCompError> {
-        let mut writer = tx.batched::<WordCount>();
+        let mut buf = [0u8; 4096];
+        let mut writer = tx.batched::<WordCount>(&mut buf);
         for word in data.split(|&b| b == b' ' || b == b'\n' || b == b'\t') {
             if word.is_empty() || word.len() > 16 {
                 continue;
@@ -120,7 +120,7 @@ impl SpaceComp for WordCount2 {
             }
         }
 
-        let mut writer = BufWriter::<WordCount, _>::new(&mut tx);
+        let mut writer = tx.batched::<WordCount>(&mut recv_buf);
         for (word, &count) in counts.iter() {
             writer.write(&WordCount::new(word, count)).await?;
         }

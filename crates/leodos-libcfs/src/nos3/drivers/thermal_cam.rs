@@ -21,6 +21,11 @@ const REG_FIFO_READ: u8 = 0x20;
 
 const STATUS_READY: u8 = 0x02;
 const TRIGGER_CAPTURE: u8 = 0x01;
+const SPI_WRITE_BIT: u8 = 0x80;
+
+const fn check_bits(value: u8, mask: u8) -> bool {
+    value & mask != 0
+}
 
 /// Thermal camera error.
 #[derive(Debug)]
@@ -97,8 +102,10 @@ impl From<Spi> for ThermalCamera {
 }
 
 impl ThermalCamera {
+    const SPI_PADDING: u8 = 0;
+
     fn read_reg(&mut self, reg: u8) -> Result<u8, CfsError> {
-        let tx = [reg, 0x00];
+        let tx = [reg, Self::SPI_PADDING];
         let mut rx = [0u8; 2];
         self.spi
             .transfer(&tx, &mut rx, 2, 0, 8, true)
@@ -106,74 +113,85 @@ impl ThermalCamera {
         Ok(rx[0])
     }
 
-    const WRITE_BIT: u8 = 0x80;
-
     fn write_reg(&mut self, reg: u8, val: u8) -> Result<(), CfsError> {
-        let tx = [reg | Self::WRITE_BIT, val];
+        let tx = [reg | SPI_WRITE_BIT, val];
         self.spi.write(&tx).map_err(BusError::from)?;
+        Ok(())
+    }
+
+    fn is_ready(&mut self) -> Result<bool, CfsError> {
+        Ok(check_bits(self.read_reg(REG_STATUS)?, STATUS_READY))
+    }
+
+    async fn wait_ready(&mut self) -> Result<(), CfsError> {
+        core::future::poll_fn(|_| match self.is_ready() {
+            Ok(true) => core::task::Poll::Ready(Ok(())),
+            Ok(false) => core::task::Poll::Pending,
+            Err(e) => core::task::Poll::Ready(Err(e)),
+        })
+        .await
+    }
+
+    /// Reads the FIFO size in total pixel count (24-bit register, 3 reads).
+    fn fifo_pixel_count(&mut self) -> Result<usize, CfsError> {
+        let b0 = self.read_reg(REG_FIFO_SIZE_0)?;
+        let b1 = self.read_reg(REG_FIFO_SIZE_1)?;
+        let b2 = self.read_reg(REG_FIFO_SIZE_2)?;
+        let fifo_bytes = u32::from_le_bytes([b0, b1, b2, 0]);
+        Ok((fifo_bytes / 4) as usize)
+    }
+
+    /// Reads one f32 pixel from the FIFO (4 byte reads, little-endian).
+    fn read_pixel(&mut self) -> Result<f32, CfsError> {
+        let mut bytes = [0u8; 4];
+        for b in &mut bytes {
+            *b = self.read_reg(REG_FIFO_READ)?;
+        }
+        Ok(f32::from_le_bytes(bytes))
+    }
+
+    /// Reads `count` pixels from the FIFO into `buf`.
+    fn read_band(&mut self, buf: &mut [f32], count: usize) -> Result<(), CfsError> {
+        for i in 0..count {
+            buf[i] = self.read_pixel()?;
+        }
         Ok(())
     }
 
     /// Captures a thermal frame into caller-provided buffers.
     ///
     /// Yields until the camera is ready, then triggers a
-    /// capture and reads the FIFO. Returns a [`Frame`] that
-    /// borrows the MWIR/LWIR data. If only one band is
+    /// capture and reads the FIFO. If only one band is
     /// available, LWIR is a copy of MWIR.
     pub async fn capture<'a>(
         &mut self,
         mwir: &'a mut [f32],
         lwir: &'a mut [f32],
     ) -> Result<Frame<'a>, CfsError> {
-        core::future::poll_fn(|_| match self.read_reg(REG_STATUS) {
-            Ok(s) if s & STATUS_READY != 0 => core::task::Poll::Ready(Ok(())),
-            Ok(_) => core::task::Poll::Pending,
-            Err(e) => core::task::Poll::Ready(Err(e)),
-        })
-        .await?;
-
+        self.wait_ready().await?;
         self.write_reg(REG_TRIGGER, TRIGGER_CAPTURE)?;
 
         let num_bands = self.read_reg(REG_NUM_BANDS)?.max(1);
         let width = self.read_reg(REG_WIDTH)? as u32;
         let height = self.read_reg(REG_HEIGHT)? as u32;
-
-        let s0 = self.read_reg(REG_FIFO_SIZE_0)? as u32;
-        let s1 = self.read_reg(REG_FIFO_SIZE_1)? as u32;
-        let s2 = self.read_reg(REG_FIFO_SIZE_2)? as u32;
-        let fifo_bytes = s0 | (s1 << 8) | (s2 << 16);
         let pixels_per_band = (width * height) as usize;
-        let total_pixels = (fifo_bytes / 4) as usize;
-        let n = mwir.len().min(lwir.len());
+        let fifo_pixels = self.fifo_pixel_count()?;
+        let buf_capacity = mwir.len().min(lwir.len());
 
-        let mut bytes = [0u8; 4];
-
-        let n_mwir = pixels_per_band.min(n).min(total_pixels);
-        for i in 0..n_mwir {
-            for b in &mut bytes {
-                *b = self.read_reg(REG_FIFO_READ)?;
-            }
-            mwir[i] = f32::from_le_bytes(bytes);
-        }
+        let n = pixels_per_band.min(buf_capacity).min(fifo_pixels);
+        self.read_band(mwir, n)?;
 
         if num_bands >= 2 {
-            let remaining = total_pixels.saturating_sub(pixels_per_band);
-            let n_lwir = pixels_per_band.min(n).min(remaining);
-            for i in 0..n_lwir {
-                for b in &mut bytes {
-                    *b = self.read_reg(REG_FIFO_READ)?;
-                }
-                lwir[i] = f32::from_le_bytes(bytes);
-            }
+            let remaining = fifo_pixels.saturating_sub(pixels_per_band);
+            let n_lwir = pixels_per_band.min(buf_capacity).min(remaining);
+            self.read_band(lwir, n_lwir)?;
         } else {
-            for i in 0..n_mwir {
-                lwir[i] = mwir[i];
-            }
+            lwir[..n].copy_from_slice(&mwir[..n]);
         }
 
         Ok(Frame {
-            mwir: &mwir[..n_mwir],
-            lwir: &lwir[..n_mwir],
+            mwir: &mwir[..n],
+            lwir: &lwir[..n],
             width,
             height,
         })

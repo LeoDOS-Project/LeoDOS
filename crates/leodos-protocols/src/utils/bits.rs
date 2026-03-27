@@ -22,6 +22,11 @@ pub fn set_bits_u32(bitmap: &mut U32, mask: u32, value: u32) {
     bitmap.set((bitmap.get() & !mask) | (value << mask.trailing_zeros()));
 }
 
+/// Returns true if any bit in `mask` is set in `bitmap`.
+pub const fn check_bits_u8(bitmap: u8, mask: u8) -> bool {
+    bitmap & mask != 0
+}
+
 /// Returns the bits from `bitmap` specified by `mask`, right-aligned.
 pub const fn get_bits_u8(bitmap: u8, mask: u8) -> u8 {
     (bitmap & mask) >> mask.trailing_zeros()

@@ -9,18 +9,23 @@ use crate::SpaceCompError;
 
 /// Batched record writer. Packs fixed-size records into a
 /// buffer and flushes via [`Tx::send`] when full.
-pub struct BufWriter<'a, T, S: Tx> {
+///
+/// ## Note
+///
+/// The buffer should be flushed before it is dropped to
+/// avoid losing unflushed records.
+pub struct BufWriter<'a, 'b, T, S: Tx> {
     tx: &'a mut S,
-    buf: [u8; 4096],
+    buf: &'b mut [u8],
     len: usize,
     _record: PhantomData<T>,
 }
 
-impl<'a, T: IntoBytes + Immutable, S: Tx> BufWriter<'a, T, S> {
-    pub fn new(tx: &'a mut S) -> Self {
+impl<'a, 'b, T: IntoBytes + Immutable, S: Tx> BufWriter<'a, 'b, T, S> {
+    pub fn new(tx: &'a mut S, buf: &'b mut [u8]) -> Self {
         Self {
             tx,
-            buf: [0u8; 4096],
+            buf,
             len: 0,
             _record: PhantomData,
         }
@@ -49,5 +54,15 @@ impl<'a, T: IntoBytes + Immutable, S: Tx> BufWriter<'a, T, S> {
         self.tx.send(&self.buf[..payload_len]).await?;
         self.len = 0;
         Ok(())
+    }
+}
+
+impl<T, S: Tx> Drop for BufWriter<'_, '_, T, S> {
+    fn drop(&mut self) {
+        debug_assert!(
+            self.len == 0,
+            "BufWriter dropped with {} unflushed records",
+            self.len
+        );
     }
 }
