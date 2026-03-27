@@ -1,3 +1,0 @@
-CFE_LIB, cfe_assert,      CFE_Assert_LibInit,   ASSERT_LIB,       0,       0, 0x0, 0;
-CFE_APP, spacecomp,       SPACECOMP_AppMain,    SPACECOMP_APP,   95,   65536, 0x0, 0;
-!

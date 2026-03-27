@@ -75,7 +75,7 @@ endif
 
 # The "LOCALTGTS" defines the top-level targets that are implemented in this makefile
 # Any other target may also be given, in that case it will simply be passed through.
-LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov check check-nos3 docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test constellation-build constellation-gen constellation-up constellation-down nos3-prep wildfire-demo-build wildfire-demo-up wildfire-demo-down nos3-build nos3-config nos3-build-fsw nos3-build-sim nos3-launch nos3-stop nos3-shell eosim-gen
+LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov check docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test demo-build demo-up demo-down eosim-gen
 OTHERTGTS := $(filter-out $(LOCALTGTS),$(MAKECMDGOALS))
 
 # As this makefile does not build any real files, treat everything as a PHONY target
@@ -160,7 +160,7 @@ osalguide:
 # that is used to indicate the prep step has been done.  This way
 # the prep step does not need to be done explicitly by the user
 # as long as the default options are sufficient.
-$(filter-out prep distclean check check-nos3 docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test constellation-build constellation-gen constellation-up constellation-down nos3-prep wildfire-demo-build wildfire-demo-up wildfire-demo-down nos3-build nos3-config nos3-build-fsw nos3-build-sim nos3-launch nos3-stop nos3-shell,$(LOCALTGTS)): $(O)/.prep
+$(filter-out prep distclean check docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test demo-build demo-up demo-down eosim-gen,$(LOCALTGTS)): $(O)/.prep
 
 # Docker targets for building on macOS
 docker-build:
@@ -193,77 +193,27 @@ check:
 	cd apps/spacecomp_wildfire/fsw && cargo check
 	cd apps/spacecomp_wordcount/fsw && cargo check
 
-check-nos3: nos3-prep
-	$(NOS3_RUN_STANDALONE) bash -c "cd apps/wildfire/fsw && cargo check"
-
-# Constellation targets
+# NOS3 multi-satellite wildfire demo
 MAX_ORB ?= 3
 MAX_SAT ?= 3
+NOS3_DC = docker compose -f docker-compose.nos3.yml
+NOS3_RUN_STANDALONE = docker run --rm -v "$$(pwd):/cFS" -v "$${HOME}/.nos3:/root/.nos3" -w /cFS nos3-rust:latest
 
-constellation-build:
-	docker build -f tools/constellation/Dockerfile.sat -t leodos-sat:latest .
+demo-build:
+	docker build -f Dockerfile.nos3 -t nos3-rust:latest .
+	$(NOS3_RUN_STANDALONE) bash -c "cd libs/42 && make clean && make 42PLATFORM=__linux__ GUIFLAG= SHADERFLAG= && mkdir -p /root/.nos3/42/NOS3InOut && tar --exclude=.git -cf - . | tar -xf - -C /root/.nos3/42/"
+	$(NOS3_RUN_STANDALONE) bash -c "cd libs/nos3 && make config && make build-sim && make build-fsw"
 
-constellation-up:
-	docker run --rm -it \
-		--name leodos-constellation \
-		-e MAX_ORB=$(MAX_ORB) \
-		-e MAX_SAT=$(MAX_SAT) \
-		-p 1234:1234/udp \
-		-p 1235:1235/udp \
-		--sysctl fs.mqueue.msg_max=1000 \
-		leodos-sat:latest
-
-constellation-down:
-	docker stop leodos-constellation 2>/dev/null || true
-
-constellation-gen:
+demo-up:
 	python3 tools/constellation/gen_nos3_config.py \
 		--orbits $(MAX_ORB) --sats-per-orbit $(MAX_SAT) \
 		--output-dir tools/constellation/generated
-
-# Wildfire demo (NOS3 simulation with thermal camera + GPS)
-NOS3_RUN_STANDALONE = docker run --rm -v "$$(pwd):/cFS" -v "$${HOME}/.nos3:/root/.nos3" -w /cFS nos3-rust:latest
-
-nos3-prep:
-	docker build -f Dockerfile.nos3 -t nos3-rust:latest .
-	$(NOS3_RUN_STANDALONE) bash -c "cd libs/nos3 && make config && make build-fsw || true"
-	find libs/nos3/fsw/build -name '*.h' | xargs sed -i'' -e 's|/cFS/|$(CURDIR)/|g'
-
-wildfire-demo-build:
-	docker build -f Dockerfile.nos3 -t nos3-rust:latest .
-	$(NOS3_RUN_STANDALONE) bash -c "cd libs/42 && make clean && make 42PLATFORM=__linux__ GUIFLAG= SHADERFLAG= && mkdir -p /root/.nos3/42/NOS3InOut && tar --exclude=.git -cf - . | tar -xf - -C /root/.nos3/42/ && cp -r /cFS/libs/nos3/cfg/build/InOut/* /root/.nos3/42/NOS3InOut/"
-	$(NOS3_RUN_STANDALONE) bash -c "cd libs/nos3 && make config && make build-sim && make build-fsw"
-
-wildfire-demo-up:
+	cp tools/constellation/generated/InOut/* ~/.nos3/42/NOS3InOut/ 2>/dev/null || true
+	cp tools/constellation/generated/nos3-simulator.xml libs/nos3/sims/build/bin/ 2>/dev/null || true
 	$(NOS3_DC) up -d
 
-wildfire-demo-down:
+demo-down:
 	$(NOS3_DC) down
-
-# NOS3 simulation targets
-NOS3_DC = docker compose -f docker-compose.nos3.yml
-NOS3_RUN = $(NOS3_DC) run --rm fsw
-
-nos3-build:
-	docker build -f Dockerfile.nos3 -t nos3-rust:latest .
-
-nos3-config:
-	$(NOS3_RUN) bash -c "cd libs/nos3 && make config"
-
-nos3-build-fsw:
-	$(NOS3_RUN) bash -c "cd libs/nos3 && make build-fsw"
-
-nos3-build-sim:
-	$(NOS3_RUN) bash -c "cd libs/nos3 && make build-sim"
-
-nos3-launch:
-	$(NOS3_DC) up -d
-
-nos3-stop:
-	$(NOS3_DC) down
-
-nos3-shell:
-	$(NOS3_DC) run --rm fsw bash
 
 # Synthetic sensor data generation (eosim)
 EOSIM_DIR = tools/eosim
