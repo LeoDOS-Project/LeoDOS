@@ -189,7 +189,7 @@ impl SpaceComp for WildfireApp {
 // ── Entry point ─────────────────────────────────────────────
 
 #[no_mangle]
-pub extern "C" fn SPACECOMP_WILDFIRE_AppMain() {
+pub extern "C" fn SC_WILDFIRE_AppMain() {
     SpaceCompNode::builder()
         .config(
             SpaceCompConfig::builder()
