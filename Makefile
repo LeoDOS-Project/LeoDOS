@@ -210,6 +210,7 @@ demo-up:
 		--output-dir tools/constellation/generated
 	cp tools/constellation/generated/InOut/* ~/.nos3/42/NOS3InOut/ 2>/dev/null || true
 	cp tools/constellation/generated/nos3-simulator.xml libs/nos3/sims/build/bin/ 2>/dev/null || true
+	cp tools/constellation/generated/sim-names.txt libs/nos3/sims/build/bin/ 2>/dev/null || true
 	$(NOS3_DC) up -d
 
 demo-down:

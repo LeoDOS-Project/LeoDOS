@@ -92,7 +92,27 @@ def generate_inp_sim(src_dir: Path, num_orbits: int, sats_per_orbit: int) -> str
     return "".join(result)
 
 
-def generate_simulator_xml(num_orbits: int, sats_per_orbit: int) -> str:
+def generate_simulator_xml(src_dir: Path, num_orbits: int, sats_per_orbit: int) -> str:
+    """Patches the original nos3-simulator.xml: replaces single GPS/camera
+    entries with per-spacecraft entries using unique bus names."""
+    src = src_dir / "nos3-simulator.xml"
+    if not src.exists():
+        raise FileNotFoundError(f"Template not found: {src}")
+    content = src.read_text()
+
+    # Remove existing gps and thermal-cam-sim entries
+    import re
+    content = re.sub(
+        r'<simulator>\s*<name>(gps|thermal-cam-sim)</name>.*?</simulator>',
+        '', content, flags=re.DOTALL)
+
+    # Insert per-spacecraft sims before </simulators>
+    new_sims = _generate_per_sc_sims(num_orbits, sats_per_orbit)
+    content = content.replace('</simulators>', new_sims + '\n        </simulators>')
+    return content
+
+
+def _generate_per_sc_sims(num_orbits: int, sats_per_orbit: int) -> str:
     total = num_orbits * sats_per_orbit
 
     sims = []
@@ -165,29 +185,7 @@ def generate_simulator_xml(num_orbits: int, sats_per_orbit: int) -> str:
             </simulator>
         """))
 
-    return dedent(f"""\
-        <?xml version="1.0" encoding="utf-8"?>
-        <nos3-configuration>
-            <common>
-                <log-config>nos3-log.xml</log-config>
-                <time>
-                    <type>NOS3</type>
-                    <bus-name>command</bus-name>
-                    <tick-topic>SIMTIME</tick-topic>
-                </time>
-                <absolute-start-time>0</absolute-start-time>
-                <sim-microseconds-per-tick>250000</sim-microseconds-per-tick>
-                <connection>
-                    <type>TCP</type>
-                    <hostname>nos-engine-server</hostname>
-                    <port>12001</port>
-                </connection>
-            </common>
-            <simulators>
-        {"".join(sims)}
-            </simulators>
-        </nos3-configuration>
-    """)
+    return "".join(sims)
 
 
 def main():
@@ -218,8 +216,16 @@ def main():
         copy_sc_file(src_42, sc, args.sats_per_orbit, inout)
 
     # NOS3 simulator XML
-    sim_xml = generate_simulator_xml(args.orbits, args.sats_per_orbit)
+    sim_src = Path("libs/nos3/cfg/sims")
+    sim_xml = generate_simulator_xml(sim_src, args.orbits, args.sats_per_orbit)
     (out / "nos3-simulator.xml").write_text(sim_xml)
+
+    # Write list of per-SC sim names for the sims launcher
+    sim_names = []
+    for sc in range(total):
+        sim_names.append(f"thermal-cam-sim-sc{sc}")
+        sim_names.append(f"gps-sim-sc{sc}")
+    (out / "sim-names.txt").write_text("\n".join(sim_names) + "\n")
 
     print(f"Generated config for {total} satellites "
           f"({args.orbits} orbits x {args.sats_per_orbit} sats)")
