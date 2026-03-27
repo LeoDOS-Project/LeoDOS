@@ -48,6 +48,7 @@ services:
     stdin_open: true
     environment:
       - TERM=xterm
+      - TERMINFO=/lib/terminfo
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
