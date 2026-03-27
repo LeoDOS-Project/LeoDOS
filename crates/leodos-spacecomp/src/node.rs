@@ -80,6 +80,11 @@ pub struct SpaceCompNode<F, S: MessageStore = NoStore, R: Reachable = AlwaysReac
 /// Implement this to define what happens when this node
 /// is assigned as a collector, mapper, or reducer.
 pub trait SpaceComp {
+    /// Called after startup sync to initialize hardware.
+    fn init(&mut self) -> Result<(), SpaceCompError> {
+        Ok(())
+    }
+
     /// Collects local data and sends it to the assigned mapper.
     async fn collect(&mut self, tx: impl Tx) -> Result<(), SpaceCompError>;
 
@@ -168,10 +173,15 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
         let mut msg_buf = [0u8; SpaceCompMessage::MAX_ASSIGN_SIZE];
 
         let dispatch = async {
+            let mut initialized = false;
             loop {
                 let Ok((_source, len)) = rx.recv(&mut recv_buf).await else {
                     break;
                 };
+                if !initialized {
+                    app.init()?;
+                    initialized = true;
+                }
                 let Ok(msg) = SpaceCompMessage::parse(&recv_buf[..len]) else {
                     continue;
                 };

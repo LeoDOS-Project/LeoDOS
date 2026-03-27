@@ -85,7 +85,7 @@ impl WildfireEvent {
 // ── SpaceComp implementation ────────────────────────────────
 
 struct WildfireApp {
-    camera: GeoCamera,
+    camera: Option<GeoCamera>,
     thresholds: FireThresholds,
 }
 
@@ -98,12 +98,28 @@ fn scid_to_index(scid: u32, num_sats: u32) -> u32 {
 
 impl WildfireApp {
     fn new() -> Result<Self, SpaceCompError> {
+        Ok(Self {
+            camera: None,
+            thresholds: FireThresholds {
+                t4_abs: 330.0,
+                ..Default::default()
+            },
+        })
+    }
+
+    fn camera(&mut self) -> &mut GeoCamera {
+        self.camera.as_mut().expect("camera not initialized")
+    }
+}
+
+impl SpaceComp for WildfireApp {
+    fn init(&mut self) -> Result<(), SpaceCompError> {
         let scid = system::get_spacecraft_id();
         let num_sats = bindings::SPACECOMP_WILDFIRE_NUM_SATS as u32;
         let sc_index = scid_to_index(scid, num_sats);
 
-        Ok(Self {
-            camera: GeoCamera::builder()
+        self.camera = Some(
+            GeoCamera::builder()
                 .device(&fmt_cstr!(32, "spi_sc{}", sc_index)?)
                 .chip_select_line(3)
                 .baudrate(1_000_000)
@@ -113,20 +129,16 @@ impl WildfireApp {
                 .focal_length_mm(FOCAL_LENGTH_MM)
                 .pixel_pitch_um(PIXEL_PITCH_UM)
                 .build()?,
-            thresholds: FireThresholds {
-                t4_abs: 330.0,
-                ..Default::default()
-            },
-        })
+        );
+        log!("Wildfire app initialized (SCID={})", scid)?;
+        Ok(())
     }
-}
 
-impl SpaceComp for WildfireApp {
     async fn collect(&mut self, mut tx: impl Tx) -> Result<(), SpaceCompError> {
         let mut buf = [0u8; 8192];
         let mut mwir = [0.0f32; MAX_PIXELS];
         let mut lwir = [0.0f32; MAX_PIXELS];
-        let geo_frame = self.camera.capture(&mut mwir, &mut lwir).await?;
+        let geo_frame = self.camera().capture(&mut mwir, &mut lwir).await?;
 
         let mut tile_count = 0;
         for tile in geo_frame.tiles(TILE_SIZE, TILE_OVERLAP) {
