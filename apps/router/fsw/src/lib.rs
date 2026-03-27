@@ -58,7 +58,7 @@ fn build_routing_table() -> (heapless::Vec<Route, MAX_ROUTES>, usize) {
         ($apid:expr, $topic:expr) => {
             let _ = table.push(Route {
                 apid: $apid as u16,
-                topic: MsgId::from_local_tlm($topic as u16),
+                topic: MsgId::local_tlm($topic as u16),
             });
         };
     }
@@ -173,7 +173,7 @@ pub extern "C" fn ROUTER_AppMain() {
         let (routes, route_count) = build_routing_table();
         info!("Loaded {route_count} APID routes")?;
 
-        let send_mid = MsgId::from_local_cmd(bindings::ROUTER_SEND_TOPICID as u16);
+        let send_mid = MsgId::local_cmd(bindings::ROUTER_SEND_TOPICID as u16);
 
         let mut pipe = Pipe::new("ROUTER_SB", 32)?;
         pipe.subscribe(send_mid)?;
