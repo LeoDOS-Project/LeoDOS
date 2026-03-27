@@ -4,12 +4,9 @@ use std::path::PathBuf;
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
-    // Link against novatel GPS driver (provides NOVATEL_OEM615_* symbols)
-    if let Ok(build_dir) = std::env::var("CARGO_TARGET_DIR") {
-        let lib_dir = format!("{build_dir}/../../../exe/cpu1/cf");
-        println!("cargo:rustc-link-search=native={lib_dir}");
-        println!("cargo:rustc-link-lib=dylib=novatel_oem615");
-    }
+    // Allow unresolved symbols — GPS/SPI functions are provided at runtime
+    // by libraries loaded before our .so (hwlib, novatel via LD_PRELOAD or cFS lib)
+    println!("cargo:rustc-cdylib-link-arg=-Wl,--allow-shlib-undefined");
 
     let apps_dir = PathBuf::from("../..");
     let build_dir = env::var("BUILD_DIR").unwrap_or_default();
