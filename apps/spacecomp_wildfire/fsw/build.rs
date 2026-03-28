@@ -4,9 +4,6 @@ use std::path::PathBuf;
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
-    // Allow unresolved symbols — GPS/SPI functions are provided at runtime
-    // by libraries loaded before our .so (hwlib, novatel via LD_PRELOAD or cFS lib)
-    println!("cargo:rustc-cdylib-link-arg=-Wl,--allow-shlib-undefined");
 
     let apps_dir = PathBuf::from("../..");
     let build_dir = env::var("BUILD_DIR").unwrap_or_default();

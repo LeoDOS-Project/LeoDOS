@@ -123,8 +123,6 @@ impl SpaceComp for WildfireApp {
                 .device(&fmt_cstr!(32, "spi_sc{}", sc_index)?)
                 .chip_select_line(3)
                 .baudrate(1_000_000)
-                .gps_device(&fmt_cstr!(32, "usart_sc{}", sc_index)?)
-                .gps_baud(115_200)
                 .altitude_m(ALTITUDE_M)
                 .focal_length_mm(FOCAL_LENGTH_MM)
                 .pixel_pitch_um(PIXEL_PITCH_UM)
