@@ -22,6 +22,7 @@
 #![deny(missing_docs)]
 
 pub(crate) mod ffi;
+pub mod cell;
 pub mod cfe;
 pub mod error;
 pub mod log;
