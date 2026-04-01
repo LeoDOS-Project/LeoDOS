@@ -24,18 +24,29 @@
 
 #![no_std]
 
-pub mod bufwriter;
-pub mod config;
-pub mod coordinator;
-pub mod error;
 pub mod job;
-pub mod node;
 pub mod packet;
 pub mod plan;
 pub mod reader;
+
+#[cfg(feature = "cfs")]
+pub mod bufwriter;
+#[cfg(feature = "cfs")]
+pub mod config;
+#[cfg(feature = "cfs")]
+pub mod coordinator;
+#[cfg(feature = "cfs")]
+pub mod error;
+#[cfg(feature = "cfs")]
+pub mod node;
+#[cfg(feature = "cfs")]
 pub mod transport;
 
+#[cfg(feature = "cfs")]
 pub use config::SpaceCompConfig;
+#[cfg(feature = "cfs")]
 pub use error::SpaceCompError;
+#[cfg(feature = "cfs")]
 pub use node::SpaceComp;
+#[cfg(feature = "cfs")]
 pub use node::SpaceCompNode;

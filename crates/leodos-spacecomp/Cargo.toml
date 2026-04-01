@@ -3,9 +3,13 @@ name = "leodos-spacecomp"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["cfs"]
+cfs = ["leodos-protocols/cfs", "dep:leodos-libcfs"]
+
 [dependencies]
-leodos-protocols = { path = "../leodos-protocols", features = ["cfs"] }
-leodos-libcfs = { path = "../leodos-libcfs" }
+leodos-protocols = { path = "../leodos-protocols" }
+leodos-libcfs = { path = "../leodos-libcfs", optional = true }
 bon = { version = "3.9.1", default-features = false }
 heapless = "0.9"
 thiserror = { version = "2", default-features = false }
