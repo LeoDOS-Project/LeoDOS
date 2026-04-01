@@ -199,6 +199,61 @@ def _generate_per_sc_sims(num_orbits: int, sats_per_orbit: int) -> str:
     return "".join(sims)
 
 
+def generate_inp_ipc(src_dir: Path) -> str:
+    """Patches Inp_IPC.txt to disable unused sockets.
+
+    42 opens IPC sockets sequentially and blocks on accept() for
+    each RX socket. If a sim (e.g., reaction wheel) is not running,
+    42 never proceeds to open later sockets. We keep only the
+    sockets our sims actually connect to: GPS (4245) and truth (9999).
+    """
+    src = src_dir / "Inp_IPC.txt"
+    if not src.exists():
+        raise FileNotFoundError(f"Template not found: {src}")
+
+    keep_ports = {"4245", "9999"}
+    lines = src.read_text().splitlines(keepends=True)
+    result = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        # Detect start of an IPC block (line with "****")
+        if "****" in line and i + 1 < len(lines):
+            # Collect the block (header + 7-9 lines until next **** or EOF)
+            block = [line]
+            i += 1
+            while i < len(lines) and "****" not in lines[i]:
+                block.append(lines[i])
+                i += 1
+
+            # Check if this block's port is one we want to keep
+            port_line = next((l for l in block if "Server Host Name" in l or "Port" in l), None)
+            keep = False
+            if port_line:
+                for port in keep_ports:
+                    if port in port_line.split("!")[0]:
+                        keep = True
+                        break
+
+            if keep:
+                result.extend(block)
+            else:
+                # Set IPC mode to OFF
+                result.append(block[0])  # section header
+                for bl in block[1:]:
+                    if "IPC Mode" in bl:
+                        result.append("OFF                                     ! IPC Mode (OFF,TX,RX,TXRX,ACS,WRITEFILE,READFILE)\n")
+                    else:
+                        result.append(bl)
+            continue
+
+        result.append(line)
+        i += 1
+
+    return "".join(result)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate NOS3 constellation config")
     parser.add_argument("--orbits", type=int, default=3)
@@ -225,6 +280,10 @@ def main():
     total = args.orbits * args.sats_per_orbit
     for sc in range(total):
         copy_sc_file(src_42, sc, args.sats_per_orbit, inout)
+
+    # 42 IPC config — disable unused sockets
+    inp_ipc = generate_inp_ipc(src_42)
+    (inout / "Inp_IPC.txt").write_text(inp_ipc)
 
     # NOS3 simulator XML
     sim_src = Path("libs/nos3/cfg/sims")
