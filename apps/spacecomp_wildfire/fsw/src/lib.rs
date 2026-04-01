@@ -1,5 +1,6 @@
 #![no_std]
 
+use leodos_libcfs::cell::TaskLocalCell;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::log;
 use leodos_libcfs::nos3::drivers::geo_camera::GeoCamera;
@@ -35,6 +36,7 @@ mod bindings {
 
 const MAX_PIXELS: usize = 512 * 512;
 const MAX_HOTSPOTS: usize = 256;
+
 const TILE_SIZE: usize = 32;
 const TILE_OVERLAP: usize = 3;
 const FOCAL_LENGTH_MM: f32 = 50.0;
@@ -133,10 +135,10 @@ impl SpaceComp for WildfireApp {
     }
 
     async fn collect(&mut self, mut tx: impl Tx) -> Result<(), SpaceCompError> {
+        static MWIR: TaskLocalCell<[f32; MAX_PIXELS]> = TaskLocalCell::new([0.0; MAX_PIXELS]);
+        static LWIR: TaskLocalCell<[f32; MAX_PIXELS]> = TaskLocalCell::new([0.0; MAX_PIXELS]);
         let mut buf = [0u8; 8192];
-        let mut mwir = [0.0f32; MAX_PIXELS];
-        let mut lwir = [0.0f32; MAX_PIXELS];
-        let geo_frame = self.camera().capture(&mut mwir, &mut lwir).await?;
+        let geo_frame = self.camera().capture(MWIR.get_mut(), LWIR.get_mut()).await?;
 
         let mut tile_count = 0;
         for tile in geo_frame.tiles(TILE_SIZE, TILE_OVERLAP) {
