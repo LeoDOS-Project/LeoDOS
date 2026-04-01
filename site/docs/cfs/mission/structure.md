@@ -43,6 +43,16 @@ A cFS mission is built by a CMake-based build system that combines the framework
 
 The startup script is itself a configuration file on the file system, not compiled in. Changing which apps load, or in what order, does not require rebuilding the core executive.
 
+## Loading
+
+The executive loads apps via `dlopen`. Libraries (`CFE_LIB`) are loaded with `RTLD_GLOBAL` — their symbols are visible to all subsequently loaded code. Apps (`CFE_APP`) are loaded with `RTLD_LOCAL` — their symbols are private. This means an app can call functions from the core executive and from any library loaded before it, but cannot call functions from another app. All inter-app communication goes through the [Software Bus](/cfs/cfe/sb).
+
+If a Rust app depends on C symbols (e.g., SPI functions from hwlib), the library providing those symbols must be listed as `CFE_LIB` and appear before the app in the startup script. The core executable must be built with `-rdynamic` so that cFE, OSAL, and PSP symbols are visible to loaded modules.
+
+### Name Length Limits
+
+OSAL enforces hard limits on identifier lengths: `OS_MAX_FILE_NAME` (20 characters for the library filename including `.so`) and `OS_MAX_API_NAME` (20 characters for the entry point symbol). Names that exceed these are silently truncated, causing load failures. Choose short names for both the library and its entry point.
+
 ## LeoDOS Context
 
 LeoDOS apps are written in Rust and compiled as C-compatible shared objects that the cFS executive loads like any other app. The Rust code links against `leodos-libcfs`, which provides safe wrappers around the cFE, OSAL, and PSP APIs. From the executive's perspective, a Rust app is indistinguishable from a C app — it exports the same entry point and uses the same bus and table interfaces.
