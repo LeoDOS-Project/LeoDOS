@@ -213,7 +213,19 @@ demo-up:
 	cp tools/constellation/generated/sim-names.txt libs/nos3/sims/build/bin/ 2>/dev/null || true
 	cp libs/nos3/fsw/build/amd64-posix/default_cpu1/cpu1/core-cpu1 libs/nos3/fsw/build/exe/cpu1/core-cpu1 2>/dev/null || true
 	@echo '{"plugins":["uart"],"server_uris":[{"name":"all","server_uri":"tcp://nos-engine-server:12000"}]}' > libs/nos3/sims/build/bin/nos_engine_server_config.json
-	$(NOS3_DC) up -d
+	@printf '%s\n' \
+		'CFE_LIB, cryptolib, Crypto_SC_Init, CRYPTOLIB, 0, 0, 0x0, 0;' \
+		'CFE_LIB, hwlib, hwlib_Init, HW_LIB, 0, 0, 0x0, 0;' \
+		'CFE_LIB, io_lib, IO_LibInit, IO_LIB, 0, 0, 0x0, 0;' \
+		'CFE_APP, sch, SCH_AppMain, SCH, 40, 16384, 0x0, 0;' \
+		'CFE_APP, ci, CI_AppMain, CI, 41, 16384, 0x0, 0;' \
+		'CFE_APP, to, TO_AppMain, TO, 42, 32768, 0x0, 0;' \
+		'CFE_APP, ci_lab, CI_Lab_AppMain, CI_LAB_APP, 80, 16384, 0x0, 0;' \
+		'CFE_APP, to_lab, TO_LAB_AppMain, TO_LAB_APP, 81, 32768, 0x0, 0;' \
+		'CFE_APP, router, ROUTER_AppMain, ROUTER_APP, 82, 65536, 0x0, 0;' \
+		'CFE_APP, sc_wildfire, SC_WILDFIRE_AppMain, WILDFIRE_APP, 90, 262144, 0x0, 0;' \
+		'!' > libs/nos3/fsw/build/exe/cpu1/cf/cfe_es_startup.scr
+	MAX_ORB=$(MAX_ORB) MAX_SAT=$(MAX_SAT) $(NOS3_DC) up -d
 
 demo-down:
 	$(NOS3_DC) down

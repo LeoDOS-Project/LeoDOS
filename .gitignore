@@ -5,3 +5,4 @@ build
 target/
 __pycache__/
 tools/eosim/output/
+run/
