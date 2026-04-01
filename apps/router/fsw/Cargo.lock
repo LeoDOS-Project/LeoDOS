@@ -362,6 +362,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
+name = "indoc"
+version = "2.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79cf5c93f93228cf8efb3ba362535fb11199ac548a09ce117c9b1adc3030d706"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -386,6 +395,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
+name = "leodos-analysis"
+version = "0.1.0"
+dependencies = [
+ "heapless",
+ "libm",
+ "zerocopy",
+]
+
+[[package]]
 name = "leodos-libcfs"
 version = "0.1.1"
 dependencies = [
@@ -395,7 +413,9 @@ dependencies = [
  "cc",
  "futures",
  "heapless",
+ "indoc",
  "lazy_static",
+ "leodos-analysis",
  "libc",
  "pin-project",
  "pin-utils",
@@ -414,11 +434,16 @@ dependencies = [
  "futures",
  "heapless",
  "leodos-libcfs",
+ "leodos-utils",
  "libm",
  "pin-utils",
  "thiserror",
  "zerocopy",
 ]
+
+[[package]]
+name = "leodos-utils"
+version = "0.1.0"
 
 [[package]]
 name = "libc"

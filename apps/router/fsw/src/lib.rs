@@ -1,6 +1,7 @@
 #![no_std]
 
 use futures::FutureExt as _;
+use core::time::Duration;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
@@ -9,7 +10,7 @@ use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
 use leodos_libcfs::error::CfsError;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::Runtime;
-use leodos_libcfs::{err, log};
+use leodos_libcfs::log;
 
 use leodos_protocols::datalink::link::cfs::udp::UdpDatalink;
 use leodos_protocols::network::isl::address::{Address, SpacecraftId};
@@ -143,6 +144,7 @@ fn ground_link(point: Point) -> Result<UdpDatalink, CfsError> {
 
 #[no_mangle]
 pub extern "C" fn ROUTER_AppMain() {
+    system::wait_for_startup_sync(Duration::from_millis(10_000));
     Runtime::new().run(async {
         event::register(&[])?;
         log!("Router app starting")?;
@@ -171,7 +173,7 @@ pub extern "C" fn ROUTER_AppMain() {
             .build();
 
         let (routes, route_count) = build_routing_table();
-        log!("Loaded {route_count} APID routes")?;
+        log!("Loaded {} APID routes", route_count)?;
 
         let send_mid = MsgId::local_cmd(bindings::ROUTER_SEND_TOPICID as u16);
 
