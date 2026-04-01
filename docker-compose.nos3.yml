@@ -64,7 +64,9 @@ services:
     volumes:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
-    command: sh -c "sleep 10 && ./nos3-single-simulator -f nos3-simulator.xml -s truth42sim"
+    environment:
+      - LD_LIBRARY_PATH=${SIM_DIR:-/cFS/libs/nos3/sims/build}/lib
+    command: sh -c "sleep 40 && ./nos3-single-simulator -f nos3-simulator.xml -s truth42sim"
     depends_on:
       - nos-engine-server
       - fortytwo
@@ -78,6 +80,8 @@ services:
       - ./libs/nos3/sims/build:${SIM_DIR:-/cFS/libs/nos3/sims/build}
       - ./tools/eosim/output:/sim/thermal_data:ro
     working_dir: ${SIM_DIR:-/cFS/libs/nos3/sims/build}/bin
+    environment:
+      - LD_LIBRARY_PATH=${SIM_DIR:-/cFS/libs/nos3/sims/build}/lib
     command: ["sh", "-c", "sleep 30; while read sim; do echo Starting $$sim; ./nos3-single-simulator -f nos3-simulator.xml -s $$sim & done < sim-names.txt; wait"]
     depends_on:
       - nos-engine-server

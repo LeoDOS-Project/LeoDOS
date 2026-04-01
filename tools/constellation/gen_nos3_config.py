@@ -211,6 +211,10 @@ def generate_inp_ipc(src_dir: Path) -> str:
     if not src.exists():
         raise FileNotFoundError(f"Template not found: {src}")
 
+    # Ports to keep enabled. Order matters — 42 opens sockets
+    # sequentially and blocks on accept() for SERVER RX sockets.
+    # Truth (9999) must come before GPS (4245) so truth42sim can
+    # connect before the GPS sim occupies the accept queue.
     keep_ports = {"4245", "9999"}
     lines = src.read_text().splitlines(keepends=True)
     result = []
