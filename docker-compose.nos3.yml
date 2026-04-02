@@ -92,6 +92,8 @@ services:
     <<: *nos3-common
     hostname: nos-fsw
     container_name: nos3-fsw
+    ports:
+      - "5012:5012/udp"
     volumes:
       - .:/cFS
     working_dir: /cFS/libs/nos3/fsw/build/exe/cpu1
