@@ -111,6 +111,8 @@ def generate_simulator_xml(src_dir: Path, num_orbits: int, sats_per_orbit: int) 
     # Use single NOS Engine server for all connections
     content = content.replace(":12001", ":12000")
     content = re.sub(r'sc\d+-nos-engine-server', 'nos-engine-server', content)
+    content = content.replace('<cosmos-hostname>cosmos</cosmos-hostname>',
+                              '<cosmos-hostname>127.0.0.1</cosmos-hostname>')
 
     # Remove existing gps and thermal-cam-sim entries
     content = re.sub(
@@ -284,6 +286,11 @@ def main():
     total = args.orbits * args.sats_per_orbit
     for sc in range(total):
         copy_sc_file(src_42, sc, args.sats_per_orbit, inout)
+
+    # 42 NOS3 time config — fix NOS Engine port
+    nos3_cfg = (src_42 / "Inp_NOS3.txt").read_text()
+    nos3_cfg = nos3_cfg.replace(":12001", ":12000")
+    (inout / "Inp_NOS3.txt").write_text(nos3_cfg)
 
     # 42 IPC config — disable unused sockets
     inp_ipc = generate_inp_ipc(src_42)
