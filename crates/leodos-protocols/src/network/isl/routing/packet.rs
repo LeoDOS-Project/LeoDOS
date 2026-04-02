@@ -179,6 +179,17 @@ impl IslRoutingTelecommand {
     }
 
     /// Parses a byte slice as an ISL routing telecommand.
+    /// Returns the target address from the ISL routing header.
+    pub fn target(&self) -> Address {
+        self.isl_header.target()
+    }
+
+    /// Returns the APID from the SPP primary header.
+    pub fn apid(&self) -> Apid {
+        self.primary.apid()
+    }
+
+    /// Parses a byte slice as an ISL routing telecommand.
     pub fn parse<'a>(bytes: &'a [u8]) -> Result<&'a IslRoutingTelecommand, IslMessageError> {
         let tc = Telecommand::parse(bytes).map_err(IslMessageError::Cfe)?;
         Self::from_telecommand(tc)

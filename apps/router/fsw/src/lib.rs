@@ -1,26 +1,30 @@
 #![no_std]
 
-use futures::FutureExt as _;
 use core::time::Duration;
+use futures::FutureExt as _;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::cfe::sb::pipe::Pipe;
 use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
 use leodos_libcfs::error::CfsError;
+use leodos_libcfs::log;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::Runtime;
-use leodos_libcfs::log;
 
 use leodos_protocols::datalink::link::cfs::udp::UdpDatalink;
 use leodos_protocols::network::isl::address::{Address, SpacecraftId};
 use leodos_protocols::network::isl::geo::LatLon;
 use leodos_protocols::network::isl::routing::algorithm::distance_minimizing::DistanceMinimizing;
 use leodos_protocols::network::isl::routing::algorithm::gateway::GatewayTable;
+use leodos_protocols::network::isl::routing::packet::IslRoutingTelecommand;
 use leodos_protocols::network::isl::routing::Router;
 use leodos_protocols::network::isl::shell::Shell;
-use leodos_protocols::network::isl::torus::{Direction, Point, Torus};
-use leodos_protocols::network::{NetworkRead, NetworkWrite};
+use leodos_protocols::network::isl::torus::Direction;
+use leodos_protocols::network::isl::torus::Point;
+use leodos_protocols::network::isl::torus::Torus;
+use leodos_protocols::network::NetworkRead;
+use leodos_protocols::network::NetworkWrite;
 use leodos_protocols::utils::clock::MetClock;
 
 mod bindings {
@@ -185,9 +189,20 @@ pub extern "C" fn ROUTER_AppMain() {
         let mut from_net = [0u8; MTU];
         let mut from_sb = [0u8; MTU + SB_HEADER_SIZE];
 
+        /// Delivers a packet to the local SB based on its APID.
+        fn deliver_local(routes: &[Route], data: &[u8]) {
+            let Ok(packet) = IslRoutingTelecommand::parse(data) else {
+                return;
+            };
+            let Some(mid) = lookup_topic(routes, packet.apid().value()) else {
+                return;
+            };
+            let _ = publish_to_sb(mid, data);
+        }
+
         enum Event {
-            FromNetwork(usize),
-            FromSb(usize),
+            Net(usize),
+            Sb(usize),
             Err,
         }
 
@@ -198,34 +213,25 @@ pub extern "C" fn ROUTER_AppMain() {
                 pin_utils::pin_mut!(net_read, sb_read);
 
                 futures::select_biased! {
-                    r = net_read => match r {
-                        Ok(len) => Event::FromNetwork(len),
-                        Err(_) => Event::Err,
-                    },
-                    r = sb_read => match r {
-                        Ok(len) => Event::FromSb(len),
-                        Err(_) => Event::Err,
-                    },
+                    r = net_read => r.map(Event::Net).unwrap_or(Event::Err),
+                    r = sb_read => r.map(Event::Sb).unwrap_or(Event::Err),
                 }
             };
 
             match event {
-                Event::FromNetwork(len) => {
-                    if len < 2 {
-                        continue;
-                    }
-                    let data = &from_net[..len];
-                    let apid = u16::from_be_bytes([data[0], data[1]]) & 0x07FF;
-                    if let Some(mid) = lookup_topic(&routes, apid) {
-                        let _ = publish_to_sb(mid, data);
-                    }
+                Event::Net(len) => {
+                    deliver_local(&routes, &from_net[..len]);
                 }
-                Event::FromSb(len) => {
-                    if len <= SB_HEADER_SIZE {
-                        continue;
-                    }
+                Event::Sb(len) => {
                     let payload = &from_sb[SB_HEADER_SIZE..len];
-                    let _ = router.write(payload).await;
+                    let Ok(packet) = IslRoutingTelecommand::parse(payload) else {
+                        continue;
+                    };
+                    if packet.target() == address {
+                        deliver_local(&routes, payload);
+                    } else {
+                        let _ = router.write(payload).await;
+                    }
                 }
                 Event::Err => {}
             }
