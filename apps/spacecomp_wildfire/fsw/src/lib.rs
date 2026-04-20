@@ -93,9 +93,7 @@ struct WildfireApp {
 
 /// Converts SCID (e.g. 1001, 2003) to 0-based linear index.
 fn scid_to_index(scid: u32, num_sats: u32) -> u32 {
-    let orbit = scid / 1000 - 1;
-    let sat = scid % 1000 - 1;
-    orbit * num_sats + sat
+    scid - num_sats
 }
 
 impl WildfireApp {

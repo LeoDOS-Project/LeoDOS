@@ -87,7 +87,7 @@ impl RawAddress {
         } else {
             Address::Satellite(Point {
                 orb: self.ground_or_orb - 1,
-                sat: self.station_or_sat,
+                sat: self.station_or_sat - 1,
             })
         }
     }
@@ -102,7 +102,7 @@ impl From<Address> for RawAddress {
             },
             Address::Satellite(Point { orb, sat }) => Self {
                 ground_or_orb: orb + 1,
-                station_or_sat: sat,
+                station_or_sat: sat + 1,
             },
             Address::ServiceArea { orb } => Self {
                 ground_or_orb: orb + 1,

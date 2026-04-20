@@ -112,9 +112,10 @@ services:
       bash -c '
         echo "Waiting for sims..."; sleep 45;
         BASE=$$(pwd); pids=();
+        NUM_SATS=3;
         for orb in $$(seq 0 $$((MAX_ORB - 1))); do
-          for sat in $$(seq 1 $$MAX_SAT); do
-            SCID=$$(( (orb + 1) * 1000 + sat ));
+          for sat in $$(seq 0 $$((MAX_SAT - 1))); do
+            SCID=$$(( (orb + 1) * NUM_SATS + sat ));
             INST=/cFS/run/sat_$$SCID;
             mkdir -p $$INST && cp -a $$BASE/. $$INST/;
             echo "Launching SCID=$$SCID";

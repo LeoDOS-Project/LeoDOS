@@ -189,7 +189,6 @@ pub extern "C" fn ROUTER_AppMain() {
         let mut from_net = [0u8; MTU];
         let mut from_sb = [0u8; MTU + SB_HEADER_SIZE];
 
-        /// Delivers a packet to the local SB based on its APID.
         fn deliver_local(routes: &[Route], data: &[u8]) {
             let Ok(packet) = IslRoutingTelecommand::parse(data) else {
                 return;
