@@ -128,7 +128,7 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
             return Ok(());
         };
 
-        let recv_mid = MsgId::local_tlm(self.config.router_recv_topic);
+        let recv_mid = MsgId::local_cmd(self.config.router_recv_topic);
         let send_mid = MsgId::local_cmd(self.config.router_send_topic);
         let sb_link = SbDatalink::new("SPCOMP_ISL", 32, recv_mid, send_mid)?;
         let network = PointToPoint::new(sb_link);
@@ -178,7 +178,6 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
                 let Ok((_source, len)) = rx.recv(&mut recv_buf).await else {
                     break;
                 };
-                log!("SpaceCoMP: recv {} bytes", len)?;
                 if !initialized {
                     app.init()?;
                     initialized = true;

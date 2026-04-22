@@ -63,7 +63,7 @@ fn build_routing_table() -> (heapless::Vec<Route, MAX_ROUTES>, usize) {
         ($apid:expr, $topic:expr) => {
             let _ = table.push(Route {
                 apid: $apid as u16,
-                topic: MsgId::local_tlm($topic as u16),
+                topic: MsgId::local_cmd($topic as u16),
             });
         };
     }
