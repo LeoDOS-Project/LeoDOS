@@ -94,6 +94,11 @@ services:
     container_name: nos3-fsw
     ports:
       - "5012:5012/udp"
+      # Router per-sat ports: 6000 + (orb*NUM_SATS+sat)*5 + {0..4}
+      # ISL N(0)/S(1)/E(2)/W(3) + Ground(4).
+      # 100 sats -> 500 ports. Range forwarded so the host ground
+      # station can reach each satellite's ground port (offset 4).
+      - "6000-6499:6000-6499/udp"
     volumes:
       - .:/cFS
     working_dir: /cFS/libs/nos3/fsw/build/exe/cpu1
