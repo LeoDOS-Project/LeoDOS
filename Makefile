@@ -224,6 +224,8 @@ demo-up:
 		'CFE_APP, to_lab, TO_LAB_AppMain, TO_LAB_APP, 81, 32768, 0x0, 0;' \
 		'CFE_APP, router, ROUTER_AppMain, ROUTER_APP, 82, 65536, 0x0, 0;' \
 		'CFE_APP, sc_wildfire, SC_WILDFIRE_AppMain, WILDFIRE_APP, 90, 262144, 0x0, 0;' \
+		'CFE_APP, sb_echo, SB_ECHO_AppMain, SB_ECHO, 91, 32768, 0x0, 0;' \
+		'CFE_APP, ping, PING_AppMain, PING_APP, 92, 262144, 0x0, 0;' \
 		'!' > libs/nos3/fsw/build/exe/cpu1/cf/cfe_es_startup.scr
 	MAX_ORB=$(MAX_ORB) MAX_SAT=$(MAX_SAT) $(NOS3_DC) up -d
 

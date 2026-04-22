@@ -79,6 +79,10 @@ fn build_routing_table() -> (heapless::Vec<Route, MAX_ROUTES>, usize) {
         bindings::ROUTER_ROUTE_2_APID,
         bindings::ROUTER_ROUTE_2_TOPIC
     );
+    add_route!(
+        bindings::ROUTER_ROUTE_3_APID,
+        bindings::ROUTER_ROUTE_3_TOPIC
+    );
     let len = table.len();
     (table, len)
 }
