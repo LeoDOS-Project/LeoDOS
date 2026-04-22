@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="265" font-family="Arial, Helvetica, sans-serif" font-size="9">
+  <rect width="420" height="265" fill="white"/>
+
+  <!-- Header labels -->
+  <text x="55" y="16" text-anchor="middle" font-weight="bold" font-size="10">Sat A</text>
+  <text x="210" y="16" text-anchor="middle" font-weight="bold" font-size="10">Sat B (LOS)</text>
+  <text x="365" y="16" text-anchor="middle" font-weight="bold" font-size="10">Ground</text>
+
+  <!-- LAYER 1: Vertical lifelines -->
+  <line x1="55" y1="22" x2="55" y2="258" stroke="#aaaaaa" stroke-width="0.8"/>
+  <line x1="210" y1="22" x2="210" y2="142" stroke="#aaaaaa" stroke-width="0.8"/>
+  <line x1="365" y1="22" x2="365" y2="258" stroke="#aaaaaa" stroke-width="0.8"/>
+  <line x1="210" y1="166" x2="210" y2="258" stroke="#ee9900" stroke-width="0.8"/>
+
+  <!-- Dashed divider line -->
+  <line x1="48" y1="146" x2="60" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="68" y1="146" x2="80" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="88" y1="146" x2="100" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="108" y1="146" x2="120" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="128" y1="146" x2="140" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="148" y1="146" x2="160" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="168" y1="146" x2="180" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="188" y1="146" x2="200" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="208" y1="146" x2="220" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="228" y1="146" x2="240" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="248" y1="146" x2="260" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="268" y1="146" x2="280" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="288" y1="146" x2="300" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="308" y1="146" x2="320" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="328" y1="146" x2="340" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="348" y1="146" x2="360" y2="146" stroke="#999999" stroke-width="1.2"/>
+  <line x1="368" y1="146" x2="372" y2="146" stroke="#999999" stroke-width="1.2"/>
+
+  <!-- LAYER 2: Arrows and annotations -->
+
+  <!-- DATA seq=0 -->
+  <line x1="55" y1="33" x2="203" y2="33" stroke="#22aa77" stroke-width="1.5"/>
+  <polygon points="203,30 210,33 203,36" fill="#22aa77"/>
+  <text x="105" y="29" fill="#22aa77" font-size="9">DATA seq=0</text>
+  <line x1="210" y1="33" x2="358" y2="33" stroke="#22aa77" stroke-width="1.5"/>
+  <polygon points="358,30 365,33 358,36" fill="#22aa77"/>
+  <text x="270" y="29" fill="#000000" font-size="9">forward</text>
+
+  <!-- DATA seq=1 -->
+  <line x1="55" y1="46" x2="203" y2="46" stroke="#22aa77" stroke-width="1.5"/>
+  <polygon points="203,43 210,46 203,49" fill="#22aa77"/>
+  <text x="105" y="42" fill="#22aa77" font-size="9">DATA seq=1</text>
+  <line x1="210" y1="46" x2="358" y2="46" stroke="#22aa77" stroke-width="1.5"/>
+  <polygon points="358,43 365,46 358,49" fill="#22aa77"/>
+  <text x="270" y="42" fill="#000000" font-size="9">forward</text>
+
+  <!-- DATA seq=2 (lost) -->
+  <line x1="55" y1="59" x2="203" y2="59" stroke="#22aa77" stroke-width="1.5"/>
+  <polygon points="203,56 210,59 203,62" fill="#22aa77"/>
+  <text x="105" y="55" fill="#22aa77" font-size="9">DATA seq=2</text>
+  <line x1="210" y1="59" x2="300" y2="59" stroke="#cc4444" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="305" y="63" fill="#cc4444" font-size="11" font-weight="bold">&#x2717;</text>
+  <text x="318" y="62" fill="#cc4444" font-size="9">(lost)</text>
+
+  <!-- DATA seq=3 -->
+  <line x1="55" y1="72" x2="203" y2="72" stroke="#22aa77" stroke-width="1.5"/>
+  <polygon points="203,69 210,72 203,75" fill="#22aa77"/>
+  <text x="105" y="68" fill="#22aa77" font-size="9">DATA seq=3</text>
+  <line x1="210" y1="72" x2="358" y2="72" stroke="#22aa77" stroke-width="1.5"/>
+  <polygon points="358,69 365,72 358,75" fill="#22aa77"/>
+  <text x="270" y="68" fill="#000000" font-size="9">forward</text>
+
+  <!-- ACK: missing seq=2 -->
+  <line x1="365" y1="88" x2="217" y2="88" stroke="#2277cc" stroke-width="1.5"/>
+  <polygon points="217,85 210,88 217,91" fill="#2277cc"/>
+  <text x="240" y="84" fill="#2277cc" font-size="9">ACK: missing seq=2</text>
+  <line x1="210" y1="88" x2="62" y2="88" stroke="#2277cc" stroke-width="1.5"/>
+  <polygon points="62,85 55,88 62,91" fill="#2277cc"/>
+  <text x="110" y="84" fill="#000000" font-size="9">forward</text>
+
+  <!-- Orbit-aware timeout + LOS GAP side by side -->
+  <rect x="85" y="97" width="100" height="14" rx="3" fill="#fff8e0" stroke="#ccccaa" stroke-width="0.8"/>
+  <text x="135" y="107" text-anchor="middle" fill="#000000" font-size="9">Orbit-aware timeout</text>
+
+  <rect x="200" y="97" width="175" height="28" rx="3" fill="#eeeeee" stroke="#bbbbbb" stroke-width="1"/>
+  <text x="288" y="110" text-anchor="middle" fill="#000000" font-size="9">LOS GAP</text>
+  <text x="288" y="120" text-anchor="middle" fill="#000000" font-size="9">(B out of ground range)</text>
+
+  <!-- New header for Sat C -->
+  <text x="210" y="160" text-anchor="middle" font-weight="bold" font-size="10" fill="#ee9900">Sat C (New LOS)</text>
+
+  <!-- Resume transmission annotation -->
+  <rect x="85" y="168" width="100" height="14" rx="3" fill="#f0f8f0" stroke="#aaccaa" stroke-width="0.8"/>
+  <text x="135" y="178" text-anchor="middle" fill="#000000" font-size="9">Resume transmission</text>
+
+  <!-- DATA seq=2 retransmit -->
+  <line x1="55" y1="199" x2="203" y2="199" stroke="#22aa77" stroke-width="1.5"/>
+  <polygon points="203,196 210,199 203,202" fill="#22aa77"/>
+  <text x="82" y="195" fill="#22aa77" font-size="9">DATA seq=2 (retransmit)</text>
+  <line x1="210" y1="199" x2="358" y2="199" stroke="#22aa77" stroke-width="1.5"/>
+  <polygon points="358,196 365,199 358,202" fill="#22aa77"/>
+  <text x="270" y="195" fill="#000000" font-size="9">forward</text>
+
+  <!-- ACK: all received -->
+  <line x1="365" y1="217" x2="217" y2="217" stroke="#2277cc" stroke-width="1.5"/>
+  <polygon points="217,214 210,217 217,220" fill="#2277cc"/>
+  <text x="250" y="213" fill="#2277cc" font-size="9">ACK: all received</text>
+  <line x1="210" y1="217" x2="62" y2="217" stroke="#2277cc" stroke-width="1.5"/>
+  <polygon points="62,214 55,217 62,220" fill="#2277cc"/>
+  <text x="110" y="213" fill="#000000" font-size="9">forward</text>
+
+  <!-- DATA seq=4 -->
+  <line x1="55" y1="237" x2="203" y2="237" stroke="#22aa77" stroke-width="1.5"/>
+  <polygon points="203,234 210,237 203,240" fill="#22aa77"/>
+  <text x="105" y="233" fill="#22aa77" font-size="9">DATA seq=4</text>
+  <line x1="210" y1="237" x2="358" y2="237" stroke="#22aa77" stroke-width="1.5"/>
+  <polygon points="358,234 365,237 358,240" fill="#22aa77"/>
+  <text x="270" y="233" fill="#000000" font-size="9">forward</text>
+</svg>
