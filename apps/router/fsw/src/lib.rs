@@ -45,7 +45,7 @@ const SHELL: Shell = Shell::new(TORUS, ALTITUDE_M, INCLINATION_DEG);
 
 const LOCALHOST: &str = "127.0.0.1";
 const PORT_BASE: u16 = 6000;
-const PORTS_PER_SAT: u16 = 10;
+const PORTS_PER_SAT: u16 = 5;
 const MTU: usize = 1024;
 
 const SB_HEADER_SIZE: usize = 8;
@@ -103,29 +103,27 @@ fn publish_to_sb(mid: MsgId, data: &[u8]) -> Result<(), CfsError> {
 fn isl_port_offset(dir: Direction) -> u16 {
     match dir {
         Direction::North => 0,
-        Direction::South => 2,
-        Direction::East => 4,
-        Direction::West => 6,
+        Direction::South => 1,
+        Direction::East => 2,
+        Direction::West => 3,
     }
 }
+
+const GROUND_OFFSET: u16 = 4;
 
 /// Unique port base for a satellite, accounting for both orbit and sat index.
 fn sat_port_base(point: Point) -> u16 {
     PORT_BASE + (point.orb as u16 * NUM_SATS as u16 + point.sat as u16) * PORTS_PER_SAT
 }
 
-/// Returns (send_port, recv_port) for an ISL direction.
-fn isl_ports(point: Point, dir: Direction) -> (u16, u16) {
-    let base = sat_port_base(point) + isl_port_offset(dir);
-    (base, base + 1)
+/// Returns the bidirectional UDP port for an ISL direction.
+fn isl_port(point: Point, dir: Direction) -> u16 {
+    sat_port_base(point) + isl_port_offset(dir)
 }
 
-const GROUND_OFFSET: u16 = 8;
-
-/// Returns (send_port, recv_port) for the ground link.
-fn ground_ports(point: Point) -> (u16, u16) {
-    let base = sat_port_base(point) + GROUND_OFFSET;
-    (base, base + 1)
+/// Returns the bidirectional UDP port for the ground link.
+fn ground_port(point: Point) -> u16 {
+    sat_port_base(point) + GROUND_OFFSET
 }
 
 fn udp_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> {
@@ -136,14 +134,18 @@ fn udp_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> 
 
 fn isl_link(point: Point, dir: Direction) -> Result<UdpDatalink, CfsError> {
     let neighbor = TORUS.neighbor(point, dir);
-    let (send, _) = isl_ports(point, dir);
-    let (_, recv) = isl_ports(neighbor, dir.opposite());
-    udp_link(send, recv)
+    let local = isl_port(point, dir);
+    let remote = isl_port(neighbor, dir.opposite());
+    udp_link(local, remote)
 }
 
+/// Port the single ground station process binds.
+/// Shared destination for all satellites' ground-bound traffic.
+const GROUND_STATION_PORT: u16 = 9000;
+
 fn ground_link(point: Point) -> Result<UdpDatalink, CfsError> {
-    let (send, recv) = ground_ports(point);
-    udp_link(send, recv)
+    let local = ground_port(point);
+    udp_link(local, GROUND_STATION_PORT)
 }
 
 #[no_mangle]
