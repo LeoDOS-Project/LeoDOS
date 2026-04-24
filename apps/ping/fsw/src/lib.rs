@@ -1,5 +1,10 @@
 #![no_std]
 
+extern crate alloc;
+
+leodos_libcfs::register_allocator!();
+
+use alloc::boxed::Box;
 use core::time::Duration;
 
 use leodos_libcfs::cfe::es::system;
@@ -109,16 +114,25 @@ async fn run() -> Result<(), CfsError> {
         .ack_delay_ticks(100)
         .build();
 
-    let srspp: SrsppNode<
-        CfsError,
+    // Heap-allocated so the large receiver/sender arrays do not
+    // live on the app's cFE task stack.
+    let srspp: Box<
+        SrsppNode<
+            CfsError,
+            NoStore,
+            AlwaysReachable,
+            ReceiverMachine<8, 4096, 8192>,
+            8,
+            4096,
+            512,
+            4,
+        >,
+    > = Box::new(SrsppNode::new(
+        sender_config,
+        receiver_config,
         NoStore,
         AlwaysReachable,
-        ReceiverMachine<8, 4096, 8192>,
-        8,
-        4096,
-        512,
-        4,
-    > = SrsppNode::new(sender_config, receiver_config, NoStore, AlwaysReachable);
+    ));
     let (mut rx, mut tx, mut driver) = srspp.split(network, FixedRto::new(1000));
 
     log!("Ping ready on sat({}, {})", point.orb, point.sat)?;

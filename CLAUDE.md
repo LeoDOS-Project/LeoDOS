@@ -92,12 +92,20 @@ already exist.
   the crate's build.rs, or a `[lints.rust] unexpected_cfgs`
   entry in Cargo.toml.
 
-- [ ] Heap-allocate SrsppNode buffers in ping/router —
-  the receiver/sender buffer arrays overflow the 65 KB
-  default cFE task stack, which forced us to bump
-  PING_APP's stack to 524 KB in `cpu1_cfe_es_startup.scr`.
-  libcfs has a heap allocator now; move big buffers onto
-  it so stack sizes stay reasonable.
+- [ ] Swap `CfsAllocator` backend from libc malloc to a
+  cFE `MemPool`. The allocator API already in place —
+  only the internal implementation changes. Flight-grade
+  reasons: deterministic alloc time, bounded memory per
+  app, auditable (no raw malloc in the binary), no
+  fragmentation. Needs ~80 lines: per-app static buffer,
+  `spin::Once<MemPool>` init, alignment via prefix-word
+  pointer stash so `dealloc` can recover the pool block.
+
+- [ ] Heap-allocate router's large buffers too (currently
+  only ping uses `Box<SrsppNode<...>>`). router.rs has
+  inline MTU+SB_HEADER_SIZE buffers and a Router with
+  its own sized arrays. Move those onto the heap so the
+  router task stack can shrink.
 
 - [ ] RingBuffer front-drop policy — add a `front_drop: bool`
   field so the router can evict the oldest packet instead

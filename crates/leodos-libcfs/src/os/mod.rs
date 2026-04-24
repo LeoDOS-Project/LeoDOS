@@ -3,6 +3,7 @@
 //! This module provides safe, idiomatic Rust wrappers for the OSAL API, which
 //! abstracts away the details of the underlying real-time operating system (RTOS).
 
+pub mod alloc;
 pub mod app;
 pub mod fs;
 pub mod heap;
