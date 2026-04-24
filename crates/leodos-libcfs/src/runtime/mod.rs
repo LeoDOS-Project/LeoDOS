@@ -29,6 +29,7 @@
 
 pub mod dyn_scope;
 pub mod join;
+pub mod reactor;
 pub mod scope;
 pub mod select_either;
 pub mod sync;
@@ -43,7 +44,11 @@ use crate::cfe::es::app;
 use crate::cfe::es::perf::PerfMarker;
 use crate::log;
 use core::future::Future;
-use core::task::{RawWaker, RawWakerVTable, Waker};
+
+/// Default timeout passed to `OS_SelectMultiple` when the task is
+/// idle. Bounds how long a `Sleep` or other non-fd future waits
+/// before being re-polled.
+const REACTOR_TIMEOUT_MS: i32 = 50;
 
 /// An async runtime designed to integrate with the cFS application lifecycle.
 ///
@@ -85,7 +90,10 @@ impl Runtime {
     fn poll_until_done(self, main_future: impl Future) -> app::RunStatus {
         pin_mut!(main_future);
 
-        let waker = noop_waker();
+        let reactor = reactor::Reactor::new();
+        // SAFETY: `reactor` lives for the whole of this function,
+        // and no clones of `waker` escape it.
+        let waker = unsafe { reactor::waker_from_reactor(&reactor) };
         let mut context = core::task::Context::from_waker(&waker);
 
         loop {
@@ -96,6 +104,13 @@ impl Runtime {
                         log!("Async task finished.").ok();
                         return app::RunStatus::Exit;
                     }
+                    if reactor.was_woken() {
+                        // An in-process waker fired during the
+                        // poll; re-poll immediately without
+                        // blocking.
+                        continue;
+                    }
+                    reactor.block(REACTOR_TIMEOUT_MS);
                 }
                 Err(status) => {
                     log!("Exit requested.").ok();
@@ -110,16 +125,4 @@ impl Default for Runtime {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// A waker that does nothing, since our executor polls continuously.
-/// The CFE scheduler controls when we should poll. For example, our loop will run every 100ms.
-fn noop_waker() -> Waker {
-    const VTABLE: RawWakerVTable = RawWakerVTable::new(
-        |_| RawWaker::new(core::ptr::null(), &VTABLE), // clone
-        |_| {},                                        // wake
-        |_| {},                                        // wake_by_ref
-        |_| {},                                        // drop
-    );
-    unsafe { Waker::from_raw(RawWaker::new(core::ptr::null(), &VTABLE)) }
 }

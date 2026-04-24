@@ -42,6 +42,63 @@ already exist.
 
 ### Future improvements
 
+- [x] Reactor: write-readiness support — `register_write`
+  registers an fd into a parallel `write_fds`; `block`
+  passes both read and write sets to `OS_SelectMultiple`;
+  `UdpSocket::send` uses it on `QueueFull`.
+
+- [ ] Reactor: persistent `FdSet` with per-leaf wakers.
+  Today every poll cycle rebuilds the set from scratch
+  (each leaf re-registers on every `Pending`). A more
+  efficient design: leaves register once with their own
+  waker, reactor holds an `FdSet` across cycles and fires
+  only the ready leaf's waker so unrelated leaves are
+  not re-polled. Needs deregister-on-drop bookkeeping.
+  Worth doing together, since per-leaf wakers is what
+  makes selective wakeup possible.
+
+- [ ] sch_lab-fed wakeup for SB-only Rust apps. The
+  Runtime's reactor already parks socket apps in
+  `OS_SelectMultiple`, but SB-only apps (sb_echo,
+  spacecomp_wildfire, telemetry/HK apps) have no fd to
+  register and fall back to `OS_TaskDelay(50ms)` — 20
+  polls/sec per app. Instead, let the Runtime subscribe
+  a pipe to a sch_lab wake-up MsgID and
+  `CFE_SB_ReceiveBuffer(pipe, PEND_FOREVER)` when no fds
+  are registered. The OS mqueue blocks the task until
+  sch_lab fires → 0% idle CPU, canonical cFS pacing.
+  API sketch: `Runtime::new().with_wakeup(mid)`. Mixed
+  apps (router) still use select_multiple on UDP +
+  short timeout to also drain SB pipes.
+
+- [ ] Rebuild sb_echo + spacecomp_wildfire against the
+  new libcfs. Current build only refreshed ping/router;
+  the other Rust apps still link the old spinning
+  Runtime. Either force their cargo_build to rebuild
+  (touch/clean) or workspace-ify so libcfs changes
+  invalidate them automatically.
+
+- [ ] Move cFS Rust apps into a Cargo workspace. Each
+  app currently has its own `Cargo.toml` and per-app
+  `CARGO_TARGET_DIR`, so common deps (leodos-protocols,
+  leodos-libcfs, aes-gcm, futures, ...) are recompiled N
+  times per build. A shared workspace target would cut
+  full builds from ~30 min to ~5.
+
+- [ ] Declare `nos3_cfe` cfg in leodos-libcfs so cargo
+  stops emitting `unexpected cfg condition name` warnings
+  on every rustc invocation. Add
+  `println!("cargo::rustc-check-cfg=cfg(nos3_cfe)");` to
+  the crate's build.rs, or a `[lints.rust] unexpected_cfgs`
+  entry in Cargo.toml.
+
+- [ ] Heap-allocate SrsppNode buffers in ping/router —
+  the receiver/sender buffer arrays overflow the 65 KB
+  default cFE task stack, which forced us to bump
+  PING_APP's stack to 524 KB in `cpu1_cfe_es_startup.scr`.
+  libcfs has a heap allocator now; move big buffers onto
+  it so stack sizes stay reasonable.
+
 - [ ] RingBuffer front-drop policy — add a `front_drop: bool`
   field so the router can evict the oldest packet instead
   of dropping incoming. Useful for telemetry freshness on
@@ -70,6 +127,66 @@ already exist.
 - [ ] Tile source coding — Rice-encode quantized delta
   temperatures in DualBandTile::write_to for ~2-3×
   compression on the ISL.
+
+### NOS3 network simulation extensions
+
+The NOS3 demo currently runs as software-in-the-loop with all
+ISL links permanently up and zero latency. To make it useful
+for testing distributed/network aspects of LeoDOS, the
+following extensions are needed. Ordered by value per effort.
+
+- [ ] LOS-gated ISL links — biggest gap. All ISL UDP links
+  are currently permanently up. Build a `leodos-topology`
+  sidecar that subscribes to 42's orbital state (via
+  truth42sim's NOS Engine bus), computes pairwise LOS for
+  the torus neighbors, and blocks packets on closed links
+  (iptables rules or a per-link UDP proxy). Unlocks testing
+  of routing convergence, SRSPP retransmission under churn,
+  and DTN-style stored-and-forward paths.
+
+- [ ] LOS-gated ground link — ground UDP link is always up.
+  Same sidecar should compute LOS between each satellite and
+  each ground station in the `GatewayTable`, dropping ground
+  link packets when out of view. Validates gateway handover
+  and the `DistanceMinimizing` algorithm's station selection.
+
+- [ ] Per-link netem — `tc qdisc` with port classifiers to
+  add delay, jitter, loss, and bandwidth limits per ISL link.
+  Can be parameterized by distance from 42's state for
+  realistic LEO variation (few ms propagation, 100 Mbps-1 Gbps).
+  No code needed, just shell config. Exercises SRSPP window
+  sizing and recovery under realistic conditions.
+
+- [ ] Per-satellite clock drift — currently all satellites
+  share one time driver. Add per-SCID offset in the time
+  driver (or run one time driver per satellite with slightly
+  different tick rates). Tests cFE time sync code that's
+  otherwise not exercised.
+
+- [ ] Partition injection — once LOS gating is in place,
+  deliberately cause network partitions by forcing LOS
+  thresholds or blocking link groups. Tests DTN storage
+  paths and application-layer resilience.
+
+- [ ] Multi-host scaling — NOS Engine speaks TCP, so it can
+  span hosts. Run one FSW container per satellite on a
+  Docker Swarm or Kubernetes cluster. Unblocks scale testing
+  beyond ~20 satellites on a single laptop and gives real
+  process isolation (one satellite's crash can't affect
+  another's memory). Real work is orchestration and
+  inter-host network routing, not the sim itself.
+
+- [ ] Orbital topology snapshots — precompute the full
+  contact plan offline (using 42 or a standalone tool like
+  pyorbital) and feed it to the topology sidecar as a
+  time-indexed table. Faster than recomputing LOS every
+  tick, and matches how real mission planning works.
+
+Prior art to learn from:
+- Hypatia (Kassing et al., 2020) — ns-3-based LEO network
+  simulator with time-varying topology. Not flight-software-
+  in-the-loop, but the topology engine is what we'd replicate.
+- Celestial / LeoEM — similar research-grade simulators.
 
 ### Missing CCSDS protocols
 

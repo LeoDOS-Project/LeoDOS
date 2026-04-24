@@ -123,12 +123,18 @@ services:
             SCID=$$(( (orb + 1) * NUM_SATS + sat ));
             INST=/cFS/run/sat_$$SCID;
             mkdir -p $$INST && cp -a $$BASE/. $$INST/;
-            echo "Launching SCID=$$SCID";
-            (cd $$INST && exec ./core-cpu1 --scid $$SCID) &
+            echo "Launching SCID=$$SCID (log: $$INST/console.log)";
+            (cd $$INST && exec ./core-cpu1 --scid $$SCID) \
+              >$$INST/console.log 2>&1 &
             pids+=($$!);
           done;
         done;
         trap "kill $${pids[*]} 2>/dev/null; wait" SIGTERM SIGINT;
+        wait -n;
+        echo "=== a sat exited, dumping status ===";
+        for p in $${pids[@]}; do
+          kill -0 $$p 2>/dev/null && echo "pid $$p alive" || echo "pid $$p DEAD";
+        done;
         wait'
     sysctls:
       - fs.mqueue.msg_max=10000

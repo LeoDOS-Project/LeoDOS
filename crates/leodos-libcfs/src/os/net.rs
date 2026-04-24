@@ -154,6 +154,12 @@ impl From<Timeout> for i32 {
 }
 
 impl UdpSocket {
+    /// Returns the OSAL id for this socket, suitable for passing
+    /// to `OS_SelectMultiple` via the runtime reactor.
+    pub fn id(&self) -> OsalId {
+        OsalId((self.0).0)
+    }
+
     /// Creates a new UDP socket bound to the specified address.
     pub fn bind(addr: SocketAddr) -> Result<UdpSocket> {
         let mut sock_id = MaybeUninit::uninit();
@@ -522,10 +528,13 @@ impl UdpSocket {
         &'a self,
         buf: &'a mut [u8],
     ) -> impl Future<Output = Result<(usize, SocketAddr)>> + use<'a> {
-        core::future::poll_fn(|_| {
+        core::future::poll_fn(|cx| {
             let recv_future = self.recv_from(buf, Timeout::Poll);
             match recv_future {
-                Err(CfsError::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
+                Err(CfsError::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => {
+                    crate::runtime::reactor::register_read(cx.waker(), self.id());
+                    Poll::Pending
+                }
                 Ok(result) => Poll::Ready(Ok(result)),
                 Err(e) => Poll::Ready(Err(e)),
             }
@@ -538,10 +547,12 @@ impl UdpSocket {
         buf: &'a [u8],
         target: &'a SocketAddr,
     ) -> impl Future<Output = Result<usize>> + use<'a> {
-        core::future::poll_fn(|_| {
-            // send_to is typically non-blocking for UDP, but wrap it anyway
+        core::future::poll_fn(|cx| {
             match self.send_to(buf, target) {
-                Err(CfsError::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => Poll::Pending,
+                Err(CfsError::Osal(OsalError::Timeout | OsalError::QueueEmpty)) => {
+                    crate::runtime::reactor::register_write(cx.waker(), self.id());
+                    Poll::Pending
+                }
                 Ok(result) => Poll::Ready(Ok(result)),
                 Err(e) => Poll::Ready(Err(e)),
             }
