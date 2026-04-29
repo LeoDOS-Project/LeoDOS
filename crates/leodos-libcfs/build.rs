@@ -838,6 +838,7 @@ fn main() {
     let bindings_str = config.generate(&macro_detector);
 
     // Detect NOS3 cFE fork (missing upstream OSAL/cFE symbols)
+    println!("cargo::rustc-check-cfg=cfg(nos3_cfe)");
     if !bindings_str.contains("OS_TimeToRelativeMilliseconds") {
         println!("cargo:rustc-cfg=nos3_cfe");
     }
