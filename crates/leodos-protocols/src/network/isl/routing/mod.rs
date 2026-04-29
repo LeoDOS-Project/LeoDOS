@@ -3,10 +3,13 @@ pub mod algorithm;
 /// ISL routable packet definitions and builders.
 pub mod packet;
 
+use core::alloc::Layout;
+
 use futures::FutureExt as _;
 use futures::future::Either;
 use zerocopy::IntoBytes as _;
 
+use crate::buffer_pool::BufferPool;
 use crate::datalink::Datalink;
 use crate::datalink::DatalinkRead;
 use crate::datalink::DatalinkWrite;
@@ -22,30 +25,31 @@ use crate::utils::clock::Clock;
 use crate::utils::ringbuf::RingBuffer;
 
 /// Per-direction link state: the link itself plus its
-/// input buffer, output queue, and staging buffer.
-struct Port<L, const MTU: usize, const OUT: usize> {
+/// pool-allocated input buffer, output queue, and staging buffer.
+struct Port<'pool, L, P: BufferPool + 'pool, const OUT: usize> {
     /// Bidirectional data link, split into read/write
     /// halves on each poll cycle.
     link: L,
     /// Input buffer for packets read from this link.
-    buf: [u8; MTU],
+    buf: P::Buf<'pool>,
     /// Output queue for packets waiting to be forwarded
     /// through this link.
     out: RingBuffer<OUT>,
     /// Staging buffer: the front of `out` is copied here
     /// before starting a write future, so the ring stays
     /// free for new enqueues while the write is in flight.
-    stage: [u8; MTU],
+    stage: P::Buf<'pool>,
 }
 
-impl<L, const MTU: usize, const OUT: usize> Port<L, MTU, OUT> {
-    fn new(link: L) -> Self {
-        Self {
+impl<'pool, L, P: BufferPool + 'pool, const OUT: usize> Port<'pool, L, P, OUT> {
+    fn new(link: L, pool: &'pool P, mtu: usize) -> Result<Self, P::Error> {
+        let layout = Layout::from_size_align(mtu, 1).expect("non-zero MTU");
+        Ok(Self {
             link,
-            buf: [0u8; MTU],
+            buf: pool.alloc(layout)?,
             out: RingBuffer::new(),
-            stage: [0u8; MTU],
-        }
+            stage: pool.alloc(layout)?,
+        })
     }
 }
 
@@ -57,15 +61,20 @@ impl<L, const MTU: usize, const OUT: usize> Port<L, MTU, OUT> {
 /// so the router can split them into read/write halves for
 /// concurrent I/O.
 ///
+/// Buffers come from a [`BufferPool`] supplied at construction;
+/// the pool's lifetime `'pool` outlives the router. This keeps
+/// the per-Port input/staging buffers off the stack and gives
+/// the whole router a shared, fallible memory budget.
+///
 /// The `read()` loop uses `select_biased!` to poll all 5
 /// readers and all 5 writers concurrently, eliminating
 /// head-of-line blocking and deadlock.
-pub struct Router<N, G, A, C, const MTU: usize = 1024, const OUT: usize = 2048> {
-    north: Port<N, MTU, OUT>,
-    south: Port<N, MTU, OUT>,
-    east: Port<N, MTU, OUT>,
-    west: Port<N, MTU, OUT>,
-    ground: Port<G, MTU, OUT>,
+pub struct Router<'pool, N, G, A, C, P: BufferPool + 'pool, const OUT: usize = 2048> {
+    north: Port<'pool, N, P, OUT>,
+    south: Port<'pool, N, P, OUT>,
+    east: Port<'pool, N, P, OUT>,
+    west: Port<'pool, N, P, OUT>,
+    ground: Port<'pool, G, P, OUT>,
     address: Address,
     algorithm: A,
     clock: C,
@@ -103,7 +112,7 @@ pub enum RouterError<E, GE = E> {
 }
 
 #[bon::bon]
-impl<N, G, A, C, const MTU: usize, const OUT: usize> Router<N, G, A, C, MTU, OUT>
+impl<'pool, N, G, A, C, P: BufferPool + 'pool, const OUT: usize> Router<'pool, N, G, A, C, P, OUT>
 where
     N: Datalink,
     G: Datalink,
@@ -112,7 +121,13 @@ where
 {
     #[builder]
     /// Creates a new router with directional links.
+    ///
+    /// Allocates two MTU-sized buffers per port (input + staging)
+    /// from `pool`. Returns an error if the pool cannot satisfy
+    /// the ten allocations.
     pub fn new(
+        pool: &'pool P,
+        mtu: usize,
         north: N,
         south: N,
         east: N,
@@ -121,17 +136,17 @@ where
         address: Address,
         algorithm: A,
         clock: C,
-    ) -> Self {
-        Self {
-            north: Port::new(north),
-            south: Port::new(south),
-            east: Port::new(east),
-            west: Port::new(west),
-            ground: Port::new(ground),
+    ) -> Result<Self, P::Error> {
+        Ok(Self {
+            north: Port::new(north, pool, mtu)?,
+            south: Port::new(south, pool, mtu)?,
+            east: Port::new(east, pool, mtu)?,
+            west: Port::new(west, pool, mtu)?,
+            ground: Port::new(ground, pool, mtu)?,
             address,
             algorithm,
             clock,
-        }
+        })
     }
 
     /// Returns this router's own address.
@@ -140,12 +155,13 @@ where
     }
 }
 
-impl<N, G, A, C, const MTU: usize, const OUT: usize> NetworkWrite for Router<N, G, A, C, MTU, OUT>
+impl<'pool, N, G, A, C, P, const OUT: usize> NetworkWrite for Router<'pool, N, G, A, C, P, OUT>
 where
     N: Datalink,
     G: Datalink,
     A: RoutingAlgorithm,
     C: Clock,
+    P: BufferPool + 'pool,
 {
     type Error = RouterError<N::WriteError, G::WriteError>;
 
@@ -182,12 +198,13 @@ where
     }
 }
 
-impl<N, G, A, C, const MTU: usize, const OUT: usize> NetworkRead for Router<N, G, A, C, MTU, OUT>
+impl<'pool, N, G, A, C, P, const OUT: usize> NetworkRead for Router<'pool, N, G, A, C, P, OUT>
 where
     N: Datalink,
     G: Datalink,
     A: RoutingAlgorithm,
     C: Clock,
+    P: BufferPool + 'pool,
 {
     type Error = RouterError<N::ReadError, G::ReadError>;
 
@@ -287,11 +304,11 @@ where
                 let ww = stage!(ww, west);
                 let gw = stage!(gw, ground);
 
-                let nr = nr.read(&mut north.buf).fuse();
-                let sr = sr.read(&mut south.buf).fuse();
-                let er = er.read(&mut east.buf).fuse();
-                let wr = wr.read(&mut west.buf).fuse();
-                let gr = gr.read(&mut ground.buf).fuse();
+                let nr = nr.read(&mut north.buf[..]).fuse();
+                let sr = sr.read(&mut south.buf[..]).fuse();
+                let er = er.read(&mut east.buf[..]).fuse();
+                let wr = wr.read(&mut west.buf[..]).fuse();
+                let gr = gr.read(&mut ground.buf[..]).fuse();
 
                 pin_utils::pin_mut!(nr, sr, er, wr, gr, nw, sw, ew, ww, gw);
 

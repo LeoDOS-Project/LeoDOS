@@ -1,7 +1,10 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 use core::time::Duration;
 use futures::FutureExt as _;
+use leodos_libcfs::cfe::es::pool::MemPool;
+use leodos_libcfs::cfe::es::pool::MemPoolStorage;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
@@ -51,6 +54,11 @@ const MTU: usize = 1024;
 const SB_HEADER_SIZE: usize = 8;
 
 const MAX_ROUTES: usize = bindings::ROUTER_MAX_ROUTES as usize;
+
+/// Backing memory for the router's buffer pool. Size: 5 ports × 2
+/// MTU buffers + cFE pool overhead, rounded up.
+const POOL_BYTES: usize = 5 * 2 * MTU + 1024;
+static POOL_STORAGE: MemPoolStorage<POOL_BYTES> = MemPoolStorage::new();
 
 struct Route {
     apid: u16,
@@ -139,6 +147,7 @@ fn ground_link(point: Point) -> Result<UdpDatalink, CfsError> {
     udp_link(local, GROUND_STATION_PORT)
 }
 
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn ROUTER_AppMain() {
     system::wait_for_startup_sync(Duration::from_millis(10_000));
@@ -158,7 +167,11 @@ pub extern "C" fn ROUTER_AppMain() {
         gateway_table.add_station(1, LatLon::new(78.23, 15.39));
         gateway_table.add_station(2, LatLon::new(64.86, -147.72));
 
-        let mut router: Router<_, _, _, _, MTU, 2048> = Router::builder()
+        let pool = MemPool::new(POOL_STORAGE.take()?, false)?;
+
+        let mut router: Router<'_, _, _, _, _, _, 2048> = Router::builder()
+            .pool(&pool)
+            .mtu(MTU)
             .north(isl_link(point, Direction::North)?)
             .south(isl_link(point, Direction::South)?)
             .east(isl_link(point, Direction::East)?)
@@ -167,7 +180,7 @@ pub extern "C" fn ROUTER_AppMain() {
             .address(address)
             .algorithm(DistanceMinimizing::new(SHELL, gateway_table))
             .clock(MetClock::new())
-            .build();
+            .build()?;
 
         let (routes, route_count) = build_routing_table();
         log!("Loaded {} APID routes", route_count)?;
