@@ -270,7 +270,7 @@ fn handle_reload(
         {
             let mut msg = send_buf.view();
             let es_cmd_mid =
-                MsgId::from_local_cmd(CFE_MISSION_ES_CMD_TOPICID);
+                MsgId::local_cmd(CFE_MISSION_ES_CMD_TOPICID);
             msg.init(es_cmd_mid, total)?;
             msg.set_fcn_code(CFE_ES_RELOAD_APP_CC)?;
 
@@ -324,8 +324,8 @@ pub extern "C" fn FS_SRV_AppMain() {
             .build()?;
 
         let router_send =
-            MsgId::from_local_cmd(bindings::FS_SRV_CMD_TOPICID as u16);
-        let router_recv = MsgId::from_local_tlm(
+            MsgId::local_cmd(bindings::FS_SRV_CMD_TOPICID as u16);
+        let router_recv = MsgId::local_tlm(
             bindings::FS_SRV_HK_TLM_TOPICID as u16,
         );
         let sb = SbDatalink::new("FS_SB", 8, router_recv, router_send)?;
@@ -542,7 +542,7 @@ pub extern "C" fn FS_SRV_AppMain() {
 
         let _ = join!(workflow, driver.run()).await;
 
-        Ok(())
+        Ok::<(), CfsError>(())
     });
 }
 
