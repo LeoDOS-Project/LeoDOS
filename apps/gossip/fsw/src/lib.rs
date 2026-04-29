@@ -113,22 +113,6 @@ fn isl_link(
     udp_link(send, recv)
 }
 
-fn publish_to_sb(
-    mid: MsgId,
-    data: &[u8],
-) -> Result<(), CfsError> {
-    let total = SB_HEADER_SIZE + data.len();
-    let mut buf = SendBuffer::new(total)?;
-    {
-        let mut msg = buf.view();
-        msg.init(mid, total)?;
-        let slice = buf.as_mut_slice();
-        slice[SB_HEADER_SIZE..].copy_from_slice(data);
-    }
-    buf.send(true)?;
-    Ok(())
-}
-
 #[no_mangle]
 pub extern "C" fn GOSSIP_AppMain() {
     Runtime::new().run(async {
@@ -224,7 +208,7 @@ pub extern "C" fn GOSSIP_AppMain() {
                     if let Some(mid) =
                         lookup_topic(&routes, apid)
                     {
-                        let _ = publish_to_sb(mid, data);
+                        let _ = SendBuffer::publish(mid, data);
                     }
                 }
             }

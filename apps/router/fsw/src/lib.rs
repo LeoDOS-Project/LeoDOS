@@ -91,19 +91,6 @@ fn lookup_topic(table: &[Route], apid: u16) -> Option<MsgId> {
     table.iter().find(|r| r.apid == apid).map(|r| r.topic)
 }
 
-fn publish_to_sb(mid: MsgId, data: &[u8]) -> Result<(), CfsError> {
-    let total_size = SB_HEADER_SIZE + data.len();
-    let mut buf = SendBuffer::new(total_size)?;
-    {
-        let mut msg = buf.view();
-        msg.init(mid, total_size)?;
-        let slice = buf.as_mut_slice();
-        slice[SB_HEADER_SIZE..].copy_from_slice(data);
-    }
-    buf.send(true)?;
-    Ok(())
-}
-
 fn isl_port_offset(dir: Direction) -> u16 {
     match dir {
         Direction::North => 0,
@@ -202,7 +189,7 @@ pub extern "C" fn ROUTER_AppMain() {
             let Some(mid) = lookup_topic(routes, packet.apid().value()) else {
                 return;
             };
-            let _ = publish_to_sb(mid, data);
+            let _ = SendBuffer::publish(mid, data);
         }
 
         enum Event {

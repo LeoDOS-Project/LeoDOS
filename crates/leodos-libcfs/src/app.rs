@@ -6,7 +6,7 @@
 //! handling, and housekeeping telemetry.
 
 use crate::cfe::evs::event;
-use crate::cfe::sb::msg::{CmdHeader, MessageRef, MsgId, TlmHeader};
+use crate::cfe::sb::msg::{CmdHeader, MessageRef, MsgId};
 use crate::cfe::sb::pipe::Pipe;
 use crate::cfe::sb::send_buf::SendBuffer;
 use crate::error::Result;
@@ -204,17 +204,7 @@ impl App {
     /// [`cmd_count`](Self::cmd_count) /
     /// [`err_count`](Self::err_count)) in the struct.
     pub fn send_hk<H: Copy>(&self, payload: &H) -> Result<()> {
-        let hdr = core::mem::size_of::<TlmHeader>();
-        let size = hdr + core::mem::size_of::<H>();
-
-        let mut send_buf = SendBuffer::new(size)?;
-        {
-            let mut msg = send_buf.view();
-            msg.init(self.hk_tlm_msg_id, size)?;
-            *msg.payload::<H>()? = *payload;
-            msg.timestamp();
-        }
-        send_buf.send(true)
+        SendBuffer::publish_typed(self.hk_tlm_msg_id, payload)
     }
 
     /// Returns the current command counter.

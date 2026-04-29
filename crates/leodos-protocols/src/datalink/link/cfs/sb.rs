@@ -1,11 +1,10 @@
 use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::cfe::sb::pipe::Pipe;
+use leodos_libcfs::cfe::sb::send_buf::HEADER_SIZE;
 use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
 use leodos_libcfs::error::CfsError as CfsError;
 
 use crate::datalink::{DatalinkRead, DatalinkWrite};
-
-const HEADER_SIZE: usize = 8;
 
 /// A bidirectional data link over the cFS Software Bus.
 ///
@@ -38,16 +37,7 @@ impl DatalinkWrite for SbDatalink {
     type Error = CfsError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        let total_size = HEADER_SIZE + data.len();
-        let mut buf = SendBuffer::new(total_size)?;
-        {
-            let mut msg = buf.view();
-            msg.init(self.send_mid, total_size)?;
-            let slice = buf.as_mut_slice();
-            slice[HEADER_SIZE..].copy_from_slice(data);
-        }
-        buf.send(true)?;
-        Ok(())
+        SendBuffer::publish(self.send_mid, data)
     }
 }
 

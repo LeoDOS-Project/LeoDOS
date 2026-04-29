@@ -3,9 +3,16 @@ use core::mem;
 use core::slice;
 
 use crate::cfe::sb::msg::MessageMut;
+use crate::cfe::sb::msg::MsgId;
+use crate::cfe::sb::msg::TlmHeader;
 use crate::error::{CfsError, SbError};
 use crate::error::Result;
 use crate::ffi;
+
+/// Size in bytes of the CCSDS primary header that `MessageMut::init`
+/// writes at the start of every Software Bus message buffer. Payload
+/// bytes follow at offset `HEADER_SIZE`.
+pub const HEADER_SIZE: usize = 8;
 
 /// An owned, writable "zero-copy" software bus message buffer.
 ///
@@ -72,6 +79,46 @@ impl SendBuffer {
     /// Returns the raw mutable byte slice of the buffer's contents.
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         unsafe { slice::from_raw_parts_mut(self.ptr as *mut u8, self.size) }
+    }
+
+    /// Allocate, initialize, fill, and transmit an originating message
+    /// in one call. The buffer is sized for `HEADER_SIZE + payload.len()`,
+    /// the CCSDS header is written via `init`, and `payload` is copied
+    /// into the buffer immediately after the header.
+    ///
+    /// On allocation or transmit failure the buffer is released back to
+    /// the cFE pool automatically.
+    pub fn publish(msg_id: MsgId, payload: &[u8]) -> Result<()> {
+        let total = HEADER_SIZE + payload.len();
+        let mut buf = Self::new(total)?;
+        buf.view().init(msg_id, total)?;
+        buf.as_mut_slice()[HEADER_SIZE..].copy_from_slice(payload);
+        buf.send(true)
+    }
+
+    /// Allocate, initialize, and transmit a telemetry message whose
+    /// payload is a typed `Copy` struct. The CCSDS secondary header
+    /// timestamp is set automatically. Use this for housekeeping and
+    /// other periodic telemetry where the payload layout is fixed.
+    pub fn publish_typed<T: Copy>(msg_id: MsgId, payload: &T) -> Result<()> {
+        let total = core::mem::size_of::<TlmHeader>() + core::mem::size_of::<T>();
+        let mut buf = Self::new(total)?;
+        let mut msg = buf.view();
+        msg.init(msg_id, total)?;
+        *msg.payload::<T>()? = *payload;
+        msg.timestamp();
+        buf.send(true)
+    }
+
+    /// Forward a pre-formed cFS message verbatim. The `data` slice is
+    /// expected to already contain a valid CCSDS header followed by
+    /// the payload, so the message is transmitted with
+    /// `is_origination=false` to preserve the original sequence
+    /// count and timestamp.
+    pub fn forward(data: &[u8]) -> Result<()> {
+        let mut buf = Self::new(data.len())?;
+        buf.as_mut_slice().copy_from_slice(data);
+        buf.send(false)
     }
 }
 

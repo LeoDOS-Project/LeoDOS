@@ -22,20 +22,7 @@ impl DatalinkWrite for PipeFrameWriter {
     type Error = CfsError;
 
     async fn write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        let header_size = 8;
-        let total_size = header_size + data.len();
-
-        let mut buf = SendBuffer::new(total_size)?;
-
-        {
-            let mut msg = buf.view();
-            msg.init(self.msg_id, total_size)?;
-            let slice = buf.as_mut_slice();
-            slice[header_size..].copy_from_slice(data);
-        }
-
-        buf.send(true)?;
-        Ok(())
+        SendBuffer::publish(self.msg_id, data)
     }
 }
 
