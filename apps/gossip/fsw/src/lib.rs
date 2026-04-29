@@ -3,6 +3,8 @@
 
 use futures::FutureExt as _;
 use leodos_libcfs::cfe::duration::Duration;
+use leodos_libcfs::cfe::es::pool::MemPool;
+use leodos_libcfs::cfe::es::pool::MemPoolStorage;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
@@ -42,6 +44,11 @@ const MAX_ROUTES: usize = bindings::GOSSIP_MAX_ROUTES as usize;
 const MTU: usize = 512;
 const SB_HEADER_SIZE: usize = 8;
 
+/// Backing memory for the gossip node's buffer pool. Size: 4 ports × 2
+/// MTU buffers + 1 outbound build buffer + cFE pool overhead.
+const POOL_BYTES: usize = (4 * 2 + 1) * MTU + 1024;
+static POOL_STORAGE: MemPoolStorage<POOL_BYTES> = MemPoolStorage::new();
+
 const GOSSIP_APID: u16 = bindings::GOSSIP_APID as u16;
 const GOSSIP_FC: u8 = bindings::GOSSIP_FUNCTION_CODE as u8;
 
@@ -56,7 +63,7 @@ fn build_routing_table() -> heapless::Vec<Route, MAX_ROUTES> {
         ($apid:expr, $topic:expr) => {
             let _ = table.push(Route {
                 apid: $apid as u16,
-                topic: MsgId::from_local_tlm($topic as u16),
+                topic: MsgId::local_tlm($topic as u16),
             });
         };
     }
@@ -125,13 +132,17 @@ pub extern "C" fn GOSSIP_AppMain() {
         let address = scid.to_address(NUM_SATS);
         let Address::Satellite(point) = address else {
             err!("Invalid spacecraft ID")?;
-            return Ok(());
+            return Ok::<(), CfsError>(());
         };
 
         let apid = Apid::new(GOSSIP_APID)
             .map_err(|_| CfsError::ValidationFailure)?;
 
-        let mut gossip: Gossip<UdpDatalink> = Gossip::builder()
+        let pool = MemPool::new(POOL_STORAGE.take()?, false)?;
+
+        let mut gossip: Gossip<'_, UdpDatalink, _> = Gossip::builder()
+            .pool(&pool)
+            .mtu(MTU)
             .north(isl_link(point, Direction::North)?)
             .south(isl_link(point, Direction::South)?)
             .east(isl_link(point, Direction::East)?)
@@ -140,12 +151,12 @@ pub extern "C" fn GOSSIP_AppMain() {
             .torus(TORUS)
             .apid(apid)
             .function_code(GOSSIP_FC)
-            .build();
+            .build()?;
 
         let routes = build_routing_table();
         info!("Loaded {} APID routes", routes.len())?;
 
-        let send_mid = MsgId::from_local_cmd(
+        let send_mid = MsgId::local_cmd(
             bindings::GOSSIP_SEND_TOPICID as u16,
         );
         let mut pipe = Pipe::new("GOSSIP_SB", 16)?;

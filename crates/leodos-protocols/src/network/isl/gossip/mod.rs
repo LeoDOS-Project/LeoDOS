@@ -10,6 +10,8 @@ pub mod bitmap;
 /// Gossip packet structure and builder.
 pub mod packet;
 
+use core::alloc::Layout;
+
 use futures::FutureExt as _;
 use futures::future::Either;
 use zerocopy::FromBytes as _;
@@ -18,6 +20,7 @@ use zerocopy::network_endian::U16;
 
 use bitmap::DuplicateFilter;
 
+use crate::buffer_pool::BufferPool;
 use crate::datalink::Datalink;
 use crate::datalink::DatalinkRead;
 use crate::datalink::DatalinkWrite;
@@ -32,23 +35,24 @@ use crate::network::isl::torus::Torus;
 use crate::network::spp::Apid;
 use crate::utils::ringbuf::RingBuffer;
 
-/// Per-direction link state: the link itself plus its input
-/// buffer, output queue, and staging buffer.
-struct Port<L, const MTU: usize, const OUT: usize> {
+/// Per-direction link state: the link itself plus its pool-allocated
+/// input buffer, output queue, and staging buffer.
+struct Port<'pool, L, P: BufferPool + 'pool, const OUT: usize> {
     link: L,
-    buf: [u8; MTU],
+    buf: P::Buf<'pool>,
     out: RingBuffer<OUT>,
-    stage: [u8; MTU],
+    stage: P::Buf<'pool>,
 }
 
-impl<L, const MTU: usize, const OUT: usize> Port<L, MTU, OUT> {
-    fn new(link: L) -> Self {
-        Self {
+impl<'pool, L, P: BufferPool + 'pool, const OUT: usize> Port<'pool, L, P, OUT> {
+    fn new(link: L, pool: &'pool P, mtu: usize) -> Result<Self, P::Error> {
+        let layout = Layout::from_size_align(mtu, 1).expect("non-zero MTU");
+        Ok(Self {
             link,
-            buf: [0u8; MTU],
+            buf: pool.alloc(layout)?,
             out: RingBuffer::new(),
-            stage: [0u8; MTU],
-        }
+            stage: pool.alloc(layout)?,
+        })
     }
 }
 
@@ -80,29 +84,36 @@ pub enum GossipError<E> {
 /// Epidemic gossip flood over a 4-connected torus mesh.
 ///
 /// Implements [`NetworkWrite`] (wrap + flood) and
-/// [`NetworkRead`] (receive, dedup, forward, deliver).
-pub struct Gossip<N, const MTU: usize = 256, const OUT: usize = 2048> {
-    north: Port<N, MTU, OUT>,
-    south: Port<N, MTU, OUT>,
-    east: Port<N, MTU, OUT>,
-    west: Port<N, MTU, OUT>,
+/// [`NetworkRead`] (receive, dedup, forward, deliver). All packet
+/// buffers come from a [`BufferPool`] supplied at construction.
+pub struct Gossip<'pool, N, P: BufferPool + 'pool, const OUT: usize = 2048> {
+    north: Port<'pool, N, P, OUT>,
+    south: Port<'pool, N, P, OUT>,
+    east: Port<'pool, N, P, OUT>,
+    west: Port<'pool, N, P, OUT>,
     address: Address,
     torus: Torus,
     apid: Apid,
     function_code: u8,
     dedup: DuplicateFilter,
     next_epoch: u16,
-    buf: [u8; MTU],
+    buf: P::Buf<'pool>,
 }
 
 #[bon::bon]
-impl<N, const MTU: usize, const OUT: usize> Gossip<N, MTU, OUT>
+impl<'pool, N, P: BufferPool + 'pool, const OUT: usize> Gossip<'pool, N, P, OUT>
 where
     N: Datalink,
 {
     #[builder]
     /// Creates a new gossip node with directional links.
+    ///
+    /// Allocates two MTU-sized buffers per port (input + staging)
+    /// plus one for outbound packet construction. Returns an error
+    /// if the pool cannot satisfy the nine allocations.
     pub fn new(
+        pool: &'pool P,
+        mtu: usize,
         north: N,
         south: N,
         east: N,
@@ -111,20 +122,21 @@ where
         torus: Torus,
         apid: Apid,
         function_code: u8,
-    ) -> Self {
-        Self {
-            north: Port::new(north),
-            south: Port::new(south),
-            east: Port::new(east),
-            west: Port::new(west),
+    ) -> Result<Self, P::Error> {
+        let layout = Layout::from_size_align(mtu, 1).expect("non-zero MTU");
+        Ok(Self {
+            north: Port::new(north, pool, mtu)?,
+            south: Port::new(south, pool, mtu)?,
+            east: Port::new(east, pool, mtu)?,
+            west: Port::new(west, pool, mtu)?,
             address,
             torus,
             apid,
             function_code,
             dedup: DuplicateFilter::new(),
             next_epoch: 0,
-            buf: [0u8; MTU],
-        }
+            buf: pool.alloc(layout)?,
+        })
     }
 
     /// Returns this node's own address.
@@ -133,7 +145,7 @@ where
     }
 }
 
-impl<N, const MTU: usize, const OUT: usize> Gossip<N, MTU, OUT>
+impl<'pool, N, P: BufferPool + 'pool, const OUT: usize> Gossip<'pool, N, P, OUT>
 where
     N: Datalink,
 {
@@ -165,10 +177,11 @@ where
 
 }
 
-impl<N, const MTU: usize, const OUT: usize> NetworkWrite
-    for Gossip<N, MTU, OUT>
+impl<'pool, N, P, const OUT: usize> NetworkWrite
+    for Gossip<'pool, N, P, OUT>
 where
     N: Datalink,
+    P: BufferPool + 'pool,
 {
     type Error = GossipError<N::WriteError>;
 
@@ -182,7 +195,7 @@ where
         self.dedup.is_duplicate(epoch.0.get());
 
         let pkt = IslGossipTelecommand::builder()
-            .buffer(&mut self.buf)
+            .buffer(&mut self.buf[..])
             .apid(self.apid)
             .function_code(self.function_code)
             .origin(self.address)
@@ -232,10 +245,11 @@ where
     }
 }
 
-impl<N, const MTU: usize, const OUT: usize> NetworkRead
-    for Gossip<N, MTU, OUT>
+impl<'pool, N, P, const OUT: usize> NetworkRead
+    for Gossip<'pool, N, P, OUT>
 where
     N: Datalink,
+    P: BufferPool + 'pool,
 {
     type Error = GossipError<N::ReadError>;
 
@@ -292,10 +306,10 @@ where
                 let ew_f = stage!(ew, east);
                 let ww_f = stage!(ww, west);
 
-                let nr_f = nr.read(&mut north.buf).fuse();
-                let sr_f = sr.read(&mut south.buf).fuse();
-                let er_f = er.read(&mut east.buf).fuse();
-                let wr_f = wr.read(&mut west.buf).fuse();
+                let nr_f = nr.read(&mut north.buf[..]).fuse();
+                let sr_f = sr.read(&mut south.buf[..]).fuse();
+                let er_f = er.read(&mut east.buf[..]).fuse();
+                let wr_f = wr.read(&mut west.buf[..]).fuse();
 
                 pin_utils::pin_mut!(
                     nr_f, sr_f, er_f, wr_f, nw_f, sw_f,
