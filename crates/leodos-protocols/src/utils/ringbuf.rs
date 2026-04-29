@@ -8,7 +8,10 @@
 /// small packets pack tightly.
 ///
 /// When the ring is full, `push` returns `false` and the
-/// packet is dropped (tail-drop policy).
+/// packet is dropped (tail-drop policy). Set `front_drop`
+/// at construction to switch to evicting the oldest packet
+/// instead — useful for telemetry where the freshest
+/// sample matters more than back-pressure.
 pub struct RingBuffer<const N: usize> {
     buf: [u8; N],
     /// Write cursor (next push position).
@@ -17,29 +20,54 @@ pub struct RingBuffer<const N: usize> {
     tail: usize,
     /// Number of packets currently stored.
     count: usize,
+    /// Drop the front packet to make room for incoming pushes
+    /// instead of rejecting the new packet.
+    front_drop: bool,
 }
 
 /// Length prefix size in bytes.
 const LEN_SIZE: usize = 2;
 
 impl<const N: usize> RingBuffer<N> {
-    /// Create a new empty ring buffer.
+    /// Create a new empty ring buffer with tail-drop policy.
     pub const fn new() -> Self {
         Self {
             buf: [0u8; N],
             head: 0,
             tail: 0,
             count: 0,
+            front_drop: false,
         }
     }
 
-    /// Push a packet into the ring. Returns `false` if full.
+    /// Create a new empty ring buffer that evicts the oldest
+    /// packet when full instead of rejecting incoming packets.
+    pub const fn with_front_drop() -> Self {
+        let mut ring = Self::new();
+        ring.front_drop = true;
+        ring
+    }
+
+    /// Push a packet into the ring. Returns `false` if the
+    /// packet is too large for the buffer, or if the ring is
+    /// full and front-drop is disabled. With front-drop, evicts
+    /// the oldest packets until the new one fits.
     pub fn push(&mut self, data: &[u8]) -> bool {
         let needed = LEN_SIZE + data.len();
         if needed > N {
             return false;
         }
 
+        if self.front_drop {
+            while !self.try_push(data, needed) {
+                self.pop();
+            }
+            return true;
+        }
+        self.try_push(data, needed)
+    }
+
+    fn try_push(&mut self, data: &[u8], needed: usize) -> bool {
         // Try to fit between head and end of buffer.
         let space_to_end = N - self.head;
         let head = if space_to_end < needed {
@@ -209,6 +237,39 @@ mod tests {
             ring.pop();
         }
         assert!(ring.is_empty());
+    }
+
+    #[test]
+    fn front_drop_evicts_oldest_when_full() {
+        let mut ring = RingBuffer::<8>::with_front_drop();
+        // 2+3 = 5 bytes
+        assert!(ring.push(&[1, 2, 3]));
+        // 2+3 = 5 bytes — only 3 bytes left; with front-drop
+        // we evict the first packet to make room.
+        assert!(ring.push(&[4, 5, 6]));
+        assert_eq!(ring.len(), 1);
+        assert_eq!(ring.front(), Some([4, 5, 6].as_slice()));
+    }
+
+    #[test]
+    fn front_drop_evicts_multiple_when_needed() {
+        let mut ring = RingBuffer::<16>::with_front_drop();
+        // Three small packets: 2+1 each = 9 bytes.
+        assert!(ring.push(&[1]));
+        assert!(ring.push(&[2]));
+        assert!(ring.push(&[3]));
+        // Big one: 2+10 = 12 bytes. Must evict at least two
+        // older packets to fit.
+        assert!(ring.push(&[0; 10]));
+        assert_eq!(ring.len(), 1);
+        assert_eq!(ring.front().map(|s| s.len()), Some(10));
+    }
+
+    #[test]
+    fn front_drop_still_rejects_oversized() {
+        let mut ring = RingBuffer::<8>::with_front_drop();
+        // 2+7 = 9 > 8 — never fits regardless of front-drop.
+        assert!(!ring.push(&[0; 7]));
     }
 
     #[test]
