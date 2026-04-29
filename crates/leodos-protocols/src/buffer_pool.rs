@@ -57,3 +57,6 @@ pub use heap::HeapBufferPool;
 pub use heap::HeapBuf;
 #[cfg(feature = "std")]
 pub use heap::OutOfMemory;
+
+#[cfg(feature = "cfs")]
+mod cfs;
