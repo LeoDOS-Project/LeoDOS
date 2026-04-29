@@ -4,13 +4,16 @@
 //! to ensure that memory allocated from a pool is always returned, preventing
 //! memory leaks.
 
-use crate::error::{CfsError, Result};
+use crate::error::{CfsError, OsalError, Result};
 use crate::ffi;
 use crate::status::check;
+use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
 use core::slice;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
 
 // Add these new struct definitions before the `MemPool` struct
 /// Statistics about a specific block size within a memory pool.
@@ -67,6 +70,53 @@ impl From<ffi::CFE_ES_MemPoolStats_t> for MemPoolStats {
             num_free_bytes: stats.NumFreeBytes,
             block_stats,
         }
+    }
+}
+
+/// Static backing memory for a [`MemPool`].
+///
+/// Construct as a `static` and call [`Self::take`] once at app
+/// startup to hand the buffer to [`MemPool::new`] / [`MemPool::new_ex`].
+/// Subsequent take calls return `Err`. This lets app code own a
+/// fixed-size pool buffer without writing any `unsafe` itself —
+/// all the unsafe sits behind this type.
+pub struct MemPoolStorage<const N: usize> {
+    buf: UnsafeCell<[u8; N]>,
+    taken: AtomicBool,
+}
+
+// SAFETY: `take` uses an atomic swap to guarantee only one caller
+// ever obtains the `&mut [u8]`. After that point the cell is
+// effectively owned by the returned reference and no other path
+// reads from it.
+unsafe impl<const N: usize> Sync for MemPoolStorage<N> {}
+
+impl<const N: usize> MemPoolStorage<N> {
+    /// Create a zero-filled storage region. Call as a `static`.
+    pub const fn new() -> Self {
+        Self {
+            buf: UnsafeCell::new([0; N]),
+            taken: AtomicBool::new(false),
+        }
+    }
+
+    /// Hand out the `&'static mut [u8]` exactly once.
+    ///
+    /// Returns `Err(CfsError::Osal(OsalError::ObjectInUse))` if a
+    /// previous call already took the buffer.
+    pub fn take(&'static self) -> Result<&'static mut [u8]> {
+        if self.taken.swap(true, Ordering::AcqRel) {
+            Err(CfsError::Osal(OsalError::ObjectInUse))
+        } else {
+            // SAFETY: the swap above guarantees exclusive access.
+            Ok(unsafe { &mut *self.buf.get() })
+        }
+    }
+}
+
+impl<const N: usize> Default for MemPoolStorage<N> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
