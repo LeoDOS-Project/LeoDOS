@@ -9,6 +9,7 @@ use core::task::Poll;
 
 use leodos_utils::future_pool::FuturePool;
 
+use crate::buffer_pool::BufferPool;
 use crate::network::isl::address::Address;
 use crate::transport::srspp::api::cfs::TransportError;
 use crate::transport::srspp::dtn::MessageStore;
@@ -102,15 +103,16 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     ///
     /// Returns only on a global error (link failure).
     /// Individual handler errors free the slot silently.
-    pub async fn serve<S, Re, F, Fut, const WIN: usize, const BUF: usize, const MTU: usize>(
+    pub async fn serve<'pool, P, S, Re, F, Fut, const WIN: usize, const MTU: usize>(
         &self,
-        tx: SrsppTxHandle<'a, E, S, Re, WIN, BUF, MTU>,
+        tx: SrsppTxHandle<'a, 'pool, E, S, Re, P, WIN, MTU>,
         handler: F,
     ) -> Result<(), TransportError<E>>
     where
+        P: BufferPool + 'pool,
         S: MessageStore,
         Re: Reachable,
-        F: Fn(SrsppStream<'a, E, R, MAX_STREAMS>, SrsppTxHandle<'a, E, S, Re, WIN, BUF, MTU>) -> Fut,
+        F: Fn(SrsppStream<'a, E, R, MAX_STREAMS>, SrsppTxHandle<'a, 'pool, E, S, Re, P, WIN, MTU>) -> Fut,
         Fut: Future<Output = Result<(), TransportError<E>>>,
     {
         #[allow(unused_mut)]

@@ -1,5 +1,8 @@
+use core::alloc::Layout;
+
 use zerocopy::{Immutable, IntoBytes};
 
+use crate::buffer_pool::BufferPool;
 use crate::network::{NetworkRead, NetworkWrite};
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
@@ -24,13 +27,20 @@ use super::ticks_to_duration;
 ///
 /// Sends messages reliably over the link, handling segmentation and retransmission.
 /// Receives ACKs from the remote receiver.
-pub struct SrsppSender<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize> {
+pub struct SrsppSender<
+    'pool,
+    L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>,
+    Rto: RtoPolicy,
+    P: BufferPool + 'pool,
+    const WIN: usize,
+    const MTU: usize,
+> {
     /// Network link for sending data and receiving ACKs.
     link: L,
     /// Policy for computing retransmission timeouts.
-    rto_policy: P,
+    rto_policy: Rto,
     /// Sender state machine.
-    machine: SenderMachine<WIN, BUF, MTU>,
+    machine: SenderMachine<'pool, P, WIN, MTU>,
     /// Pending actions from the state machine.
     actions: SenderActions,
     /// Per-packet retransmission deadlines keyed by sequence number.
@@ -40,27 +50,41 @@ pub struct SrsppSender<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>
     /// Instant when this sender was created, used for elapsed time.
     start_time: Instant,
     /// Buffer for receiving ACK packets from the link.
-    recv_buffer: [u8; MTU],
+    recv_buffer: P::Buf<'pool>,
     /// Buffer for building outgoing data packets.
-    tx_buffer: [u8; MTU],
+    tx_buffer: P::Buf<'pool>,
 }
 
-impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, P: RtoPolicy, const WIN: usize, const BUF: usize, const MTU: usize>
-    SrsppSender<L, P, WIN, BUF, MTU>
+impl<
+    'pool,
+    L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>,
+    Rto: RtoPolicy,
+    P: BufferPool + 'pool,
+    const WIN: usize,
+    const MTU: usize,
+> SrsppSender<'pool, L, Rto, P, WIN, MTU>
 {
     /// Create a new sender.
-    pub fn new(config: SenderConfig, link: L, rto_policy: P, ticks_per_sec: u32) -> Self {
-        Self {
+    pub fn new(
+        config: SenderConfig,
+        link: L,
+        rto_policy: Rto,
+        ticks_per_sec: u32,
+        pool: &'pool P,
+        buf_size: usize,
+    ) -> Result<Self, P::Error> {
+        let mtu_layout = Layout::from_size_align(MTU, 1).expect("non-zero MTU");
+        Ok(Self {
             link,
             rto_policy,
-            machine: SenderMachine::new(config),
+            machine: SenderMachine::new(config, pool, buf_size)?,
             actions: SenderActions::new(),
             retransmit_timers: HashMap::new(),
             ticks_per_sec,
             start_time: Instant::now(),
-            recv_buffer: [0u8; MTU],
-            tx_buffer: [0u8; MTU],
-        }
+            recv_buffer: pool.alloc(mtu_layout)?,
+            tx_buffer: pool.alloc(mtu_layout)?,
+        })
     }
 
     /// Send a message.
@@ -95,7 +119,7 @@ impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, P: RtoPo
         tokio::select! {
             biased;
 
-            result = self.link.read(&mut self.recv_buffer) => {
+            result = self.link.read(&mut self.recv_buffer[..]) => {
                 let len = result.map_err(|e| SrsppError::Network(e.to_string()))?;
                 self.handle_incoming(&self.recv_buffer[..len].to_vec()).await?;
             }
@@ -134,7 +158,7 @@ impl<L: NetworkWrite + NetworkRead<Error = <L as NetworkWrite>::Error>, P: RtoPo
                     let packet_len =
                         if let Some(info) = self.machine.get_payload(*seq) {
                             let pkt = SrsppDataPacket::builder()
-                                .buffer(&mut self.tx_buffer)
+                                .buffer(&mut self.tx_buffer[..])
                                 .source_address(source_address)
                                 .target(info.target)
                                 .apid(apid)

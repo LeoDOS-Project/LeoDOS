@@ -1,13 +1,10 @@
 #![no_std]
 #![deny(unsafe_code)]
 
-extern crate alloc;
-
-leodos_libcfs::register_allocator!();
-
-use alloc::boxed::Box;
 use core::time::Duration;
 
+use leodos_libcfs::cfe::es::pool::MemPool;
+use leodos_libcfs::cfe::es::pool::MemPoolStorage;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
@@ -46,6 +43,15 @@ mod bindings {
     #![allow(dead_code)]
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
+
+const MTU: usize = 512;
+const SRSPP_BUF_SIZE: usize = 4096;
+
+/// Backing memory for the ping app's SRSPP buffer pool. Sized for
+/// the sender's send buffer + driver tx + driver recv buffers + cFE
+/// pool overhead.
+const POOL_BYTES: usize = SRSPP_BUF_SIZE + 2 * MTU + 1024;
+static POOL_STORAGE: MemPoolStorage<POOL_BYTES> = MemPoolStorage::new();
 
 /// Ping request: identifies the message and records the ground send time.
 #[repr(C, packed)]
@@ -116,26 +122,30 @@ async fn run() -> Result<(), CfsError> {
         .ack_delay_ticks(100)
         .build();
 
-    // Heap-allocated so the large receiver/sender arrays do not
+    let pool = MemPool::new(POOL_STORAGE.take()?, false)?;
+
+    // Pool-backed so the large receiver/sender arrays do not
     // live on the app's cFE task stack.
-    let srspp: Box<
-        SrsppNode<
-            CfsError,
-            NoStore,
-            AlwaysReachable,
-            ReceiverMachine<8, 4096, 8192>,
-            8,
-            4096,
-            512,
-            4,
-        >,
-    > = Box::new(SrsppNode::new(
+    let srspp: SrsppNode<
+        '_,
+        CfsError,
+        _,
+        NoStore,
+        AlwaysReachable,
+        ReceiverMachine<8, 4096, 8192>,
+        8,
+        512,
+        4,
+    > = SrsppNode::new(
+        &pool,
+        SRSPP_BUF_SIZE,
         sender_config,
         receiver_config,
         NoStore,
         AlwaysReachable,
-    ));
-    let (mut rx, mut tx, mut driver) = srspp.split(network, FixedRto::new(1000));
+    )?;
+    let (mut rx, mut tx, mut driver) =
+        srspp.split(network, FixedRto::new(1000), &pool, MTU)?;
 
     log!("Ping ready on sat({}, {})", point.orb, point.sat)?;
 

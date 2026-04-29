@@ -2,6 +2,8 @@
 #![deny(unsafe_code)]
 
 use leodos_libcfs::cell::TaskLocalCell;
+use leodos_libcfs::cfe::es::pool::MemPool;
+use leodos_libcfs::cfe::es::pool::MemPoolStorage;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::log;
 use leodos_libcfs::nos3::drivers::geo_camera::GeoCamera;
@@ -199,9 +201,19 @@ impl SpaceComp for WildfireApp {
 
 // ── Entry point ─────────────────────────────────────────────
 
+/// Backing memory for the wildfire SpaceCompNode's SRSPP pool.
+/// Sized for the SRSPP send buffer (4096) + driver tx + driver recv
+/// (2 × 512 MTU) + cFE pool overhead.
+const POOL_BYTES: usize = 4096 + 2 * 512 + 1024;
+static POOL_STORAGE: MemPoolStorage<POOL_BYTES> = MemPoolStorage::new();
+
 #[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn SC_WILDFIRE_AppMain() {
+    let pool = match POOL_STORAGE.take().and_then(|buf| MemPool::new(buf, false)) {
+        Ok(p) => p,
+        Err(_) => panic!("SC_WILDFIRE: pool init failed"),
+    };
     SpaceCompNode::builder()
         .config(
             SpaceCompConfig::builder()
@@ -219,7 +231,7 @@ pub extern "C" fn SC_WILDFIRE_AppMain() {
         .store(NoStore)
         .reachable(AlwaysReachable)
         .build()
-        .start();
+        .start(pool);
 }
 
 #[cfg(not(test))]

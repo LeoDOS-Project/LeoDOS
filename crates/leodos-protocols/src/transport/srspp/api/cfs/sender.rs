@@ -1,3 +1,4 @@
+use core::alloc::Layout;
 use core::future::poll_fn;
 use core::task::Poll;
 
@@ -10,6 +11,7 @@ use leodos_libcfs::cfe::duration::Duration;
 use leodos_libcfs::cfe::time::SysTime;
 use leodos_libcfs::runtime::time::sleep;
 
+use crate::buffer_pool::BufferPool;
 use crate::network::NetworkRead;
 use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
@@ -35,9 +37,9 @@ use crate::utils::cell::SyncRefCell;
 use super::TimerSet;
 
 /// Shared mutable state for the sender channel.
-pub(super) struct SenderState<E, const WIN: usize, const BUF: usize, const MTU: usize> {
+pub(super) struct SenderState<'pool, E, P: BufferPool + 'pool, const WIN: usize, const MTU: usize> {
     /// Sender state machine.
-    pub(crate) machine: SenderMachine<WIN, BUF, MTU>,
+    pub(crate) machine: SenderMachine<'pool, P, WIN, MTU>,
     /// Pending actions produced by the state machine.
     pub(crate) actions: SenderActions,
     /// Retransmission timers for in-flight packets.
@@ -52,15 +54,16 @@ pub(super) struct SenderState<E, const WIN: usize, const BUF: usize, const MTU: 
 
 /// Channel that owns the sender state. Split into handle + driver.
 pub struct SrsppSender<
+    'pool,
     E,
     S: MessageStore,
     R: Reachable,
+    P: BufferPool + 'pool,
     const WIN: usize,
-    const BUF: usize,
     const MTU: usize,
 > {
     /// Interior-mutable sender state shared between handle and driver.
-    pub(super) state: SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
+    pub(super) state: SyncRefCell<SenderState<'pool, E, P, WIN, MTU>>,
     /// DTN store and reachability oracle.
     dtn: SyncRefCell<DtnContext<S, R>>,
     /// This sender's own address (for reachability checks).
@@ -73,16 +76,25 @@ pub(super) struct DtnContext<S, R> {
 }
 
 /// Alias for a sender without DTN support.
-pub type SimpleSender<E, const WIN: usize = 8, const BUF: usize = 4096, const MTU: usize = 512> =
-    SrsppSender<E, NoStore, AlwaysReachable, WIN, BUF, MTU>;
+pub type SimpleSender<'pool, E, P, const WIN: usize = 8, const MTU: usize = 512> =
+    SrsppSender<'pool, E, NoStore, AlwaysReachable, P, WIN, MTU>;
 
 #[bon::bon]
-impl<E: Clone, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize>
-    SrsppSender<E, S, R, WIN, BUF, MTU>
+impl<
+    'pool,
+    E: Clone,
+    S: MessageStore,
+    R: Reachable,
+    P: BufferPool + 'pool,
+    const WIN: usize,
+    const MTU: usize,
+> SrsppSender<'pool, E, S, R, P, WIN, MTU>
 {
     /// Creates a new sender.
     #[builder]
     pub fn new(
+        pool: &'pool P,
+        buf_size: usize,
         source_address: Address,
         apid: Apid,
         #[builder(default)] function_code: u8,
@@ -91,7 +103,7 @@ impl<E: Clone, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize
         #[builder(default = SrsppDataPacket::HEADER_SIZE)] header_overhead: usize,
         store: S,
         reachable: R,
-    ) -> Self {
+    ) -> Result<Self, P::Error> {
         let config = SenderConfig::builder()
             .source_address(source_address)
             .apid(apid)
@@ -100,9 +112,9 @@ impl<E: Clone, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize
             .max_retransmits(max_retransmits)
             .header_overhead(header_overhead)
             .build();
-        Self {
+        Ok(Self {
             state: SyncRefCell::new(SenderState {
-                machine: SenderMachine::new(config),
+                machine: SenderMachine::new(config, pool, buf_size)?,
                 actions: SenderActions::new(),
                 timers: TimerSet::new(),
                 closed: false,
@@ -110,83 +122,91 @@ impl<E: Clone, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize
             }),
             dtn: SyncRefCell::new(DtnContext { store, reachable }),
             origin: source_address,
-        }
+        })
     }
 
     /// Splits into a handle for sending and a driver for I/O.
-    pub fn split<P: RtoPolicy>(
+    pub fn split<Rto: RtoPolicy>(
         &self,
-        rto_policy: P,
-    ) -> (
-        SrsppTxHandle<'_, E, S, R, WIN, BUF, MTU>,
-        SrsppSenderDriver<'_, P, E, S, R, WIN, BUF, MTU>,
-    ) {
-        (
+        rto_policy: Rto,
+        pool: &'pool P,
+        mtu: usize,
+    ) -> Result<(
+        SrsppTxHandle<'_, 'pool, E, S, R, P, WIN, MTU>,
+        SrsppSenderDriver<'_, 'pool, Rto, E, S, R, P, WIN, MTU>,
+    ), P::Error> {
+        Ok((
             SrsppTxHandle {
                 sender: &self.state,
                 dtn: &self.dtn,
                 origin: self.origin,
             },
-            SrsppSenderDriver::new(rto_policy, &self.state, &self.dtn, self.origin),
-        )
+            SrsppSenderDriver::new(rto_policy, &self.state, &self.dtn, self.origin, pool, mtu)?,
+        ))
     }
 }
 
 /// Driver that handles I/O and DTN drain. Runs as a concurrent task.
 pub struct SrsppSenderDriver<
     'a,
-    P: RtoPolicy,
+    'pool,
+    Rto: RtoPolicy,
     E,
     S: MessageStore,
     R: Reachable,
+    P: BufferPool + 'pool,
     const WIN: usize,
-    const BUF: usize,
     const MTU: usize,
 > {
-    rto_policy: P,
-    pub(super) sender: &'a SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
+    rto_policy: Rto,
+    pub(super) sender: &'a SyncRefCell<SenderState<'pool, E, P, WIN, MTU>>,
     dtn: &'a SyncRefCell<DtnContext<S, R>>,
     origin: Address,
-    tx_buffer: [u8; MTU],
+    tx_buffer: P::Buf<'pool>,
 }
 
 impl<
     'a,
-    P: RtoPolicy,
+    'pool,
+    Rto: RtoPolicy,
     E,
     S: MessageStore,
     R: Reachable,
+    P: BufferPool + 'pool,
     const WIN: usize,
-    const BUF: usize,
     const MTU: usize,
-> SrsppSenderDriver<'a, P, E, S, R, WIN, BUF, MTU>
+> SrsppSenderDriver<'a, 'pool, Rto, E, S, R, P, WIN, MTU>
 {
     pub(super) fn new(
-        rto_policy: P,
-        sender: &'a SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
+        rto_policy: Rto,
+        sender: &'a SyncRefCell<SenderState<'pool, E, P, WIN, MTU>>,
         dtn: &'a SyncRefCell<DtnContext<S, R>>,
         origin: Address,
-    ) -> Self {
-        Self {
+        pool: &'pool P,
+        mtu: usize,
+    ) -> Result<Self, P::Error> {
+        let layout = Layout::from_size_align(mtu, 1).expect("non-zero MTU");
+        Ok(Self {
             rto_policy,
             sender,
             dtn,
             origin,
-            tx_buffer: [0u8; MTU],
-        }
+            tx_buffer: pool.alloc(layout)?,
+        })
     }
 }
 
 impl<
     'a,
-    P: RtoPolicy,
+    'pool,
+    Rto: RtoPolicy,
     E: Clone,
     S: MessageStore,
     R: Reachable,
+    P: BufferPool + 'pool,
     const WIN: usize,
-    const BUF: usize,
     const MTU: usize,
-> SrsppSenderDriver<'a, P, E, S, R, WIN, BUF, MTU>
+> SrsppSenderDriver<'a, 'pool, Rto, E, S, R, P, WIN, MTU>
 {
     /// Sends all pending transmit actions over the link.
     pub(super) async fn transmit(
@@ -211,7 +231,7 @@ impl<
             let packet_len = self.sender.with(|s| {
                 if let Some(info) = s.machine.get_payload(seq) {
                     let pkt = SrsppDataPacket::builder()
-                        .buffer(&mut self.tx_buffer)
+                        .buffer(&mut self.tx_buffer[..])
                         .source_address(cfg_clone.source_address)
                         .target(info.target)
                         .apid(cfg_clone.apid)
@@ -353,7 +373,7 @@ impl<
                 }
                 let Some(len) = self
                     .dtn
-                    .with_mut(|d| d.store.read(target, &mut self.tx_buffer))
+                    .with_mut(|d| d.store.read(target, &mut self.tx_buffer[..]))
                 else {
                     break;
                 };
@@ -445,40 +465,58 @@ pub(super) fn duration_until(deadline: Option<SysTime>) -> Duration {
 /// Handle for sending data over an SRSPP node.
 pub struct SrsppTxHandle<
     'a,
+    'pool,
     E,
     S: MessageStore,
     R: Reachable,
+    P: BufferPool + 'pool,
     const WIN: usize,
-    const BUF: usize,
     const MTU: usize,
 > {
-    pub(super) sender: &'a SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
+    pub(super) sender: &'a SyncRefCell<SenderState<'pool, E, P, WIN, MTU>>,
     pub(super) dtn: &'a SyncRefCell<DtnContext<S, R>>,
     pub(super) origin: Address,
 }
 
-impl<'a, E, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize>
-    Clone for SrsppTxHandle<'a, E, S, R, WIN, BUF, MTU>
+impl<
+    'a,
+    'pool,
+    E,
+    S: MessageStore,
+    R: Reachable,
+    P: BufferPool + 'pool,
+    const WIN: usize,
+    const MTU: usize,
+> Clone for SrsppTxHandle<'a, 'pool, E, S, R, P, WIN, MTU>
 {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'a, E, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize>
-    Copy for SrsppTxHandle<'a, E, S, R, WIN, BUF, MTU>
+impl<
+    'a,
+    'pool,
+    E,
+    S: MessageStore,
+    R: Reachable,
+    P: BufferPool + 'pool,
+    const WIN: usize,
+    const MTU: usize,
+> Copy for SrsppTxHandle<'a, 'pool, E, S, R, P, WIN, MTU>
 {
 }
 
 impl<
     'a,
+    'pool,
     E: Clone,
     S: MessageStore,
     R: Reachable,
+    P: BufferPool + 'pool,
     const WIN: usize,
-    const BUF: usize,
     const MTU: usize,
-> SrsppTxHandle<'a, E, S, R, WIN, BUF, MTU>
+> SrsppTxHandle<'a, 'pool, E, S, R, P, WIN, MTU>
 {
     /// Sends data to the given target.
     ///

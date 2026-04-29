@@ -3,6 +3,7 @@
 #![allow(async_fn_in_trait)]
 
 use core::time::Duration;
+use leodos_libcfs::cfe::es::pool::MemPool;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
@@ -51,12 +52,12 @@ pub type RxHandle<
 /// SRSPP transmit handle.
 pub type TxHandle<
     'a,
+    'pool,
     S = NoStore,
     Re = AlwaysReachable,
     const WIN: usize = 8,
-    const BUF: usize = 4096,
     const MTU: usize = 512,
-> = SrsppTxHandle<'a, CfsError, S, Re, WIN, BUF, MTU>;
+> = SrsppTxHandle<'a, 'pool, CfsError, S, Re, MemPool, WIN, MTU>;
 
 /// A SpaceCoMP node that handles SRSPP transport,
 /// message dispatch, and coordinator orchestration.
@@ -97,11 +98,15 @@ pub trait SpaceComp {
 
 impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
     /// Starts the node with default SRSPP buffer sizes.
-    pub fn start<A: SpaceComp>(self) -> !
+    ///
+    /// Takes ownership of `pool` — the cFE memory pool used for
+    /// SRSPP buffers (sender data, driver tx, driver recv). The
+    /// pool's lifetime is tied to this call, which never returns.
+    pub fn start<A: SpaceComp>(self, pool: MemPool) -> !
     where
         F: FnOnce() -> Result<A, SpaceCompError>,
     {
-        leodos_libcfs::runtime::Runtime::new().run(self.run::<A, 8, 4096, 512, 8192, 1>())
+        leodos_libcfs::runtime::Runtime::new().run(self.run::<A, 8, 4096, 512, 8192, 1>(pool))
     }
 
     /// Runs the node with custom SRSPP buffer sizes.
@@ -114,6 +119,7 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
         const MAX_STREAMS: usize,
     >(
         self,
+        pool: MemPool,
     ) -> Result<(), SpaceCompError>
     where
         F: FnOnce() -> Result<A, SpaceCompError>,
@@ -154,16 +160,25 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
             .build();
 
         let srspp: SrsppNode<
+            '_,
             CfsError,
+            MemPool,
             S,
             R,
             ReceiverMachine<WIN, BUF, RX_BUF>,
             WIN,
-            BUF,
             MTU,
             MAX_STREAMS,
-        > = SrsppNode::new(sender_config, receiver_config, self.store, self.reachable);
-        let (mut rx, mut tx, mut driver) = srspp.split(network, FixedRto::new(rto));
+        > = SrsppNode::new(
+            &pool,
+            BUF,
+            sender_config,
+            receiver_config,
+            self.store,
+            self.reachable,
+        )?;
+        let (mut rx, mut tx, mut driver) =
+            srspp.split(network, FixedRto::new(rto), &pool, MTU)?;
 
         system::wait_for_startup_sync(Duration::from_millis(10_000));
 

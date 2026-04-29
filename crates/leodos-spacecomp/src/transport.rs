@@ -1,6 +1,7 @@
 //! Transport traits and contextualized channels for SpaceComp.
 #![allow(async_fn_in_trait)]
 
+use leodos_libcfs::cfe::es::pool::MemPool;
 use leodos_libcfs::error::CfsError;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
@@ -83,24 +84,24 @@ pub trait Rx {
 /// SRSPP-backed sender with target + job context.
 pub struct SpaceCompTx<
     'a,
+    'pool,
     S: MessageStore,
     R: Reachable,
     const WIN: usize,
-    const BUF: usize,
     const MTU: usize,
 > {
-    tx: SrsppTxHandle<'a, CfsError, S, R, WIN, BUF, MTU>,
+    tx: SrsppTxHandle<'a, 'pool, CfsError, S, R, MemPool, WIN, MTU>,
     target: Address,
     job_id: u16,
     partition_id: u8,
     buf: [u8; 512],
 }
 
-impl<'a, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize>
-    SpaceCompTx<'a, S, R, WIN, BUF, MTU>
+impl<'a, 'pool, S: MessageStore, R: Reachable, const WIN: usize, const MTU: usize>
+    SpaceCompTx<'a, 'pool, S, R, WIN, MTU>
 {
     pub fn new(
-        tx: SrsppTxHandle<'a, CfsError, S, R, WIN, BUF, MTU>,
+        tx: SrsppTxHandle<'a, 'pool, CfsError, S, R, MemPool, WIN, MTU>,
         target: Address,
         job_id: u16,
         partition_id: u8,
@@ -115,8 +116,8 @@ impl<'a, S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, cons
     }
 }
 
-impl<S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize> Tx
-    for SpaceCompTx<'_, S, R, WIN, BUF, MTU>
+impl<'a, 'pool, S: MessageStore, R: Reachable, const WIN: usize, const MTU: usize> Tx
+    for SpaceCompTx<'a, 'pool, S, R, WIN, MTU>
 {
     async fn send(&mut self, data: &[u8]) -> Result<(), SpaceCompError> {
         let m = SpaceCompMessage::builder()

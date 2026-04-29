@@ -3,6 +3,9 @@
 //! Handles segmentation, buffering, and retransmission of messages.
 //! Completely synchronous - no I/O, no async.
 
+use core::alloc::Layout;
+
+use crate::buffer_pool::BufferPool;
 use crate::network::isl::address::{Address, RawAddress};
 use crate::network::spp::{Apid, SequenceCount, SequenceFlag};
 use heapless::Vec;
@@ -219,15 +222,18 @@ impl Default for PacketMeta {
 /// # Type Parameters
 ///
 /// * `WIN` - Maximum number of in-flight packets (window size)
-/// * `BUF` - Total send buffer size in bytes
 /// * `MTU` - Maximum transmission unit (packet size)
-pub struct SenderMachine<const WIN: usize, const BUF: usize, const MTU: usize> {
+///
+/// The send buffer (formerly an inline `[u8; BUF]`) now comes from
+/// a [`BufferPool`] supplied at construction. Buffer size is set
+/// at runtime via the `buf_size` argument to `new`.
+pub struct SenderMachine<'pool, P: BufferPool + 'pool, const WIN: usize, const MTU: usize> {
     /// Sender configuration.
     pub(crate) config: SenderConfig,
     /// Per-slot metadata for each window entry.
     meta: [PacketMeta; WIN],
     /// Contiguous send buffer holding all packet payloads.
-    data: [u8; BUF],
+    data: P::Buf<'pool>,
     /// Current write position in the send buffer.
     write_pos: usize,
     /// Next sequence number to assign.
@@ -236,17 +242,25 @@ pub struct SenderMachine<const WIN: usize, const BUF: usize, const MTU: usize> {
     send_base: u16,
 }
 
-impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BUF, MTU> {
-    /// Create a new sender state machine with the given configuration.
-    pub fn new(config: SenderConfig) -> Self {
-        Self {
+impl<'pool, P: BufferPool + 'pool, const WIN: usize, const MTU: usize>
+    SenderMachine<'pool, P, WIN, MTU>
+{
+    /// Create a new sender state machine with the given configuration
+    /// and a pool-allocated send buffer of `buf_size` bytes.
+    pub fn new(
+        config: SenderConfig,
+        pool: &'pool P,
+        buf_size: usize,
+    ) -> Result<Self, P::Error> {
+        let layout = Layout::from_size_align(buf_size, 1).expect("non-zero buf_size");
+        Ok(Self {
             config,
             meta: [PacketMeta::default(); WIN],
-            data: [0u8; BUF],
+            data: pool.alloc(layout)?,
             write_pos: 0,
             next_seq: 0,
             send_base: 0,
-        }
+        })
     }
 
     /// Returns a reference to the sender configuration.
@@ -261,7 +275,7 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
 
     /// Available space in the send buffer (bytes).
     pub fn available_bytes(&self) -> usize {
-        BUF - self.write_pos
+        self.data.len() - self.write_pos
     }
 
     /// Available slots in send window.
@@ -570,9 +584,10 @@ impl<const WIN: usize, const BUF: usize, const MTU: usize> SenderMachine<WIN, BU
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
+    use crate::buffer_pool::HeapBufferPool;
     use crate::transport::srspp::packet::SrsppDataPacket;
 
     fn make_config() -> SenderConfig {
@@ -592,7 +607,8 @@ mod tests {
 
     #[test]
     fn test_send_emits_transmit_action() {
-        let mut sender: SenderMachine<8, 4096, 512> = SenderMachine::new(make_config());
+        let pool = HeapBufferPool::new(4096 + 64);
+        let mut sender: SenderMachine<'_, HeapBufferPool, 8, 512> = SenderMachine::new(make_config(), &pool, 4096).unwrap();
         let mut actions = SenderActions::new();
 
         sender
@@ -619,7 +635,8 @@ mod tests {
 
     #[test]
     fn test_mark_transmitted() {
-        let mut sender: SenderMachine<8, 4096, 512> = SenderMachine::new(make_config());
+        let pool = HeapBufferPool::new(4096 + 64);
+        let mut sender: SenderMachine<'_, HeapBufferPool, 8, 512> = SenderMachine::new(make_config(), &pool, 4096).unwrap();
         let mut actions = SenderActions::new();
 
         sender
@@ -644,7 +661,8 @@ mod tests {
 
     #[test]
     fn test_ack_stops_timer() {
-        let mut sender: SenderMachine<8, 4096, 512> = SenderMachine::new(make_config());
+        let pool = HeapBufferPool::new(4096 + 64);
+        let mut sender: SenderMachine<'_, HeapBufferPool, 8, 512> = SenderMachine::new(make_config(), &pool, 4096).unwrap();
         let mut actions = SenderActions::new();
 
         sender
@@ -683,7 +701,8 @@ mod tests {
 
     #[test]
     fn test_timeout_emits_retransmit() {
-        let mut sender: SenderMachine<8, 4096, 512> = SenderMachine::new(make_config());
+        let pool = HeapBufferPool::new(4096 + 64);
+        let mut sender: SenderMachine<'_, HeapBufferPool, 8, 512> = SenderMachine::new(make_config(), &pool, 4096).unwrap();
         let mut actions = SenderActions::new();
 
         sender
@@ -717,7 +736,8 @@ mod tests {
 
     #[test]
     fn test_max_retransmits_emits_packet_lost() {
-        let mut sender: SenderMachine<8, 4096, 512> = SenderMachine::new(make_config());
+        let pool = HeapBufferPool::new(4096 + 64);
+        let mut sender: SenderMachine<'_, HeapBufferPool, 8, 512> = SenderMachine::new(make_config(), &pool, 4096).unwrap();
         let mut actions = SenderActions::new();
 
         sender
@@ -764,7 +784,8 @@ mod tests {
 
     #[test]
     fn test_segmentation() {
-        let mut sender: SenderMachine<8, 4096, 64> = SenderMachine::new(make_config());
+        let pool = HeapBufferPool::new(4096 + 64);
+        let mut sender: SenderMachine<'_, HeapBufferPool, 8, 64> = SenderMachine::new(make_config(), &pool, 4096).unwrap();
         let mut actions = SenderActions::new();
 
         let data = [0u8; 150];
@@ -789,7 +810,8 @@ mod tests {
 
     #[test]
     fn test_selective_ack() {
-        let mut sender: SenderMachine<8, 4096, 512> = SenderMachine::new(make_config());
+        let pool = HeapBufferPool::new(4096 + 64);
+        let mut sender: SenderMachine<'_, HeapBufferPool, 8, 512> = SenderMachine::new(make_config(), &pool, 4096).unwrap();
         let mut actions = SenderActions::new();
 
         // Send 3 packets
@@ -840,7 +862,8 @@ mod tests {
 
     #[test]
     fn test_message_lost_on_segmented_packet_loss() {
-        let mut sender: SenderMachine<8, 4096, 64> = SenderMachine::new(make_config());
+        let pool = HeapBufferPool::new(4096 + 64);
+        let mut sender: SenderMachine<'_, HeapBufferPool, 8, 64> = SenderMachine::new(make_config(), &pool, 4096).unwrap();
         let mut actions = SenderActions::new();
 
         let data = [0u8; 150];

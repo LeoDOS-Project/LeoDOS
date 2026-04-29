@@ -5,10 +5,11 @@
 
 use core::mem::size_of;
 
+use leodos_libcfs::cfe::es::pool::MemPool;
+use leodos_libcfs::error::CfsError;
 use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
 use leodos_protocols::transport::srspp::dtn::MessageStore;
 use leodos_protocols::transport::srspp::dtn::Reachable;
-use leodos_libcfs::error::CfsError;
 use crate::job::Job;
 use crate::packet::AssignCollectorPayload;
 use crate::packet::AssignMapperPayload;
@@ -27,8 +28,8 @@ use crate::SpaceCompError;
 const MAX_SATELLITES: usize = 64;
 
 /// Runs the coordinator role for a submitted job.
-pub async fn run<S: MessageStore, R: Reachable, const WIN: usize, const BUF: usize, const MTU: usize>(
-    tx: &mut SrsppTxHandle<'_, CfsError, S, R, WIN, BUF, MTU>,
+pub async fn run<S: MessageStore, R: Reachable, const WIN: usize, const MTU: usize>(
+    tx: &mut SrsppTxHandle<'_, '_, CfsError, S, R, MemPool, WIN, MTU>,
     buf: &mut [u8],
     shell: Shell,
     local_point: Point,

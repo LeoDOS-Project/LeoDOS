@@ -1,8 +1,11 @@
+use core::alloc::Layout;
+
 use futures::FutureExt;
 
 use leodos_libcfs::cfe::duration::Duration;
 use leodos_libcfs::runtime::time::sleep;
 
+use crate::buffer_pool::BufferPool;
 use crate::network::NetworkRead;
 use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
@@ -34,39 +37,51 @@ use super::sender::duration_until;
 
 /// Combined SRSPP sender and receiver over a single link.
 pub struct SrsppNode<
+    'pool,
     E,
+    P: BufferPool + 'pool,
     S: MessageStore = NoStore,
     Re: Reachable = AlwaysReachable,
     R: ReceiverBackend = ReceiverMachine<8, 4096, 8192>,
     const WIN: usize = 8,
-    const BUF: usize = 4096,
     const MTU: usize = 512,
     const MAX_STREAMS: usize = 1,
 > {
-    pub(super) sender: SyncRefCell<SenderState<E, WIN, BUF, MTU>>,
+    pub(super) sender: SyncRefCell<SenderState<'pool, E, P, WIN, MTU>>,
     pub(super) receiver: SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
     dtn: SyncRefCell<DtnContext<S, Re>>,
     origin: Address,
 }
 
 impl<
+    'pool,
     E: Clone,
+    P: BufferPool + 'pool,
     S: MessageStore,
     Re: Reachable,
     R: ReceiverBackend,
     const WIN: usize,
-    const BUF: usize,
     const MTU: usize,
     const MAX_STREAMS: usize,
-> SrsppNode<E, S, Re, R, WIN, BUF, MTU, MAX_STREAMS>
+> SrsppNode<'pool, E, P, S, Re, R, WIN, MTU, MAX_STREAMS>
 {
     /// Creates a new node with sender and receiver configurations.
-    pub fn new(sender_config: SenderConfig, receiver_config: ReceiverConfig, store: S, reachable: Re) -> Self {
+    ///
+    /// `buf_size` is the size in bytes of the sender's send buffer
+    /// (formerly the `BUF` const generic).
+    pub fn new(
+        pool: &'pool P,
+        buf_size: usize,
+        sender_config: SenderConfig,
+        receiver_config: ReceiverConfig,
+        store: S,
+        reachable: Re,
+    ) -> Result<Self, P::Error> {
         let origin = sender_config.source_address;
         let ack_delay = Duration::from_millis(receiver_config.ack_delay_ticks);
-        Self {
+        Ok(Self {
             sender: SyncRefCell::new(SenderState {
-                machine: SenderMachine::new(sender_config),
+                machine: SenderMachine::new(sender_config, pool, buf_size)?,
                 actions: SenderActions::new(),
                 timers: TimerSet::new(),
                 closed: false,
@@ -81,20 +96,23 @@ impl<
             }),
             dtn: SyncRefCell::new(DtnContext { store, reachable }),
             origin,
-        }
+        })
     }
 
     /// Splits into separate tx/rx handles and a driver for I/O.
-    pub fn split<L: NetworkWrite<Error = E> + NetworkRead<Error = E>, P: RtoPolicy>(
+    pub fn split<L: NetworkWrite<Error = E> + NetworkRead<Error = E>, Rto: RtoPolicy>(
         &self,
         link: L,
-        rto_policy: P,
-    ) -> (
+        rto_policy: Rto,
+        pool: &'pool P,
+        mtu: usize,
+    ) -> Result<(
         SrsppRxHandle<'_, E, R, MAX_STREAMS>,
-        SrsppTxHandle<'_, E, S, Re, WIN, BUF, MTU>,
-        SrsppNodeDriver<'_, L, P, E, S, Re, R, WIN, BUF, MTU, MAX_STREAMS>,
-    ) {
-        (
+        SrsppTxHandle<'_, 'pool, E, S, Re, P, WIN, MTU>,
+        SrsppNodeDriver<'_, 'pool, L, Rto, E, S, Re, R, P, WIN, MTU, MAX_STREAMS>,
+    ), P::Error> {
+        let layout = Layout::from_size_align(mtu, 1).expect("non-zero MTU");
+        Ok((
             SrsppRxHandle {
                 receiver: &self.receiver,
             },
@@ -110,47 +128,51 @@ impl<
                     &self.sender,
                     &self.dtn,
                     self.origin,
-                ),
+                    pool,
+                    mtu,
+                )?,
                 receiver: SrsppReceiverDriver::new(&self.receiver),
-                recv_buffer: [0u8; MTU],
+                recv_buffer: pool.alloc(layout)?,
             },
-        )
+        ))
     }
 }
 
 /// I/O driver for a combined SRSPP sender/receiver node.
 pub struct SrsppNodeDriver<
     'a,
+    'pool,
     L,
-    P: RtoPolicy,
+    Rto: RtoPolicy,
     E,
     S: MessageStore,
     Re: Reachable,
     R: ReceiverBackend,
+    P: BufferPool + 'pool,
     const WIN: usize,
-    const BUF: usize,
     const MTU: usize,
     const MAX_STREAMS: usize,
 > {
     link: L,
-    sender: SrsppSenderDriver<'a, P, E, S, Re, WIN, BUF, MTU>,
+    sender: SrsppSenderDriver<'a, 'pool, Rto, E, S, Re, P, WIN, MTU>,
     receiver: SrsppReceiverDriver<'a, E, R, MAX_STREAMS>,
-    recv_buffer: [u8; MTU],
+    recv_buffer: P::Buf<'pool>,
 }
 
 impl<
     'a,
+    'pool,
     L: NetworkWrite<Error = E> + NetworkRead<Error = E>,
-    P: RtoPolicy,
+    Rto: RtoPolicy,
     E: Clone,
     S: MessageStore,
     Re: Reachable,
     R: ReceiverBackend,
+    P: BufferPool + 'pool,
     const WIN: usize,
-    const BUF: usize,
     const MTU: usize,
     const MAX_STREAMS: usize,
-> SrsppNodeDriver<'a, L, P, E, S, Re, R, WIN, BUF, MTU, MAX_STREAMS>
+> SrsppNodeDriver<'a, 'pool, L, Rto, E, S, Re, R, P, WIN, MTU, MAX_STREAMS>
 {
     /// Runs the combined send/receive I/O loop.
     pub async fn run(&mut self) -> Result<(), TransportError<E>> {
@@ -165,7 +187,7 @@ impl<
             let timeout = self.next_timeout();
 
             let event = {
-                let read_fut = self.link.read(&mut self.recv_buffer).fuse();
+                let read_fut = self.link.read(&mut self.recv_buffer[..]).fuse();
                 let sleep_fut = sleep(timeout).fuse();
                 pin_utils::pin_mut!(read_fut, sleep_fut);
                 futures::select_biased! {
