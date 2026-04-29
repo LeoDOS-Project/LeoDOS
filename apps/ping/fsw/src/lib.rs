@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 extern crate alloc;
 
@@ -68,6 +69,7 @@ pub struct PongPayload {
     pub sent_ms: U64,
 }
 
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn PING_AppMain() {
     system::wait_for_startup_sync(Duration::from_millis(10_000));

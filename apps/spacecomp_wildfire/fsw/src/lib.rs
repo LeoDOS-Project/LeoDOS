@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 use leodos_libcfs::cell::TaskLocalCell;
 use leodos_libcfs::cfe::es::system;
@@ -198,6 +199,7 @@ impl SpaceComp for WildfireApp {
 
 // ── Entry point ─────────────────────────────────────────────
 
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn SC_WILDFIRE_AppMain() {
     SpaceCompNode::builder()

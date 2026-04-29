@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 use core::cell::Cell;
 use core::time::Duration;
@@ -301,6 +302,7 @@ async fn scan_and_downlink(
     Ok(())
 }
 
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn WILDFIRE_AppMain() {
     Runtime::new()

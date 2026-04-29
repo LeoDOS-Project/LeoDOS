@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 use futures::FutureExt as _;
 use leodos_libcfs::cfe::duration::Duration;
@@ -113,6 +114,7 @@ fn isl_link(
     udp_link(send, recv)
 }
 
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn GOSSIP_AppMain() {
     Runtime::new().run(async {

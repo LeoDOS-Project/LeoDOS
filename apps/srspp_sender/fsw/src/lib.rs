@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 use heapless::Vec as HVec;
 use leodos_libcfs::cfe::duration::Duration;
@@ -45,6 +46,7 @@ fn format_u32(mut n: u32, buf: &mut [u8; 10]) -> &[u8] {
     &buf[i..]
 }
 
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn SRSPP_SENDER_AppMain() {
     Runtime::new().run(async {

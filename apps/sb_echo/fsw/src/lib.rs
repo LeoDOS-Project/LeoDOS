@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 use core::time::Duration;
 use futures::FutureExt as _;
@@ -19,6 +20,7 @@ mod bindings {
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
 
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn SB_ECHO_AppMain() {
     system::wait_for_startup_sync(Duration::from_millis(10_000));

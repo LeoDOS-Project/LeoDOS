@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 use leodos_libcfs::log;
 use leodos_libcfs::os::net::SocketAddr;
@@ -16,6 +17,7 @@ mod bindings {
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
 
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn SAMPLE_RUST_AppMain() {
     Runtime::new().run(async {

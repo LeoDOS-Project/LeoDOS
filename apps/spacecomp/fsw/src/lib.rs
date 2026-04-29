@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
@@ -79,6 +80,7 @@ const RTO_MS: u32 = 1000;
 pub const TORUS: Torus = Torus::new(NUM_ORBITS, NUM_SATS);
 pub const SHELL: Shell = Shell::new(TORUS, ALTITUDE_M, INCLINATION_DEG);
 
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn SPACECOMP_AppMain() {
     Runtime::new().run(async {

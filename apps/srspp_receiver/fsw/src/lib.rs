@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::error::Error;
@@ -25,6 +26,7 @@ const LOCAL_PORT: u16 = 5002;
 const REMOTE_IP: &str = "127.0.0.1";
 const REMOTE_PORT: u16 = 5001;
 
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn SRSPP_RECEIVER_AppMain() {
     Runtime::new().run(async {

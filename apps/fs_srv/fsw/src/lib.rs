@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 use leodos_libcfs::app::App;
 use leodos_libcfs::cfe::sb::msg::MsgId;
@@ -312,6 +313,7 @@ fn handle_reload(
 
 // ── App entry point ─────────────────────────────────────────
 
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn FS_SRV_AppMain() {
     Runtime::new().run(async {
