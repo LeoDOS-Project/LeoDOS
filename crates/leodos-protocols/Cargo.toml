@@ -30,8 +30,3 @@ nos3 = ["cfs", "leodos-libcfs/nos3"]
 [dev-dependencies]
 rand = "0.9.2"
 futures = { version = "0.3.31", features = ["executor"] }
-
-[profile.release]
-panic = "abort"    # Abort on panic
-lto = true         # Link-Time Optimization
-codegen-units = 1  # Better optimizations

@@ -15,13 +15,5 @@ zerocopy = { version = "0.8", features = ["derive"] }
 futures = { version = "0.3.31", default-features = false, features = ["async-await"] }
 pin-utils = "0.1.0"
 
-[profile.release]
-lto = true
-panic = "abort"
-opt-level = "z"
-
-[profile.dev]
-panic = "abort"
-
 [build-dependencies]
 bindgen = "0.72.1"

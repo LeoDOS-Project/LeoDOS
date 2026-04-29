@@ -1,0 +1,40 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/leodos-analysis",
+    "crates/leodos-lib42",
+    "crates/leodos-libcfs",
+    "crates/leodos-protocols",
+    "crates/leodos-protocols/examples/srspp_demo",
+    "crates/leodos-spacecomp",
+    "crates/leodos-utils",
+    "tools/leodos-cli",
+    "tools/leodos-executor",
+    "tools/leodos-ground",
+    "apps/ci_lab/fsw",
+    "apps/colonies_executor/fsw",
+    "apps/fs_srv/fsw",
+    "apps/gossip/fsw",
+    "apps/nos3_demo/fsw",
+    "apps/ping/fsw",
+    "apps/router/fsw",
+    "apps/sample_rust_app/fsw",
+    "apps/sb_echo/fsw",
+    "apps/sch_lab/fsw",
+    "apps/spacecomp/fsw",
+    "apps/spacecomp_wildfire/fsw",
+    "apps/spacecomp_wordcount/fsw",
+    "apps/srspp_receiver/fsw",
+    "apps/srspp_sender/fsw",
+    "apps/to_lab/fsw",
+    "apps/wildfire/fsw",
+]
+
+[profile.release]
+lto = true
+panic = "abort"
+opt-level = "z"
+codegen-units = 1
+
+[profile.dev]
+panic = "abort"

@@ -17,10 +17,3 @@ thiserror = { version = "2.0.17", default-features = false }
 [build-dependencies]
 bindgen = "0.72.1"
 
-[profile.release]
-lto = true
-panic = 'abort'
-opt-level = "z"
-
-[profile.dev]
-panic = 'abort'

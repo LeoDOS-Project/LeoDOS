@@ -11,13 +11,5 @@ crate-type = ["cdylib"]
 leodos-protocols = { path = "../../../crates/leodos-protocols", features = ["cfs"] }
 leodos-libcfs = { path = "../../../crates/leodos-libcfs" }
 
-[profile.release]
-lto = true
-panic = "abort"
-opt-level = "z"
-
-[profile.dev]
-panic = "abort"
-
 [build-dependencies]
 bindgen = "0.72.1"

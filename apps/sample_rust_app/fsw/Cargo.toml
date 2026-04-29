@@ -13,13 +13,5 @@ leodos-libcfs = { path = "../../../crates/leodos-libcfs" }
 zerocopy = { version = "0.8.27", features = ["derive"], default-features = false }
 heapless = "0.9.1"
 
-[profile.release]
-lto = true
-panic = 'abort'
-opt-level = "z"
-
-[profile.dev]
-panic = 'abort'
-
 [build-dependencies]
 bindgen = "0.72.1"

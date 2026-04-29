@@ -1,15 +1,17 @@
 [package]
-name = "nos3_demo"
+name = "sb-echo"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "nos3_demo"
+name = "sb_echo"
 crate-type = ["cdylib"]
 
 [dependencies]
 leodos-libcfs = { path = "../../../crates/leodos-libcfs", features = ["nos3"] }
+futures = { version = "0.3", default-features = false }
 heapless = "0.9"
+pin-utils = "0.1"
 
 [build-dependencies]
-bindgen = "0.72.1"
+bindgen = "0.71"

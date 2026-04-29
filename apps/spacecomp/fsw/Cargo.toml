@@ -15,13 +15,5 @@ heapless = "0.9"
 thiserror = { version = "2.0.17", default-features = false }
 zerocopy = { version = "0.8", features = ["derive"] }
 
-[profile.release]
-lto = true
-panic = "abort"
-opt-level = "z"
-
-[profile.dev]
-panic = "abort"
-
 [build-dependencies]
 bindgen = "0.72.1"
