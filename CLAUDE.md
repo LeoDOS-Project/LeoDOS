@@ -92,6 +92,37 @@ already exist.
   the crate's build.rs, or a `[lints.rust] unexpected_cfgs`
   entry in Cargo.toml.
 
+- [ ] `BufferPool` trait + pool-backed SRSPP and Router.
+  Define a runtime-neutral `BufferPool` trait in
+  leodos-protocols:
+  ```
+  trait BufferPool {
+      type Buf: DerefMut<Target=[u8]>;
+      type Error;
+      fn get(&self, layout: Layout) -> Result<Self::Buf, Self::Error>;
+  }
+  ```
+  Parameterize `SrsppNode<'pool, P: BufferPool, ...>` and
+  `Router<'pool, P, ...>` so their buffers come from a
+  shared pool instead of const-generic inline arrays.
+  Backends:
+    * `leodos-libcfs`: impl over cFE `MemPool` for flight-
+      grade deterministic alloc.
+    * `leodos-protocols` tokio API: impl over `Box<[u8]>`
+      or a static-slab helper for tests.
+  Pool itself uses interior mutability (mutex or atomic
+  free list) so links/streams can share `&pool` without
+  borrow conflicts. Pool allocates at ingress only;
+  forwarding paths just move `Buf` handles around.
+  Router/SRSPP may want `RefCell<LinkState>` per link for
+  the "multiple concurrently-mutable sub-pieces" pattern —
+  independent of the pool decision. Explicit `Result`
+  from `get()` means OOM is a handleable error at every
+  call site (reject stream, drop packet, etc.), not a
+  process-level panic as with `GlobalAlloc`. Enables
+  shared buffer budget across all neighbors/streams
+  rather than worst-case × N static allocation.
+
 - [ ] Swap `CfsAllocator` backend from libc malloc to a
   cFE `MemPool`. The allocator API already in place —
   only the internal implementation changes. Flight-grade
@@ -101,16 +132,9 @@ already exist.
   `spin::Once<MemPool>` init, alignment via prefix-word
   pointer stash so `dealloc` can recover the pool block.
 
-- [ ] Heap-allocate router's large buffers too (currently
-  only ping uses `Box<SrsppNode<...>>`). router.rs has
-  inline MTU+SB_HEADER_SIZE buffers and a Router with
-  its own sized arrays. Move those onto the heap so the
-  router task stack can shrink.
-
-- [ ] RingBuffer front-drop policy — add a `front_drop: bool`
-  field so the router can evict the oldest packet instead
-  of dropping incoming. Useful for telemetry freshness on
-  congested links. SRSPP retransmits either way.
+- [x] RingBuffer front-drop policy — `with_front_drop()`
+  constructor evicts the oldest packet instead of rejecting
+  incoming pushes. Default behavior (tail-drop) unchanged.
 - [ ] SB send ceremony — `SendBuffer::new` → `.view()` →
   `.init()` → fill → `.send()` is 5 steps. Add a typed
   publish helper, e.g. `pipe.publish(msg_id, &payload)?`.
