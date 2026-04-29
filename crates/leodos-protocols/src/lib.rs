@@ -6,6 +6,8 @@
 
 /// Application layer protocols and services.
 pub mod application;
+/// Runtime-neutral buffer pool abstraction with fallible allocation.
+pub mod buffer_pool;
 /// Channel coding, CRC, randomization, and physical layer protocols.
 pub mod coding;
 /// Protocol identifier newtypes (SCID, VCID, etc.).
