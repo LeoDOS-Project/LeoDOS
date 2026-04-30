@@ -28,6 +28,10 @@ use heapless::LinearMap;
 use super::TransportError;
 use super::sender::duration_until;
 
+/// Buffer size for outgoing ACK packets. ACK packets are small and
+/// fixed-size, so a 32-byte stack buffer is sufficient.
+pub(super) const ACK_BUFFER_SIZE: usize = 32;
+
 /// Per-stream receiver state for a single remote sender.
 pub(super) struct StreamState<R: ReceiverBackend> {
     /// Receiver backend for this stream.
@@ -54,7 +58,207 @@ pub(super) struct MultiReceiverState<E, R: ReceiverBackend, const MAX_STREAMS: u
     pub(super) error: Option<TransportError<E>>,
 }
 
-// ── Channel and driver ──
+// ── Helper functions (used by both standalone driver and node driver) ──
+
+/// Processes a received data packet and dispatches to the correct stream.
+pub(super) async fn process_data<E, R, const MAX_STREAMS: usize>(
+    state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    ack_buffer: &mut [u8],
+    packet: &[u8],
+    link: &mut impl NetworkWrite<Error = E>,
+) -> Result<(), TransportError<E>>
+where
+    E: Clone,
+    R: ReceiverBackend,
+{
+    if let Ok(SrsppType::Data) = SrsppPacket::parse(packet).and_then(|p| p.srspp_type()) {
+        if let Ok(data) = SrsppDataPacket::parse(packet) {
+            let source_address = data.srspp_header.source_address();
+            let seq = data.primary.sequence_count();
+            let flags = data.primary.sequence_flag();
+
+            let result =
+                state.with_mut(|s| -> Result<HandleResult, TransportError<E>> {
+                    if !s.streams.contains_key(&source_address) {
+                        let _ = s.streams.insert(
+                            source_address,
+                            StreamState {
+                                machine: R::new(),
+                                ack_state: AckState::new(&s.config, source_address),
+                                ack_deadline: None,
+                                progress_deadline: None,
+                            },
+                        );
+                    }
+                    if let Some(stream) = s.streams.get_mut(&source_address) {
+                        let outcome = stream.machine.handle_data(seq, flags, &data.payload)?;
+                        Ok(stream.ack_state.on_data(
+                            outcome,
+                            stream.machine.expected_seq(),
+                            stream.machine.recv_bitmap(),
+                        ))
+                    } else {
+                        Ok(HandleResult::default())
+                    }
+                })?;
+
+            drive_actions(state, ack_buffer, source_address, result, link).await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Processes expired ACK and progress timers across all streams.
+pub(super) async fn handle_timeouts<E, R, const MAX_STREAMS: usize>(
+    state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    ack_buffer: &mut [u8],
+    link: &mut impl NetworkWrite<Error = E>,
+) -> Result<(), TransportError<E>>
+where
+    E: Clone,
+    R: ReceiverBackend,
+{
+    let now = SysTime::now();
+
+    let ack_expired = state.with(|s| {
+        s.streams
+            .iter()
+            .filter_map(|(source, stream)| {
+                stream.ack_deadline.filter(|&d| now >= d).map(|_| *source)
+            })
+            .collect::<heapless::Vec<_, MAX_STREAMS>>()
+    });
+
+    for source in ack_expired {
+        let result = state.with_mut(|s| {
+            if let Some(stream) = s.streams.get_mut(&source) {
+                stream.ack_deadline = None;
+                stream
+                    .ack_state
+                    .on_ack_timeout(stream.machine.expected_seq(), stream.machine.recv_bitmap())
+            } else {
+                HandleResult::default()
+            }
+        });
+        drive_actions(state, ack_buffer, source, result, link).await?;
+    }
+
+    let progress_expired = state.with(|s| {
+        s.streams
+            .iter()
+            .filter_map(|(source, stream)| {
+                stream
+                    .progress_deadline
+                    .filter(|&d| now >= d)
+                    .map(|_| *source)
+            })
+            .collect::<heapless::Vec<_, MAX_STREAMS>>()
+    });
+
+    for source in progress_expired {
+        let result = state
+            .with_mut(|s| -> Result<HandleResult, TransportError<E>> {
+                if let Some(stream) = s.streams.get_mut(&source) {
+                    stream.progress_deadline = None;
+                    let outcome = stream.machine.skip_gap()?;
+                    Ok(stream.ack_state.on_gap_skip(outcome))
+                } else {
+                    Ok(HandleResult::default())
+                }
+            })?;
+        drive_actions(state, ack_buffer, source, result, link).await?;
+    }
+
+    Ok(())
+}
+
+/// Returns the earliest receiver deadline (ACK or progress).
+pub(super) fn next_deadline<E, R, const MAX_STREAMS: usize>(
+    state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+) -> Option<SysTime>
+where
+    R: ReceiverBackend,
+{
+    state.with(|s| {
+        s.streams
+            .iter()
+            .map(|(_, s)| s)
+            .flat_map(|s| [s.ack_deadline, s.progress_deadline])
+            .flatten()
+            .min()
+    })
+}
+
+/// Sends ACK and updates timers based on a state machine result.
+async fn drive_actions<E, R, const MAX_STREAMS: usize>(
+    state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    ack_buffer: &mut [u8],
+    source: Address,
+    result: HandleResult,
+    link: &mut impl NetworkWrite<Error = E>,
+) -> Result<(), TransportError<E>>
+where
+    E: Clone,
+    R: ReceiverBackend,
+{
+    if let Some(AckInfo {
+        destination,
+        cumulative_ack,
+        selective_bitmap,
+    }) = result.ack
+    {
+        let (local_address, apid, function_code) = state.with(|s| {
+            (
+                s.config.local_address,
+                s.config.apid,
+                s.config.function_code,
+            )
+        });
+        let ack = SrsppAckPacket::builder()
+            .buffer(ack_buffer)
+            .source_address(local_address)
+            .target(destination)
+            .apid(apid)
+            .function_code(function_code)
+            .cumulative_ack(cumulative_ack)
+            .selective_bitmap(selective_bitmap)
+            .sequence_count(SequenceCount::from(0))
+            .build()?;
+        link.write(zerocopy::IntoBytes::as_bytes(ack))
+            .await
+            .map_err(TransportError::Network)?;
+    }
+
+    let ack_delay = state.with(|s| s.ack_delay);
+    state.with_mut(|s| {
+        if let Some(action) = result.ack_timer {
+            if let Some(entry) = s.streams.get_mut(&source) {
+                entry.ack_deadline = match action {
+                    TimerAction::Start { .. } => {
+                        Some(SysTime::now() + SysTime::from(ack_delay))
+                    }
+                    TimerAction::Stop => None,
+                };
+            }
+        }
+        if let Some(action) = result.progress_timer {
+            if let Some(entry) = s.streams.get_mut(&source) {
+                entry.progress_deadline = match action {
+                    TimerAction::Start { ticks } => {
+                        let delay = Duration::from_millis(ticks);
+                        Some(SysTime::now() + SysTime::from(delay))
+                    }
+                    TimerAction::Stop => None,
+                };
+            }
+        }
+    });
+
+    Ok(())
+}
+
+// ── Channel and standalone driver ──
 
 /// Channel that owns the receiver state. Split into handle + driver.
 pub struct SrsppReceiver<
@@ -107,213 +311,28 @@ impl<E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize> SrsppReceiver<E, R,
             SrsppRxHandle {
                 receiver: &self.state,
             },
-            SrsppReceiverDriver::new(&self.state),
+            SrsppReceiverDriver {
+                state: &self.state,
+                ack_buffer: [0u8; ACK_BUFFER_SIZE],
+            },
         )
     }
 }
 
-/// Driver that handles I/O. Runs as a concurrent task.
+/// Standalone receiver driver. Owns its own read loop.
+///
+/// In combined-node mode, [`SrsppNodeDriver`](super::node::SrsppNodeDriver)
+/// drives I/O directly via the free functions in this module — it does
+/// not embed this type.
 pub struct SrsppReceiverDriver<'a, E, R: ReceiverBackend, const MAX_STREAMS: usize> {
     pub(super) state: &'a SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
-    ack_buffer: [u8; 32],
-}
-
-impl<'a, E, R: ReceiverBackend, const MAX_STREAMS: usize>
-    SrsppReceiverDriver<'a, E, R, MAX_STREAMS>
-{
-    pub(super) fn new(state: &'a SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>) -> Self {
-        Self {
-            state,
-            ack_buffer: [0u8; 32],
-        }
-    }
+    ack_buffer: [u8; ACK_BUFFER_SIZE],
 }
 
 impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
     SrsppReceiverDriver<'a, E, R, MAX_STREAMS>
 {
-    /// Processes a received data packet and dispatches to the correct stream.
-    pub(super) async fn process_data(
-        &mut self,
-        packet: &[u8],
-        link: &mut impl NetworkWrite<Error = E>,
-    ) -> Result<(), TransportError<E>> {
-        if let Ok(SrsppType::Data) = SrsppPacket::parse(packet).and_then(|p| p.srspp_type()) {
-            if let Ok(data) = SrsppDataPacket::parse(packet) {
-                let source_address = data.srspp_header.source_address();
-                let seq = data.primary.sequence_count();
-                let flags = data.primary.sequence_flag();
-
-                let result =
-                    self.state
-                        .with_mut(|s| -> Result<HandleResult, TransportError<E>> {
-                            if !s.streams.contains_key(&source_address) {
-                                let _ = s.streams.insert(
-                                    source_address,
-                                    StreamState {
-                                        machine: R::new(),
-                                        ack_state: AckState::new(&s.config, source_address),
-                                        ack_deadline: None,
-                                        progress_deadline: None,
-                                    },
-                                );
-                            }
-                            if let Some(stream) = s.streams.get_mut(&source_address) {
-                                let outcome =
-                                    stream.machine.handle_data(seq, flags, &data.payload)?;
-                                Ok(stream.ack_state.on_data(
-                                    outcome,
-                                    stream.machine.expected_seq(),
-                                    stream.machine.recv_bitmap(),
-                                ))
-                            } else {
-                                Ok(HandleResult::default())
-                            }
-                        })?;
-
-                self.drive_actions(source_address, result, link).await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Processes expired ACK and progress timers across all streams.
-    pub(super) async fn handle_timeouts(
-        &mut self,
-        link: &mut impl NetworkWrite<Error = E>,
-    ) -> Result<(), TransportError<E>> {
-        let now = SysTime::now();
-
-        let ack_expired = self.state.with(|s| {
-            s.streams
-                .iter()
-                .filter_map(|(source, stream)| {
-                    stream.ack_deadline.filter(|&d| now >= d).map(|_| *source)
-                })
-                .collect::<heapless::Vec<_, MAX_STREAMS>>()
-        });
-
-        for source in ack_expired {
-            let result = self.state.with_mut(|s| {
-                if let Some(stream) = s.streams.get_mut(&source) {
-                    stream.ack_deadline = None;
-                    stream
-                        .ack_state
-                        .on_ack_timeout(stream.machine.expected_seq(), stream.machine.recv_bitmap())
-                } else {
-                    HandleResult::default()
-                }
-            });
-            self.drive_actions(source, result, link).await?;
-        }
-
-        let progress_expired = self.state.with(|s| {
-            s.streams
-                .iter()
-                .filter_map(|(source, stream)| {
-                    stream
-                        .progress_deadline
-                        .filter(|&d| now >= d)
-                        .map(|_| *source)
-                })
-                .collect::<heapless::Vec<_, MAX_STREAMS>>()
-        });
-
-        for source in progress_expired {
-            let result = self
-                .state
-                .with_mut(|s| -> Result<HandleResult, TransportError<E>> {
-                    if let Some(stream) = s.streams.get_mut(&source) {
-                        stream.progress_deadline = None;
-                        let outcome = stream.machine.skip_gap()?;
-                        Ok(stream.ack_state.on_gap_skip(outcome))
-                    } else {
-                        Ok(HandleResult::default())
-                    }
-                })?;
-            self.drive_actions(source, result, link).await?;
-        }
-
-        Ok(())
-    }
-
-    /// Returns the earliest receiver deadline (ACK or progress).
-    pub(super) fn next_deadline(&self) -> Option<SysTime> {
-        self.state.with(|s| {
-            s.streams
-                .iter()
-                .map(|(_, s)| s)
-                .flat_map(|s| [s.ack_deadline, s.progress_deadline])
-                .flatten()
-                .min()
-        })
-    }
-
-    /// Sends ACK and updates timers based on a state machine result.
-    async fn drive_actions(
-        &mut self,
-        source: Address,
-        result: HandleResult,
-        link: &mut impl NetworkWrite<Error = E>,
-    ) -> Result<(), TransportError<E>> {
-        if let Some(AckInfo {
-            destination,
-            cumulative_ack,
-            selective_bitmap,
-        }) = result.ack
-        {
-            let (local_address, apid, function_code) = self.state.with(|s| {
-                (
-                    s.config.local_address,
-                    s.config.apid,
-                    s.config.function_code,
-                )
-            });
-            let ack = SrsppAckPacket::builder()
-                .buffer(&mut self.ack_buffer)
-                .source_address(local_address)
-                .target(destination)
-                .apid(apid)
-                .function_code(function_code)
-                .cumulative_ack(cumulative_ack)
-                .selective_bitmap(selective_bitmap)
-                .sequence_count(SequenceCount::from(0))
-                .build()?;
-            link.write(zerocopy::IntoBytes::as_bytes(ack))
-                .await
-                .map_err(TransportError::Network)?;
-        }
-
-        let ack_delay = self.state.with(|s| s.ack_delay);
-        self.state.with_mut(|s| {
-            if let Some(action) = result.ack_timer {
-                if let Some(entry) = s.streams.get_mut(&source) {
-                    entry.ack_deadline = match action {
-                        TimerAction::Start { .. } => {
-                            Some(SysTime::now() + SysTime::from(ack_delay))
-                        }
-                        TimerAction::Stop => None,
-                    };
-                }
-            }
-            if let Some(action) = result.progress_timer {
-                if let Some(entry) = s.streams.get_mut(&source) {
-                    entry.progress_deadline = match action {
-                        TimerAction::Start { ticks } => {
-                            let delay = Duration::from_millis(ticks);
-                            Some(SysTime::now() + SysTime::from(delay))
-                        }
-                        TimerAction::Stop => None,
-                    };
-                }
-            }
-        });
-
-        Ok(())
-    }
-
-    /// Run the driver loop.
+    /// Run the standalone driver loop.
     pub async fn run<const MTU: usize>(
         &mut self,
         link: &mut (impl NetworkWrite<Error = E> + NetworkRead<Error = E>),
@@ -324,7 +343,7 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
                 return Ok(());
             }
 
-            let timeout = duration_until(self.next_deadline());
+            let timeout = duration_until(next_deadline(self.state));
 
             let event = {
                 let read_fut = link.read(&mut recv_buffer).fuse();
@@ -338,7 +357,14 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
 
             match event {
                 Some(Ok(len)) => {
-                    if let Err(e) = self.process_data(&recv_buffer[..len], link).await {
+                    if let Err(e) = process_data(
+                        self.state,
+                        &mut self.ack_buffer,
+                        &recv_buffer[..len],
+                        link,
+                    )
+                    .await
+                    {
                         self.state.with_mut(|s| s.error = Some(e.clone()));
                         return Err(e);
                     }
@@ -349,7 +375,9 @@ impl<'a, E: Clone, R: ReceiverBackend, const MAX_STREAMS: usize>
                     return Err(err);
                 }
                 None => {
-                    if let Err(e) = self.handle_timeouts(link).await {
+                    if let Err(e) =
+                        handle_timeouts(self.state, &mut self.ack_buffer, link).await
+                    {
                         self.state.with_mut(|s| s.error = Some(e.clone()));
                         return Err(e);
                     }

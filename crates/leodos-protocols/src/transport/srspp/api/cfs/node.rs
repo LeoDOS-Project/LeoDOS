@@ -25,9 +25,12 @@ use crate::transport::srspp::rto::RtoPolicy;
 use crate::utils::cell::SyncRefCell;
 
 use super::TimerSet;
+use super::receiver::ACK_BUFFER_SIZE;
 use super::receiver::MultiReceiverState;
-use super::receiver::SrsppReceiverDriver;
 use super::receiver::SrsppRxHandle;
+use super::receiver::handle_timeouts as receiver_handle_timeouts;
+use super::receiver::next_deadline as receiver_next_deadline;
+use super::receiver::process_data;
 use super::sender::DtnContext;
 use super::sender::SenderState;
 use super::sender::SrsppTxHandle;
@@ -126,12 +129,13 @@ impl<
             SrsppNodeDriver {
                 link,
                 sender: &self.sender,
-                receiver: SrsppReceiverDriver::new(&self.receiver),
+                receiver: &self.receiver,
                 dtn: &self.dtn,
                 origin: self.origin,
                 rto_policy,
                 tx_buffer: pool.alloc_bytes(mtu)?,
                 recv_buffer: pool.alloc_bytes(mtu)?,
+                ack_buffer: [0u8; ACK_BUFFER_SIZE],
             },
         ))
     }
@@ -160,12 +164,13 @@ pub struct SrsppNodeDriver<
 > {
     link: L,
     sender: &'a SyncRefCell<SenderState<'pool, E, P, WIN, MTU>>,
-    receiver: SrsppReceiverDriver<'a, E, R, MAX_STREAMS>,
+    receiver: &'a SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
     dtn: &'a SyncRefCell<DtnContext<S, Re>>,
     origin: Address,
     rto_policy: Rto,
     tx_buffer: P::Buf<'pool>,
     recv_buffer: P::Buf<'pool>,
+    ack_buffer: [u8; ACK_BUFFER_SIZE],
 }
 
 impl<
@@ -244,7 +249,13 @@ impl<
                         self.set_both_errors(e.clone());
                         return Err(e);
                     }
-                    if let Err(e) = self.receiver.handle_timeouts(&mut self.link).await {
+                    if let Err(e) = receiver_handle_timeouts(
+                        self.receiver,
+                        &mut self.ack_buffer,
+                        &mut self.link,
+                    )
+                    .await
+                    {
                         self.set_both_errors(e.clone());
                         return Err(e);
                     }
@@ -259,8 +270,9 @@ impl<
             return Ok(());
         };
         match parsed.srspp_type() {
-            Ok(SrsppType::Data) => self.receiver.process_data(packet, &mut self.link).await,
-            Ok(SrsppType::Eos) => self.receiver.process_data(packet, &mut self.link).await,
+            Ok(SrsppType::Data) | Ok(SrsppType::Eos) => {
+                process_data(self.receiver, &mut self.ack_buffer, packet, &mut self.link).await
+            }
             Ok(SrsppType::Ack) => process_ack(self.sender, packet),
             Err(_) => Ok(()),
         }
@@ -268,7 +280,7 @@ impl<
 
     fn next_timeout(&self) -> Duration {
         let s = sender_next_deadline(self.sender);
-        let r = self.receiver.next_deadline();
+        let r = receiver_next_deadline(self.receiver);
         let deadline = match (s, r) {
             (Some(a), Some(b)) => Some(if a < b { a } else { b }),
             (a, b) => a.or(b),
@@ -278,6 +290,6 @@ impl<
 
     fn set_both_errors(&self, err: TransportError<E>) {
         self.sender.with_mut(|s| s.error = Some(err.clone()));
-        self.receiver.state.with_mut(|s| s.error = Some(err));
+        self.receiver.with_mut(|s| s.error = Some(err));
     }
 }
