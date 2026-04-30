@@ -46,6 +46,20 @@ pub trait BufferPool {
     /// caller decides what to do with that — drop a packet, reject
     /// a new stream, etc.
     fn alloc(&self, layout: Layout) -> Result<Self::Buf<'_>, Self::Error>;
+
+    /// Allocate `size` bytes with no alignment requirement.
+    ///
+    /// Convenience over [`alloc`] for the common case of byte
+    /// buffers (MTU-sized packets, framing scratch, reassembly).
+    /// `Layout::from_size_align` only fails on non-power-of-2
+    /// alignment or `size > isize::MAX`; with `align = 1` and
+    /// realistic buffer sizes neither is reachable, so this hides
+    /// the `LayoutError` that would otherwise plumb through every
+    /// call site.
+    fn alloc_bytes(&self, size: usize) -> Result<Self::Buf<'_>, Self::Error> {
+        let layout = Layout::from_size_align(size, 1).expect("align=1 is a power of 2");
+        self.alloc(layout)
+    }
 }
 
 #[cfg(feature = "std")]

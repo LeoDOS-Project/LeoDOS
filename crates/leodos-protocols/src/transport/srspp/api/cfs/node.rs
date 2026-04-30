@@ -1,4 +1,3 @@
-use core::alloc::Layout;
 
 use futures::FutureExt;
 
@@ -111,7 +110,6 @@ impl<
         SrsppTxHandle<'_, 'pool, E, S, Re, P, WIN, MTU>,
         SrsppNodeDriver<'_, 'pool, L, Rto, E, S, Re, R, P, WIN, MTU, MAX_STREAMS>,
     ), P::Error> {
-        let layout = Layout::from_size_align(mtu, 1).expect("non-zero MTU");
         Ok((
             SrsppRxHandle {
                 receiver: &self.receiver,
@@ -132,7 +130,7 @@ impl<
                     mtu,
                 )?,
                 receiver: SrsppReceiverDriver::new(&self.receiver),
-                recv_buffer: pool.alloc(layout)?,
+                recv_buffer: pool.alloc_bytes(mtu)?,
             },
         ))
     }

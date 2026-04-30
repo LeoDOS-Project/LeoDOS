@@ -1,4 +1,3 @@
-use core::alloc::Layout;
 use core::future::poll_fn;
 use core::task::Poll;
 
@@ -185,13 +184,12 @@ impl<
         pool: &'pool P,
         mtu: usize,
     ) -> Result<Self, P::Error> {
-        let layout = Layout::from_size_align(mtu, 1).expect("non-zero MTU");
         Ok(Self {
             rto_policy,
             sender,
             dtn,
             origin,
-            tx_buffer: pool.alloc(layout)?,
+            tx_buffer: pool.alloc_bytes(mtu)?,
         })
     }
 }

@@ -3,7 +3,6 @@ pub mod algorithm;
 /// ISL routable packet definitions and builders.
 pub mod packet;
 
-use core::alloc::Layout;
 
 use futures::FutureExt as _;
 use futures::future::Either;
@@ -43,12 +42,11 @@ struct Port<'pool, L, P: BufferPool + 'pool, const OUT: usize> {
 
 impl<'pool, L, P: BufferPool + 'pool, const OUT: usize> Port<'pool, L, P, OUT> {
     fn new(link: L, pool: &'pool P, mtu: usize) -> Result<Self, P::Error> {
-        let layout = Layout::from_size_align(mtu, 1).expect("non-zero MTU");
         Ok(Self {
             link,
-            buf: pool.alloc(layout)?,
+            buf: pool.alloc_bytes(mtu)?,
             out: RingBuffer::new(),
-            stage: pool.alloc(layout)?,
+            stage: pool.alloc_bytes(mtu)?,
         })
     }
 }

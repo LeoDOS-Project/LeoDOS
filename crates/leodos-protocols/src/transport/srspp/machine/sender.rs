@@ -3,7 +3,6 @@
 //! Handles segmentation, buffering, and retransmission of messages.
 //! Completely synchronous - no I/O, no async.
 
-use core::alloc::Layout;
 
 use crate::buffer_pool::BufferPool;
 use crate::network::isl::address::{Address, RawAddress};
@@ -252,11 +251,10 @@ impl<'pool, P: BufferPool + 'pool, const WIN: usize, const MTU: usize>
         pool: &'pool P,
         buf_size: usize,
     ) -> Result<Self, P::Error> {
-        let layout = Layout::from_size_align(buf_size, 1).expect("non-zero buf_size");
         Ok(Self {
             config,
             meta: [PacketMeta::default(); WIN],
-            data: pool.alloc(layout)?,
+            data: pool.alloc_bytes(buf_size)?,
             write_pos: 0,
             next_seq: 0,
             send_base: 0,

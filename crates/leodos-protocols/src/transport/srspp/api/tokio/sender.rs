@@ -1,4 +1,3 @@
-use core::alloc::Layout;
 
 use zerocopy::{Immutable, IntoBytes};
 
@@ -73,7 +72,6 @@ impl<
         pool: &'pool P,
         buf_size: usize,
     ) -> Result<Self, P::Error> {
-        let mtu_layout = Layout::from_size_align(MTU, 1).expect("non-zero MTU");
         Ok(Self {
             link,
             rto_policy,
@@ -82,8 +80,8 @@ impl<
             retransmit_timers: HashMap::new(),
             ticks_per_sec,
             start_time: Instant::now(),
-            recv_buffer: pool.alloc(mtu_layout)?,
-            tx_buffer: pool.alloc(mtu_layout)?,
+            recv_buffer: pool.alloc_bytes(MTU)?,
+            tx_buffer: pool.alloc_bytes(MTU)?,
         })
     }
 
