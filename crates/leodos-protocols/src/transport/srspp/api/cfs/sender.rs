@@ -162,6 +162,7 @@ pub struct SrsppSenderDriver<
     dtn: &'a SyncRefCell<DtnContext<S, R>>,
     origin: Address,
     tx_buffer: P::Buf<'pool>,
+    recv_buffer: P::Buf<'pool>,
 }
 
 impl<
@@ -190,6 +191,7 @@ impl<
             dtn,
             origin,
             tx_buffer: pool.alloc_bytes(mtu)?,
+            recv_buffer: pool.alloc_bytes(mtu)?,
         })
     }
 }
@@ -275,7 +277,7 @@ impl<
     }
 
     /// Processes a received ACK packet and updates sender state.
-    pub(super) fn process_ack(&mut self, packet: &[u8]) -> Result<(), TransportError<E>> {
+    pub(super) fn process_ack(&self, packet: &[u8]) -> Result<(), TransportError<E>> {
         if let Ok(SrsppType::Ack) = SrsppPacket::parse(packet).and_then(|p| p.srspp_type()) {
             if let Ok(ack) = SrsppAckPacket::parse(packet) {
                 self.sender.with_mut(|s| {
@@ -397,7 +399,6 @@ impl<
         &mut self,
         link: &mut (impl NetworkWrite<Error = E> + NetworkRead<Error = E>),
     ) -> Result<(), TransportError<E>> {
-        let mut recv_buffer = [0u8; MTU];
         loop {
             let pending = self.dtn.with(|d| d.store.pending_targets() != 0);
             if self.sender.with(|s| s.closed && s.machine.is_idle()) && !pending {
@@ -414,7 +415,7 @@ impl<
             let timeout = duration_until(self.next_deadline());
 
             let event = {
-                let read_fut = link.read(&mut recv_buffer).fuse();
+                let read_fut = link.read(&mut self.recv_buffer[..]).fuse();
                 let sleep_fut = sleep(timeout).fuse();
                 pin_utils::pin_mut!(read_fut, sleep_fut);
                 futures::select_biased! {
@@ -425,7 +426,7 @@ impl<
 
             match event {
                 Some(Ok(len)) => {
-                    if let Err(e) = self.process_ack(&recv_buffer[..len]) {
+                    if let Err(e) = self.process_ack(&self.recv_buffer[..len]) {
                         self.sender.with_mut(|s| s.error = Some(e.clone()));
                         return Err(e);
                     }
