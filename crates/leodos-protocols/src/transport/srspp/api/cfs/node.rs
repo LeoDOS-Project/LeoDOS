@@ -30,9 +30,13 @@ use super::receiver::SrsppReceiverDriver;
 use super::receiver::SrsppRxHandle;
 use super::sender::DtnContext;
 use super::sender::SenderState;
-use super::sender::SrsppSenderDriver;
 use super::sender::SrsppTxHandle;
+use super::sender::drain_stored;
 use super::sender::duration_until;
+use super::sender::handle_timeouts as sender_handle_timeouts;
+use super::sender::next_deadline as sender_next_deadline;
+use super::sender::process_ack;
+use super::sender::transmit;
 
 /// Combined SRSPP sender and receiver over a single link.
 pub struct SrsppNode<
@@ -121,15 +125,12 @@ impl<
             },
             SrsppNodeDriver {
                 link,
-                sender: SrsppSenderDriver::new(
-                    rto_policy,
-                    &self.sender,
-                    &self.dtn,
-                    self.origin,
-                    pool,
-                    mtu,
-                )?,
+                sender: &self.sender,
                 receiver: SrsppReceiverDriver::new(&self.receiver),
+                dtn: &self.dtn,
+                origin: self.origin,
+                rto_policy,
+                tx_buffer: pool.alloc_bytes(mtu)?,
                 recv_buffer: pool.alloc_bytes(mtu)?,
             },
         ))
@@ -137,6 +138,12 @@ impl<
 }
 
 /// I/O driver for a combined SRSPP sender/receiver node.
+///
+/// Holds the sender state directly (not as an embedded
+/// `SrsppSenderDriver`) and dispatches incoming packets to either the
+/// sender's free-function helpers or the receiver driver. This avoids
+/// the second `recv_buffer` an embedded sender driver would allocate
+/// for its own (unused) standalone read loop.
 pub struct SrsppNodeDriver<
     'a,
     'pool,
@@ -152,8 +159,12 @@ pub struct SrsppNodeDriver<
     const MAX_STREAMS: usize,
 > {
     link: L,
-    sender: SrsppSenderDriver<'a, 'pool, Rto, E, S, Re, P, WIN, MTU>,
+    sender: &'a SyncRefCell<SenderState<'pool, E, P, WIN, MTU>>,
     receiver: SrsppReceiverDriver<'a, E, R, MAX_STREAMS>,
+    dtn: &'a SyncRefCell<DtnContext<S, Re>>,
+    origin: Address,
+    rto_policy: Rto,
+    tx_buffer: P::Buf<'pool>,
     recv_buffer: P::Buf<'pool>,
 }
 
@@ -175,9 +186,24 @@ impl<
     /// Runs the combined send/receive I/O loop.
     pub async fn run(&mut self) -> Result<(), TransportError<E>> {
         loop {
-            self.sender.drain_stored(&mut self.link).await?;
+            drain_stored(
+                self.sender,
+                self.dtn,
+                &mut self.tx_buffer[..],
+                self.origin,
+                &self.rto_policy,
+                &mut self.link,
+            )
+            .await?;
 
-            if let Err(e) = self.sender.transmit(&mut self.link).await {
+            if let Err(e) = transmit(
+                self.sender,
+                &mut self.tx_buffer[..],
+                &self.rto_policy,
+                &mut self.link,
+            )
+            .await
+            {
                 self.set_both_errors(e.clone());
                 return Err(e);
             }
@@ -207,7 +233,14 @@ impl<
                     return Err(err);
                 }
                 None => {
-                    if let Err(e) = self.sender.handle_timeouts(&mut self.link).await {
+                    if let Err(e) = sender_handle_timeouts(
+                        self.sender,
+                        &mut self.tx_buffer[..],
+                        &self.rto_policy,
+                        &mut self.link,
+                    )
+                    .await
+                    {
                         self.set_both_errors(e.clone());
                         return Err(e);
                     }
@@ -228,13 +261,13 @@ impl<
         match parsed.srspp_type() {
             Ok(SrsppType::Data) => self.receiver.process_data(packet, &mut self.link).await,
             Ok(SrsppType::Eos) => self.receiver.process_data(packet, &mut self.link).await,
-            Ok(SrsppType::Ack) => self.sender.process_ack(packet),
+            Ok(SrsppType::Ack) => process_ack(self.sender, packet),
             Err(_) => Ok(()),
         }
     }
 
     fn next_timeout(&self) -> Duration {
-        let s = self.sender.next_deadline();
+        let s = sender_next_deadline(self.sender);
         let r = self.receiver.next_deadline();
         let deadline = match (s, r) {
             (Some(a), Some(b)) => Some(if a < b { a } else { b }),
@@ -244,7 +277,7 @@ impl<
     }
 
     fn set_both_errors(&self, err: TransportError<E>) {
-        self.sender.sender.with_mut(|s| s.error = Some(err.clone()));
+        self.sender.with_mut(|s| s.error = Some(err.clone()));
         self.receiver.state.with_mut(|s| s.error = Some(err));
     }
 }
