@@ -42,6 +42,38 @@ already exist.
 
 ### Future improvements
 
+- [ ] SRSPP driver: `AtomicWaker` so `tx.send` wakes the
+  driver immediately. Today the driver's `select_biased!`
+  on (link.read OR sleep(timeout)) is bounded only by
+  retransmit deadlines or the no-deadline cap (currently
+  100ms in `duration_until`). When the app calls
+  `tx.send` to enqueue a reply with no in-flight timer,
+  the driver naps until the cap fires. The 100ms cap is
+  a polling fallback — proper fix is a notify channel
+  between sender state mutators and the driver future
+  so the cap can drop to "Pending forever". Also covers
+  the symmetric receiver-side mutators if any. Bug
+  manifested in the cFS ping demo as 60s pong latency
+  before the cap fix; tokio path uses explicit
+  `flush()` so wasn't affected.
+
+- [ ] Heartbeat-based constellation `wait` for ground
+  tooling. Today `leodos-ground ping` rides out the
+  initial multi-sat startup latency via SRSPP retransmits
+  (currently `max_retransmits = 60`). On real RF links
+  this is wasteful. Add a periodic heartbeat from each
+  router to `Address::Ground { station: 0 }` (small
+  `magic + scid + seq` payload, raw UDP — distinguishable
+  from SRSPP by the magic prefix), and a
+  `leodos-ground wait --num-sats N --timeout T`
+  subcommand that listens on the ground UDP port and
+  blocks until N unique SCIDs have heartbeated. Once
+  ready, the user can drop `max_retransmits` back to
+  3–5 for the actual `ping` call. Also enables a
+  `leodos-ground status` view of who's currently
+  reachable. Defer until we move past loopback — for
+  9-sat docker the retransmit approach is fine.
+
 - [x] Reactor: write-readiness support — `register_write`
   registers an fd into a parallel `write_fds`; `block`
   passes both read and write sets to `OS_SelectMultiple`;
