@@ -42,7 +42,7 @@ const SRSPP_WIN: usize = 8;
 const SRSPP_MTU: usize = 512;
 const SRSPP_BUF_SIZE: usize = 4096;
 const SRSPP_TICKS_PER_SEC: u32 = 1000;
-const SRSPP_MAX_RETRANSMITS: u8 = 5;
+const SRSPP_MAX_RETRANSMITS: u8 = 60;
 const POOL_OVERHEAD: usize = 1024;
 const POOL_BYTES: usize = SRSPP_BUF_SIZE + 2 * SRSPP_MTU + POOL_OVERHEAD;
 
