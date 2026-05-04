@@ -195,6 +195,84 @@ the same clock. Apps still don't change.
    source.
 10. (Phase 2) Determinism / replay. Log the bridge stream
     + TM stream. Replay scenarios offline.
+11. (Phase 2) Network simulation. See section below.
+
+## Network simulation (Phase 2)
+
+Phase 1 only does on/off LOS gating at the FSW boundary
+(router drops sends on closed links). For RF realism — link
+latency from slant range, jitter, packet loss, bandwidth
+caps — we need to simulate the inter-spacecraft network
+itself.
+
+This is something **NOS3 does not offer** out of the box:
+NOS3 simulates hardware buses and time, but inter-spacecraft
+IP sockets are unmediated. Adding it is a feature beyond
+NOS3 parity, well-aligned with constellation-research
+goals (routing under churn, DTN under intermittent contact,
+SRSPP retransmit behavior on lossy links).
+
+Three intercept points, ordered by invasiveness:
+
+### a) App-layer gate — Phase 1, already planned
+
+Router consults `los_neighbors` and drops sends on closed
+links before they hit UDP. On/off only, no latency model.
+No privileges, no extra processes, deterministic.
+
+### b) Kernel netem driven by walker-delta
+
+Walker-delta computes per-link conditions from orbital
+geometry (slant range → propagation delay, FSPL → loss,
+bandwidth from modem characteristics) and pushes
+`tc qdisc` rules into the container.
+
+```
+walker-delta computes ──► netem-controller in container
+  delay 12ms 2ms              tc qdisc add dev lo
+  loss 0.1%                     parent 1: handle 10:
+  rate 50mbit                   netem delay 12ms 2ms
+                                  loss 0.1% rate 50mbit
+```
+
+A small `netem-controller` sidecar in the container
+receives state from walker-delta and rewrites tc rules per
+link as conditions change.
+
+Covers: latency, jitter, loss, bandwidth caps, duplication,
+reordering. Realistic kernel-level simulation. Zero code
+changes inside cFS or our crates.
+
+Needs: `cap_add: NET_ADMIN` on the docker container. Rule
+updates take ~ms.
+
+### c) User-space link-simulator proxy
+
+A Rust process owning UDP sockets between cFS instances.
+cFS_3's "north" socket writes to the proxy; the proxy
+applies arbitrary policy (delay/jitter/drop, replay-from-
+trace, asymmetric loss, deliberate corruption) and forwards
+to cFS_4's "south" socket.
+
+```
+cFS_3 ──► :8000 [link-sim] ──delay,drop──► :6005 cFS_4
+                  │
+                  ▼ subscribes to walker-delta
+```
+
+Covers: anything netem covers, plus arbitrary policies that
+aren't expressible in tc (Doppler-aware timing, per-modem
+behavior models, weird stress patterns).
+
+Cost: a new Rust process + 2× UDP sockets per link. Router
+config points at proxy ports instead of peer cFS ports.
+
+### Recommended progression
+
+Start with (a) — already in Phase 1. Add (b) when there's a
+research need for latency/jitter/loss realism (likely soon
+for any DTN or congestion-control work). Reach for (c) only
+when walker-delta needs to express something netem can't.
 
 ## What we explicitly skip
 
