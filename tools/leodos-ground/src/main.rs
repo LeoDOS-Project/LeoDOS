@@ -3,6 +3,7 @@ use clap::Subcommand;
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use leodos_protocols::buffer_pool::HeapBufferPool;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::spp::Apid;
 use leodos_protocols::transport::srspp::api::tokio::SrsppReceiver;
@@ -36,6 +37,16 @@ const GROUND_STATION_ID: u8 = 0;
 const GROUND_LOCAL_PORT: u16 = 9000;
 
 const PING_APID: u16 = 0x62;
+
+const SRSPP_WIN: usize = 8;
+const SRSPP_MTU: usize = 512;
+const SRSPP_BUF_SIZE: usize = 4096;
+const SRSPP_TICKS_PER_SEC: u32 = 1000;
+const SRSPP_MAX_RETRANSMITS: u8 = 5;
+const POOL_OVERHEAD: usize = 1024;
+const POOL_BYTES: usize = SRSPP_BUF_SIZE + 2 * SRSPP_MTU + POOL_OVERHEAD;
+
+const RX_REASM_BUF: usize = 8192;
 
 /// Ping request: identifies the message and records the ground send time.
 #[repr(C, packed)]
@@ -131,11 +142,19 @@ async fn ping(
         .apid(apid)
         .function_code(0)
         .rto_ticks(rto_ms)
-        .max_retransmits(5)
+        .max_retransmits(SRSPP_MAX_RETRANSMITS)
         .header_overhead(SrsppDataPacket::HEADER_SIZE)
         .build();
-    let mut sender: SrsppSender<_, _, 8, 4096, 512> =
-        SrsppSender::new(sender_config, sender_link, FixedRto::new(rto_ms), 1000);
+    let pool = HeapBufferPool::new(POOL_BYTES);
+    let mut sender: SrsppSender<_, _, _, SRSPP_WIN, SRSPP_MTU> = SrsppSender::new(
+        sender_config,
+        sender_link,
+        FixedRto::new(rto_ms),
+        SRSPP_TICKS_PER_SEC,
+        &pool,
+        SRSPP_BUF_SIZE,
+    )
+    .map_err(|_| "sender pool alloc failed")?;
 
     let receiver_config = ReceiverConfig::builder()
         .local_address(source)
@@ -144,8 +163,11 @@ async fn ping(
         .immediate_ack(true)
         .ack_delay_ticks(100)
         .build();
-    let mut receiver: SrsppReceiver<_, ReceiverMachine<8, 4096, 8192>, 512> =
-        SrsppReceiver::new(receiver_config, target, receiver_link, 1000);
+    let mut receiver: SrsppReceiver<
+        _,
+        ReceiverMachine<SRSPP_WIN, SRSPP_BUF_SIZE, RX_REASM_BUF>,
+        SRSPP_MTU,
+    > = SrsppReceiver::new(receiver_config, target, receiver_link, SRSPP_TICKS_PER_SEC);
 
     // Build ping payload
     let seq_u32: u32 = 1;
