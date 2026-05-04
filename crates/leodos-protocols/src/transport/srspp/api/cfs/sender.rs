@@ -498,7 +498,7 @@ pub(super) fn duration_until(deadline: Option<SysTime>) -> Duration {
                 Duration::zero()
             }
         })
-        .unwrap_or(Duration::from_secs(60))
+        .unwrap_or(Duration::from_millis(100))
 }
 
 /// Handle for sending data over an SRSPP node.
