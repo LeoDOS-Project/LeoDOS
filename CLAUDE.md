@@ -42,26 +42,18 @@ already exist.
 
 ### Future improvements
 
-- [ ] cmake's per-app install rule doesn't notice when `cargo`
-  rewrites a cdylib; `make install` leaves stale `.so`s in
-  `build/.../exe/cpu1/cf/`. After Rust changes, force-copy from
-  `build/leodos/cargo_target/release/lib<app>.so` over the
-  per-app and `cf/` copies, or add a depend on the cargo
-  workspace build's timestamps. Bit me hard during the bridge
-  bring-up — symptoms looked like an OSAL bind bug.
-
-- [ ] Walker-delta bridge publisher: fill in stubbed sat
-  fields. `vel_eci_m_s` is currently zero (walker-delta's
-  `SatelliteState` doesn't carry velocity — finite-difference
-  two propagator samples or extend `satellite_positions` to
-  return velocity). `nadir_quat` is identity — derive from
-  position+velocity (nadir = -r_hat, velocity sets roll axis).
-  `los_neighbors` packs the first ≤4 neighbors as bits 0..3
-  with no direction tagging — needs a torus N/S/E/W mapping
-  (compare neighbor's plane and sat_index against this sat's
-  to label each direction). `los_ground` is always zero —
-  needs per-sat ground-station visibility from the radius_km
-  horizon check that's already in pass.rs.
+- [ ] Walker-delta bridge publisher: two stubs remain.
+  `nadir_quat` is identity — derive from position+velocity
+  (body z = -r_hat, body x along velocity, body y = z×x;
+  rotation matrix → quaternion). `los_neighbors` packs the
+  first ≤4 neighbors as bits 0..3 with no direction tagging
+  — needs a torus N/S/E/W mapping (compare neighbor's plane
+  and sat_index against this sat's to label each direction).
+  `los_ground` is always zero — needs per-sat ground-station
+  visibility from the radius_km horizon check in pass.rs.
+  Velocity is now finite-differenced from two propagator
+  samples (1 s apart) — accurate enough for routing and
+  attitude derivation, can revisit if precision matters.
 
 - [ ] SRSPP driver: `AtomicWaker` so `tx.send` wakes the
   driver immediately. Today the driver's `select_biased!`

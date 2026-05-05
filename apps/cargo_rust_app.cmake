@@ -60,6 +60,12 @@ function(cargo_rust_app APP_NAME)
 
     add_dependencies(${APP_NAME} cargo_workspace_build)
 
+    # Trigger the cFE app's link step (and therefore the POST_BUILD copy
+    # below) whenever cargo's output changes. Without this the cFE target
+    # appears up-to-date — its only source is placeholder.c which never
+    # changes — and a fresh cdylib in CARGO_TARGET_DIR is silently ignored.
+    set_property(TARGET ${APP_NAME} APPEND PROPERTY LINK_DEPENDS "${OUTPUT_LIB}")
+
     add_custom_command(TARGET ${APP_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy "${OUTPUT_LIB}" $<TARGET_FILE:${APP_NAME}>
         COMMENT "Copying ${CRA_LIB} from shared cargo target dir")
