@@ -1,5 +1,11 @@
+.git
+.git*
 build/
 site/
 docs/
 **/target/
 !cfe/cmake/target/
+.claude/
+.DS_Store
+*.log
+log.txt
