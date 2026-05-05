@@ -128,6 +128,10 @@ install:
 prep $(O)/.prep:
 	mkdir -p "$(O)"
 	(cd "$(O)" && cmake $(PREP_OPTS) "$(CURDIR)/cfe")
+	# tools/elf2cfetbl's install rule reads from tables/staging,
+	# which is only created when an app registers a table object.
+	# Pre-create it so install doesn't fail when no app has tables.
+	mkdir -p "$(O)/tables/staging"
 	echo "$(PREP_OPTS)" > "$(O)/.prep"
 
 clean:
