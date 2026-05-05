@@ -18,16 +18,16 @@
 #![no_std]
 #![deny(unsafe_code)]
 
-use core::ffi::c_char;
 use core::time::Duration;
 use leodos_libcfs::bridge::Hello;
 use leodos_libcfs::bridge::StateFrame;
-use leodos_libcfs::cfe::es::app::RunStatus;
+use leodos_libcfs::cfe::es::app;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
 use leodos_libcfs::log;
+use leodos_libcfs::os::env;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::os::net::SocketDomain;
 use leodos_libcfs::os::net::TcpStream;
@@ -99,38 +99,10 @@ fn convert(scid: u32, frame: &StateFrame) -> BridgeStateTlm {
     }
 }
 
-/// Read `LEODOS_BRIDGE_ADDR` from the process environment via libc.
-/// Returns `None` if unset or invalid UTF-8. The returned tuple is
-/// `(host_str, port)`; the host is borrowed from the env's static
-/// memory, so we copy it into a fixed buffer before parsing.
-#[allow(unsafe_code)]
-fn read_bridge_addr_env(out: &mut [u8; 128]) -> Option<usize> {
-    let key = b"LEODOS_BRIDGE_ADDR\0";
-    let ptr = unsafe { libc::getenv(key.as_ptr() as *const c_char) };
-    if ptr.is_null() {
-        return None;
-    }
-    let mut len = 0;
-    unsafe {
-        while len < out.len() {
-            let b = *ptr.add(len);
-            if b == 0 {
-                break;
-            }
-            out[len] = b as u8;
-            len += 1;
-        }
-    }
-    if len == 0 || len == out.len() {
-        return None;
-    }
-    Some(len)
-}
-
 fn parse_addr(s: &str) -> Option<SocketAddr> {
     let (host, port_str) = s.rsplit_once(':')?;
     let port: u16 = port_str.parse().ok()?;
-    SocketAddr::new_ipv4(host, port).ok()
+    SocketAddr::resolve_ipv4(host, port).ok()
 }
 
 fn read_exact(stream: &mut TcpStream, buf: &mut [u8]) -> bool {
@@ -169,30 +141,21 @@ pub extern "C" fn SIM_CLIENT_AppMain() {
     let topic = bindings::SIM_CLIENT_BRIDGE_STATE_TOPICID as u16;
     let mid = MsgId::local_tlm(topic);
 
-    let mut env_buf = [0u8; 128];
-    let env_len = match read_bridge_addr_env(&mut env_buf) {
-        Some(n) => n,
+    let addr_str: heapless::String<128> = match env::var("LEODOS_BRIDGE_ADDR") {
+        Some(v) => v,
         None => {
             log!("SIM_CLIENT: LEODOS_BRIDGE_ADDR not set, exiting").ok();
             return;
         }
     };
-    let addr_str = match core::str::from_utf8(&env_buf[..env_len]) {
-        Ok(s) => s,
-        Err(_) => {
-            log!("SIM_CLIENT: LEODOS_BRIDGE_ADDR not utf8").ok();
-            return;
-        }
-    };
-    let Some(addr) = parse_addr(addr_str) else {
-        log!("SIM_CLIENT: cannot parse LEODOS_BRIDGE_ADDR").ok();
+    let Some(addr) = parse_addr(&addr_str) else {
+        log!("SIM_CLIENT: cannot resolve LEODOS_BRIDGE_ADDR").ok();
         return;
     };
 
     log!("SIM_CLIENT: scid={} dialing bridge", scid).ok();
 
-    let mut run_status = RunStatus::Run as u32;
-    while run_loop(&mut run_status) {
+    while app::run_loop().is_ok() {
         match TcpStream::connect(addr.clone(), SocketDomain::IPv4) {
             Ok(mut stream) => {
                 let hello = Hello::new(scid);
@@ -200,7 +163,7 @@ pub extern "C" fn SIM_CLIENT_AppMain() {
                     log!("SIM_CLIENT: hello write failed").ok();
                 } else {
                     log!("SIM_CLIENT: scid={} bridge connected", scid).ok();
-                    pump(&mut stream, scid, mid, &mut run_status);
+                    pump(&mut stream, scid, mid);
                 }
             }
             Err(_) => {
@@ -211,9 +174,9 @@ pub extern "C" fn SIM_CLIENT_AppMain() {
     }
 }
 
-fn pump(stream: &mut TcpStream, scid: u32, mid: MsgId, run_status: &mut u32) {
+fn pump(stream: &mut TcpStream, scid: u32, mid: MsgId) {
     let mut buf = [0u8; core::mem::size_of::<StateFrame>()];
-    while run_loop(run_status) {
+    while app::run_loop().is_ok() {
         if !read_exact(stream, &mut buf) {
             log!("SIM_CLIENT: bridge disconnected").ok();
             return;
@@ -229,14 +192,6 @@ fn pump(stream: &mut TcpStream, scid: u32, mid: MsgId, run_status: &mut u32) {
         let tlm = convert(scid, &frame);
         let _ = SendBuffer::publish_typed(mid, &tlm);
     }
-}
-
-#[allow(unsafe_code)]
-fn run_loop(run_status: &mut u32) -> bool {
-    extern "C" {
-        fn CFE_ES_RunLoop(run_status: *mut u32) -> bool;
-    }
-    unsafe { CFE_ES_RunLoop(run_status as *mut u32) }
 }
 
 #[cfg(not(test))]

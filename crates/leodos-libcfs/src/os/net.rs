@@ -33,6 +33,16 @@ pub enum SocketShutdownMode {
 }
 
 impl SocketAddr {
+    /// Resolves `host` to an IPv4 [`SocketAddr`]. Accepts a
+    /// dotted-decimal literal or a hostname (uses `getaddrinfo`).
+    #[cfg(feature = "sim")]
+    pub fn resolve_ipv4(host: &str, port: u16) -> Result<Self> {
+        if let Ok(addr) = Self::new_ipv4(host, port) {
+            return Ok(addr);
+        }
+        resolve_ipv4_hostname(host, port)
+    }
+
     /// Creates a new socket address.
     pub fn new_ipv4(ip_addr: &str, port: u16) -> Result<Self> {
         let mut addr_uninit = MaybeUninit::uninit();
@@ -76,6 +86,72 @@ impl SocketAddr {
         let s = String::from_utf8(vec).map_err(|_| CfsError::InvalidString)?;
         Ok(s)
     }
+}
+
+#[cfg(feature = "sim")]
+fn resolve_ipv4_hostname(host: &str, port: u16) -> Result<SocketAddr> {
+    let mut hbuf = [0u8; 256];
+    if host.is_empty() || host.len() >= hbuf.len() {
+        return Err(CfsError::Osal(OsalError::NameTooLong));
+    }
+    hbuf[..host.len()].copy_from_slice(host.as_bytes());
+    hbuf[host.len()] = 0;
+
+    // SAFETY: zero-initialized addrinfo is a valid hint per POSIX.
+    let mut hints: libc::addrinfo = unsafe { core::mem::zeroed() };
+    hints.ai_family = libc::AF_INET;
+    hints.ai_socktype = libc::SOCK_STREAM;
+
+    let mut res: *mut libc::addrinfo = core::ptr::null_mut();
+    // SAFETY: hbuf is NUL-terminated; res is freed below.
+    let rc = unsafe {
+        libc::getaddrinfo(
+            hbuf.as_ptr() as *const core::ffi::c_char,
+            core::ptr::null(),
+            &hints,
+            &mut res,
+        )
+    };
+    if rc != 0 || res.is_null() {
+        return Err(CfsError::Osal(OsalError::Error));
+    }
+
+    // SAFETY: getaddrinfo with AF_INET returns sockaddr_in entries.
+    let sin = unsafe { &*((*res).ai_addr as *const libc::sockaddr_in) };
+    let octets = u32::from_be(sin.sin_addr.s_addr).to_be_bytes();
+    // SAFETY: matches the getaddrinfo above.
+    unsafe { libc::freeaddrinfo(res) };
+
+    let mut ip = [0u8; 16];
+    let s = format_ipv4(&octets, &mut ip).ok_or(CfsError::Osal(OsalError::Error))?;
+    SocketAddr::new_ipv4(s, port)
+}
+
+#[cfg(feature = "sim")]
+fn format_ipv4<'a>(octets: &[u8; 4], buf: &'a mut [u8; 16]) -> Option<&'a str> {
+    let mut len = 0;
+    for (i, b) in octets.iter().enumerate() {
+        if i > 0 {
+            buf[len] = b'.';
+            len += 1;
+        }
+        let mut n = *b;
+        let mut digits = [0u8; 3];
+        let mut d = 0;
+        loop {
+            digits[d] = b'0' + (n % 10);
+            d += 1;
+            n /= 10;
+            if n == 0 {
+                break;
+            }
+        }
+        for j in (0..d).rev() {
+            buf[len] = digits[j];
+            len += 1;
+        }
+    }
+    core::str::from_utf8(&buf[..len]).ok()
 }
 
 impl TryFrom<core::net::SocketAddr> for SocketAddr {

@@ -5,6 +5,8 @@
 
 pub mod alloc;
 pub mod app;
+#[cfg(feature = "sim")]
+pub mod env;
 pub mod fs;
 pub mod heap;
 pub mod id;
