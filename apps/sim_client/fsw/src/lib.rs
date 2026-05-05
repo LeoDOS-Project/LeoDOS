@@ -132,6 +132,13 @@ pub extern "C" fn SIM_CLIENT_AppMain() {
 
             let tlm = convert(scid, header.seq.get(), header.sim_time_ms.get(), sat);
             SendBuffer::publish_typed(mid, &tlm)?;
+            log!(
+                "SIM_CLIENT: pub seq={} pos=[{:.0},{:.0},{:.0}]",
+                header.seq.get(),
+                tlm.pos_eci_m[0],
+                tlm.pos_eci_m[1],
+                tlm.pos_eci_m[2],
+            )?;
         }
 
         #[allow(unreachable_code)]

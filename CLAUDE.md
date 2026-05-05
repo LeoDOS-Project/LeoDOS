@@ -42,6 +42,16 @@ already exist.
 
 ### Future improvements
 
+- [ ] Walker-delta bridge publisher: split snapshots across
+  multiple UDP datagrams when the encoded size exceeds the
+  ~65 KB UDP cap (~680 sats). Today the publisher silently
+  drops oversized snapshots with a `log::warn!` that isn't
+  visible in the default UI. Either chunk the sat array
+  across N datagrams with a chunk index in the header, or
+  switch to TCP / shared memory for large constellations.
+  Bit me when a 30×30 (900-sat) constellation produced no
+  output in cFS.
+
 - [ ] Walker-delta bridge publisher: two stubs remain.
   `nadir_quat` is identity — derive from position+velocity
   (body z = -r_hat, body x along velocity, body y = z×x;
