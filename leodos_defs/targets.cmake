@@ -107,7 +107,7 @@ SET(MISSION_CPUNAMES cpu1)
 # bridge will replace the hwlib backend in a follow-up step; until
 # then the applist is restricted to apps that don't need hwlib.
 SET(cpu1_PROCESSORID 1)
-SET(cpu1_APPLIST sb_echo ping)
+SET(cpu1_APPLIST ci_lab to_lab sch_lab sb_echo ping)
 SET(cpu1_FILELIST cfe_es_startup.scr)
 SET(cpu1_SYSTEM i686-linux-gnu)
 
