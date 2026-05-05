@@ -33,6 +33,8 @@ pub mod runtime;
 pub mod macros;
 pub mod app;
 pub mod bridge;
+#[cfg(feature = "bridge-client")]
+pub mod bridge_client;
 pub mod util;
 pub use util::cstring;
 pub use util::string_from_c_buf;
