@@ -42,6 +42,19 @@ already exist.
 
 ### Future improvements
 
+- [ ] Walker-delta bridge publisher: fill in stubbed sat
+  fields. `vel_eci_m_s` is currently zero (walker-delta's
+  `SatelliteState` doesn't carry velocity — finite-difference
+  two propagator samples or extend `satellite_positions` to
+  return velocity). `nadir_quat` is identity — derive from
+  position+velocity (nadir = -r_hat, velocity sets roll axis).
+  `los_neighbors` packs the first ≤4 neighbors as bits 0..3
+  with no direction tagging — needs a torus N/S/E/W mapping
+  (compare neighbor's plane and sat_index against this sat's
+  to label each direction). `los_ground` is always zero —
+  needs per-sat ground-station visibility from the radius_km
+  horizon check that's already in pass.rs.
+
 - [ ] SRSPP driver: `AtomicWaker` so `tx.send` wakes the
   driver immediately. Today the driver's `select_biased!`
   on (link.read OR sleep(timeout)) is bounded only by
