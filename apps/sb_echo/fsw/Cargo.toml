@@ -8,7 +8,7 @@ name = "sb_echo"
 crate-type = ["cdylib"]
 
 [dependencies]
-leodos-libcfs = { path = "../../../crates/leodos-libcfs", features = ["nos3"] }
+leodos-libcfs = { path = "../../../crates/leodos-libcfs" }
 futures = { version = "0.3", default-features = false }
 heapless = "0.9"
 pin-utils = "0.1"
