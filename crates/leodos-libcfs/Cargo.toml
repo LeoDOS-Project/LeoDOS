@@ -6,7 +6,6 @@ edition = "2021"
 [features]
 default = []
 std = []
-bridge-client = ["std"]
 cfdp = []
 bp = []
 nos3 = []

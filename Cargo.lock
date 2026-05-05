@@ -2305,6 +2305,7 @@ dependencies = [
  "bindgen 0.71.1",
  "heapless",
  "leodos-libcfs",
+ "libc",
  "zerocopy",
 ]
 
