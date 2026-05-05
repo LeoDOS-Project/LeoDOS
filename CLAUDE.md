@@ -42,6 +42,14 @@ already exist.
 
 ### Future improvements
 
+- [ ] cmake's per-app install rule doesn't notice when `cargo`
+  rewrites a cdylib; `make install` leaves stale `.so`s in
+  `build/.../exe/cpu1/cf/`. After Rust changes, force-copy from
+  `build/leodos/cargo_target/release/lib<app>.so` over the
+  per-app and `cf/` copies, or add a depend on the cargo
+  workspace build's timestamps. Bit me hard during the bridge
+  bring-up — symptoms looked like an OSAL bind bug.
+
 - [ ] Walker-delta bridge publisher: fill in stubbed sat
   fields. `vel_eci_m_s` is currently zero (walker-delta's
   `SatelliteState` doesn't carry velocity — finite-difference
