@@ -21,6 +21,7 @@ members = [
     "apps/sample_rust_app/fsw",
     "apps/sb_echo/fsw",
     "apps/sch_lab/fsw",
+    "apps/sim_client/fsw",
     "apps/spacecomp/fsw",
     "apps/spacecomp_wildfire/fsw",
     "apps/spacecomp_wordcount/fsw",

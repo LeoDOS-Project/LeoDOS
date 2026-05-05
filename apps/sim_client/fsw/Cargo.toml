@@ -1,0 +1,16 @@
+[package]
+name = "sim_client"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "sim_client"
+crate-type = ["cdylib"]
+
+[dependencies]
+leodos-libcfs = { path = "../../../crates/leodos-libcfs" }
+heapless = "0.9"
+zerocopy = { version = "0.8", default-features = false, features = ["derive"] }
+
+[build-dependencies]
+bindgen = "0.71"

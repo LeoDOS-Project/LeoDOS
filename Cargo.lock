@@ -2299,6 +2299,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sim_client"
+version = "0.1.0"
+dependencies = [
+ "bindgen 0.71.1",
+ "heapless",
+ "leodos-libcfs",
+ "zerocopy",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
