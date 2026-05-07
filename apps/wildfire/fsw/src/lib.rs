@@ -52,6 +52,7 @@ mod bindings {
 const MAX_PIXELS: usize = 512 * 512;
 const MAX_HOTSPOTS: usize = 64;
 const NUM_SATS: u8 = 3;
+const NUM_ORBITS: u8 = 3;
 const RTO_MS: u32 = 1000;
 
 // ── Table-based configuration ───────────────────────────────
@@ -127,6 +128,8 @@ enum WildfireError {
     Cfs(#[from] CfsError),
     #[error(transparent)]
     Transport(#[from] TransportError<CfsError>),
+    #[error("invalid spacecraft id")]
+    InvalidSpacecraftId,
 }
 
 // ── App entry ───────────────────────────────────────────────
@@ -149,7 +152,9 @@ async fn main() -> Result<(), WildfireError> {
 
     // Derive address from cFS spacecraft ID
     let scid = SpacecraftId::new(leodos_libcfs::cfe::es::system::get_spacecraft_id());
-    let address = scid.to_address(NUM_SATS);
+    let Some(address) = scid.to_address(NUM_ORBITS, NUM_SATS) else {
+        return Err(WildfireError::InvalidSpacecraftId);
+    };
 
     // SRSPP transport via router app's Software Bus
     let router_send = MsgId::local_cmd(bindings::WILDFIRE_CMD_TOPICID as u16);
@@ -302,7 +307,6 @@ async fn scan_and_downlink(
     Ok(())
 }
 
-#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn WILDFIRE_AppMain() {
     Runtime::new()

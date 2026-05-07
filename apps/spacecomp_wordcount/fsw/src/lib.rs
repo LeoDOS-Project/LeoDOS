@@ -130,7 +130,6 @@ impl SpaceComp for WordCount2 {
     }
 }
 
-#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn SPACECOMP_WORDCOUNT_AppMain() {
     SpaceCompNode::builder()

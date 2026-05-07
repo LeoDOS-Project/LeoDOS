@@ -146,32 +146,11 @@ impl<'pool, N, P: BufferPool + 'pool, const OUT: usize> Gossip<'pool, N, P, OUT>
 where
     N: Datalink,
 {
-    /// Compute which directions to flood a locally-originated
-    /// packet (all neighbors in service area).
-    fn flood_directions(
-        &self,
-        service_area_min: u8,
-        service_area_max: u8,
-    ) -> [bool; 4] {
-        let my_point = Point::from(self.address);
-        let all = [
-            Direction::North,
-            Direction::South,
-            Direction::East,
-            Direction::West,
-        ];
-        let mut dirs = [false; 4];
-        for (i, direction) in all.iter().enumerate() {
-            let neighbor = self.torus.neighbor(my_point, *direction);
-            let addr = Address::from(neighbor);
-            dirs[i] = addr.is_in_service_area(
-                service_area_min,
-                service_area_max,
-            );
-        }
-        dirs
+    /// Flood a locally-originated packet to all four torus
+    /// neighbors.
+    fn flood_directions(&self) -> [bool; 4] {
+        [true; 4]
     }
-
 }
 
 impl<'pool, N, P, const OUT: usize> NetworkWrite
@@ -197,8 +176,6 @@ where
             .function_code(self.function_code)
             .origin(self.address)
             .predecessor(self.address)
-            .service_area_min(0)
-            .service_area_max(255)
             .epoch(epoch)
             .payload_len(data.len())
             .build()
@@ -211,7 +188,7 @@ where
         pkt.set_cfe_checksum();
         let len = pkt.as_bytes().len();
 
-        let dirs = self.flood_directions(0, 255);
+        let dirs = self.flood_directions();
 
         if dirs[0] {
             let (_, mut w) = self.north.link.split();
@@ -382,11 +359,7 @@ where
                             let n =
                                 torus.neighbor(my_point, *d);
                             let a = Address::from(n);
-                            dirs[i] = a != predecessor
-                                && a.is_in_service_area(
-                                    header.service_area_min,
-                                    header.service_area_max,
-                                );
+                            dirs[i] = a != predecessor;
                         }
                         dirs
                     };

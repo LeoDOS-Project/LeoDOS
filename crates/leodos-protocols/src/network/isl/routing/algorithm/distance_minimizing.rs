@@ -116,10 +116,6 @@ impl<const N: usize> RoutingAlgorithm for DistanceMinimizing<N> {
                     });
                 (gw, Hop::Ground)
             }
-            Address::ServiceArea { orb } => (
-                Point { orb: current.orb, sat: orb },
-                Hop::Local,
-            ),
         };
         if current == target_point {
             return local_hop;

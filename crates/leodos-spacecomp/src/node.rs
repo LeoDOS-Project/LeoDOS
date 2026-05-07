@@ -128,11 +128,11 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
         log!("SpaceCoMP node starting")?;
 
         let scid = SpacecraftId::new(system::get_spacecraft_id());
-        let address = scid.to_address(self.config.num_sats);
-        let Address::Satellite(point) = address else {
+        let Some(address) = scid.to_address(self.config.num_orbits, self.config.num_sats) else {
             log!("Invalid spacecraft ID")?;
             return Ok(());
         };
+        let Address::Satellite(point) = address else { unreachable!() };
 
         let recv_mid = MsgId::local_cmd(self.config.router_recv_topic);
         let send_mid = MsgId::local_cmd(self.config.router_send_topic);

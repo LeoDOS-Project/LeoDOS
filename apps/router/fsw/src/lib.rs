@@ -250,7 +250,6 @@ fn ground_link(point: Point) -> Result<UdpDatalink, CfsError> {
     udp_link(local, GROUND_STATION_PORT)
 }
 
-#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn ROUTER_AppMain() {
     system::wait_for_startup_sync(Duration::from_millis(10_000));

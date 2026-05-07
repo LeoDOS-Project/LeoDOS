@@ -80,7 +80,6 @@ const RTO_MS: u32 = 1000;
 pub const TORUS: Torus = Torus::new(NUM_ORBITS, NUM_SATS);
 pub const SHELL: Shell = Shell::new(TORUS, ALTITUDE_M, INCLINATION_DEG);
 
-#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn SPACECOMP_AppMain() {
     Runtime::new().run(async {
@@ -88,11 +87,11 @@ pub extern "C" fn SPACECOMP_AppMain() {
         info!("SpaceCoMP app starting")?;
 
         let scid = SpacecraftId::new(system::get_spacecraft_id());
-        let address = scid.to_address(NUM_SATS);
-        let Address::Satellite(point) = address else {
+        let Some(address) = scid.to_address(NUM_ORBITS, NUM_SATS) else {
             err!("Invalid spacecraft ID")?;
             return Ok(());
         };
+        let Address::Satellite(point) = address else { unreachable!() };
 
         // Communicate through the router app via the Software Bus.
         let recv_mid = MsgId::from_local_tlm(APID);

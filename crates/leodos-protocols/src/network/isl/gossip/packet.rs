@@ -83,8 +83,6 @@ pub struct Epoch(pub U16);
 pub struct IslGossipHeader {
     origin: RawAddress,
     predecessor: RawAddress,
-    pub(crate) service_area_min: u8,
-    pub(crate) service_area_max: u8,
     epoch: Epoch,
 }
 
@@ -139,28 +137,6 @@ impl IslGossipHeader {
     pub fn set_epoch(&mut self, epoch: Epoch) {
         self.epoch = epoch;
     }
-
-    /// The maximum service area (in hops) for this gossip. Nodes with a service area
-    /// greater than this value should not forward the gossip further.
-    pub fn service_area_min(&self) -> u8 {
-        self.service_area_min
-    }
-
-    /// Sets the minimum service area in the gossip header.
-    pub fn set_service_area_min(&mut self, area: u8) {
-        self.service_area_min = area;
-    }
-
-    /// The maximum service area (in hops) for this gossip. Nodes with a service area
-    /// greater than this value should not forward the gossip further.
-    pub fn service_area_max(&self) -> u8 {
-        self.service_area_max
-    }
-
-    /// Sets the maximum service area in the gossip header.
-    pub fn set_service_area_max(&mut self, area: u8) {
-        self.service_area_max = area;
-    }
 }
 
 #[bon]
@@ -173,8 +149,6 @@ impl IslGossipTelecommand {
         function_code: u8,
         origin: Address,
         predecessor: Address,
-        service_area_min: u8,
-        service_area_max: u8,
         epoch: Epoch,
         payload_len: usize,
     ) -> Result<&'a mut Self, GossipMessageError> {
@@ -208,8 +182,6 @@ impl IslGossipTelecommand {
 
         gossip_tc.gossip_header.set_origin(origin);
         gossip_tc.gossip_header.set_predecessor(predecessor);
-        gossip_tc.gossip_header.service_area_min = service_area_min;
-        gossip_tc.gossip_header.service_area_max = service_area_max;
         gossip_tc.gossip_header.set_epoch(epoch);
 
         gossip_tc.set_cfe_checksum();

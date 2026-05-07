@@ -207,7 +207,6 @@ impl SpaceComp for WildfireApp {
 const POOL_BYTES: usize = 4096 + 2 * 512 + 1024;
 static POOL_STORAGE: MemPoolStorage<POOL_BYTES> = MemPoolStorage::new();
 
-#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn SC_WILDFIRE_AppMain() {
     let pool = match POOL_STORAGE.take().and_then(|buf| MemPool::new(buf, false)) {

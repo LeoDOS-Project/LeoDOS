@@ -11,11 +11,16 @@ use crate::network::isl::torus::Point;
 #[derive(
     Copy, Clone, Debug, PartialEq, Eq, Hash, FromBytes, IntoBytes, Immutable, KnownLayout, Unaligned,
 )]
-/// A unique numeric identifier for a spacecraft in the constellation.
+/// A satellite's identifier in the constellation.
+///
+/// Values in `[0, num_planes * sats_per_plane)` map to satellites in
+/// plane-major order; values outside that range are not satellites
+/// and decode to `None`. Ground stations are identified separately
+/// via [`GroundStationId`] and never share this namespace.
 pub struct SpacecraftId(pub U32);
 
 impl SpacecraftId {
-    /// Creates a new spacecraft ID from a raw `u32` value.
+    /// Wraps a raw `u32` cFE spacecraft ID.
     pub const fn new(id: u32) -> Self {
         Self(U32::new(id))
     }
@@ -25,24 +30,33 @@ impl SpacecraftId {
         self.0.get()
     }
 
-    /// Encodes an orbital plane and satellite index into a spacecraft ID.
-    pub fn encode(orb: u8, sat: u8, num_sats: u8) -> Self {
-        Self::new((orb as u32 + 1) * num_sats as u32 + sat as u32)
+    /// Encodes a `(orb, sat)` pair into a satellite ID.
+    pub fn encode(orb: u8, sat: u8, sats_per_plane: u8) -> Self {
+        Self::new(orb as u32 * sats_per_plane as u32 + sat as u32)
     }
 
-    /// Decodes this spacecraft ID into an `Address`.
-    pub fn to_address(&self, num_sats: u8) -> Address {
-        let n = num_sats as u32;
-        let orb = self.get() / n;
-        let sat = self.get() % n;
-        if orb == 0 {
-            Address::Ground { station: sat as u8 }
-        } else {
+    /// Decodes this satellite ID into a satellite [`Address`], or
+    /// `None` if the ID falls outside `[0, num_planes * sats_per_plane)`.
+    pub fn to_address(&self, num_planes: u8, sats_per_plane: u8) -> Option<Address> {
+        let n = num_planes as u32 * sats_per_plane as u32;
+        let id = self.get();
+        (id < n).then(|| {
             Address::Satellite(Point {
-                orb: (orb - 1) as u8,
-                sat: sat as u8,
+                orb: (id / sats_per_plane as u32) as u8,
+                sat: (id % sats_per_plane as u32) as u8,
             })
-        }
+        })
+    }
+}
+
+/// A ground station's identifier. Disjoint from [`SpacecraftId`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct GroundStationId(pub u8);
+
+impl GroundStationId {
+    /// Decodes this ground station ID into an [`Address`].
+    pub fn to_address(&self) -> Address {
+        Address::Ground { station: self.0 }
     }
 }
 
@@ -66,11 +80,6 @@ pub enum Address {
     },
     /// A specific satellite at a grid position.
     Satellite(Point),
-    /// All satellites in a given orbital plane (multicast).
-    ServiceArea {
-        /// Orbital plane index.
-        orb: u8,
-    },
 }
 
 impl RawAddress {
@@ -80,14 +89,10 @@ impl RawAddress {
             Address::Ground {
                 station: self.station_or_sat,
             }
-        } else if self.station_or_sat == 0 {
-            Address::ServiceArea {
-                orb: self.ground_or_orb - 1,
-            }
         } else {
             Address::Satellite(Point {
                 orb: self.ground_or_orb - 1,
-                sat: self.station_or_sat - 1,
+                sat: self.station_or_sat,
             })
         }
     }
@@ -102,11 +107,7 @@ impl From<Address> for RawAddress {
             },
             Address::Satellite(Point { orb, sat }) => Self {
                 ground_or_orb: orb + 1,
-                station_or_sat: sat + 1,
-            },
-            Address::ServiceArea { orb } => Self {
-                ground_or_orb: orb + 1,
-                station_or_sat: 0,
+                station_or_sat: sat,
             },
         }
     }
@@ -115,36 +116,12 @@ impl From<Address> for RawAddress {
 impl Address {
     /// Creates a ground station address.
     pub fn ground(station: u8) -> Self {
-        Self::Ground { station: station }
+        Self::Ground { station }
     }
 
     /// Creates a satellite address from orbital plane and satellite indices.
     pub fn satellite(orb: u8, sat: u8) -> Self {
         Self::Satellite(Point { orb, sat })
-    }
-
-    /// Creates a service area (multicast) address for an orbital plane.
-    pub fn service_area(orb: u8) -> Self {
-        Self::ServiceArea { orb }
-    }
-
-    /// Returns `true` if this address can be used as a packet source.
-    pub fn is_valid_source(&self) -> bool {
-        !matches!(self, Address::ServiceArea { .. })
-    }
-
-    /// Returns `true` if this satellite falls within the given service area range.
-    pub fn is_in_service_area(&self, min_sat: u8, max_sat: u8) -> bool {
-        match self {
-            Address::Satellite(Point { sat, .. }) => {
-                if min_sat <= max_sat {
-                    (min_sat..=max_sat).contains(sat)
-                } else {
-                    (min_sat..).contains(sat) || (..=max_sat).contains(sat)
-                }
-            }
-            _ => false,
-        }
     }
 }
 
@@ -152,7 +129,6 @@ impl From<Address> for Point {
     fn from(addr: Address) -> Self {
         match addr {
             Address::Satellite(Point { orb, sat }) => Point::new(sat, orb),
-            Address::ServiceArea { orb } => Point::new(0, orb),
             Address::Ground { .. } => Point::new(0, 0),
         }
     }

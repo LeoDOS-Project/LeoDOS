@@ -121,7 +121,6 @@ fn isl_link(
     udp_link(send, recv)
 }
 
-#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn GOSSIP_AppMain() {
     Runtime::new().run(async {
@@ -129,11 +128,11 @@ pub extern "C" fn GOSSIP_AppMain() {
         info!("Gossip app starting")?;
 
         let scid = SpacecraftId::new(system::get_spacecraft_id());
-        let address = scid.to_address(NUM_SATS);
-        let Address::Satellite(point) = address else {
+        let Some(address) = scid.to_address(NUM_ORBS, NUM_SATS) else {
             err!("Invalid spacecraft ID")?;
             return Ok::<(), CfsError>(());
         };
+        let Address::Satellite(point) = address else { unreachable!() };
 
         let apid = Apid::new(GOSSIP_APID)
             .map_err(|_| CfsError::ValidationFailure)?;

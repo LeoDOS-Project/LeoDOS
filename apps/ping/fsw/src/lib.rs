@@ -75,7 +75,6 @@ pub struct PongPayload {
     pub sent_ms: U64,
 }
 
-#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn PING_AppMain() {
     system::wait_for_startup_sync(Duration::from_millis(10_000));
@@ -93,11 +92,12 @@ async fn run() -> Result<(), CfsError> {
 
     let scid = system::get_spacecraft_id();
     let num_sats = bindings::PING_NUM_SATS as u8;
-    let address = SpacecraftId::new(scid).to_address(num_sats);
-    let Address::Satellite(point) = address else {
-        log!("Ping: invalid spacecraft ID {}", scid)?;
+    let num_orbits = bindings::PING_NUM_ORBITS as u8;
+    let Some(address) = SpacecraftId::new(scid).to_address(num_orbits, num_sats) else {
+        log!("Ping: scid {} is not a configured satellite", scid)?;
         return Ok(());
     };
+    let Address::Satellite(point) = address else { unreachable!() };
 
     let recv_mid = MsgId::local_cmd(bindings::PING_ROUTER_RECV_TOPICID as u16);
     let send_mid = MsgId::local_cmd(bindings::ROUTER_SEND_TOPICID as u16);

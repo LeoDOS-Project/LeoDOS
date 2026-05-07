@@ -17,7 +17,6 @@ use crate::transport::UdpLink;
 
 const MY_APID: u16 = 0x100;
 
-#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn COLONIES_EXECUTOR_Main() {
     let mut buffer = [0u8; 4096];

@@ -45,7 +45,6 @@ const IMU_CAN_BITRATE: u32 = 1_000_000;
 /// Polling interval between sensor reads (seconds).
 const POLL_SECS: u32 = 2;
 
-#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn NOS3_DEMO_AppMain() {
     Runtime::new().run(async {
