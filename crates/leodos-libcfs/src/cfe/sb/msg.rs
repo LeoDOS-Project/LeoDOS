@@ -6,7 +6,7 @@
 //! associated with raw pointer manipulation.
 
 use crate::cfe::time::SysTime;
-use crate::error::{CfsError, OsalError, Result};
+use crate::error::{CfsError, OsalError, Result, SbError};
 use crate::ffi;
 use crate::status::check;
 use core::mem::MaybeUninit;
@@ -301,6 +301,23 @@ impl<'a> MessageRef<'a> {
     /// Gets the length of the user data portion of the message.
     pub fn user_data_length(&self) -> usize {
         unsafe { ffi::CFE_SB_GetUserDataLength(self.slice.as_ptr() as *const _) }
+    }
+
+    /// Returns a reference to the message's user-data payload typed as
+    /// `P`. `P` must be a `#[repr(C)]` struct whose layout matches the
+    /// payload bytes the publisher emitted; `zerocopy` enforces sane
+    /// alignment / size at the type system level.
+    pub fn payload<P>(&self) -> Result<&P>
+    where
+        P: zerocopy::FromBytes + zerocopy::KnownLayout + zerocopy::Immutable,
+    {
+        let len = self.user_data_length();
+        if len < core::mem::size_of::<P>() {
+            return Err(CfsError::Sb(SbError::BadArgument));
+        }
+        let ptr = unsafe { self.user_data() } as *const u8;
+        let slice = unsafe { core::slice::from_raw_parts(ptr, core::mem::size_of::<P>()) };
+        P::ref_from_bytes(slice).map_err(|_| CfsError::Sb(SbError::BadArgument))
     }
 
     /// Gets the segmentation flag from the message header.
