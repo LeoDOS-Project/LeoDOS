@@ -1317,6 +1317,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "leodos-bridge"
+version = "0.1.0"
+dependencies = [
+ "zerocopy",
+]
+
+[[package]]
 name = "leodos-cli"
 version = "0.1.0"
 dependencies = [
@@ -1350,8 +1357,10 @@ name = "leodos-ground"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "leodos-bridge",
  "leodos-protocols",
  "rand 0.8.6",
+ "socket2 0.5.10",
  "tokio",
  "zerocopy",
 ]
@@ -1380,6 +1389,7 @@ dependencies = [
  "indoc",
  "lazy_static",
  "leodos-analysis",
+ "leodos-bridge",
  "libc",
  "pin-project",
  "pin-utils",
@@ -1934,6 +1944,7 @@ dependencies = [
  "leodos-protocols",
  "pin-utils",
  "thiserror 2.0.18",
+ "zerocopy",
 ]
 
 [[package]]

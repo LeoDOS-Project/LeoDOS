@@ -19,12 +19,18 @@
 #![deny(unsafe_code)]
 
 use core::time::Duration;
+use leodos_libcfs::bridge::EventFrame;
 use leodos_libcfs::bridge::Hello;
 use leodos_libcfs::bridge::StateFrame;
 use leodos_libcfs::cfe::es::app;
 use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
+use leodos_libcfs::cfe::evs::tlm::LongEventPayload;
+use leodos_libcfs::cfe::evs::tlm::long_event_mid;
+use leodos_libcfs::cfe::sb::msg::MessageRef;
 use leodos_libcfs::cfe::sb::msg::MsgId;
+use leodos_libcfs::cfe::sb::pipe::Pipe;
+use leodos_libcfs::cfe::sb::pipe::Timeout;
 use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
 use leodos_libcfs::log;
 use leodos_libcfs::os::env;
@@ -46,6 +52,9 @@ mod bindings {
 }
 
 const RECONNECT_BACKOFF: Duration = Duration::from_secs(1);
+const EVS_PIPE_DEPTH: u16 = 32;
+/// Max EVS message bytes — must match `CFE_MISSION_EVS_MAX_MESSAGE_LENGTH`.
+const MAX_EVS_RECV: usize = 256;
 
 /// Per-tick telemetry produced from a decoded leo-viz [`StateFrame`].
 /// Host endian; struct layout matches what consumer apps deserialize.
@@ -155,6 +164,20 @@ pub extern "C" fn SIM_CLIENT_AppMain() {
 
     log!("SIM_CLIENT: scid={} dialing bridge", scid).ok();
 
+    let mut evs_pipe = match Pipe::new("SIM_CLIENT_EVS", EVS_PIPE_DEPTH) {
+        Ok(p) => match p.subscribe(long_event_mid()) {
+            Ok(()) => Some(p),
+            Err(_) => {
+                log!("SIM_CLIENT: EVS subscribe failed").ok();
+                None
+            }
+        },
+        Err(_) => {
+            log!("SIM_CLIENT: EVS pipe create failed").ok();
+            None
+        }
+    };
+
     while app::run_loop().is_ok() {
         match TcpStream::connect(addr.clone(), SocketDomain::IPv4) {
             Ok(mut stream) => {
@@ -163,7 +186,7 @@ pub extern "C" fn SIM_CLIENT_AppMain() {
                     log!("SIM_CLIENT: hello write failed").ok();
                 } else {
                     log!("SIM_CLIENT: scid={} bridge connected", scid).ok();
-                    pump(&mut stream, scid, mid);
+                    pump(&mut stream, scid, mid, evs_pipe.as_mut());
                 }
             }
             Err(_) => {
@@ -174,8 +197,9 @@ pub extern "C" fn SIM_CLIENT_AppMain() {
     }
 }
 
-fn pump(stream: &mut TcpStream, scid: u32, mid: MsgId) {
+fn pump(stream: &mut TcpStream, scid: u32, mid: MsgId, mut evs_pipe: Option<&mut Pipe>) {
     let mut buf = [0u8; core::mem::size_of::<StateFrame>()];
+    let mut event_seq: u32 = 0;
     while app::run_loop().is_ok() {
         if !read_exact(stream, &mut buf) {
             log!("SIM_CLIENT: bridge disconnected").ok();
@@ -191,6 +215,52 @@ fn pump(stream: &mut TcpStream, scid: u32, mid: MsgId) {
         }
         let tlm = convert(scid, &frame);
         let _ = SendBuffer::publish_typed(mid, &tlm);
+
+        if let Some(pipe) = evs_pipe.as_deref_mut() {
+            if !drain_events(stream, pipe, scid, frame.sim_time_ms.get(), &mut event_seq) {
+                log!("SIM_CLIENT: bridge write failed during event drain").ok();
+                return;
+            }
+        }
+    }
+}
+
+/// Pull every queued EVS event out of `pipe` (non-blocking) and ship
+/// each as an [`EventFrame`] over the bridge stream. Returns `false`
+/// on bridge write failure so the caller can reconnect.
+fn drain_events(
+    stream: &mut TcpStream,
+    pipe: &mut Pipe,
+    scid: u32,
+    sim_time_ms: u64,
+    seq: &mut u32,
+) -> bool {
+    let mut recv_buf = [0u8; MAX_EVS_RECV];
+    loop {
+        let len = match pipe.timed_recv(&mut recv_buf, Timeout::Poll) {
+            Ok(n) => n,
+            Err(_) => return true,
+        };
+        if len == 0 {
+            return true;
+        }
+        let msg = MessageRef::new(&recv_buf[..len]);
+        let Ok(payload) = msg.payload::<LongEventPayload>() else {
+            continue;
+        };
+        let frame = EventFrame::new(
+            *seq,
+            sim_time_ms,
+            scid,
+            payload.packet_id.event_id.get(),
+            payload.packet_id.event_type.get() as u8,
+            payload.app_name_str().as_bytes(),
+            payload.message_str().as_bytes(),
+        );
+        *seq = seq.wrapping_add(1);
+        if !write_all(stream, frame.as_bytes()) {
+            return false;
+        }
     }
 }
 

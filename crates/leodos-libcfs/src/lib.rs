@@ -32,7 +32,7 @@ pub mod status;
 pub mod runtime;
 pub mod macros;
 pub mod app;
-pub mod bridge;
+pub use leodos_bridge as bridge;
 pub mod util;
 pub use util::cstring;
 pub use util::string_from_c_buf;
