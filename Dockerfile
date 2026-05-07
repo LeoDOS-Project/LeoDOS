@@ -25,6 +25,12 @@ RUN mkdir -p /cFS/build/leodos/tables/staging && \
     MISSIONCONFIG=leodos make O=build/leodos SIMULATION=native prep && \
     MISSIONCONFIG=leodos make O=build/leodos SIMULATION=native install
 
+# Build the ground-station daemon. leo-viz docker-execs this binary
+# once per launched ground station to drive ping requests over the
+# bridge.
+RUN cargo build --release \
+    --manifest-path /cFS/tools/leodos-ground/Cargo.toml
+
 WORKDIR /cFS/build/leodos/exe/cpu1
 
 CMD ["/bin/bash"]

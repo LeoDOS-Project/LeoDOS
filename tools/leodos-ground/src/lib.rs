@@ -1,0 +1,227 @@
+//! Ground-station ping logic, factored out so leo-viz can call it
+//! in-process from its egui send-window without spawning a subprocess.
+//!
+//! Public API: [`ping`] — async, runs to completion, returns
+//! `Result<PongInfo, String>`.
+
+use leodos_protocols::buffer_pool::HeapBufferPool;
+use leodos_protocols::network::isl::address::Address;
+use leodos_protocols::network::spp::Apid;
+use leodos_protocols::transport::srspp::api::tokio::SrsppReceiver;
+use leodos_protocols::transport::srspp::api::tokio::SrsppSender;
+use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
+use leodos_protocols::transport::srspp::machine::receiver::ReceiverMachine;
+use leodos_protocols::transport::srspp::machine::sender::SenderConfig;
+use leodos_protocols::transport::srspp::packet::SrsppDataPacket;
+use leodos_protocols::transport::srspp::rto::FixedRto;
+use std::net::SocketAddr;
+use std::time::Duration;
+use zerocopy::network_endian::U32;
+use zerocopy::network_endian::U64;
+use zerocopy::FromBytes;
+use zerocopy::Immutable;
+use zerocopy::IntoBytes;
+use zerocopy::KnownLayout;
+use zerocopy::Unaligned;
+
+pub mod bridge;
+pub mod udp_link;
+
+pub use bridge::bridge_loop;
+pub use bridge::BridgeConfig;
+use udp_link::GroundSocket;
+
+pub const PORT_BASE: u16 = 6000;
+pub const PORTS_PER_SAT: u16 = 5;
+pub const GROUND_OFFSET: u16 = 4;
+pub const GROUND_STATION_ID: u8 = 0;
+pub const GROUND_LOCAL_PORT: u16 = 9000;
+
+const PING_APID: u16 = 0x62;
+
+const SRSPP_WIN: usize = 8;
+const SRSPP_MTU: usize = 512;
+const SRSPP_BUF_SIZE: usize = 4096;
+const SRSPP_TICKS_PER_SEC: u32 = 1000;
+const SRSPP_MAX_RETRANSMITS: u8 = 60;
+const POOL_OVERHEAD: usize = 1024;
+const POOL_BYTES: usize = SRSPP_BUF_SIZE + 2 * SRSPP_MTU + POOL_OVERHEAD;
+
+const RX_REASM_BUF: usize = 8192;
+
+#[repr(C, packed)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone)]
+struct PingPayload {
+    seq: U32,
+    sent_ms: U64,
+}
+
+#[repr(C, packed)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone)]
+struct PongPayload {
+    seq: U32,
+    scid: U32,
+    orb: u8,
+    sat: u8,
+    _pad: [u8; 2],
+    met_seconds: U32,
+    met_subseconds: U32,
+    sent_ms: U64,
+}
+
+/// Decoded pong data plus the wall-clock RTT measured against the ground send.
+#[derive(Debug, Clone)]
+pub struct PongInfo {
+    pub seq: u32,
+    pub scid: u32,
+    pub orb: u8,
+    pub sat: u8,
+    pub met_seconds: u32,
+    pub met_subseconds: u32,
+    pub rtt_ms: u64,
+}
+
+pub fn sat_port_base(orb: u8, sat: u8, num_sats: u8) -> u16 {
+    PORT_BASE + (orb as u16 * num_sats as u16 + sat as u16) * PORTS_PER_SAT
+}
+
+pub fn sat_ground_port(orb: u8, sat: u8, num_sats: u8) -> u16 {
+    sat_port_base(orb, sat, num_sats) + GROUND_OFFSET
+}
+
+fn epoch_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+pub async fn ping(
+    orb: u8,
+    sat: u8,
+    num_sats: u8,
+    rto_ms: u32,
+    timeout_s: u64,
+) -> Result<PongInfo, String> {
+    let target = Address::Satellite(leodos_protocols::network::isl::torus::Point::new(orb, sat));
+    let source = Address::Ground { station: GROUND_STATION_ID };
+
+    let local: SocketAddr = format!("127.0.0.1:{}", GROUND_LOCAL_PORT)
+        .parse()
+        .map_err(|e: std::net::AddrParseError| e.to_string())?;
+    let remote: SocketAddr = format!("127.0.0.1:{}", sat_ground_port(orb, sat, num_sats))
+        .parse()
+        .map_err(|e: std::net::AddrParseError| e.to_string())?;
+
+    let apid = Apid::new(PING_APID).map_err(|e| format!("bad APID: {e:?}"))?;
+
+    let socket = GroundSocket::bind(local, remote)
+        .await
+        .map_err(|e| format!("bind: {e}"))?;
+    let (sender_link, receiver_link, dispatcher) = socket.split();
+    let dispatcher_handle = tokio::spawn(dispatcher);
+    // RAII guard: abort the dispatcher (and drop the UDP socket) on
+    // every return path so the next call can rebind 127.0.0.1:9000.
+    // Without this, the dispatcher stays parked on recv_from holding
+    // an Arc<UdpSocket>, so the kernel can deliver packets to a stale
+    // socket whose channels are already closed.
+    struct DispatcherGuard(Option<tokio::task::JoinHandle<()>>);
+    impl Drop for DispatcherGuard {
+        fn drop(&mut self) {
+            if let Some(h) = self.0.take() {
+                h.abort();
+            }
+        }
+    }
+    let _dispatcher_guard = DispatcherGuard(Some(dispatcher_handle));
+
+    let sender_config = SenderConfig::builder()
+        .source_address(source)
+        .apid(apid)
+        .function_code(0)
+        .rto_ticks(rto_ms)
+        .max_retransmits(SRSPP_MAX_RETRANSMITS)
+        .header_overhead(SrsppDataPacket::HEADER_SIZE)
+        .build();
+    let pool = HeapBufferPool::new(POOL_BYTES);
+    let mut sender: SrsppSender<_, _, _, SRSPP_WIN, SRSPP_MTU> = SrsppSender::new(
+        sender_config,
+        sender_link,
+        FixedRto::new(rto_ms),
+        SRSPP_TICKS_PER_SEC,
+        &pool,
+        SRSPP_BUF_SIZE,
+    )
+    .map_err(|_| "sender pool alloc failed".to_string())?;
+
+    let receiver_config = ReceiverConfig::builder()
+        .local_address(source)
+        .apid(apid)
+        .function_code(0)
+        .immediate_ack(true)
+        .ack_delay_ticks(100)
+        .build();
+    let mut receiver: SrsppReceiver<
+        _,
+        ReceiverMachine<SRSPP_WIN, SRSPP_BUF_SIZE, RX_REASM_BUF>,
+        SRSPP_MTU,
+    > = SrsppReceiver::new(receiver_config, target, receiver_link, SRSPP_TICKS_PER_SEC);
+
+    let seq_u32: u32 = 1;
+    let send_ms = epoch_millis();
+    let ping_msg = PingPayload {
+        seq: U32::new(seq_u32),
+        sent_ms: U64::new(send_ms),
+    };
+
+    sender
+        .send(target, ping_msg.as_bytes())
+        .await
+        .map_err(|e| format!("send: {e}"))?;
+
+    let result: Result<PongPayload, String> = tokio::time::timeout(
+        Duration::from_secs(timeout_s),
+        async {
+            let flush_task = async {
+                sender.flush().await.map_err(|e| format!("flush: {e}"))
+            };
+            let recv_task = async {
+                let mut buf = [0u8; 128];
+                let len = receiver
+                    .recv(&mut buf)
+                    .await
+                    .map_err(|e| format!("recv: {e}"))?;
+                PongPayload::read_from_bytes(&buf[..len])
+                    .map_err(|_| "bad pong payload".to_string())
+            };
+            tokio::pin!(flush_task, recv_task);
+            let mut pong: Option<PongPayload> = None;
+            let mut flushed = false;
+            while pong.is_none() || !flushed {
+                tokio::select! {
+                    r = &mut flush_task, if !flushed => {
+                        r?;
+                        flushed = true;
+                    }
+                    r = &mut recv_task, if pong.is_none() => {
+                        pong = Some(r?);
+                    }
+                }
+            }
+            Ok(pong.unwrap())
+        },
+    )
+    .await
+    .unwrap_or_else(|_| Err(format!("timed out after {timeout_s}s")));
+
+    let pong = result?;
+    Ok(PongInfo {
+        seq: pong.seq.get(),
+        scid: pong.scid.get(),
+        orb: pong.orb,
+        sat: pong.sat,
+        met_seconds: pong.met_seconds.get(),
+        met_subseconds: pong.met_subseconds.get(),
+        rtt_ms: epoch_millis().saturating_sub(send_ms),
+    })
+}

@@ -24,8 +24,20 @@ pub struct GroundSocket {
 }
 
 impl GroundSocket {
+    /// Bind a UDP socket on `local` with `SO_REUSEADDR` so consecutive
+    /// daemon-side pings don't collide with the previous socket
+    /// lingering in TIME_WAIT.
     pub async fn bind(local: SocketAddr, remote: SocketAddr) -> std::io::Result<Self> {
-        let socket = Arc::new(UdpSocket::bind(local).await?);
+        let domain = match local {
+            SocketAddr::V4(_) => socket2::Domain::IPV4,
+            SocketAddr::V6(_) => socket2::Domain::IPV6,
+        };
+        let sock = socket2::Socket::new(domain, socket2::Type::DGRAM, Some(socket2::Protocol::UDP))?;
+        sock.set_reuse_address(true)?;
+        sock.set_nonblocking(true)?;
+        sock.bind(&local.into())?;
+        let std_sock: std::net::UdpSocket = sock.into();
+        let socket = Arc::new(UdpSocket::from_std(std_sock)?);
         Ok(Self { socket, remote })
     }
 

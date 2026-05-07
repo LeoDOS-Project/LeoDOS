@@ -3,13 +3,19 @@ name = "leodos-ground"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "leodos_ground"
+path = "src/lib.rs"
+
 [[bin]]
 name = "leodos-ground"
 path = "src/main.rs"
 
 [dependencies]
 leodos-protocols = { path = "../../crates/leodos-protocols", features = ["tokio"] }
+leodos-bridge = { path = "../../crates/leodos-bridge" }
 clap = { version = "4.5", features = ["derive"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "io-util"] }
 zerocopy = { version = "0.8", features = ["derive"] }
 rand = "0.8"
+socket2 = "0.5"
