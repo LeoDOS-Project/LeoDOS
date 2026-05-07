@@ -77,7 +77,13 @@ impl ChunkList {
     ///
     /// # Safety
     /// The callback must be valid and the total must be correct.
-    pub unsafe fn compute_gaps<F>(&self, max_gaps: u32, total: u32, start: u32, mut callback: F) -> u32
+    pub unsafe fn compute_gaps<F>(
+        &self,
+        max_gaps: u32,
+        total: u32,
+        start: u32,
+        mut callback: F,
+    ) -> u32
     where
         F: FnMut(&ChunkList, &Chunk, *mut core::ffi::c_void),
     {
@@ -89,7 +95,11 @@ impl ChunkList {
             F: FnMut(&ChunkList, &Chunk, *mut core::ffi::c_void),
         {
             let callback = &mut *(context as *mut F);
-            callback(&*(chunks as *const ChunkList), &*(chunk as *const Chunk), core::ptr::null_mut());
+            callback(
+                &*(chunks as *const ChunkList),
+                &*(chunk as *const Chunk),
+                core::ptr::null_mut(),
+            );
         }
         let callback_ptr = &mut callback as *mut F as *mut core::ffi::c_void;
         ffi::CF_ChunkList_ComputeGaps(
@@ -101,44 +111,55 @@ impl ChunkList {
             callback_ptr,
         )
     }
-}
+    /// Erases a range of chunks from the list.
+    pub fn erase_range(&mut self, start: u32, end: u32) {
+        unsafe { ffi::CF_Chunks_EraseRange(&mut self.0, start, end) }
+    }
 
-/// Erases a range of chunks from the list.
-pub fn chunks_erase_range(chunks: &mut ChunkList, start: u32, end: u32) {
-    unsafe { ffi::CF_Chunks_EraseRange(&mut chunks.0, start, end) }
-}
+    /// Erases a single chunk at the given index.
+    pub fn erase_chunk(&mut self, index: u32) {
+        unsafe { ffi::CF_Chunks_EraseChunk(&mut self.0, index) }
+    }
 
-/// Erases a single chunk at the given index.
-pub fn chunks_erase_chunk(chunks: &mut ChunkList, index: u32) {
-    unsafe { ffi::CF_Chunks_EraseChunk(&mut chunks.0, index) }
-}
+    /// Inserts a chunk at the given index.
+    pub fn insert_chunk(&mut self, index: u32, chunk: &Chunk) {
+        unsafe { ffi::CF_Chunks_InsertChunk(&mut self.0, index, &chunk.0) }
+    }
 
-/// Inserts a chunk at the given index.
-pub fn chunks_insert_chunk(chunks: &mut ChunkList, index: u32, chunk: &Chunk) {
-    unsafe { ffi::CF_Chunks_InsertChunk(&mut chunks.0, index, &chunk.0) }
-}
+    /// Finds the insert position for a new chunk.
+    pub fn find_insert_position(&mut self, chunk: &Chunk) -> u32 {
+        unsafe { ffi::CF_Chunks_FindInsertPosition(&mut self.0, &chunk.0) }
+    }
 
-/// Finds the insert position for a new chunk.
-pub fn chunks_find_insert_position(chunks: &mut ChunkList, chunk: &Chunk) -> u32 {
-    unsafe { ffi::CF_Chunks_FindInsertPosition(&mut chunks.0, &chunk.0) }
-}
+    /// Combines the chunk at the given index with the previous chunk if possible.
+    pub fn combine_previous(&mut self, index: u32) -> i32 {
+        unsafe {
+            ffi::CF_Chunks_CombinePrevious(
+                &mut self.0,
+                index,
+                &self.0.chunks.add(index as usize).read(),
+            )
+        }
+    }
 
-/// Combines the chunk at the given index with the previous chunk if possible.
-pub fn chunks_combine_previous(chunks: &mut ChunkList, index: u32) -> i32 {
-    unsafe { ffi::CF_Chunks_CombinePrevious(&mut chunks.0, index, &chunks.0.chunks.add(index as usize).read()) }
-}
+    /// Combines the chunk at the given index with the next chunk if possible.
+    pub fn combine_next(&mut self, index: u32) -> i32 {
+        unsafe {
+            ffi::CF_Chunks_CombineNext(
+                &mut self.0,
+                index,
+                &self.0.chunks.add(index as usize).read(),
+            )
+        }
+    }
 
-/// Combines the chunk at the given index with the next chunk if possible.
-pub fn chunks_combine_next(chunks: &mut ChunkList, index: u32) -> i32 {
-    unsafe { ffi::CF_Chunks_CombineNext(&mut chunks.0, index, &chunks.0.chunks.add(index as usize).read()) }
-}
+    /// Finds the smallest chunk in the list and returns its index.
+    pub fn find_smallest_size(chunks: &ChunkList) -> u32 {
+        unsafe { ffi::CF_Chunks_FindSmallestSize(&chunks.0) }
+    }
 
-/// Finds the smallest chunk in the list and returns its index.
-pub fn chunks_find_smallest_size(chunks: &ChunkList) -> u32 {
-    unsafe { ffi::CF_Chunks_FindSmallestSize(&chunks.0) }
-}
-
-/// Inserts a chunk into the list at the given index.
-pub fn chunks_insert(chunks: &mut ChunkList, index: u32, chunk: &Chunk) {
-    unsafe { ffi::CF_Chunks_Insert(&mut chunks.0, index, &chunk.0) }
+    /// Inserts a chunk into the list at the given index.
+    pub fn insert(&mut self, index: u32, chunk: &Chunk) {
+        unsafe { ffi::CF_Chunks_Insert(&mut self.0, index, &chunk.0) }
+    }
 }
