@@ -10,8 +10,9 @@ use crate::transport::srspp::machine::sender::SenderActions;
 use crate::transport::srspp::machine::sender::SenderConfig;
 use crate::transport::srspp::machine::sender::SenderEvent;
 use crate::transport::srspp::machine::sender::SenderMachine;
-use crate::transport::srspp::packet::SrsppDataPacket;
 use crate::transport::srspp::packet::SrsppAckPacket;
+use crate::transport::srspp::packet::SrsppDataPacket;
+use crate::transport::srspp::packet::SrsppEosPacket;
 use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::rto::RtoPolicy;
@@ -100,6 +101,18 @@ impl<
         Ok(())
     }
 
+    /// Send an end-of-stream packet to `target`. Allocates a window
+    /// slot for an EOS packet (own seq, no payload) and queues it
+    /// for transmission. Returns when the EOS has been transmitted
+    /// once (not necessarily ACKed). Call [`flush`] afterwards to
+    /// wait for the ACK that confirms peer-side stream teardown.
+    pub async fn send_eos(&mut self, target: Address) -> Result<(), SrsppError> {
+        self.machine
+            .handle(SenderEvent::SendEos { target }, &mut self.actions)?;
+        self.process_actions().await?;
+        Ok(())
+    }
+
     /// Wait for all sent data to be acknowledged.
     pub async fn flush(&mut self) -> Result<(), SrsppError> {
         while !self.machine.is_idle() {
@@ -155,26 +168,43 @@ impl<
 
                     let packet_len =
                         if let Some(info) = self.machine.get_payload(*seq) {
-                            let pkt = SrsppDataPacket::builder()
-                                .buffer(&mut self.tx_buffer[..])
-                                .source_address(source_address)
-                                .target(info.target)
-                                .apid(apid)
-                                .function_code(function_code)
-                                .sequence_count(*seq)
-                                .sequence_flag(info.flags)
-                                .payload_len(info.payload.len())
-                                .build()
-                                .map_err(|e| {
-                                    SrsppError::PacketError(
-                                        format!("{:?}", e),
-                                    )
-                                })?;
-                            pkt.payload.copy_from_slice(info.payload);
-                            Some(
-                                SrsppDataPacket::HEADER_SIZE
-                                    + info.payload.len(),
-                            )
+                            if info.is_eos {
+                                SrsppEosPacket::builder()
+                                    .buffer(&mut self.tx_buffer[..])
+                                    .source_address(source_address)
+                                    .target(info.target)
+                                    .apid(apid)
+                                    .function_code(function_code)
+                                    .sequence_count(*seq)
+                                    .build()
+                                    .map_err(|e| {
+                                        SrsppError::PacketError(
+                                            format!("{:?}", e),
+                                        )
+                                    })?;
+                                Some(core::mem::size_of::<SrsppEosPacket>())
+                            } else {
+                                let pkt = SrsppDataPacket::builder()
+                                    .buffer(&mut self.tx_buffer[..])
+                                    .source_address(source_address)
+                                    .target(info.target)
+                                    .apid(apid)
+                                    .function_code(function_code)
+                                    .sequence_count(*seq)
+                                    .sequence_flag(info.flags)
+                                    .payload_len(info.payload.len())
+                                    .build()
+                                    .map_err(|e| {
+                                        SrsppError::PacketError(
+                                            format!("{:?}", e),
+                                        )
+                                    })?;
+                                pkt.payload.copy_from_slice(info.payload);
+                                Some(
+                                    SrsppDataPacket::HEADER_SIZE
+                                        + info.payload.len(),
+                                )
+                            }
                         } else {
                             None
                         };

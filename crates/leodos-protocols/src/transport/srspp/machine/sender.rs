@@ -36,6 +36,14 @@ pub enum SenderEvent<'a> {
         /// Sequence number of the timed-out packet.
         seq: SequenceCount,
     },
+
+    /// Application wants to signal end-of-stream to a target. The
+    /// machine allocates a window slot for an EOS packet (own seq,
+    /// no payload) and emits a `Transmit` action like `SendRequest`.
+    SendEos {
+        /// Destination address.
+        target: Address,
+    },
 }
 
 /// Actions the sender machine wants the driver to perform.
@@ -146,6 +154,9 @@ pub struct PayloadInfo<'a> {
     pub target: Address,
     /// Payload data bytes.
     pub payload: &'a [u8],
+    /// True for end-of-stream slots (no payload, serialize as
+    /// `SrsppEosPacket`); false for normal data slots.
+    pub is_eos: bool,
 }
 
 /// Configuration for the sender.
@@ -196,6 +207,11 @@ struct PacketMeta {
     len: usize,
     /// Whether this packet belongs to a segmented message.
     is_segmented: bool,
+    /// Whether this slot is an end-of-stream signal. EOS slots have
+    /// `len == 0` and serialize as [`SrsppEosPacket`] instead of a
+    /// data packet, but consume a sequence number and are
+    /// retransmitted/ACKed identically.
+    is_eos: bool,
 }
 
 impl Default for PacketMeta {
@@ -209,6 +225,7 @@ impl Default for PacketMeta {
             offset: 0,
             len: 0,
             is_segmented: false,
+            is_eos: false,
         }
     }
 }
@@ -305,6 +322,7 @@ impl<'pool, P: BufferPool + 'pool, const WIN: usize, const MTU: usize>
                 flags: m.flags,
                 target: m.target.parse(),
                 payload: &self.data[m.offset..m.offset + m.len],
+                is_eos: m.is_eos,
             })
     }
 
@@ -328,6 +346,9 @@ impl<'pool, P: BufferPool + 'pool, const WIN: usize, const MTU: usize>
             }
             SenderEvent::RetransmitTimeout { seq } => {
                 self.handle_timeout(seq, actions);
+            }
+            SenderEvent::SendEos { target } => {
+                self.queue_eos(target, actions)?;
             }
         }
         Ok(())
@@ -413,6 +434,47 @@ impl<'pool, P: BufferPool + 'pool, const WIN: usize, const MTU: usize>
             offset,
             len: payload.len(),
             is_segmented,
+            is_eos: false,
+        };
+
+        self.next_seq = (self.next_seq + 1) & SequenceCount::MAX;
+
+        actions.push(SenderAction::Transmit {
+            seq,
+            rto_ticks: self.config.rto_ticks,
+        });
+
+        Ok(())
+    }
+
+    /// Queue an end-of-stream packet for `target`. Like
+    /// [`queue_packet`] but allocates a slot with no payload bytes
+    /// and the `is_eos` flag set so the driver serializes it as
+    /// `SrsppEosPacket`. Consumes one sequence number; receiver
+    /// drops per-stream state once the cumulative ACK covers it.
+    fn queue_eos(
+        &mut self,
+        target: Address,
+        actions: &mut SenderActions,
+    ) -> Result<(), SenderError> {
+        let slot_idx = self
+            .meta
+            .iter()
+            .position(|m| m.state == SlotState::Empty)
+            .ok_or(SenderError::WindowFull)?;
+
+        let seq = SequenceCount::from(self.next_seq);
+
+        self.meta[slot_idx] = PacketMeta {
+            state: SlotState::PendingTransmit,
+            seq: self.next_seq,
+            flags: SequenceFlag::Unsegmented,
+            target: RawAddress::from(target),
+            retransmit_count: 0,
+            offset: self.write_pos,
+            len: 0,
+            is_segmented: false,
+            is_eos: true,
         };
 
         self.next_seq = (self.next_seq + 1) & SequenceCount::MAX;

@@ -283,6 +283,54 @@ impl SrsppAckPacket {
     }
 }
 
+/// SRSPP end-of-stream packet. Same wire prelude as
+/// [`SrsppAckPacket`] (Primary + TC + ISL + SRSPP headers) but with
+/// no trailer — signals that the sender has finished its stream and
+/// the receiver may discard per-stream state once this packet's
+/// sequence number is acknowledged.
+#[repr(C, packed)]
+#[derive(FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable, Copy, Clone, Debug)]
+pub(crate) struct SrsppEosPacket {
+    /// Space Packet primary header.
+    pub primary: PrimaryHeader,
+    /// cFE telecommand secondary header.
+    pub secondary: TelecommandSecondaryHeader,
+    /// ISL routing header for inter-satellite addressing.
+    pub(crate) isl_header: IslRoutingTelecommandHeader,
+    /// SRSPP protocol header.
+    pub(crate) srspp_header: SrsppHeader,
+}
+
+impl SrsppEosPacket {
+    /// Parse an EOS packet reference from a raw byte buffer.
+    pub(crate) fn parse(bytes: &[u8]) -> Result<&Self, SrsppPacketError> {
+        if bytes.len() < size_of::<Self>() {
+            return Err(SrsppPacketError::BufferTooSmall {
+                required: size_of::<Self>(),
+                provided: bytes.len(),
+            });
+        }
+        Self::ref_from_bytes(&bytes[..size_of::<Self>()]).map_err(|_| {
+            SrsppPacketError::BufferTooSmall {
+                required: size_of::<Self>(),
+                provided: bytes.len(),
+            }
+        })
+    }
+
+    /// Compute and set the cFE checksum over the entire packet.
+    pub(crate) fn set_cfe_checksum(&mut self) {
+        self.secondary.set_checksum(0);
+        self.secondary.set_checksum(checksum_u8(self.as_bytes()));
+    }
+
+    /// Validate the cFE checksum of this packet.
+    #[allow(dead_code)]
+    pub(crate) fn validate_cfe_checksum(&self) -> bool {
+        validate_checksum_u8(self.as_bytes())
+    }
+}
+
 /// Errors that can occur when constructing or parsing SRSPP packets.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum SrsppPacketError {
@@ -408,6 +456,56 @@ impl SrsppAckPacket {
         packet.srspp_header.set_srspp_type(SrsppType::Ack);
 
         packet.ack_payload = AckPayload::new(cumulative_ack.value(), selective_bitmap);
+
+        packet.set_cfe_checksum();
+
+        Ok(packet)
+    }
+}
+
+#[bon]
+impl SrsppEosPacket {
+    /// Build a new SRSPP end-of-stream packet in the provided buffer.
+    /// Has its own sequence number; receiver tears down per-stream
+    /// state once the cumulative ACK covers this seq.
+    #[builder]
+    pub(crate) fn new<'a>(
+        buffer: &'a mut [u8],
+        source_address: Address,
+        target: Address,
+        apid: Apid,
+        function_code: u8,
+        sequence_count: SequenceCount,
+    ) -> Result<&'a mut SrsppEosPacket, SrsppPacketError> {
+        let provided_len = buffer.len();
+        let (packet, _) = SrsppEosPacket::mut_from_prefix(buffer).map_err(|_| {
+            SrsppPacketError::BufferTooSmall {
+                required: size_of::<SrsppEosPacket>(),
+                provided: provided_len,
+            }
+        })?;
+
+        packet.primary.set_version(PacketVersion::VERSION_1);
+        packet.primary.set_packet_type(PacketType::Telecommand);
+        packet
+            .primary
+            .set_secondary_header_flag(SecondaryHeaderFlag::Present);
+        packet.primary.set_apid(apid);
+        packet.primary.set_sequence_count(sequence_count);
+        packet.primary.set_sequence_flag(SequenceFlag::Unsegmented);
+
+        let data_field_len = size_of::<TelecommandSecondaryHeader>()
+            + size_of::<IslRoutingTelecommandHeader>()
+            + size_of::<SrsppHeader>();
+        packet.primary.set_data_field_len(data_field_len as u16);
+
+        packet.secondary.set_function_code(function_code);
+        packet.secondary.set_checksum(0);
+
+        packet.isl_header.set_target(target);
+
+        packet.srspp_header.set_source_address(source_address);
+        packet.srspp_header.set_srspp_type(SrsppType::Eos);
 
         packet.set_cfe_checksum();
 

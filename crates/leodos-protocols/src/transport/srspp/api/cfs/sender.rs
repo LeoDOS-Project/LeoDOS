@@ -28,6 +28,7 @@ use crate::transport::srspp::machine::sender::SenderEvent;
 use crate::transport::srspp::machine::sender::SenderMachine;
 use crate::transport::srspp::packet::SrsppAckPacket;
 use crate::transport::srspp::packet::SrsppDataPacket;
+use crate::transport::srspp::packet::SrsppEosPacket;
 use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::rto::RtoPolicy;
@@ -85,21 +86,36 @@ where
     for seq in transmits {
         let packet_len = sender.with(|s| {
             if let Some(info) = s.machine.get_payload(seq) {
-                let pkt = SrsppDataPacket::builder()
-                    .buffer(tx_buffer)
-                    .source_address(cfg_clone.source_address)
-                    .target(info.target)
-                    .apid(cfg_clone.apid)
-                    .function_code(cfg_clone.function_code)
-                    .sequence_count(seq)
-                    .sequence_flag(info.flags)
-                    .payload_len(info.payload.len())
-                    .build()
-                    .map_err(TransportError::Packet)?;
-                pkt.payload.copy_from_slice(info.payload);
-                Ok::<_, TransportError<E>>(Some(
-                    SrsppDataPacket::HEADER_SIZE + info.payload.len(),
-                ))
+                if info.is_eos {
+                    SrsppEosPacket::builder()
+                        .buffer(tx_buffer)
+                        .source_address(cfg_clone.source_address)
+                        .target(info.target)
+                        .apid(cfg_clone.apid)
+                        .function_code(cfg_clone.function_code)
+                        .sequence_count(seq)
+                        .build()
+                        .map_err(TransportError::Packet)?;
+                    Ok::<_, TransportError<E>>(Some(
+                        core::mem::size_of::<SrsppEosPacket>(),
+                    ))
+                } else {
+                    let pkt = SrsppDataPacket::builder()
+                        .buffer(tx_buffer)
+                        .source_address(cfg_clone.source_address)
+                        .target(info.target)
+                        .apid(cfg_clone.apid)
+                        .function_code(cfg_clone.function_code)
+                        .sequence_count(seq)
+                        .sequence_flag(info.flags)
+                        .payload_len(info.payload.len())
+                        .build()
+                        .map_err(TransportError::Packet)?;
+                    pkt.payload.copy_from_slice(info.payload);
+                    Ok::<_, TransportError<E>>(Some(
+                        SrsppDataPacket::HEADER_SIZE + info.payload.len(),
+                    ))
+                }
             } else {
                 Ok::<_, TransportError<E>>(None)
             }
@@ -597,6 +613,38 @@ impl<
         self.sender.with_mut(|s| {
             s.machine
                 .handle(SenderEvent::SendRequest { target, data }, &mut s.actions)
+        })?;
+        Ok(())
+    }
+
+    /// Send an end-of-stream packet to `target`. Allocates a window
+    /// slot for an EOS packet (own seq, no payload) and queues it for
+    /// transmission. The peer's receiver discards its per-stream
+    /// state once the cumulative ACK covers the EOS sequence number,
+    /// so the next message from this source restarts cleanly at
+    /// seq=0.
+    pub async fn send_eos(
+        &mut self,
+        target: impl Into<Address>,
+    ) -> Result<(), TransportError<E>> {
+        let target = target.into();
+        poll_fn(|_cx| {
+            self.sender.with(|s| {
+                if let Some(ref e) = s.error {
+                    return Poll::Ready(Err(e.clone()));
+                }
+                if s.machine.available_window() > 0 {
+                    Poll::Ready(Ok(()))
+                } else {
+                    Poll::Pending
+                }
+            })
+        })
+        .await?;
+
+        self.sender.with_mut(|s| {
+            s.machine
+                .handle(SenderEvent::SendEos { target }, &mut s.actions)
         })?;
         Ok(())
     }
