@@ -1,6 +1,7 @@
 #![no_std]
 #![deny(unsafe_code)]
 
+use core::fmt::Write as _;
 use core::time::Duration;
 use futures::FutureExt as _;
 use leodos_libcfs::cfe::es::pool::MemPool;
@@ -10,8 +11,13 @@ use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::cfe::sb::pipe::Pipe;
 use leodos_libcfs::cfe::sb::send_buf::SendBuffer;
+use leodos_libcfs::cfe::tbl::Table;
+use leodos_libcfs::cfe::tbl::TableOptions;
+use leodos_libcfs::cfe::tbl::Validate;
 use leodos_libcfs::error::CfsError;
 use leodos_libcfs::log;
+use leodos_libcfs::os::fs::AccessMode;
+use leodos_libcfs::os::fs::File;
 use leodos_libcfs::os::net::SocketAddr;
 use leodos_libcfs::runtime::Runtime;
 
@@ -48,6 +54,103 @@ const SHELL: Shell = Shell::new(TORUS, ALTITUDE_M, INCLINATION_DEG);
 
 const LOCALHOST: &str = "127.0.0.1";
 const PORT_BASE: u16 = 6000;
+
+/// EVS event id fired on every forwarded ISL packet. Message format
+/// is `fwd src=<endpoint> dst=<endpoint>` where each endpoint is
+/// `sat:<scid>` or `gnd:<station>`. leo-viz parses this to draw a
+/// transient line between the two endpoints.
+const ROUTER_FORWARD_EID: u16 = 100;
+
+const ROUTER_GROUND_MAX_STATIONS: usize = bindings::ROUTER_MAX_GROUND_STATIONS as usize;
+
+/// Mirrors `RouterGroundEntry_t` in
+/// `apps/router/fsw/tables/router_ground.h`.
+#[repr(C)]
+#[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::KnownLayout, zerocopy::Immutable)]
+struct RouterGroundEntry {
+    station_id: u8,
+    _pad: [u8; 3],
+    lat_deg: f32,
+    lon_deg: f32,
+}
+
+/// Mirrors `RouterGroundTable_t` in the same header. Loaded from
+/// the leo-viz-written file at [`ROUTER_GROUND_RUNTIME_PATH`] if
+/// present, otherwise from cFE Table Services'
+/// `/cf/router_ground.tbl` (the compiled-in default). Valid
+/// entries are `entries[0..count]`.
+#[repr(C)]
+#[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::KnownLayout, zerocopy::Immutable)]
+struct RouterGroundTable {
+    count: u8,
+    _pad: [u8; 3],
+    entries: [RouterGroundEntry; ROUTER_GROUND_MAX_STATIONS],
+}
+
+/// Path to the runtime-overridden ground-station file written by
+/// leo-viz into the bind-mounted log dir before launching the
+/// container. Plain `RouterGroundTable` bytes (host endian, x86_64
+/// little-endian on both sides). When present, supersedes the
+/// compiled-in default at `/cf/router_ground.tbl`.
+const ROUTER_GROUND_RUNTIME_PATH: &str = "/tmp/leodos/router_ground.bin";
+
+impl Default for RouterGroundTable {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            _pad: [0; 3],
+            entries: [RouterGroundEntry {
+                station_id: 0,
+                _pad: [0; 3],
+                lat_deg: 0.0,
+                lon_deg: 0.0,
+            }; ROUTER_GROUND_MAX_STATIONS],
+        }
+    }
+}
+
+impl Validate for RouterGroundTable {}
+
+/// Best-effort read of [`ROUTER_GROUND_RUNTIME_PATH`] into a
+/// `RouterGroundTable`. Returns `None` if the file is missing,
+/// truncated, or fails any sanity check.
+fn read_runtime_ground_table() -> Option<RouterGroundTable> {
+    use zerocopy::FromBytes;
+    let mut file = File::open(ROUTER_GROUND_RUNTIME_PATH, AccessMode::ReadOnly).ok()?;
+    let mut buf = [0u8; core::mem::size_of::<RouterGroundTable>()];
+    let n = file.sync_read(&mut buf).ok()?;
+    if n != buf.len() {
+        return None;
+    }
+    let table = RouterGroundTable::read_from_bytes(&buf).ok()?;
+    if (table.count as usize) > ROUTER_GROUND_MAX_STATIONS {
+        return None;
+    }
+    Some(table)
+}
+
+/// Append a `sat:<scid>` or `gnd:<station>` token for `addr` to `out`.
+fn write_endpoint<const N: usize>(out: &mut heapless::String<N>, addr: Address) {
+    match addr {
+        Address::Satellite(p) => {
+            let scid = p.orb as u16 * NUM_SATS as u16 + p.sat as u16;
+            let _ = write!(out, "sat:{}", scid);
+        }
+        Address::Ground { station } => {
+            let _ = write!(out, "gnd:{}", station);
+        }
+    }
+}
+
+/// Fire an EVS event describing one forwarded ISL packet. The
+/// emitting spacecraft is the source (it's the one forwarding); the
+/// EVS event header carries the emitting scid.
+fn emit_forward_event(dst: Address) {
+    let mut msg: heapless::String<96> = heapless::String::new();
+    let _ = msg.push_str("fwd dst=");
+    write_endpoint(&mut msg, dst);
+    let _ = event::info(ROUTER_FORWARD_EID, &msg);
+}
 const PORTS_PER_SAT: u16 = 5;
 const MTU: usize = 1024;
 
@@ -156,16 +259,41 @@ pub extern "C" fn ROUTER_AppMain() {
         log!("Router app starting")?;
 
         let scid = SpacecraftId::new(system::get_spacecraft_id());
-        let address = scid.to_address(NUM_SATS);
-        let Address::Satellite(point) = address else {
+        let Some(address) = scid.to_address(NUM_ORBS, NUM_SATS) else {
             log!("Invalid spacecraft ID")?;
             return Ok::<(), CfsError>(());
         };
+        let Address::Satellite(point) = address else { unreachable!() };
 
         let mut gateway_table = GatewayTable::<4>::new(5.0);
-        gateway_table.add_station(0, LatLon::new(67.86, 20.22));
-        gateway_table.add_station(1, LatLon::new(78.23, 15.39));
-        gateway_table.add_station(2, LatLon::new(64.86, -147.72));
+        let ground_table =
+            Table::<RouterGroundTable>::new("GroundTable", TableOptions::DEFAULT)?;
+        let mut loaded_from_runtime = false;
+        if let Some(parsed) = read_runtime_ground_table() {
+            if ground_table.load_from_slice(&[parsed]).is_ok() {
+                log!(
+                    "Router: ground table loaded from runtime file ({} entries)",
+                    parsed.count
+                )?;
+                loaded_from_runtime = true;
+            } else {
+                log!("Router: runtime ground table load_from_slice failed")?;
+            }
+        }
+        if !loaded_from_runtime {
+            if let Err(e) = ground_table.load_from_file("/cf/router_ground.tbl") {
+                log!("Router: ground table load failed: {:?}", e)?;
+            }
+        }
+        if let Ok(accessor) = ground_table.get() {
+            let n = (accessor.count as usize).min(ROUTER_GROUND_MAX_STATIONS);
+            for entry in accessor.entries[..n].iter() {
+                gateway_table.add_station(
+                    entry.station_id,
+                    LatLon::new(entry.lat_deg, entry.lon_deg),
+                );
+            }
+        }
 
         let pool = MemPool::new(POOL_STORAGE.take()?, false)?;
 
@@ -235,6 +363,7 @@ pub extern "C" fn ROUTER_AppMain() {
                     if packet.target() == address {
                         deliver_local(&routes, payload);
                     } else {
+                        emit_forward_event(packet.target());
                         let _ = router.write(payload).await;
                     }
                 }

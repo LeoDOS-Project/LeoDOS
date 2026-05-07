@@ -4,7 +4,8 @@ CFE_APP, to_lab,     TO_LAB_AppMain,     TO_LAB_APP,  70,  65536, 0x0, 0;
 CFE_APP, sch_lab,    SCH_LAB_AppMain,    SCH_LAB_APP, 80,  65536, 0x0, 0;
 CFE_APP, sim_client, SIM_CLIENT_AppMain, SIM_CLIENT,  85, 131072, 0x0, 0;
 CFE_APP, sb_echo,    SB_ECHO_AppMain,    SB_ECHO,     90,  65536, 0x0, 0;
-CFE_APP, ping,       PING_AppMain,       PING_APP,    91, 262144, 0x0, 0;
+CFE_APP, router,     ROUTER_AppMain,     ROUTER_APP,  91, 262144, 0x0, 0;
+CFE_APP, ping,       PING_AppMain,       PING_APP,    92, 262144, 0x0, 0;
 !
 ! Startup script fields:
 ! 1. Object Type      -- CFE_APP for an Application, or CFE_LIB for a library.

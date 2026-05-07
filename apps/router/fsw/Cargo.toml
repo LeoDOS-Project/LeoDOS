@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 leodos-protocols = { path = "../../../crates/leodos-protocols", features = ["cfs"] }
 leodos-libcfs = { path = "../../../crates/leodos-libcfs" }
 heapless = "0.9"
+zerocopy = { version = "0.8", features = ["derive"] }
 thiserror = { version = "2.0.17", default-features = false }
 futures = { version = "0.3.31", default-features = false, features = ["async-await"] }
 pin-utils = "0.1.0"
