@@ -78,7 +78,8 @@ where
             let source_address = data.srspp_header.source_address();
             let seq = data.primary.sequence_count();
             let flags = data.primary.sequence_flag();
-            let result = drive_segment(state, source_address, seq, flags, &data.payload)?;
+            let result =
+                drive_segment(state, source_address, seq, flags, &data.payload)?;
             drive_actions(state, ack_buffer, source_address, result, link).await
         }
         Ok(SrsppType::Eos) => {
@@ -88,21 +89,49 @@ where
             let source_address = eos.srspp_header.source_address();
             let seq = eos.primary.sequence_count();
             let flags = eos.primary.sequence_flag();
-            // Feed an empty payload through the state machine so the EOS
-            // sequence number advances expected_seq and gets ACKed; mark
-            // eos_seq so the consumer can surface it as a Eos event.
-            let result = drive_segment(state, source_address, seq, flags, &[])?;
+            // Record eos_seq before driving the segment so drive_segment
+            // can drain the synthetic empty message produced when
+            // expected_seq advances past the EOS slot.
             state.with_mut(|s| {
+                if !s.streams.contains_key(&source_address) {
+                    let _ = s.streams.insert(
+                        source_address,
+                        StreamState {
+                            machine: R::new(),
+                            ack_state: AckState::new(&s.config, source_address),
+                            ack_deadline: None,
+                            progress_deadline: None,
+                            eos_seq: None,
+                            eos_observed: false,
+                        },
+                    );
+                }
                 if let Some(stream) = s.streams.get_mut(&source_address) {
                     if stream.eos_seq.is_none() {
                         stream.eos_seq = Some(seq);
                     }
                 }
             });
+            // Feed an empty payload through the state machine so the EOS
+            // sequence number advances expected_seq and gets ACKed; the
+            // resulting empty message is drained inside drive_segment so
+            // the consumer never observes it as a 0-byte data event.
+            let result = drive_segment(state, source_address, seq, flags, &[])?;
             drive_actions(state, ack_buffer, source_address, result, link).await
         }
         _ => Ok(()),
     }
+}
+
+/// Distance, masked to the 14-bit SRSPP sequence space, that `seq` is
+/// strictly past `target` going forward. The half-space cutoff
+/// distinguishes "ahead" (small positive distance) from "behind"
+/// (large positive distance, which is really negative mod 2^14).
+pub(super) fn seq_strictly_past(seq: u16, target: u16) -> bool {
+    let span: u16 = SequenceCount::MAX + 1;
+    let half = span / 2;
+    let delta = seq.wrapping_sub(target) & SequenceCount::MAX;
+    delta > 0 && delta < half
 }
 
 /// Common path for routing an in-band segment (DATA payload or EOS
@@ -134,7 +163,27 @@ where
             );
         }
         if let Some(stream) = s.streams.get_mut(&source) {
+            let before = stream.machine.expected_seq().value();
             let outcome = stream.machine.handle_data(seq, flags, payload)?;
+            let after = stream.machine.expected_seq().value();
+
+            // If expected_seq just transitioned past the recorded EOS
+            // sequence, the state machine produced (or just delivered)
+            // the synthetic empty message for the EOS slot — drain it
+            // here so the EOS event is surfaced exclusively via
+            // expected_seq state, never confused with a 0-byte DATA.
+            if let Some(eos) = stream.eos_seq {
+                let eos_raw = eos.value();
+                let was_past = seq_strictly_past(before, eos_raw);
+                let now_past = seq_strictly_past(after, eos_raw);
+                if !was_past
+                    && now_past
+                    && stream.machine.message_len() == Some(0)
+                {
+                    let _ = stream.machine.take_message();
+                }
+            }
+
             Ok(stream.ack_state.on_data(
                 outcome,
                 stream.machine.expected_seq(),

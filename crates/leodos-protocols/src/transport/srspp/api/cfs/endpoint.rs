@@ -63,6 +63,7 @@ use super::receiver::StreamState;
 use super::receiver::handle_timeouts as receiver_handle_timeouts;
 use super::receiver::next_deadline as receiver_next_deadline;
 use super::receiver::process_data;
+use super::receiver::seq_strictly_past;
 use super::sender::DtnContext;
 use super::sender::SenderState;
 use super::sender::drain_stored;
@@ -883,22 +884,25 @@ enum PeekOutcome {
     Eos,
 }
 
+/// True when the EOS marker has been delivered to (and ACKed by) the
+/// receiver state machine — i.e. expected_seq has advanced strictly
+/// past the recorded `eos_seq`.
+fn eos_reached<R: ReceiverBackend>(stream: &StreamState<R>) -> bool {
+    let Some(eos) = stream.eos_seq else { return false };
+    seq_strictly_past(stream.machine.expected_seq().value(), eos.value())
+}
+
 /// Decide what the next recv event for `stream` should be without
 /// consuming any buffered message.
 ///
-/// Returns `Some(Data)` if a payload is ready to deliver, `Some(Eos)`
-/// once the EOS marker has reached the head of the in-order delivery
-/// stream and not yet been observed, or `None` if neither.
+/// Returns `Some(Data)` whenever a payload is ready (including 0-byte
+/// payloads, which are valid DATA), `Some(Eos)` once the EOS sequence
+/// has been ACKed and the consumer has not yet observed it, or `None`.
 fn peek_recv_event<R: ReceiverBackend>(stream: &StreamState<R>) -> Option<PeekOutcome> {
     if stream.machine.has_message() {
-        // Treat the synthetic empty message produced by the EOS
-        // sequence number as an Eos marker, not a data delivery.
-        if stream.machine.message_len() == Some(0) && stream.eos_seq.is_some() {
-            return (!stream.eos_observed).then_some(PeekOutcome::Eos);
-        }
         return Some(PeekOutcome::Data);
     }
-    if stream.eos_seq.is_some() && !stream.eos_observed {
+    if !stream.eos_observed && eos_reached(stream) {
         return Some(PeekOutcome::Eos);
     }
     None
@@ -911,23 +915,12 @@ fn take_recv_event<R: ReceiverBackend>(
     stream: &mut StreamState<R>,
     buf: &mut [u8],
 ) -> Option<RecvKind> {
-    if stream.machine.has_message() {
-        if stream.machine.message_len() == Some(0) && stream.eos_seq.is_some() {
-            // Drain the synthetic empty message produced by the EOS
-            // sequence number; surface it as Eos.
-            let _ = stream.machine.take_message();
-            if stream.eos_observed {
-                return None;
-            }
-            stream.eos_observed = true;
-            return Some(RecvKind::Eos);
-        }
-        let msg = stream.machine.take_message()?;
+    if let Some(msg) = stream.machine.take_message() {
         let len = msg.len().min(buf.len());
         buf[..len].copy_from_slice(&msg[..len]);
         return Some(RecvKind::Data(len));
     }
-    if stream.eos_seq.is_some() && !stream.eos_observed {
+    if !stream.eos_observed && eos_reached(stream) {
         stream.eos_observed = true;
         return Some(RecvKind::Eos);
     }
