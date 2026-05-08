@@ -8,8 +8,8 @@ use leodos_libcfs::cfe::es::system;
 use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::error::CfsError;
-use leodos_libcfs::log;
 use leodos_libcfs::join;
+use leodos_libcfs::log;
 
 use crate::job::Job;
 use crate::packet::AssignCollectorPayload;
@@ -24,9 +24,9 @@ use leodos_protocols::datalink::link::cfs::sb::SbDatalink;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::ptp::PointToPoint;
-use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
-use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
-use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
+use leodos_protocols::transport::srspp::api::cfs::EndpointListener;
+use leodos_protocols::transport::srspp::api::cfs::EndpointSender;
+use leodos_protocols::transport::srspp::api::cfs::SrsppEndpoint;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
 use leodos_protocols::transport::srspp::dtn::MessageStore;
 use leodos_protocols::transport::srspp::dtn::NoStore;
@@ -40,24 +40,24 @@ use leodos_protocols::transport::srspp::rto::FixedRto;
 use crate::SpaceCompConfig;
 use crate::SpaceCompError;
 
-/// SRSPP receive handle.
-pub type RxHandle<
+/// Listener handle alias used by SpaceCoMP role functions.
+pub type Listener<
     'a,
     const WIN: usize = 8,
     const BUF: usize = 4096,
     const RX_BUF: usize = 8192,
-    const MAX_STREAMS: usize = 1,
-> = SrsppRxHandle<'a, CfsError, ReceiverMachine<WIN, BUF, RX_BUF>, MAX_STREAMS>;
+    const MAX_STREAMS: usize = 4,
+> = EndpointListener<'a, CfsError, ReceiverMachine<WIN, BUF, RX_BUF>, MAX_STREAMS>;
 
-/// SRSPP transmit handle.
-pub type TxHandle<
+/// Sender handle alias used by SpaceCoMP role functions.
+pub type Sender<
     'a,
     'pool,
     S = NoStore,
     Re = AlwaysReachable,
     const WIN: usize = 8,
     const MTU: usize = 512,
-> = SrsppTxHandle<'a, 'pool, CfsError, S, Re, MemPool, WIN, MTU>;
+> = EndpointSender<'a, 'pool, CfsError, MemPool, S, Re, WIN, MTU>;
 
 /// A SpaceCoMP node that handles SRSPP transport,
 /// message dispatch, and coordinator orchestration.
@@ -66,8 +66,6 @@ pub type TxHandle<
 /// - `F`: closure that constructs the app after startup sync
 /// - `S`: message store for DTN (default: [`NoStore`])
 /// - `R`: reachability oracle for DTN (default: [`AlwaysReachable`])
-///
-/// Const parameters control SRSPP buffer sizes (all have defaults).
 #[derive(bon::Builder)]
 pub struct SpaceCompNode<F, S: MessageStore = NoStore, R: Reachable = AlwaysReachable> {
     app_fn: F,
@@ -106,7 +104,8 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
     where
         F: FnOnce() -> Result<A, SpaceCompError>,
     {
-        leodos_libcfs::runtime::Runtime::new().run(self.run::<A, 8, 4096, 512, 8192, 1>(pool))
+        leodos_libcfs::runtime::Runtime::new()
+            .run(self.run::<A, 8, 4096, 512, 8192, 4, 4>(pool))
     }
 
     /// Runs the node with custom SRSPP buffer sizes.
@@ -116,6 +115,7 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
         const BUF: usize,
         const MTU: usize,
         const RX_BUF: usize,
+        const MAX_TX: usize,
         const MAX_STREAMS: usize,
     >(
         self,
@@ -159,7 +159,7 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
             .ack_delay_ticks(100)
             .build();
 
-        let srspp: SrsppNode<
+        let endpoint: SrsppEndpoint<
             '_,
             CfsError,
             MemPool,
@@ -168,8 +168,9 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
             ReceiverMachine<WIN, BUF, RX_BUF>,
             WIN,
             MTU,
+            MAX_TX,
             MAX_STREAMS,
-        > = SrsppNode::new(
+        > = SrsppEndpoint::new(
             &pool,
             BUF,
             sender_config,
@@ -177,8 +178,10 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
             self.store,
             self.reachable,
         )?;
-        let (mut rx, mut tx, mut driver) =
-            srspp.split(network, FixedRto::new(rto), &pool, MTU)?;
+
+        let mut listener = endpoint
+            .listener()
+            .map_err(|_| SpaceCompError::Cfs(CfsError::ExternalResourceFail))?;
 
         system::wait_for_startup_sync(Duration::from_millis(10_000));
 
@@ -190,7 +193,7 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
         let dispatch = async {
             let mut initialized = false;
             loop {
-                let Ok((_source, len)) = rx.recv(&mut recv_buf).await else {
+                let Ok((_source, len)) = listener.recv(&mut recv_buf).await else {
                     break;
                 };
                 if !initialized {
@@ -212,8 +215,10 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
                                 continue;
                             }
                         };
-                        crate::coordinator::run(&mut tx, &mut msg_buf, shell, point, job_id, job)
-                            .await
+                        crate::coordinator::run(
+                            &endpoint, &mut msg_buf, shell, point, job_id, job,
+                        )
+                        .await
                     }
                     OpCode::AssignCollector => {
                         let p: AssignCollectorPayload =
@@ -224,9 +229,15 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
                                     continue;
                                 }
                             };
+                        let mapper_tx = match endpoint.sender(p.mapper_addr()) {
+                            Ok(s) => s,
+                            Err(_) => {
+                                log!("AssignCollector: sender allocation failed")?;
+                                continue;
+                            }
+                        };
                         let stx = crate::transport::SpaceCompTx::new(
-                            tx,
-                            p.mapper_addr(),
+                            mapper_tx,
                             job_id,
                             p.partition_id(),
                         );
@@ -241,13 +252,20 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
                                     continue;
                                 }
                             };
+                        let reducer_tx = match endpoint.sender(p.reducer_addr()) {
+                            Ok(s) => s,
+                            Err(_) => {
+                                log!("AssignMapper: sender allocation failed")?;
+                                continue;
+                            }
+                        };
                         let mut srx = crate::transport::SpaceCompRx::new(
-                            &mut rx,
+                            &mut listener,
                             job_id,
                             p.collector_count(),
                         );
                         let mut stx =
-                            crate::transport::SpaceCompTx::new(tx, p.reducer_addr(), job_id, 0);
+                            crate::transport::SpaceCompTx::new(reducer_tx, job_id, 0);
                         let mut map_buf = [0u8; 8192];
                         let result = loop {
                             match srx.recv(&mut map_buf).await {
@@ -272,9 +290,19 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
                                     continue;
                                 }
                             };
-                        let srx =
-                            crate::transport::SpaceCompRx::new(&mut rx, job_id, p.mapper_count());
-                        let stx = crate::transport::SpaceCompTx::new(tx, p.los_addr(), job_id, 0);
+                        let los_tx = match endpoint.sender(p.los_addr()) {
+                            Ok(s) => s,
+                            Err(_) => {
+                                log!("AssignReducer: sender allocation failed")?;
+                                continue;
+                            }
+                        };
+                        let srx = crate::transport::SpaceCompRx::new(
+                            &mut listener,
+                            job_id,
+                            p.mapper_count(),
+                        );
+                        let stx = crate::transport::SpaceCompTx::new(los_tx, job_id, 0);
                         app.reduce(srx, stx).await
                     }
                     _ => continue,
@@ -287,7 +315,7 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
             Ok::<(), SpaceCompError>(())
         };
 
-        let (d, dr) = join!(dispatch, driver.run()).await;
+        let (d, dr) = join!(dispatch, endpoint.run(network, FixedRto::new(rto))).await;
         d?;
         dr.map_err(SpaceCompError::Transport)?;
 

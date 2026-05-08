@@ -18,7 +18,8 @@ use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::spp::Apid;
-use leodos_protocols::transport::srspp::api::cfs::SrsppListener;
+use leodos_libcfs::join;
+use leodos_protocols::transport::srspp::api::cfs::SrsppEndpoint;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
 use leodos_protocols::transport::srspp::dtn::NoStore;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
@@ -123,7 +124,7 @@ async fn run() -> Result<(), CfsError> {
 
     let pool = MemPool::new(POOL_STORAGE.take()?, false)?;
 
-    let listener: SrsppListener<
+    let endpoint: SrsppEndpoint<
         '_,
         CfsError,
         _,
@@ -133,7 +134,8 @@ async fn run() -> Result<(), CfsError> {
         8,
         512,
         4,
-    > = SrsppListener::new(
+        4,
+    > = SrsppEndpoint::new(
         &pool,
         SRSPP_BUF_SIZE,
         sender_config,
@@ -144,14 +146,15 @@ async fn run() -> Result<(), CfsError> {
 
     log!("Ping ready on sat({}, {})", point.orb, point.sat)?;
 
-    listener
-        .listen(network, FixedRto::new(1000), |mut stream, mut tx, _| async move {
-            let mut recv_buf = [0u8; 128];
-            let len = stream.recv(&mut recv_buf).await?;
-            let source = stream.source();
+    let mut listener = endpoint.listener().map_err(|_| CfsError::Osal(leodos_libcfs::error::OsalError::Error))?;
+
+    let serve = async {
+        let mut recv_buf = [0u8; 128];
+        loop {
+            let (source, len) = listener.recv(&mut recv_buf).await?;
             let Ok(ping) = PingPayload::ref_from_bytes(&recv_buf[..len]) else {
                 let _ = log!("Ping: bad payload ({} bytes)", len);
-                return Ok(());
+                continue;
             };
             let seq = ping.seq.get();
             let sent_ms = ping.sent_ms.get();
@@ -167,14 +170,29 @@ async fn run() -> Result<(), CfsError> {
                 met_subseconds: U32::new(met.subseconds()),
                 sent_ms: U64::new(sent_ms),
             };
-            tx.send(&pong).await?;
-            Ok(())
-        })
-        .await
-        .map_err(|e| {
-            let _ = log!("Ping: listener exited: {}", e);
-            CfsError::Osal(leodos_libcfs::error::OsalError::Error)
-        })?;
+            let Ok(mut tx) = endpoint.sender(source) else {
+                let _ = log!("Ping: cannot allocate sender to {:?}", source);
+                continue;
+            };
+            if let Err(e) = tx.send(&pong).await {
+                let _ = log!("Ping: send failed: {}", e);
+                continue;
+            }
+            if let Err(e) = tx.flush().await {
+                let _ = log!("Ping: flush failed: {}", e);
+            }
+        }
+        #[allow(unreachable_code)]
+        Ok::<(), leodos_protocols::transport::srspp::api::cfs::TransportError<CfsError>>(())
+    };
+
+    let (run_res, serve_res) = join!(endpoint.run(network, FixedRto::new(1000)), serve).await;
+    if let Err(e) = run_res {
+        let _ = log!("Ping: endpoint run exited: {}", e);
+    }
+    if let Err(e) = serve_res {
+        let _ = log!("Ping: serve exited: {}", e);
+    }
     Ok(())
 }
 

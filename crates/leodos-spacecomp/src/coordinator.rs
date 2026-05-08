@@ -7,9 +7,10 @@ use core::mem::size_of;
 
 use leodos_libcfs::cfe::es::pool::MemPool;
 use leodos_libcfs::error::CfsError;
-use leodos_protocols::transport::srspp::api::cfs::SrsppDial;
+use leodos_protocols::transport::srspp::api::cfs::SrsppEndpoint;
 use leodos_protocols::transport::srspp::dtn::MessageStore;
 use leodos_protocols::transport::srspp::dtn::Reachable;
+use leodos_protocols::transport::srspp::machine::receiver::ReceiverBackend;
 use crate::job::Job;
 use crate::packet::AssignCollectorPayload;
 use crate::packet::AssignMapperPayload;
@@ -31,11 +32,13 @@ const MAX_SATELLITES: usize = 64;
 pub async fn run<
     S: MessageStore,
     R: Reachable,
+    Rb: ReceiverBackend,
     const WIN: usize,
     const MTU: usize,
+    const MAX_TX: usize,
     const MAX_STREAMS: usize,
 >(
-    dial: &SrsppDial<'_, '_, CfsError, MemPool, S, R, WIN, MTU, MAX_STREAMS>,
+    endpoint: &SrsppEndpoint<'_, CfsError, MemPool, S, R, Rb, WIN, MTU, MAX_TX, MAX_STREAMS>,
     buf: &mut [u8],
     shell: Shell,
     local_point: Point,
@@ -58,10 +61,11 @@ pub async fn run<
             .payload_len(size_of::<AssignCollectorPayload>())
             .build()?;
         m.payload_mut().copy_from_slice(payload.as_bytes());
-        let mut tx = dial
-            .to(Address::Satellite(*pt))
-            .ok_or(SpaceCompError::Plan("dial slot exhausted"))?;
+        let mut tx = endpoint
+            .sender(Address::Satellite(*pt))
+            .map_err(|_| SpaceCompError::Plan("endpoint sender allocation failed"))?;
         tx.send(m.as_bytes()).await?;
+        tx.flush().await?;
     }
 
     for (j, pt) in plan.mappers.iter().enumerate() {
@@ -77,10 +81,11 @@ pub async fn run<
             .payload_len(size_of::<AssignMapperPayload>())
             .build()?;
         m.payload_mut().copy_from_slice(payload.as_bytes());
-        let mut tx = dial
-            .to(Address::Satellite(*pt))
-            .ok_or(SpaceCompError::Plan("dial slot exhausted"))?;
+        let mut tx = endpoint
+            .sender(Address::Satellite(*pt))
+            .map_err(|_| SpaceCompError::Plan("endpoint sender allocation failed"))?;
         tx.send(m.as_bytes()).await?;
+        tx.flush().await?;
     }
 
     let payload = AssignReducerPayload::builder()
@@ -94,10 +99,11 @@ pub async fn run<
         .payload_len(size_of::<AssignReducerPayload>())
         .build()?;
     m.payload_mut().copy_from_slice(payload.as_bytes());
-    let mut tx = dial
-        .to(Address::Satellite(plan.reducer))
-        .ok_or(SpaceCompError::Plan("dial slot exhausted"))?;
+    let mut tx = endpoint
+        .sender(Address::Satellite(plan.reducer))
+        .map_err(|_| SpaceCompError::Plan("endpoint sender allocation failed"))?;
     tx.send(m.as_bytes()).await?;
+    tx.flush().await?;
 
     Ok(())
 }

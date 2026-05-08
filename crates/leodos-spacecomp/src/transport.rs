@@ -3,8 +3,8 @@
 
 use leodos_libcfs::cfe::es::pool::MemPool;
 use leodos_libcfs::error::CfsError;
-use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
-use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
+use leodos_protocols::transport::srspp::api::cfs::EndpointListener;
+use leodos_protocols::transport::srspp::api::cfs::EndpointSender;
 use leodos_protocols::transport::srspp::dtn::MessageStore;
 use leodos_protocols::transport::srspp::dtn::Reachable;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverBackend;
@@ -89,7 +89,7 @@ pub struct SpaceCompTx<
     const WIN: usize,
     const MTU: usize,
 > {
-    tx: SrsppTxHandle<'a, 'pool, CfsError, S, R, MemPool, WIN, MTU>,
+    tx: EndpointSender<'a, 'pool, CfsError, MemPool, S, R, WIN, MTU>,
     job_id: u16,
     partition_id: u8,
     buf: [u8; 512],
@@ -98,10 +98,10 @@ pub struct SpaceCompTx<
 impl<'a, 'pool, S: MessageStore, R: Reachable, const WIN: usize, const MTU: usize>
     SpaceCompTx<'a, 'pool, S, R, WIN, MTU>
 {
-    /// Wraps a per-target SRSPP tx handle. The handle's bound target
+    /// Wraps a per-target endpoint sender. The sender's bound target
     /// is the next-stage destination for this role.
     pub fn new(
-        tx: SrsppTxHandle<'a, 'pool, CfsError, S, R, MemPool, WIN, MTU>,
+        tx: EndpointSender<'a, 'pool, CfsError, MemPool, S, R, WIN, MTU>,
         job_id: u16,
         partition_id: u8,
     ) -> Self {
@@ -111,6 +111,12 @@ impl<'a, 'pool, S: MessageStore, R: Reachable, const WIN: usize, const MTU: usiz
             partition_id,
             buf: [0u8; 512],
         }
+    }
+
+    /// Waits for all queued data to be acknowledged by the bound target.
+    pub async fn flush(&mut self) -> Result<(), SpaceCompError> {
+        self.tx.flush().await?;
+        Ok(())
     }
 }
 
@@ -137,6 +143,7 @@ impl<'a, 'pool, S: MessageStore, R: Reachable, const WIN: usize, const MTU: usiz
             .payload_len(0)
             .build()?;
         self.tx.send(m.as_bytes()).await?;
+        self.tx.flush().await?;
         Ok(())
     }
 
@@ -146,16 +153,16 @@ impl<'a, 'pool, S: MessageStore, R: Reachable, const WIN: usize, const MTU: usiz
 }
 
 /// SRSPP-backed receiver with job context + PhaseDone tracking.
-pub struct SpaceCompRx<'a, 'rx, R: ReceiverBackend, const MAX_STREAMS: usize> {
-    rx: &'a mut SrsppRxHandle<'rx, CfsError, R, MAX_STREAMS>,
+pub struct SpaceCompRx<'a, 'l, R: ReceiverBackend, const MAX_STREAMS: usize> {
+    rx: &'a mut EndpointListener<'l, CfsError, R, MAX_STREAMS>,
     job_id: u16,
     expected_done: u8,
     done_count: u8,
 }
 
-impl<'a, 'rx, R: ReceiverBackend, const MAX_STREAMS: usize> SpaceCompRx<'a, 'rx, R, MAX_STREAMS> {
+impl<'a, 'l, R: ReceiverBackend, const MAX_STREAMS: usize> SpaceCompRx<'a, 'l, R, MAX_STREAMS> {
     pub fn new(
-        rx: &'a mut SrsppRxHandle<'rx, CfsError, R, MAX_STREAMS>,
+        rx: &'a mut EndpointListener<'l, CfsError, R, MAX_STREAMS>,
         job_id: u16,
         expected_done: u8,
     ) -> Self {
@@ -190,7 +197,7 @@ impl<R: ReceiverBackend, const MAX_STREAMS: usize> Rx for SpaceCompRx<'_, '_, R,
                     _ => None,
                 }
             });
-            let Ok(maybe) = result.await else {
+            let Ok((_source, maybe)) = result.await else {
                 return Some(Err(SpaceCompError::Cfs(CfsError::ExternalResourceFail)));
             };
             let Some(inner) = maybe else { continue };
@@ -210,7 +217,6 @@ impl<R: ReceiverBackend, const MAX_STREAMS: usize> Rx for SpaceCompRx<'_, '_, R,
         mut f: impl FnMut(&[u8]) -> T,
     ) -> Option<Result<T, SpaceCompError>> {
         loop {
-            // Use recv into a local buffer, then call f
             let mut buf = [0u8; 8192];
             let len = match self.recv(&mut buf).await {
                 Some(Ok(len)) => len,

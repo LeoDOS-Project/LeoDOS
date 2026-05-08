@@ -1,3 +1,5 @@
+/// Shared link with composable per-peer views.
+mod endpoint;
 /// Concurrent per-connection receive.
 mod listener;
 /// Combined sender/receiver SRSPP node.
@@ -7,6 +9,9 @@ mod receiver;
 /// SRSPP sender with retransmission support.
 mod sender;
 
+pub use endpoint::{
+    EndpointError, EndpointListener, EndpointReceiver, EndpointSender, SrsppEndpoint,
+};
 pub use listener::{SrsppDial, SrsppListener, SrsppStream};
 pub use node::{SrsppNode, SrsppNodeDriver};
 pub use receiver::{DeliveryToken, SrsppReceiver, SrsppReceiverDriver, SrsppRxHandle};
