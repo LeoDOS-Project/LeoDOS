@@ -26,6 +26,7 @@ use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::transport::srspp::api::cfs::EndpointListener;
 use leodos_protocols::transport::srspp::api::cfs::EndpointSender;
+use leodos_protocols::transport::srspp::api::cfs::RecvKind;
 use leodos_protocols::transport::srspp::api::cfs::SrsppEndpoint;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
 use leodos_protocols::transport::srspp::dtn::MessageStore;
@@ -193,8 +194,14 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
         let dispatch = async {
             let mut initialized = false;
             loop {
-                let Ok((_source, len)) = listener.recv(&mut recv_buf).await else {
+                let Ok((_source, kind)) = listener.recv(&mut recv_buf).await else {
                     break;
+                };
+                let len = match kind {
+                    RecvKind::Data(n) => n,
+                    // SpaceComp tracks completion via app-level PhaseDone;
+                    // the SRSPP-level EOS is not load-bearing here.
+                    RecvKind::Eos => continue,
                 };
                 if !initialized {
                     app.init()?;

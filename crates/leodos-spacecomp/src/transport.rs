@@ -197,10 +197,15 @@ impl<R: ReceiverBackend, const MAX_STREAMS: usize> Rx for SpaceCompRx<'_, '_, R,
                     _ => None,
                 }
             });
-            let Ok((_source, maybe)) = result.await else {
+            let Ok((_source, maybe_event)) = result.await else {
                 return Some(Err(SpaceCompError::Cfs(CfsError::ExternalResourceFail)));
             };
-            let Some(inner) = maybe else { continue };
+            // SRSPP-level EOS arrives as `None`; SpaceComp completion is
+            // tracked via app-level PhaseDone, so we ignore it here.
+            let Some(filtered) = maybe_event else { continue };
+            // Closure returned None for messages it could not parse or
+            // whose job_id did not match — skip and keep listening.
+            let Some(inner) = filtered else { continue };
             if let Some(len) = inner {
                 return Some(Ok(len));
             } else {

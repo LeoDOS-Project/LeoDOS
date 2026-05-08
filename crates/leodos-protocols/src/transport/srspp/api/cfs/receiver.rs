@@ -19,6 +19,7 @@ use crate::transport::srspp::machine::receiver::ReceiverConfig;
 use crate::transport::srspp::machine::receiver::TimerAction;
 use crate::transport::srspp::packet::SrsppAckPacket;
 use crate::transport::srspp::packet::SrsppDataPacket;
+use crate::transport::srspp::packet::SrsppEosPacket;
 use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
 use crate::utils::cell::SyncRefCell;
@@ -35,6 +36,14 @@ pub(super) struct StreamState<R: ReceiverBackend> {
     pub(super) ack_state: AckState,
     pub(super) ack_deadline: Option<SysTime>,
     pub(super) progress_deadline: Option<SysTime>,
+    /// Sequence number of the EOS packet, once observed on the wire.
+    /// Set by [`process_eos`] and consumed by recv views to surface the
+    /// end-of-stream signal exactly once.
+    pub(super) eos_seq: Option<SequenceCount>,
+    /// True once the EOS marker has been delivered to the consumer.
+    /// Prevents double-delivery of the synthetic empty message produced
+    /// by passing the EOS through [`ReceiverBackend::handle_data`].
+    pub(super) eos_observed: bool,
 }
 
 /// Multi-source receive state shared by listener and explicit receiver views.
@@ -58,42 +67,83 @@ where
     E: Clone,
     R: ReceiverBackend,
 {
-    if let Ok(SrsppType::Data) = SrsppPacket::parse(packet).and_then(|p| p.srspp_type()) {
-        if let Ok(data) = SrsppDataPacket::parse(packet) {
+    let Ok(parsed) = SrsppPacket::parse(packet) else {
+        return Ok(());
+    };
+    match parsed.srspp_type() {
+        Ok(SrsppType::Data) => {
+            let Ok(data) = SrsppDataPacket::parse(packet) else {
+                return Ok(());
+            };
             let source_address = data.srspp_header.source_address();
             let seq = data.primary.sequence_count();
             let flags = data.primary.sequence_flag();
-
-            let result =
-                state.with_mut(|s| -> Result<HandleResult, TransportError<E>> {
-                    if !s.streams.contains_key(&source_address) {
-                        let _ = s.streams.insert(
-                            source_address,
-                            StreamState {
-                                machine: R::new(),
-                                ack_state: AckState::new(&s.config, source_address),
-                                ack_deadline: None,
-                                progress_deadline: None,
-                            },
-                        );
-                    }
-                    if let Some(stream) = s.streams.get_mut(&source_address) {
-                        let outcome = stream.machine.handle_data(seq, flags, &data.payload)?;
-                        Ok(stream.ack_state.on_data(
-                            outcome,
-                            stream.machine.expected_seq(),
-                            stream.machine.recv_bitmap(),
-                        ))
-                    } else {
-                        Ok(HandleResult::default())
-                    }
-                })?;
-
-            drive_actions(state, ack_buffer, source_address, result, link).await?;
+            let result = drive_segment(state, source_address, seq, flags, &data.payload)?;
+            drive_actions(state, ack_buffer, source_address, result, link).await
         }
+        Ok(SrsppType::Eos) => {
+            let Ok(eos) = SrsppEosPacket::parse(packet) else {
+                return Ok(());
+            };
+            let source_address = eos.srspp_header.source_address();
+            let seq = eos.primary.sequence_count();
+            let flags = eos.primary.sequence_flag();
+            // Feed an empty payload through the state machine so the EOS
+            // sequence number advances expected_seq and gets ACKed; mark
+            // eos_seq so the consumer can surface it as a Eos event.
+            let result = drive_segment(state, source_address, seq, flags, &[])?;
+            state.with_mut(|s| {
+                if let Some(stream) = s.streams.get_mut(&source_address) {
+                    if stream.eos_seq.is_none() {
+                        stream.eos_seq = Some(seq);
+                    }
+                }
+            });
+            drive_actions(state, ack_buffer, source_address, result, link).await
+        }
+        _ => Ok(()),
     }
+}
 
-    Ok(())
+/// Common path for routing an in-band segment (DATA payload or EOS
+/// marker) through the per-source receiver machine and emitting the
+/// resulting ACK / timer actions.
+fn drive_segment<E, R, const MAX_STREAMS: usize>(
+    state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
+    source: Address,
+    seq: SequenceCount,
+    flags: crate::network::spp::SequenceFlag,
+    payload: &[u8],
+) -> Result<HandleResult, TransportError<E>>
+where
+    E: Clone,
+    R: ReceiverBackend,
+{
+    state.with_mut(|s| -> Result<HandleResult, TransportError<E>> {
+        if !s.streams.contains_key(&source) {
+            let _ = s.streams.insert(
+                source,
+                StreamState {
+                    machine: R::new(),
+                    ack_state: AckState::new(&s.config, source),
+                    ack_deadline: None,
+                    progress_deadline: None,
+                    eos_seq: None,
+                    eos_observed: false,
+                },
+            );
+        }
+        if let Some(stream) = s.streams.get_mut(&source) {
+            let outcome = stream.machine.handle_data(seq, flags, payload)?;
+            Ok(stream.ack_state.on_data(
+                outcome,
+                stream.machine.expected_seq(),
+                stream.machine.recv_bitmap(),
+            ))
+        } else {
+            Ok(HandleResult::default())
+        }
+    })
 }
 
 /// Walks expired ACK and progress timers across all streams.

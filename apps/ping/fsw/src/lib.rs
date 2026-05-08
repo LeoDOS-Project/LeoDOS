@@ -19,6 +19,7 @@ use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::spp::Apid;
 use leodos_libcfs::join;
+use leodos_protocols::transport::srspp::api::cfs::RecvKind;
 use leodos_protocols::transport::srspp::api::cfs::SrsppEndpoint;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
 use leodos_protocols::transport::srspp::dtn::NoStore;
@@ -151,7 +152,14 @@ async fn run() -> Result<(), CfsError> {
     let serve = async {
         let mut recv_buf = [0u8; 128];
         loop {
-            let (source, len) = listener.recv(&mut recv_buf).await?;
+            let (source, kind) = listener.recv(&mut recv_buf).await?;
+            let len = match kind {
+                RecvKind::Data(n) => n,
+                RecvKind::Eos => {
+                    let _ = log!("Ping: peer {:?} closed", source);
+                    continue;
+                }
+            };
             let Ok(ping) = PingPayload::ref_from_bytes(&recv_buf[..len]) else {
                 let _ = log!("Ping: bad payload ({} bytes)", len);
                 continue;

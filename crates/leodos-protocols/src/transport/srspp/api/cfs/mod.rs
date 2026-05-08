@@ -6,7 +6,7 @@ mod receiver;
 mod sender;
 
 pub use endpoint::{
-    EndpointError, EndpointListener, EndpointReceiver, EndpointSender, SrsppEndpoint,
+    EndpointError, EndpointListener, EndpointReceiver, EndpointSender, RecvKind, SrsppEndpoint,
 };
 
 use leodos_libcfs::cfe::time::SysTime;

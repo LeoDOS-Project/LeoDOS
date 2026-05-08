@@ -59,6 +59,7 @@ use crate::utils::cell::SyncRefCell;
 
 use super::receiver::ACK_BUFFER_SIZE;
 use super::receiver::MultiReceiverState;
+use super::receiver::StreamState;
 use super::receiver::handle_timeouts as receiver_handle_timeouts;
 use super::receiver::next_deadline as receiver_next_deadline;
 use super::receiver::process_data;
@@ -139,8 +140,23 @@ pub struct SrsppEndpoint<
     rx_state: SyncRefCell<MultiReceiverState<E, Rb, MAX_STREAMS>>,
     bound_sources: SyncRefCell<Vec<Address, MAX_STREAMS>>,
     mode: Cell<Mode>,
+    shutdown: Cell<bool>,
     dtn: SyncRefCell<DtnContext<S, Re>>,
     origin: Address,
+}
+
+/// Outcome of a single receive call.
+///
+/// `Data` carries the byte length of the message copied into the
+/// caller's buffer. `Eos` signals that the bound source (or the
+/// reported source for a listener) finished its stream and will not
+/// produce further data; the caller's buffer is left untouched.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum RecvKind {
+    /// `len` bytes of payload were written to the caller's buffer.
+    Data(usize),
+    /// End-of-stream marker — peer signaled it is done sending.
+    Eos,
 }
 
 impl<
@@ -195,9 +211,20 @@ impl<
             }),
             bound_sources: SyncRefCell::new(Vec::new()),
             mode: Cell::new(Mode::None),
+            shutdown: Cell::new(false),
             dtn: SyncRefCell::new(DtnContext { store, reachable }),
             origin,
         })
+    }
+
+    /// Signals the run loop to exit gracefully once all sender slots
+    /// are idle and all receiver streams have surfaced their EOS.
+    ///
+    /// Calling [`run`](Self::run) after `shutdown` is set returns
+    /// immediately. Already-running `run` futures observe the flag at
+    /// the top of each iteration and exit when no work is pending.
+    pub fn shutdown(&self) {
+        self.shutdown.set(true);
     }
 
     /// Allocates a sender bound to `target`.
@@ -303,6 +330,10 @@ impl<
         loop {
             if let Some(e) = self.global_error() {
                 return Err(e);
+            }
+
+            if self.shutdown.get() && self.is_quiescent() {
+                return Ok(());
             }
 
             for slot in self.tx_slots.iter() {
@@ -459,6 +490,21 @@ impl<
 
     fn global_error(&self) -> Option<TransportError<E>> {
         self.rx_state.with(|s| s.error.clone())
+    }
+
+    /// True when no live sender slot has work in flight and every
+    /// receiver stream has surfaced its EOS to a consumer. Paired with
+    /// the `shutdown` flag to drive a clean run-loop exit.
+    fn is_quiescent(&self) -> bool {
+        let senders_idle = self.tx_slots.iter().all(|slot| {
+            slot.target.get().is_none() || slot.state.with(|s| s.machine.is_idle())
+        });
+        let recv_done = self.rx_state.with(|s| {
+            s.streams
+                .iter()
+                .all(|(_, stream)| stream.eos_observed && !stream.machine.has_message())
+        });
+        senders_idle && recv_done
     }
 }
 
@@ -671,8 +717,13 @@ impl<'a, E: Clone, Rb: ReceiverBackend, const MAX_STREAMS: usize>
         self.source
     }
 
-    /// Receives the next message from the bound source.
-    pub async fn recv(&mut self, buf: &mut [u8]) -> Result<usize, TransportError<E>> {
+    /// Receives the next event from the bound source.
+    ///
+    /// Returns [`RecvKind::Data`] when a payload was copied into `buf`,
+    /// or [`RecvKind::Eos`] once the peer's EOS marker has been processed.
+    /// After [`RecvKind::Eos`] is returned, no further events arrive
+    /// from this source unless the receiver is dropped and recreated.
+    pub async fn recv(&mut self, buf: &mut [u8]) -> Result<RecvKind, TransportError<E>> {
         poll_fn(|_cx| {
             self.rx_state.with_mut(|s| {
                 if let Some(ref e) = s.error {
@@ -681,23 +732,26 @@ impl<'a, E: Clone, Rb: ReceiverBackend, const MAX_STREAMS: usize>
                 let Some(stream) = s.streams.get_mut(&self.source) else {
                     return Poll::Pending;
                 };
-                let Some(msg) = stream.machine.take_message() else {
-                    return Poll::Pending;
-                };
-                let len = msg.len().min(buf.len());
-                buf[..len].copy_from_slice(&msg[..len]);
-                Poll::Ready(Ok(len))
+                if let Some(kind) = take_recv_event(stream, buf) {
+                    return Poll::Ready(Ok(kind));
+                }
+                Poll::Pending
             })
         })
         .await
     }
 
-    /// Receives the next message and processes it in-place with `f`.
-    pub async fn recv_with<F, Ret>(&mut self, f: F) -> Result<Ret, TransportError<E>>
+    /// Receives the next data message and processes it in-place with `f`.
+    ///
+    /// EOS markers are surfaced as `Ok(None)`; data messages as `Ok(Some(_))`.
+    pub async fn recv_with<F, Ret>(
+        &mut self,
+        f: F,
+    ) -> Result<Option<Ret>, TransportError<E>>
     where
         F: FnOnce(&[u8]) -> Ret,
     {
-        poll_fn(|_cx| {
+        let outcome = poll_fn(|_cx| {
             self.rx_state.with(|s| {
                 if let Some(ref e) = s.error {
                     return Poll::Ready(Err(e.clone()));
@@ -705,20 +759,31 @@ impl<'a, E: Clone, Rb: ReceiverBackend, const MAX_STREAMS: usize>
                 let Some(stream) = s.streams.get(&self.source) else {
                     return Poll::Pending;
                 };
-                stream
-                    .machine
-                    .has_message()
-                    .then_some(Poll::Ready(Ok(())))
-                    .unwrap_or(Poll::Pending)
+                match peek_recv_event(stream) {
+                    Some(o) => Poll::Ready(Ok(o)),
+                    None => Poll::Pending,
+                }
             })
         })
         .await?;
 
-        let ret = self.rx_state.with_mut(|s| {
-            let stream = s.streams.get_mut(&self.source).unwrap();
-            stream.machine.consume_message(f).unwrap()
-        });
-        Ok(ret)
+        match outcome {
+            PeekOutcome::Eos => {
+                self.rx_state.with_mut(|s| {
+                    if let Some(stream) = s.streams.get_mut(&self.source) {
+                        stream.eos_observed = true;
+                    }
+                });
+                Ok(None)
+            }
+            PeekOutcome::Data => {
+                let ret = self.rx_state.with_mut(|s| {
+                    let stream = s.streams.get_mut(&self.source).unwrap();
+                    stream.machine.consume_message(f).unwrap()
+                });
+                Ok(Some(ret))
+            }
+        }
     }
 }
 
@@ -741,23 +806,23 @@ impl<'a, E, Rb: ReceiverBackend, const MAX_STREAMS: usize> Drop
 impl<'a, E: Clone, Rb: ReceiverBackend, const MAX_STREAMS: usize>
     EndpointListener<'a, E, Rb, MAX_STREAMS>
 {
-    /// Receives the next message from any source.
+    /// Receives the next event from any source.
     ///
-    /// Returns the source address along with the message length.
+    /// Returns the originating address paired with [`RecvKind::Data`]
+    /// (payload copied into `buf`) or [`RecvKind::Eos`] (peer signaled
+    /// end-of-stream). Each source produces exactly one Eos event.
     pub async fn recv(
         &mut self,
         buf: &mut [u8],
-    ) -> Result<(Address, usize), TransportError<E>> {
+    ) -> Result<(Address, RecvKind), TransportError<E>> {
         poll_fn(|_cx| {
             self.rx_state.with_mut(|s| {
                 if let Some(ref e) = s.error {
                     return Poll::Ready(Err(e.clone()));
                 }
                 for (source, stream) in s.streams.iter_mut() {
-                    if let Some(msg) = stream.machine.take_message() {
-                        let len = msg.len().min(buf.len());
-                        buf[..len].copy_from_slice(&msg[..len]);
-                        return Poll::Ready(Ok((*source, len)));
+                    if let Some(kind) = take_recv_event(stream, buf) {
+                        return Poll::Ready(Ok((*source, kind)));
                     }
                 }
                 Poll::Pending
@@ -766,22 +831,25 @@ impl<'a, E: Clone, Rb: ReceiverBackend, const MAX_STREAMS: usize>
         .await
     }
 
-    /// Receives the next message and processes it in-place with `f`.
+    /// Receives the next data message and processes it in-place with `f`.
+    ///
+    /// Returns `Ok((source, Some(ret)))` for a data event and
+    /// `Ok((source, None))` for an EOS event.
     pub async fn recv_with<F, Ret>(
         &mut self,
         f: F,
-    ) -> Result<(Address, Ret), TransportError<E>>
+    ) -> Result<(Address, Option<Ret>), TransportError<E>>
     where
         F: FnOnce(&[u8]) -> Ret,
     {
-        let source = poll_fn(|_cx| {
+        let (source, outcome) = poll_fn(|_cx| {
             self.rx_state.with(|s| {
                 if let Some(ref e) = s.error {
                     return Poll::Ready(Err(e.clone()));
                 }
                 for (source, stream) in s.streams.iter() {
-                    if stream.machine.has_message() {
-                        return Poll::Ready(Ok(*source));
+                    if let Some(o) = peek_recv_event(stream) {
+                        return Poll::Ready(Ok((*source, o)));
                     }
                 }
                 Poll::Pending
@@ -789,10 +857,79 @@ impl<'a, E: Clone, Rb: ReceiverBackend, const MAX_STREAMS: usize>
         })
         .await?;
 
-        let ret = self.rx_state.with_mut(|s| {
-            let stream = s.streams.get_mut(&source).unwrap();
-            stream.machine.consume_message(f).unwrap()
-        });
-        Ok((source, ret))
+        match outcome {
+            PeekOutcome::Eos => {
+                self.rx_state.with_mut(|s| {
+                    if let Some(stream) = s.streams.get_mut(&source) {
+                        stream.eos_observed = true;
+                    }
+                });
+                Ok((source, None))
+            }
+            PeekOutcome::Data => {
+                let ret = self.rx_state.with_mut(|s| {
+                    let stream = s.streams.get_mut(&source).unwrap();
+                    stream.machine.consume_message(f).unwrap()
+                });
+                Ok((source, Some(ret)))
+            }
+        }
     }
+}
+
+#[derive(Copy, Clone)]
+enum PeekOutcome {
+    Data,
+    Eos,
+}
+
+/// Decide what the next recv event for `stream` should be without
+/// consuming any buffered message.
+///
+/// Returns `Some(Data)` if a payload is ready to deliver, `Some(Eos)`
+/// once the EOS marker has reached the head of the in-order delivery
+/// stream and not yet been observed, or `None` if neither.
+fn peek_recv_event<R: ReceiverBackend>(stream: &StreamState<R>) -> Option<PeekOutcome> {
+    if stream.machine.has_message() {
+        // Treat the synthetic empty message produced by the EOS
+        // sequence number as an Eos marker, not a data delivery.
+        if stream.machine.message_len() == Some(0) && stream.eos_seq.is_some() {
+            return (!stream.eos_observed).then_some(PeekOutcome::Eos);
+        }
+        return Some(PeekOutcome::Data);
+    }
+    if stream.eos_seq.is_some() && !stream.eos_observed {
+        return Some(PeekOutcome::Eos);
+    }
+    None
+}
+
+/// Consume the next recv event for `stream`, copying any payload bytes
+/// into `buf` and updating the stream's EOS-observed state. Returns
+/// `None` when the stream has nothing ready.
+fn take_recv_event<R: ReceiverBackend>(
+    stream: &mut StreamState<R>,
+    buf: &mut [u8],
+) -> Option<RecvKind> {
+    if stream.machine.has_message() {
+        if stream.machine.message_len() == Some(0) && stream.eos_seq.is_some() {
+            // Drain the synthetic empty message produced by the EOS
+            // sequence number; surface it as Eos.
+            let _ = stream.machine.take_message();
+            if stream.eos_observed {
+                return None;
+            }
+            stream.eos_observed = true;
+            return Some(RecvKind::Eos);
+        }
+        let msg = stream.machine.take_message()?;
+        let len = msg.len().min(buf.len());
+        buf[..len].copy_from_slice(&msg[..len]);
+        return Some(RecvKind::Data(len));
+    }
+    if stream.eos_seq.is_some() && !stream.eos_observed {
+        stream.eos_observed = true;
+        return Some(RecvKind::Eos);
+    }
+    None
 }
