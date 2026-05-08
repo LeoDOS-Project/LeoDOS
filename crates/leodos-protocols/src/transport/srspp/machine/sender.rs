@@ -7,7 +7,7 @@
 use crate::buffer_pool::BufferPool;
 use crate::network::isl::address::{Address, RawAddress};
 use crate::network::spp::{Apid, SequenceCount, SequenceFlag};
-use heapless::Vec;
+use heapless::Deque;
 
 /// Maximum number of actions that can be emitted per event.
 const MAX_ACTIONS: usize = 32;
@@ -80,29 +80,41 @@ pub enum SenderAction {
     },
 }
 
-/// Collection of actions emitted by the sender.
+/// FIFO of pending actions emitted by the sender state machine.
+///
+/// `handle()` appends; the run loop drains via [`pop_front`]. This
+/// is intentionally append-only on the producer side: two successive
+/// `handle()` calls accumulate, never clobber. The run loop is the
+/// only place actions are consumed.
 #[derive(Debug)]
 pub struct SenderActions {
-    inner: Vec<SenderAction, MAX_ACTIONS>,
+    inner: Deque<SenderAction, MAX_ACTIONS>,
 }
 
 impl SenderActions {
-    /// Create a new empty actions collection.
+    /// Create a new empty actions queue.
     pub fn new() -> Self {
-        Self { inner: Vec::new() }
+        Self {
+            inner: Deque::new(),
+        }
     }
 
-    /// Add an action to the collection.
+    /// Append an action to the back of the queue.
     pub fn push(&mut self, action: SenderAction) {
-        let _ = self.inner.push(action);
+        let _ = self.inner.push_back(action);
     }
 
-    /// Clear all actions.
+    /// Remove and return the oldest action, if any.
+    pub fn pop_front(&mut self) -> Option<SenderAction> {
+        self.inner.pop_front()
+    }
+
+    /// Drop all queued actions.
     pub fn clear(&mut self) {
         self.inner.clear();
     }
 
-    /// Iterate over the actions.
+    /// Iterate over the queued actions in FIFO order.
     pub fn iter(&self) -> impl Iterator<Item = &SenderAction> {
         self.inner.iter()
     }
@@ -126,7 +138,7 @@ impl Default for SenderActions {
 
 impl<'a> IntoIterator for &'a SenderActions {
     type Item = &'a SenderAction;
-    type IntoIter = core::slice::Iter<'a, SenderAction>;
+    type IntoIter = heapless::deque::Iter<'a, SenderAction>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inner.iter()
@@ -337,14 +349,16 @@ impl<'pool, P: BufferPool + 'pool, const WIN: usize, const MTU: usize>
             })
     }
 
-    /// Process an event and produce actions.
+    /// Process an event and append the resulting actions to `actions`.
+    ///
+    /// `actions` is a FIFO; the run loop drains it via
+    /// [`SenderActions::pop_front`]. Successive `handle()` calls
+    /// accumulate — they never wipe earlier events' actions.
     pub fn handle(
         &mut self,
         event: SenderEvent<'_>,
         actions: &mut SenderActions,
     ) -> Result<(), SenderError> {
-        actions.clear();
-
         match event {
             SenderEvent::SendRequest { target, data } => {
                 self.handle_send_request(target, data, actions)?;

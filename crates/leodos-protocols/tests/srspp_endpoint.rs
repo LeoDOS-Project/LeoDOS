@@ -312,19 +312,14 @@ fn endpoint_eos_roundtrip() {
 
     block_on(async {
         let test = async {
-            // Drain the data message before queueing the EOS:
-            // (1) `machine.handle()` clears the actions queue every
-            //     call, so back-to-back send+send_eos without a flush
-            //     drops the data's Transmit action.
-            // (2) The receiver's `complete_message_len` slot is
-            //     single-element — letting the EOS arrive before the
-            //     consumer drains the data overwrites it with the
-            //     synthetic empty message produced by EOS handling.
-            // Both quirks are pre-existing properties of the sender /
-            // receiver machines; this test interleaves like a real
-            // consumer would.
+            // Sender FIFO (bug 1) is fixed, so send + send_eos can be
+            // back-to-back without the first being clobbered. The
+            // receiver's `complete_message_len` is still a single
+            // slot (bug 2 in CLAUDE.md), so the consumer drains the
+            // data event before letting EOS arrive — recv.await yields
+            // to the run loops which deliver the data, then we recv
+            // before queueing more.
             tx.send(b"data").await.unwrap();
-            tx.flush().await.unwrap();
             let mut buf = [0u8; 64];
             let (_src, k1) = listener.recv(&mut buf).await.unwrap();
             assert_eq!(k1, RecvKind::Data(4));

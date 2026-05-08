@@ -60,79 +60,78 @@ where
     C: Clock,
 {
     let now = clock.now();
+    let cfg_clone = sender.with(|s| s.machine.config().clone());
 
-    let (transmits, cfg_clone) = sender.with(|s| {
-        let t = s
-            .actions
-            .iter()
-            .filter_map(|a| match a {
-                SenderAction::Transmit { seq, .. } => Some(*seq),
-                _ => None,
-            })
-            .collect::<heapless::Vec<_, WIN>>();
-        (t, s.machine.config().clone())
-    });
+    // Drain the action queue. handle() appended; we pop_front and
+    // dispatch each action to its effect (Transmit→write packet,
+    // StopTimer→cancel retransmit timer, PacketLost→propagate).
+    loop {
+        let action = sender.with_mut(|s| s.actions.pop_front());
+        let Some(action) = action else { break };
+        match action {
+            SenderAction::Transmit { seq, .. } => {
+                let packet_len = sender.with(|s| {
+                    if let Some(info) = s.machine.get_payload(seq) {
+                        if info.is_eos {
+                            SrsppEosPacket::builder()
+                                .buffer(tx_buffer)
+                                .source_address(cfg_clone.source_address)
+                                .target(info.target)
+                                .apid(cfg_clone.apid)
+                                .function_code(cfg_clone.function_code)
+                                .sequence_count(seq)
+                                .build()
+                                .map_err(TransportError::Packet)?;
+                            Ok::<_, TransportError<E>>(Some(
+                                core::mem::size_of::<SrsppEosPacket>(),
+                            ))
+                        } else {
+                            let pkt = SrsppDataPacket::builder()
+                                .buffer(tx_buffer)
+                                .source_address(cfg_clone.source_address)
+                                .target(info.target)
+                                .apid(cfg_clone.apid)
+                                .function_code(cfg_clone.function_code)
+                                .sequence_count(seq)
+                                .sequence_flag(info.flags)
+                                .payload_len(info.payload.len())
+                                .build()
+                                .map_err(TransportError::Packet)?;
+                            pkt.payload.copy_from_slice(info.payload);
+                            Ok::<_, TransportError<E>>(Some(
+                                SrsppDataPacket::HEADER_SIZE + info.payload.len(),
+                            ))
+                        }
+                    } else {
+                        Ok::<_, TransportError<E>>(None)
+                    }
+                })?;
 
-    for seq in transmits {
-        let packet_len = sender.with(|s| {
-            if let Some(info) = s.machine.get_payload(seq) {
-                if info.is_eos {
-                    SrsppEosPacket::builder()
-                        .buffer(tx_buffer)
-                        .source_address(cfg_clone.source_address)
-                        .target(info.target)
-                        .apid(cfg_clone.apid)
-                        .function_code(cfg_clone.function_code)
-                        .sequence_count(seq)
-                        .build()
-                        .map_err(TransportError::Packet)?;
-                    Ok::<_, TransportError<E>>(Some(
-                        core::mem::size_of::<SrsppEosPacket>(),
-                    ))
-                } else {
-                    let pkt = SrsppDataPacket::builder()
-                        .buffer(tx_buffer)
-                        .source_address(cfg_clone.source_address)
-                        .target(info.target)
-                        .apid(cfg_clone.apid)
-                        .function_code(cfg_clone.function_code)
-                        .sequence_count(seq)
-                        .sequence_flag(info.flags)
-                        .payload_len(info.payload.len())
-                        .build()
-                        .map_err(TransportError::Packet)?;
-                    pkt.payload.copy_from_slice(info.payload);
-                    Ok::<_, TransportError<E>>(Some(
-                        SrsppDataPacket::HEADER_SIZE + info.payload.len(),
-                    ))
+                if let Some(packet_len) = packet_len {
+                    link.write(&tx_buffer[..packet_len])
+                        .await
+                        .map_err(TransportError::Network)?;
+
+                    let rto_dur = Duration::from_millis(rto_policy.rto_ticks(now.seconds()));
+
+                    sender.with_mut(|s| {
+                        s.machine.mark_transmitted(seq);
+                        s.timers.start(seq, now + SysTime::from(rto_dur));
+                    });
                 }
-            } else {
-                Ok::<_, TransportError<E>>(None)
             }
-        })?;
-
-        if let Some(packet_len) = packet_len {
-            link.write(&tx_buffer[..packet_len])
-                .await
-                .map_err(TransportError::Network)?;
-
-            let rto_dur = Duration::from_millis(rto_policy.rto_ticks(now.seconds()));
-
-            sender.with_mut(|s| {
-                s.machine.mark_transmitted(seq);
-                s.timers.start(seq, now + SysTime::from(rto_dur));
-            });
+            SenderAction::StopTimer { seq } => {
+                sender.with_mut(|s| s.timers.stop(seq));
+            }
+            SenderAction::PacketLost { .. }
+            | SenderAction::SpaceAvailable { .. }
+            | SenderAction::MessageLost => {
+                // No driver-side effect; producers can observe via
+                // is_idle / available_window / has_message_lost
+                // queries on the handle.
+            }
         }
     }
-
-    sender.with_mut(|s| {
-        for action in s.actions.iter() {
-            let &SenderAction::StopTimer { seq } = action else {
-                continue;
-            };
-            s.timers.stop(seq);
-        }
-    });
 
     Ok(())
 }
@@ -155,15 +154,7 @@ where
                         selective_bitmap: ack.ack_payload.selective_ack_bitmap(),
                     },
                     &mut s.actions,
-                )?;
-
-                for action in s.actions.iter() {
-                    let &SenderAction::StopTimer { seq } = action else {
-                        continue;
-                    };
-                    s.timers.stop(seq);
-                }
-                Ok::<(), TransportError<E>>(())
+                )
             })?;
         }
     }

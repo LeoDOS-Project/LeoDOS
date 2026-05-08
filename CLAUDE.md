@@ -65,19 +65,6 @@ already exist.
   samples (1 s apart) — accurate enough for routing and
   attitude derivation, can revisit if precision matters.
 
-- [ ] SRSPP sender: `SenderActions` is clobbered, not
-  appended. `SenderMachine::handle()` calls
-  `actions.clear()` at the start of every event, so two
-  successive `tx.send`-style calls (with no run-loop
-  yield in between) drop the first event's `Transmit`
-  action and that slot stalls in `PendingTransmit`. The
-  endpoint test had to flush between `send` and
-  `send_eos` to work around it. Production callers
-  happen to interleave enough yields that it never
-  bites, but the API has a hidden ordering requirement.
-  Fix: make `SenderActions` a true FIFO — `handle()`
-  appends, the run loop drains-and-clears.
-
 - [ ] SRSPP receiver: `complete_message_len` is a single
   slot, not a queue. If two messages reach the receive
   state machine before the consumer drains the first via
