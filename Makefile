@@ -75,7 +75,7 @@ endif
 
 # The "LOCALTGTS" defines the top-level targets that are implemented in this makefile
 # Any other target may also be given, in that case it will simply be passed through.
-LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov check docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test demo-build demo-up demo-down eosim-gen
+LOCALTGTS := doc usersguide osalguide prep all clean install distclean test lcov check docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test cfs-test demo-build demo-up demo-down eosim-gen
 OTHERTGTS := $(filter-out $(LOCALTGTS),$(MAKECMDGOALS))
 
 # As this makefile does not build any real files, treat everything as a PHONY target
@@ -181,7 +181,7 @@ osalguide:
 # that is used to indicate the prep step has been done.  This way
 # the prep step does not need to be done explicitly by the user
 # as long as the default options are sufficient.
-$(filter-out prep distclean check docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test demo-build demo-up demo-down eosim-gen,$(LOCALTGTS)): $(O)/.prep
+$(filter-out prep distclean check docker-build docker-prep docker-all docker-install docker-run docker-shell docker-test cfs-test demo-build demo-up demo-down eosim-gen,$(LOCALTGTS)): $(O)/.prep
 
 # Docker targets for building on macOS
 docker-build:
@@ -205,6 +205,18 @@ docker-shell:
 docker-test:
 	docker compose run --rm cfs-test bash -c \
 		"[ -f build/.prep ] || make SIMULATION=native prep && cd crates/leodos-protocols && cargo test --features=cfs"
+
+# Run leodos-libcfs unit tests against cFE's UT stub libraries inside
+# the cFS build container. Requires `make prep && make` to have built
+# build/native/default_cpu1/{core_api,psp,osal}/ut-stubs/*.a (which
+# happens automatically when ENABLE_UNIT_TESTS=1, the default).
+# Override CFS_TEST_ARGS to pass extra `cargo test` flags, e.g.:
+#   make cfs-test CFS_TEST_ARGS=link_resolves_cfe_psp_get_spacecraft_id
+CFS_TEST_ARGS ?=
+cfs-test:
+	docker compose run --rm cfs-build bash -c \
+		"CFE_DIR=/cFS/cfe OSAL_DIR=/cFS/osal PSP_DIR=/cFS/psp BUILD_DIR=/cFS/build \
+		 cargo test -p leodos-libcfs --features=cfs-stubs --tests $(CFS_TEST_ARGS)"
 
 check:
 	cd crates/leodos-analysis && cargo check --tests
