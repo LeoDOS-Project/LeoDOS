@@ -119,6 +119,23 @@ ifneq ($(CMAKE_PREFIX_PATH),)
 PREP_OPTS += -DCMAKE_PREFIX_PATH=$(CMAKE_PREFIX_PATH)
 endif
 
+# cFE's mission-config selection. With two *_defs trees in the repo
+# (leodos_defs, sample_defs), cmake's auto-detection refuses to pick.
+# Default to the LeoDOS mission; override with `MISSIONCONFIG=sample`
+# to build against sample_defs.
+MISSIONCONFIG ?= leodos
+PREP_OPTS += -DMISSIONCONFIG=$(MISSIONCONFIG)
+
+# Build cFE's unit-test stub libraries (libut_core_api_stubs.a,
+# libut_psp-*_stubs.a) alongside the flight build. These mock the cFE
+# public API surface and let leodos-libcfs unit-test its wrappers
+# against scriptable stubs instead of real cFE. Override with
+# `ENABLE_UNIT_TESTS=0 make prep` to skip if build time matters.
+ENABLE_UNIT_TESTS ?= 1
+ifneq ($(ENABLE_UNIT_TESTS),)
+PREP_OPTS += -DENABLE_UNIT_TESTS=$(ENABLE_UNIT_TESTS)
+endif
+
 all:
 	$(MAKE) --no-print-directory -C "$(O)" mission-all
 
