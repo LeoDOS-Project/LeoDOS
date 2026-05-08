@@ -13,7 +13,6 @@ members = [
     "tools/leodos-ground",
     "apps/ci_lab/fsw",
     "apps/colonies_executor/fsw",
-    "apps/fs_srv/fsw",
     "apps/gossip/fsw",
     "apps/nos3_demo/fsw",
     "apps/ping/fsw",
@@ -22,13 +21,9 @@ members = [
     "apps/sb_echo/fsw",
     "apps/sch_lab/fsw",
     "apps/sim_client/fsw",
-    "apps/spacecomp/fsw",
     "apps/spacecomp_wildfire/fsw",
     "apps/spacecomp_wordcount/fsw",
-    "apps/srspp_receiver/fsw",
-    "apps/srspp_sender/fsw",
     "apps/to_lab/fsw",
-    "apps/wildfire/fsw",
 ]
 
 [profile.release]

@@ -215,6 +215,30 @@ already exist.
   temperatures in DualBandTile::write_to for ~2-3×
   compression on the ISL.
 
+- [ ] SpaceComp app operational integration. The deleted
+  `apps/wildfire/fsw` had several operational features
+  the new `apps/spacecomp_wildfire/fsw` does not, because
+  `SpaceCompNode::start` runs a tight collect/map/reduce
+  loop without a cFS app shell:
+  * Table-based runtime config (`Table<WildfireConfig>` —
+    AOI bounds, BT threshold, min cluster pixels) updatable
+    from ground via TBL services. Today thresholds are
+    hardcoded constants.
+  * CDS-persisted state (`CdsBlock<WildfireState>` — pass
+    count, alerts sent) restored across reboots. Today
+    every restart loses these counters.
+  * HK telemetry (`WildfireHk` — cmd_count, err_count,
+    pass_count, alerts_sent) published on the standard cFS
+    HK schedule. Today the spacecomp apps publish nothing
+    on the HK channel; ground sees no liveness signal.
+  * App framework cmd/HK loop (`App::recv` matching
+    `Event::Hk` / `Event::Command`) running alongside the
+    SpaceComp dispatcher. Today no command interface.
+  Path: extend `SpaceCompNode` with optional cmd/HK topics
+  and table/CDS hooks, or expose the SpaceComp dispatch
+  future so an app can run it inside its own
+  `App::builder().run(...)` shell.
+
 ### NOS3 network simulation extensions
 
 The NOS3 demo currently runs as software-in-the-loop with all

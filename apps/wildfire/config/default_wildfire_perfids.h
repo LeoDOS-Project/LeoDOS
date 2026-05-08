@@ -1,6 +1,0 @@
-#ifndef WILDFIRE_PERFIDS_H
-#define WILDFIRE_PERFIDS_H
-
-#define WILDFIRE_APPMAIN_PERF_ID  90
-
-#endif
