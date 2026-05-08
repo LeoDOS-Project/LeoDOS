@@ -745,7 +745,14 @@ fn inject_doc_comments(
 }
 
 /// Rewrites `pub` to `pub(crate)` so bindings don't leak from the crate.
+///
+/// Skipped under the `cfs-stubs` feature so integration tests can take
+/// the address of stubbed C functions; the parent `ffi` module is still
+/// gated to that feature, so production builds remain encapsulated.
 fn restrict_visibility(content: &str) -> String {
+    if env::var("CARGO_FEATURE_CFS_STUBS").is_ok() {
+        return content.to_string();
+    }
     content
         .replace("pub fn", "pub(crate) fn")
         .replace("pub type", "pub(crate) type")

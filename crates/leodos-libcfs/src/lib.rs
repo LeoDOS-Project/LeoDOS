@@ -21,7 +21,16 @@
 //!   and key OSAL/PSP functionalities.
 #![deny(missing_docs)]
 
+#[cfg(not(feature = "cfs-stubs"))]
 pub(crate) mod ffi;
+/// Bindgen-generated FFI to cFE / OSAL / PSP.
+///
+/// Only public under the `cfs-stubs` feature so integration tests can
+/// take the address of stubbed C functions for `UT_SetDefaultReturnValue`.
+/// Production builds keep this module crate-private.
+#[cfg(feature = "cfs-stubs")]
+#[doc(hidden)]
+pub mod ffi;
 pub mod cell;
 pub mod cfe;
 pub mod error;
