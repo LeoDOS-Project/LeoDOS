@@ -3,7 +3,6 @@
 
 use leodos_libcfs::cfe::es::pool::MemPool;
 use leodos_libcfs::error::CfsError;
-use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::transport::srspp::api::cfs::SrsppRxHandle;
 use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
 use leodos_protocols::transport::srspp::dtn::MessageStore;
@@ -91,7 +90,6 @@ pub struct SpaceCompTx<
     const MTU: usize,
 > {
     tx: SrsppTxHandle<'a, 'pool, CfsError, S, R, MemPool, WIN, MTU>,
-    target: Address,
     job_id: u16,
     partition_id: u8,
     buf: [u8; 512],
@@ -100,15 +98,15 @@ pub struct SpaceCompTx<
 impl<'a, 'pool, S: MessageStore, R: Reachable, const WIN: usize, const MTU: usize>
     SpaceCompTx<'a, 'pool, S, R, WIN, MTU>
 {
+    /// Wraps a per-target SRSPP tx handle. The handle's bound target
+    /// is the next-stage destination for this role.
     pub fn new(
         tx: SrsppTxHandle<'a, 'pool, CfsError, S, R, MemPool, WIN, MTU>,
-        target: Address,
         job_id: u16,
         partition_id: u8,
     ) -> Self {
         Self {
             tx,
-            target,
             job_id,
             partition_id,
             buf: [0u8; 512],
@@ -127,7 +125,7 @@ impl<'a, 'pool, S: MessageStore, R: Reachable, const WIN: usize, const MTU: usiz
             .payload_len(data.len())
             .build()?;
         m.payload_mut().copy_from_slice(data);
-        self.tx.send(self.target, m.as_bytes()).await?;
+        self.tx.send(m.as_bytes()).await?;
         Ok(())
     }
 
@@ -138,7 +136,7 @@ impl<'a, 'pool, S: MessageStore, R: Reachable, const WIN: usize, const MTU: usiz
             .job_id(self.job_id)
             .payload_len(0)
             .build()?;
-        self.tx.send(self.target, m.as_bytes()).await?;
+        self.tx.send(m.as_bytes()).await?;
         Ok(())
     }
 

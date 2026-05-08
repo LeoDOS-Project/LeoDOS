@@ -311,6 +311,9 @@ pub struct SrsppSender<
     dtn: SyncRefCell<DtnContext<S, R>>,
     /// This sender's own address (for reachability checks).
     origin: Address,
+    /// Peer address every send goes to. Bound at construction so the
+    /// machine's sequence counter is unique to this connection.
+    target: Address,
 }
 
 /// Alias for a sender without DTN support.
@@ -328,12 +331,15 @@ impl<
     const MTU: usize,
 > SrsppSender<'pool, E, S, R, P, WIN, MTU>
 {
-    /// Creates a new sender.
+    /// Creates a new sender bound to `target`. All sends go to that
+    /// peer; the machine's sequence counter is private to this
+    /// connection.
     #[builder]
     pub fn new(
         pool: &'pool P,
         buf_size: usize,
         source_address: Address,
+        target: Address,
         apid: Apid,
         #[builder(default)] function_code: u8,
         rto_ticks: u32,
@@ -360,6 +366,7 @@ impl<
             }),
             dtn: SyncRefCell::new(DtnContext { store, reachable }),
             origin: source_address,
+            target,
         })
     }
 
@@ -378,6 +385,7 @@ impl<
                 sender: &self.state,
                 dtn: &self.dtn,
                 origin: self.origin,
+                target: self.target,
             },
             SrsppSenderDriver {
                 rto_policy,
@@ -531,6 +539,7 @@ pub struct SrsppTxHandle<
     pub(super) sender: &'a SyncRefCell<SenderState<'pool, E, P, WIN, MTU>>,
     pub(super) dtn: &'a SyncRefCell<DtnContext<S, R>>,
     pub(super) origin: Address,
+    pub(super) target: Address,
 }
 
 impl<
@@ -573,17 +582,16 @@ impl<
     const MTU: usize,
 > SrsppTxHandle<'a, 'pool, E, S, R, P, WIN, MTU>
 {
-    /// Sends data to the given target.
+    /// Sends data to the bound target.
     ///
     /// If the destination is unreachable, the message is
     /// stored for later delivery by the driver. If reachable,
     /// it enters SRSPP normally.
     pub async fn send(
         &mut self,
-        target: impl Into<Address>,
         data: &(impl IntoBytes + Immutable + ?Sized),
     ) -> Result<(), TransportError<E>> {
-        let target = target.into();
+        let target = self.target;
         let data = data.as_bytes();
 
         if !self
@@ -617,17 +625,14 @@ impl<
         Ok(())
     }
 
-    /// Send an end-of-stream packet to `target`. Allocates a window
-    /// slot for an EOS packet (own seq, no payload) and queues it for
-    /// transmission. The peer's receiver discards its per-stream
-    /// state once the cumulative ACK covers the EOS sequence number,
-    /// so the next message from this source restarts cleanly at
-    /// seq=0.
-    pub async fn send_eos(
-        &mut self,
-        target: impl Into<Address>,
-    ) -> Result<(), TransportError<E>> {
-        let target = target.into();
+    /// Send an end-of-stream packet to the bound target. Allocates a
+    /// window slot for an EOS packet (own seq, no payload) and queues
+    /// it for transmission. The peer's receiver discards its
+    /// per-stream state once the cumulative ACK covers the EOS
+    /// sequence number, so the next message from this source restarts
+    /// cleanly at seq=0.
+    pub async fn send_eos(&mut self) -> Result<(), TransportError<E>> {
+        let target = self.target;
         poll_fn(|_cx| {
             self.sender.with(|s| {
                 if let Some(ref e) = s.error {

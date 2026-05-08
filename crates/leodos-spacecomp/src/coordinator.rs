@@ -7,7 +7,7 @@ use core::mem::size_of;
 
 use leodos_libcfs::cfe::es::pool::MemPool;
 use leodos_libcfs::error::CfsError;
-use leodos_protocols::transport::srspp::api::cfs::SrsppTxHandle;
+use leodos_protocols::transport::srspp::api::cfs::SrsppDial;
 use leodos_protocols::transport::srspp::dtn::MessageStore;
 use leodos_protocols::transport::srspp::dtn::Reachable;
 use crate::job::Job;
@@ -28,8 +28,14 @@ use crate::SpaceCompError;
 const MAX_SATELLITES: usize = 64;
 
 /// Runs the coordinator role for a submitted job.
-pub async fn run<S: MessageStore, R: Reachable, const WIN: usize, const MTU: usize>(
-    tx: &mut SrsppTxHandle<'_, '_, CfsError, S, R, MemPool, WIN, MTU>,
+pub async fn run<
+    S: MessageStore,
+    R: Reachable,
+    const WIN: usize,
+    const MTU: usize,
+    const MAX_STREAMS: usize,
+>(
+    dial: &SrsppDial<'_, '_, CfsError, MemPool, S, R, WIN, MTU, MAX_STREAMS>,
     buf: &mut [u8],
     shell: Shell,
     local_point: Point,
@@ -52,7 +58,10 @@ pub async fn run<S: MessageStore, R: Reachable, const WIN: usize, const MTU: usi
             .payload_len(size_of::<AssignCollectorPayload>())
             .build()?;
         m.payload_mut().copy_from_slice(payload.as_bytes());
-        tx.send(Address::Satellite(*pt), m.as_bytes()).await?;
+        let mut tx = dial
+            .to(Address::Satellite(*pt))
+            .ok_or(SpaceCompError::Plan("dial slot exhausted"))?;
+        tx.send(m.as_bytes()).await?;
     }
 
     for (j, pt) in plan.mappers.iter().enumerate() {
@@ -68,7 +77,10 @@ pub async fn run<S: MessageStore, R: Reachable, const WIN: usize, const MTU: usi
             .payload_len(size_of::<AssignMapperPayload>())
             .build()?;
         m.payload_mut().copy_from_slice(payload.as_bytes());
-        tx.send(Address::Satellite(*pt), m.as_bytes()).await?;
+        let mut tx = dial
+            .to(Address::Satellite(*pt))
+            .ok_or(SpaceCompError::Plan("dial slot exhausted"))?;
+        tx.send(m.as_bytes()).await?;
     }
 
     let payload = AssignReducerPayload::builder()
@@ -82,7 +94,10 @@ pub async fn run<S: MessageStore, R: Reachable, const WIN: usize, const MTU: usi
         .payload_len(size_of::<AssignReducerPayload>())
         .build()?;
     m.payload_mut().copy_from_slice(payload.as_bytes());
-    tx.send(Address::Satellite(plan.reducer), m.as_bytes()).await?;
+    let mut tx = dial
+        .to(Address::Satellite(plan.reducer))
+        .ok_or(SpaceCompError::Plan("dial slot exhausted"))?;
+    tx.send(m.as_bytes()).await?;
 
     Ok(())
 }

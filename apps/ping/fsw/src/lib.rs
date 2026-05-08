@@ -10,7 +10,6 @@ use leodos_libcfs::cfe::evs::event;
 use leodos_libcfs::cfe::sb::msg::MsgId;
 use leodos_libcfs::cfe::time::SysTime;
 use leodos_libcfs::error::CfsError;
-use leodos_libcfs::join;
 use leodos_libcfs::log;
 use leodos_libcfs::runtime::Runtime;
 
@@ -19,7 +18,7 @@ use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::spp::Apid;
-use leodos_protocols::transport::srspp::api::cfs::SrsppNode;
+use leodos_protocols::transport::srspp::api::cfs::SrsppListener;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
 use leodos_protocols::transport::srspp::dtn::NoStore;
 use leodos_protocols::transport::srspp::machine::receiver::ReceiverConfig;
@@ -124,9 +123,7 @@ async fn run() -> Result<(), CfsError> {
 
     let pool = MemPool::new(POOL_STORAGE.take()?, false)?;
 
-    // Pool-backed so the large receiver/sender arrays do not
-    // live on the app's cFE task stack.
-    let srspp: SrsppNode<
+    let listener: SrsppListener<
         '_,
         CfsError,
         _,
@@ -136,7 +133,7 @@ async fn run() -> Result<(), CfsError> {
         8,
         512,
         4,
-    > = SrsppNode::new(
+    > = SrsppListener::new(
         &pool,
         SRSPP_BUF_SIZE,
         sender_config,
@@ -144,28 +141,21 @@ async fn run() -> Result<(), CfsError> {
         NoStore,
         AlwaysReachable,
     )?;
-    let (mut rx, mut tx, mut driver) =
-        srspp.split(network, FixedRto::new(1000), &pool, MTU)?;
 
     log!("Ping ready on sat({}, {})", point.orb, point.sat)?;
 
-    let app = async {
-        let mut recv_buf = [0u8; 128];
-        loop {
-            let Ok((source, len)) = rx.recv(&mut recv_buf).await else {
-                break;
-            };
+    listener
+        .listen(network, FixedRto::new(1000), |mut stream, mut tx, _| async move {
+            let mut recv_buf = [0u8; 128];
+            let len = stream.recv(&mut recv_buf).await?;
+            let source = stream.source();
             let Ok(ping) = PingPayload::ref_from_bytes(&recv_buf[..len]) else {
-                log!("Ping: bad payload ({} bytes)", len)?;
-                continue;
+                let _ = log!("Ping: bad payload ({} bytes)", len);
+                return Ok(());
             };
             let seq = ping.seq.get();
             let sent_ms = ping.sent_ms.get();
-            log!(
-                "Ping: seq={} from {:?}",
-                seq,
-                source
-            )?;
+            let _ = log!("Ping: seq={} from {:?}", seq, source);
             let met = SysTime::now_met();
             let pong = PongPayload {
                 seq: U32::new(seq),
@@ -177,19 +167,14 @@ async fn run() -> Result<(), CfsError> {
                 met_subseconds: U32::new(met.subseconds()),
                 sent_ms: U64::new(sent_ms),
             };
-            tx.send(source, &pong).await.map_err(|e| {
-                let _ = log!("Ping: send pong failed: {}", e);
-                CfsError::Osal(leodos_libcfs::error::OsalError::Error)
-            })?;
-        }
-        Ok::<(), CfsError>(())
-    };
-
-    let (a, dr) = join!(app, driver.run()).await;
-    a?;
-    if let Err(e) = dr {
-        log!("Ping: driver exited: {}", e)?;
-    }
+            tx.send(&pong).await?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| {
+            let _ = log!("Ping: listener exited: {}", e);
+            CfsError::Osal(leodos_libcfs::error::OsalError::Error)
+        })?;
     Ok(())
 }
 

@@ -283,6 +283,17 @@ impl<'pool, P: BufferPool + 'pool, const WIN: usize, const MTU: usize>
         &self.config
     }
 
+    /// Clears all in-flight slots and resets the sequence counter so
+    /// the underlying buffer can be rebound to a new logical
+    /// connection. Used by [`SrsppListener`](crate::transport::srspp::api::cfs::SrsppListener)
+    /// to recycle pre-allocated sender slots between accepted peers.
+    pub fn reset(&mut self) {
+        self.meta = [PacketMeta::default(); WIN];
+        self.write_pos = 0;
+        self.next_seq = 0;
+        self.send_base = 0;
+    }
+
     /// Maximum payload bytes per packet given the MTU and header overhead.
     pub fn max_payload_per_packet(&self) -> usize {
         MTU.saturating_sub(self.config.header_overhead)

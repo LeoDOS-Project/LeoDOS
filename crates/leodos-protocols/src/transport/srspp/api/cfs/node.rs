@@ -57,6 +57,7 @@ pub struct SrsppNode<
     pub(super) receiver: SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
     dtn: SyncRefCell<DtnContext<S, Re>>,
     origin: Address,
+    remote: Address,
 }
 
 impl<
@@ -78,6 +79,7 @@ impl<
     pub fn new(
         pool: &'pool P,
         buf_size: usize,
+        remote: Address,
         sender_config: SenderConfig,
         receiver_config: ReceiverConfig,
         store: S,
@@ -102,6 +104,7 @@ impl<
             }),
             dtn: SyncRefCell::new(DtnContext { store, reachable }),
             origin,
+            remote,
         })
     }
 
@@ -125,6 +128,7 @@ impl<
                 sender: &self.sender,
                 dtn: &self.dtn,
                 origin: self.origin,
+                target: self.remote,
             },
             SrsppNodeDriver {
                 link,
