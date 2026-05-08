@@ -847,4 +847,33 @@ fn main() {
     let out_file = out_dir.join("bindings.rs");
     let final_content = postprocess_bindings(&bindings_str, &macro_detector, &config.include_paths);
     fs::write(&out_file, final_content).expect("Couldn't write bindings");
+
+    // When the `cfs-stubs` feature is enabled, point the linker at
+    // cFE's UT stub libraries so test binaries resolve cFE symbols
+    // against scriptable stubs instead of the real flight code.
+    // Requires `make prep` to have been run with ENABLE_UNIT_TESTS=1
+    // (the default) so the static libs exist under build/native/.
+    if env::var("CARGO_FEATURE_CFS_STUBS").is_ok() {
+        emit_stub_link_flags(&build_dir);
+    }
+}
+
+fn emit_stub_link_flags(build_dir: &PathBuf) {
+    let arch = "native/default_cpu1";
+    let dirs = [
+        ("core_api/ut-stubs", "ut_core_api_stubs"),
+        ("psp/ut-stubs", "ut_psp_api_stubs"),
+        ("osal/ut-stubs", "ut_osapi_stubs"),
+        ("osal/ut_assert", "ut_assert"),
+    ];
+    for (rel, _lib) in &dirs {
+        let p = build_dir.join(arch).join(rel);
+        println!("cargo:rustc-link-search=native={}", p.display());
+    }
+    // Order matters: ut_core_api_stubs depends on ut_psp_api_stubs and
+    // ut_osapi_stubs; everything depends on ut_assert. List dependents
+    // before dependencies so the linker resolves symbols left-to-right.
+    for (_rel, lib) in &dirs {
+        println!("cargo:rustc-link-lib=static={}", lib);
+    }
 }

@@ -10,6 +10,11 @@ sim = []
 cfdp = []
 bp = []
 nos3 = []
+# Link tests against cFE's UT stub libraries
+# (libut_core_api_stubs, libut_psp_api_stubs, libut_osapi_stubs,
+# libut_assert) instead of the real cFE. Requires `make prep` to have
+# been run with ENABLE_UNIT_TESTS=1 (the default) so the .a files exist.
+cfs-stubs = ["std"]
 
 [dependencies]
 libc = { version = "0.2.183", default-features = false }
