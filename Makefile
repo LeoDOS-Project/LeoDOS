@@ -206,17 +206,23 @@ docker-test:
 	docker compose run --rm cfs-test bash -c \
 		"[ -f build/.prep ] || make SIMULATION=native prep && cd crates/leodos-protocols && cargo test --features=cfs"
 
-# Run leodos-libcfs unit tests against cFE's UT stub libraries inside
-# the cFS build container. Requires `make prep && make` to have built
+# Run cFE-stub-linked unit tests inside the cFS build container.
+# Requires `make prep && make` to have built
 # build/native/default_cpu1/{core_api,psp,osal}/ut-stubs/*.a (which
 # happens automatically when ENABLE_UNIT_TESTS=1, the default).
+#
+# `--test-threads=1` is required: the OSAL BSP no-op shims in our
+# test crates don't actually lock, so cargo's default test parallelism
+# would race the UT framework's global state and SIGSEGV.
+#
 # Override CFS_TEST_ARGS to pass extra `cargo test` flags, e.g.:
 #   make cfs-test CFS_TEST_ARGS=link_resolves_cfe_psp_get_spacecraft_id
 CFS_TEST_ARGS ?=
 cfs-test:
 	docker compose run --rm cfs-build bash -c \
 		"CFE_DIR=/cFS/cfe OSAL_DIR=/cFS/osal PSP_DIR=/cFS/psp BUILD_DIR=/cFS/build \
-		 cargo test -p leodos-libcfs --features=cfs-stubs --tests $(CFS_TEST_ARGS)"
+		 cargo test -p leodos-libcfs --features=cfs-stubs --tests $(CFS_TEST_ARGS) -- --test-threads=1 && \
+		 cargo test -p leodos-protocols --features=cfs-stubs --tests $(CFS_TEST_ARGS) -- --test-threads=1"
 
 check:
 	cd crates/leodos-analysis && cargo check --tests

@@ -65,6 +65,31 @@ already exist.
   samples (1 s apart) — accurate enough for routing and
   attitude derivation, can revisit if precision matters.
 
+- [ ] SRSPP sender: `SenderActions` is clobbered, not
+  appended. `SenderMachine::handle()` calls
+  `actions.clear()` at the start of every event, so two
+  successive `tx.send`-style calls (with no run-loop
+  yield in between) drop the first event's `Transmit`
+  action and that slot stalls in `PendingTransmit`. The
+  endpoint test had to flush between `send` and
+  `send_eos` to work around it. Production callers
+  happen to interleave enough yields that it never
+  bites, but the API has a hidden ordering requirement.
+  Fix: make `SenderActions` a true FIFO — `handle()`
+  appends, the run loop drains-and-clears.
+
+- [ ] SRSPP receiver: `complete_message_len` is a single
+  slot, not a queue. If two messages reach the receive
+  state machine before the consumer drains the first via
+  `take_message`, the second `deliver_packet` overwrites
+  the first and the data is lost. Manifests in tests
+  where DATA + EOS are queued back-to-back: the EOS
+  produces an empty message that overwrites the unread
+  DATA, then drive_segment drains the empty as the EOS
+  marker, leaving nothing for `listener.recv`. Fix: a
+  small FIFO of pending messages, or backpressure that
+  blocks `handle_data` when an unread message is pending.
+
 - [ ] SRSPP driver: `AtomicWaker` so `tx.send` wakes the
   driver immediately. Today the driver's `select_biased!`
   on (link.read OR sleep(timeout)) is bounded only by

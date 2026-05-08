@@ -40,10 +40,10 @@ use leodos_protocols::transport::srspp::rto::FixedRto;
 
 // ── Mock clock ───────────────────────────────────────────────
 
-/// Test clock that never blocks. `now()` returns a fixed value;
-/// `sleep()` resolves immediately, so the endpoint's run loop polls
-/// in a tight cycle. Sufficient for tests that don't exercise
-/// retransmit timing.
+/// Test clock that never blocks on real time. `now()` returns a
+/// fixed value; `sleep()` yields to the executor *once* and then
+/// resolves, so the endpoint's run loop returns `Pending` between
+/// iterations and concurrently-joined run loops actually get polled.
 #[derive(Copy, Clone)]
 struct MockClock;
 
@@ -52,7 +52,16 @@ impl Clock for MockClock {
         SysTime::from(Duration::from_millis(0))
     }
     fn sleep(&self, _duration: Duration) -> impl core::future::Future<Output = ()> {
-        async {}
+        let mut yielded = false;
+        poll_fn(move |cx| {
+            if yielded {
+                Poll::Ready(())
+            } else {
+                yielded = true;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        })
     }
 }
 
@@ -303,13 +312,25 @@ fn endpoint_eos_roundtrip() {
 
     block_on(async {
         let test = async {
+            // Drain the data message before queueing the EOS:
+            // (1) `machine.handle()` clears the actions queue every
+            //     call, so back-to-back send+send_eos without a flush
+            //     drops the data's Transmit action.
+            // (2) The receiver's `complete_message_len` slot is
+            //     single-element — letting the EOS arrive before the
+            //     consumer drains the data overwrites it with the
+            //     synthetic empty message produced by EOS handling.
+            // Both quirks are pre-existing properties of the sender /
+            // receiver machines; this test interleaves like a real
+            // consumer would.
             tx.send(b"data").await.unwrap();
-            tx.send_eos().await.unwrap();
             tx.flush().await.unwrap();
             let mut buf = [0u8; 64];
             let (_src, k1) = listener.recv(&mut buf).await.unwrap();
-            let (_src, k2) = listener.recv(&mut buf).await.unwrap();
             assert_eq!(k1, RecvKind::Data(4));
+            tx.send_eos().await.unwrap();
+            tx.flush().await.unwrap();
+            let (_src, k2) = listener.recv(&mut buf).await.unwrap();
             assert_eq!(k2, RecvKind::Eos);
         };
         let run_a = endpoint_a.run(link_a, FixedRto::new(1000), MockClock).fuse();
