@@ -682,16 +682,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fs_srv"
-version = "0.1.0"
-dependencies = [
- "bindgen 0.72.1",
- "heapless",
- "leodos-libcfs",
- "leodos-protocols",
-]
-
-[[package]]
 name = "futures"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2353,19 +2343,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spacecomp"
-version = "0.1.0"
-dependencies = [
- "bindgen 0.72.1",
- "bon",
- "heapless",
- "leodos-libcfs",
- "leodos-protocols",
- "thiserror 2.0.18",
- "zerocopy",
-]
-
-[[package]]
 name = "spacecomp-wildfire"
 version = "0.1.0"
 dependencies = [
@@ -2408,25 +2385,6 @@ version = "0.1.0"
 dependencies = [
  "leodos-protocols",
  "tokio",
-]
-
-[[package]]
-name = "srspp_receiver"
-version = "0.1.0"
-dependencies = [
- "bindgen 0.72.1",
- "leodos-libcfs",
- "leodos-protocols",
-]
-
-[[package]]
-name = "srspp_sender"
-version = "0.1.0"
-dependencies = [
- "bindgen 0.72.1",
- "heapless",
- "leodos-libcfs",
- "leodos-protocols",
 ]
 
 [[package]]
@@ -2999,19 +2957,6 @@ name = "webpki-roots"
 version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
-
-[[package]]
-name = "wildfire"
-version = "0.1.0"
-dependencies = [
- "bindgen 0.72.1",
- "heapless",
- "leodos-analysis",
- "leodos-libcfs",
- "leodos-protocols",
- "thiserror 2.0.18",
- "zerocopy",
-]
 
 [[package]]
 name = "winapi"

@@ -191,7 +191,6 @@ impl<
                 config: receiver_config,
                 streams: heapless::LinearMap::new(),
                 ack_delay,
-                closed: false,
                 error: None,
             }),
             bound_sources: SyncRefCell::new(Vec::new()),

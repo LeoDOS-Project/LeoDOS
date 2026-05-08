@@ -1,22 +1,12 @@
 /// Shared link with composable per-peer views.
 mod endpoint;
-/// Concurrent per-connection receive.
-mod listener;
-/// Combined sender/receiver SRSPP node.
-mod node;
-/// Multi-stream SRSPP receiver.
+/// Multi-stream SRSPP receive state and helpers used by the endpoint.
 mod receiver;
-/// SRSPP sender with retransmission support.
+/// SRSPP send state and helpers used by the endpoint.
 mod sender;
 
 pub use endpoint::{
     EndpointError, EndpointListener, EndpointReceiver, EndpointSender, SrsppEndpoint,
-};
-pub use listener::{SrsppDial, SrsppListener, SrsppStream};
-pub use node::{SrsppNode, SrsppNodeDriver};
-pub use receiver::{DeliveryToken, SrsppReceiver, SrsppReceiverDriver, SrsppRxHandle};
-pub use sender::{
-    SimpleSender, SrsppSender, SrsppSenderDriver, SrsppTxHandle,
 };
 
 use leodos_libcfs::cfe::time::SysTime;
