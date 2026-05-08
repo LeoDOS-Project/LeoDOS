@@ -11,6 +11,7 @@ use crate::buffer_pool::BufferPool;
 use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
+use crate::transport::srspp::api::cfs::Clock;
 use crate::transport::srspp::api::cfs::TransportError;
 use crate::transport::srspp::dtn::MessageStore;
 use crate::transport::srspp::dtn::Reachable;
@@ -45,18 +46,20 @@ pub(super) struct DtnContext<S, R> {
 
 /// Drains pending Transmit actions onto `link`, marking each packet
 /// as transmitted and arming its retransmission timer.
-pub(super) async fn transmit<'pool, E, P, Rto, const WIN: usize, const MTU: usize>(
+pub(super) async fn transmit<'pool, E, P, Rto, C, const WIN: usize, const MTU: usize>(
     sender: &SyncRefCell<SenderState<'pool, E, P, WIN, MTU>>,
     tx_buffer: &mut [u8],
     rto_policy: &Rto,
+    clock: &C,
     link: &mut impl NetworkWrite<Error = E>,
 ) -> Result<(), TransportError<E>>
 where
     E: Clone,
     P: BufferPool + 'pool,
     Rto: RtoPolicy,
+    C: Clock,
 {
-    let now = SysTime::now();
+    let now = clock.now();
 
     let (transmits, cfg_clone) = sender.with(|s| {
         let t = s
@@ -169,18 +172,20 @@ where
 
 /// Walks expired retransmission timers and drives the corresponding
 /// retransmits through [`transmit`].
-pub(super) async fn handle_timeouts<'pool, E, P, Rto, const WIN: usize, const MTU: usize>(
+pub(super) async fn handle_timeouts<'pool, E, P, Rto, C, const WIN: usize, const MTU: usize>(
     sender: &SyncRefCell<SenderState<'pool, E, P, WIN, MTU>>,
     tx_buffer: &mut [u8],
     rto_policy: &Rto,
+    clock: &C,
     link: &mut impl NetworkWrite<Error = E>,
 ) -> Result<(), TransportError<E>>
 where
     E: Clone,
     P: BufferPool + 'pool,
     Rto: RtoPolicy,
+    C: Clock,
 {
-    let now = SysTime::now();
+    let now = clock.now();
 
     for seq in sender.with_mut(|s| s.timers.expired(now).collect::<heapless::Vec<_, WIN>>()) {
         sender.with_mut(|s| {
@@ -192,7 +197,7 @@ where
             )
         })?;
 
-        transmit(sender, tx_buffer, rto_policy, link).await?;
+        transmit(sender, tx_buffer, rto_policy, clock, link).await?;
     }
 
     Ok(())
@@ -217,6 +222,7 @@ pub(super) async fn drain_stored<
     S,
     R,
     Rto,
+    C,
     const WIN: usize,
     const MTU: usize,
 >(
@@ -225,6 +231,7 @@ pub(super) async fn drain_stored<
     tx_buffer: &mut [u8],
     origin: Address,
     rto_policy: &Rto,
+    clock: &C,
     link: &mut impl NetworkWrite<Error = E>,
 ) -> Result<(), TransportError<E>>
 where
@@ -233,8 +240,9 @@ where
     S: MessageStore,
     R: Reachable,
     Rto: RtoPolicy,
+    C: Clock,
 {
-    dtn.with_mut(|d| d.store.expire(SysTime::now().seconds()));
+    dtn.with_mut(|d| d.store.expire(clock.now().seconds()));
 
     let pending = dtn.with(|d| d.store.pending_targets());
     if pending == 0 {
@@ -276,7 +284,7 @@ where
             })?;
         }
 
-        transmit(sender, tx_buffer, rto_policy, link).await?;
+        transmit(sender, tx_buffer, rto_policy, clock, link).await?;
     }
 
     Ok(())
@@ -285,8 +293,8 @@ where
 /// Converts an optional deadline into a duration from now, capping at
 /// 100 ms when no deadline is set so the run loop polls outbound work
 /// even without retransmit timers.
-pub(super) fn duration_until(deadline: Option<SysTime>) -> Duration {
-    let now = SysTime::now();
+pub(super) fn duration_until(clock: &impl Clock, deadline: Option<SysTime>) -> Duration {
+    let now = clock.now();
     deadline
         .map(|d| {
             if d > now {

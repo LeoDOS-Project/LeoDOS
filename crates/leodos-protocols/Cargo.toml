@@ -26,6 +26,10 @@ std = []
 tokio = ["std", "dep:tokio"]
 cfs = ["dep:leodos-libcfs", "dep:leodos-utils"]
 nos3 = ["cfs", "leodos-libcfs/nos3"]
+# Link tests against cFE's UT stub libraries instead of real cFE.
+# Implies `cfs` (so the wrappers compile) and `std` (for cargo's
+# test harness). Used by `make cfs-test` for SRSPP endpoint tests.
+cfs-stubs = ["cfs", "std", "leodos-libcfs/cfs-stubs"]
 
 [dev-dependencies]
 rand = "0.9.2"

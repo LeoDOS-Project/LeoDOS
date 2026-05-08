@@ -1,3 +1,5 @@
+/// Time-source abstraction for the endpoint.
+mod clock;
 /// Shared link with composable per-peer views.
 mod endpoint;
 /// Multi-stream SRSPP receive state and helpers used by the endpoint.
@@ -5,6 +7,7 @@ mod receiver;
 /// SRSPP send state and helpers used by the endpoint.
 mod sender;
 
+pub use clock::{CfeClock, Clock};
 pub use endpoint::{
     EndpointError, EndpointListener, EndpointReceiver, EndpointSender, RecvKind, SrsppEndpoint,
 };

@@ -29,7 +29,6 @@ use futures::FutureExt;
 use heapless::Vec;
 use leodos_libcfs::cfe::duration::Duration;
 use leodos_libcfs::cfe::time::SysTime;
-use leodos_libcfs::runtime::time::sleep;
 
 use zerocopy::Immutable;
 use zerocopy::IntoBytes;
@@ -57,6 +56,7 @@ use crate::transport::srspp::packet::SrsppType;
 use crate::transport::srspp::rto::RtoPolicy;
 use crate::utils::cell::SyncRefCell;
 
+use super::clock::Clock;
 use super::receiver::ACK_BUFFER_SIZE;
 use super::receiver::MultiReceiverState;
 use super::receiver::StreamState;
@@ -315,14 +315,21 @@ impl<
     /// Drives the I/O loop. Reads packets from `link`, demuxes to the
     /// matching receiver stream or sender slot, and runs retransmission
     /// and ACK timers. Returns on link error.
-    pub async fn run<L, Rto>(
+    ///
+    /// `clock` supplies the time source for retransmit deadlines and
+    /// the inter-poll sleep. Production callers pass [`CfeClock`];
+    /// tests may substitute a mock that returns scripted values
+    /// without touching cFE FFI.
+    pub async fn run<L, Rto, C>(
         &self,
         mut link: L,
         rto_policy: Rto,
+        clock: C,
     ) -> Result<(), TransportError<E>>
     where
         L: NetworkRead<Error = E> + NetworkWrite<Error = E>,
         Rto: RtoPolicy,
+        C: Clock,
     {
         let mut tx_buffer = [0u8; MTU];
         let mut recv_buffer = [0u8; MTU];
@@ -347,6 +354,7 @@ impl<
                     &mut tx_buffer,
                     self.origin,
                     &rto_policy,
+                    &clock,
                     &mut link,
                 )
                 .await
@@ -358,6 +366,7 @@ impl<
                     &slot.state,
                     &mut tx_buffer,
                     &rto_policy,
+                    &clock,
                     &mut link,
                 )
                 .await
@@ -367,11 +376,11 @@ impl<
                 }
             }
 
-            let timeout = self.next_timeout();
+            let timeout = self.next_timeout(&clock);
 
             let event = {
                 let read_fut = link.read(&mut recv_buffer).fuse();
-                let sleep_fut = sleep(timeout).fuse();
+                let sleep_fut = clock.sleep(timeout).fuse();
                 pin_utils::pin_mut!(read_fut, sleep_fut);
                 futures::select_biased! {
                     r = read_fut => Some(r),
@@ -382,7 +391,7 @@ impl<
             match event {
                 Some(Ok(len)) => {
                     if let Err(e) = self
-                        .handle_incoming(&recv_buffer[..len], &mut ack_buffer, &mut link)
+                        .handle_incoming(&recv_buffer[..len], &mut ack_buffer, &clock, &mut link)
                         .await
                     {
                         self.set_errors(e.clone());
@@ -395,9 +404,13 @@ impl<
                     return Err(err);
                 }
                 None => {
-                    if let Err(e) =
-                        receiver_handle_timeouts(&self.rx_state, &mut ack_buffer, &mut link)
-                            .await
+                    if let Err(e) = receiver_handle_timeouts(
+                        &self.rx_state,
+                        &mut ack_buffer,
+                        &clock,
+                        &mut link,
+                    )
+                    .await
                     {
                         self.set_errors(e.clone());
                         return Err(e);
@@ -410,6 +423,7 @@ impl<
                             &slot.state,
                             &mut tx_buffer,
                             &rto_policy,
+                            &clock,
                             &mut link,
                         )
                         .await
@@ -423,14 +437,16 @@ impl<
         }
     }
 
-    async fn handle_incoming<L>(
+    async fn handle_incoming<L, C>(
         &self,
         packet: &[u8],
         ack_buffer: &mut [u8],
+        clock: &C,
         link: &mut L,
     ) -> Result<(), TransportError<E>>
     where
         L: NetworkWrite<Error = E>,
+        C: Clock,
     {
         let Ok(parsed) = SrsppPacket::parse(packet) else {
             return Ok(());
@@ -446,7 +462,7 @@ impl<
                         return Ok(());
                     }
                 }
-                process_data(&self.rx_state, ack_buffer, packet, link).await
+                process_data(&self.rx_state, ack_buffer, packet, clock, link).await
             }
             Ok(SrsppType::Ack) => {
                 let Ok(ack) = SrsppAckPacket::parse(packet) else {
@@ -466,7 +482,7 @@ impl<
         }
     }
 
-    fn next_timeout(&self) -> Duration {
+    fn next_timeout(&self, clock: &impl Clock) -> Duration {
         let r = receiver_next_deadline(&self.rx_state);
         let mut earliest = r;
         for slot in self.tx_slots.iter() {
@@ -479,7 +495,7 @@ impl<
                 (a, b) => a.or(b),
             };
         }
-        duration_until(earliest)
+        duration_until(clock, earliest)
     }
 
     fn set_errors(&self, err: TransportError<E>) {

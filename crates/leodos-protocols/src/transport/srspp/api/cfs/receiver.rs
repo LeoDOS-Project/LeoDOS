@@ -11,6 +11,7 @@ use leodos_libcfs::cfe::time::SysTime;
 use crate::network::NetworkWrite;
 use crate::network::isl::address::Address;
 use crate::network::spp::SequenceCount;
+use crate::transport::srspp::api::cfs::Clock;
 use crate::transport::srspp::machine::receiver::AckInfo;
 use crate::transport::srspp::machine::receiver::AckState;
 use crate::transport::srspp::machine::receiver::HandleResult;
@@ -57,15 +58,17 @@ pub(super) struct MultiReceiverState<E, R: ReceiverBackend, const MAX_STREAMS: u
 /// Feeds an incoming DATA packet into the matching per-source stream
 /// (creating one if needed) and emits any ACK or timer updates the
 /// state machine asks for.
-pub(super) async fn process_data<E, R, const MAX_STREAMS: usize>(
+pub(super) async fn process_data<E, R, C, const MAX_STREAMS: usize>(
     state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
     ack_buffer: &mut [u8],
     packet: &[u8],
+    clock: &C,
     link: &mut impl NetworkWrite<Error = E>,
 ) -> Result<(), TransportError<E>>
 where
     E: Clone,
     R: ReceiverBackend,
+    C: Clock,
 {
     let Ok(parsed) = SrsppPacket::parse(packet) else {
         return Ok(());
@@ -80,7 +83,7 @@ where
             let flags = data.primary.sequence_flag();
             let result =
                 drive_segment(state, source_address, seq, flags, &data.payload)?;
-            drive_actions(state, ack_buffer, source_address, result, link).await
+            drive_actions(state, ack_buffer, source_address, result, clock, link).await
         }
         Ok(SrsppType::Eos) => {
             let Ok(eos) = SrsppEosPacket::parse(packet) else {
@@ -117,7 +120,7 @@ where
             // resulting empty message is drained inside drive_segment so
             // the consumer never observes it as a 0-byte data event.
             let result = drive_segment(state, source_address, seq, flags, &[])?;
-            drive_actions(state, ack_buffer, source_address, result, link).await
+            drive_actions(state, ack_buffer, source_address, result, clock, link).await
         }
         _ => Ok(()),
     }
@@ -196,16 +199,18 @@ where
 }
 
 /// Walks expired ACK and progress timers across all streams.
-pub(super) async fn handle_timeouts<E, R, const MAX_STREAMS: usize>(
+pub(super) async fn handle_timeouts<E, R, C, const MAX_STREAMS: usize>(
     state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
     ack_buffer: &mut [u8],
+    clock: &C,
     link: &mut impl NetworkWrite<Error = E>,
 ) -> Result<(), TransportError<E>>
 where
     E: Clone,
     R: ReceiverBackend,
+    C: Clock,
 {
-    let now = SysTime::now();
+    let now = clock.now();
 
     let ack_expired = state.with(|s| {
         s.streams
@@ -227,7 +232,7 @@ where
                 HandleResult::default()
             }
         });
-        drive_actions(state, ack_buffer, source, result, link).await?;
+        drive_actions(state, ack_buffer, source, result, clock, link).await?;
     }
 
     let progress_expired = state.with(|s| {
@@ -253,7 +258,7 @@ where
                     Ok(HandleResult::default())
                 }
             })?;
-        drive_actions(state, ack_buffer, source, result, link).await?;
+        drive_actions(state, ack_buffer, source, result, clock, link).await?;
     }
 
     Ok(())
@@ -276,16 +281,18 @@ where
     })
 }
 
-async fn drive_actions<E, R, const MAX_STREAMS: usize>(
+async fn drive_actions<E, R, C, const MAX_STREAMS: usize>(
     state: &SyncRefCell<MultiReceiverState<E, R, MAX_STREAMS>>,
     ack_buffer: &mut [u8],
     source: Address,
     result: HandleResult,
+    clock: &C,
     link: &mut impl NetworkWrite<Error = E>,
 ) -> Result<(), TransportError<E>>
 where
     E: Clone,
     R: ReceiverBackend,
+    C: Clock,
 {
     if let Some(AckInfo {
         destination,
@@ -316,13 +323,12 @@ where
     }
 
     let ack_delay = state.with(|s| s.ack_delay);
+    let now = clock.now();
     state.with_mut(|s| {
         if let Some(action) = result.ack_timer {
             if let Some(entry) = s.streams.get_mut(&source) {
                 entry.ack_deadline = match action {
-                    TimerAction::Start { .. } => {
-                        Some(SysTime::now() + SysTime::from(ack_delay))
-                    }
+                    TimerAction::Start { .. } => Some(now + SysTime::from(ack_delay)),
                     TimerAction::Stop => None,
                 };
             }
@@ -332,7 +338,7 @@ where
                 entry.progress_deadline = match action {
                     TimerAction::Start { ticks } => {
                         let delay = Duration::from_millis(ticks);
-                        Some(SysTime::now() + SysTime::from(delay))
+                        Some(now + SysTime::from(delay))
                     }
                     TimerAction::Stop => None,
                 };

@@ -24,6 +24,7 @@ use leodos_protocols::datalink::link::cfs::sb::SbDatalink;
 use leodos_protocols::network::isl::address::Address;
 use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::ptp::PointToPoint;
+use leodos_protocols::transport::srspp::api::cfs::CfeClock;
 use leodos_protocols::transport::srspp::api::cfs::EndpointListener;
 use leodos_protocols::transport::srspp::api::cfs::EndpointSender;
 use leodos_protocols::transport::srspp::api::cfs::RecvKind;
@@ -322,7 +323,11 @@ impl<F, S: MessageStore, R: Reachable> SpaceCompNode<F, S, R> {
             Ok::<(), SpaceCompError>(())
         };
 
-        let (d, dr) = join!(dispatch, endpoint.run(network, FixedRto::new(rto))).await;
+        let (d, dr) = join!(
+            dispatch,
+            endpoint.run(network, FixedRto::new(rto), CfeClock)
+        )
+        .await;
         d?;
         dr.map_err(SpaceCompError::Transport)?;
 

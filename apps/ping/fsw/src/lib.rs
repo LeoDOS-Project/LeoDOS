@@ -19,6 +19,7 @@ use leodos_protocols::network::isl::address::SpacecraftId;
 use leodos_protocols::network::ptp::PointToPoint;
 use leodos_protocols::network::spp::Apid;
 use leodos_libcfs::join;
+use leodos_protocols::transport::srspp::api::cfs::CfeClock;
 use leodos_protocols::transport::srspp::api::cfs::RecvKind;
 use leodos_protocols::transport::srspp::api::cfs::SrsppEndpoint;
 use leodos_protocols::transport::srspp::dtn::AlwaysReachable;
@@ -194,7 +195,11 @@ async fn run() -> Result<(), CfsError> {
         Ok::<(), leodos_protocols::transport::srspp::api::cfs::TransportError<CfsError>>(())
     };
 
-    let (run_res, serve_res) = join!(endpoint.run(network, FixedRto::new(1000)), serve).await;
+    let (run_res, serve_res) = join!(
+        endpoint.run(network, FixedRto::new(1000), CfeClock),
+        serve
+    )
+    .await;
     if let Err(e) = run_res {
         let _ = log!("Ping: endpoint run exited: {}", e);
     }
