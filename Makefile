@@ -224,6 +224,17 @@ cfs-test:
 		 cargo test -p leodos-libcfs --features=cfs-stubs --tests $(CFS_TEST_ARGS) -- --test-threads=1 && \
 		 cargo test -p leodos-protocols --features=cfs-stubs --tests $(CFS_TEST_ARGS) -- --test-threads=1"
 
+# Coverage report for the stub-linked test path. Defaults to a
+# concise summary; override with COV_MODE=--text for line-level
+# uncovered output, or COV_MODE=--json --output-path coverage.json
+# for structured form.
+COV_MODE ?= --summary-only
+cfs-coverage:
+	docker compose run --rm cfs-build bash -c \
+		"CFE_DIR=/cFS/cfe OSAL_DIR=/cFS/osal PSP_DIR=/cFS/psp BUILD_DIR=/cFS/build \
+		 cargo llvm-cov -p leodos-libcfs -p leodos-protocols \
+		   --features=cfs-stubs $(COV_MODE) -- --test-threads=1"
+
 check:
 	cd crates/leodos-analysis && cargo check --tests
 	cd crates/leodos-protocols && cargo check --tests --features=cfs

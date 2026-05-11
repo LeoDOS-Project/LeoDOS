@@ -16,7 +16,9 @@ RUN apt-get update && apt-get install -y \
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo
 ENV PATH=/usr/local/cargo/bin:$PATH
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    rustup component add llvm-tools-preview && \
+    cargo install cargo-llvm-cov
 
 WORKDIR /cFS
 COPY . /cFS

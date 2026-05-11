@@ -14,7 +14,6 @@ use crate::network::spp::SpacePacketData;
 use core::fmt::Display;
 use core::mem::size_of;
 use core::ops::Deref;
-use core::ops::DerefMut;
 use zerocopy::FromBytes;
 use zerocopy::IntoBytes;
 use zerocopy::byteorder::network_endian::U16;
@@ -212,8 +211,184 @@ impl<'a, 'b> Deref for CrcSpacePacket<'a, 'b> {
         self.packet
     }
 }
-impl<'a, 'b> DerefMut for CrcSpacePacket<'a, 'b> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.packet
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::network::spp::SecondaryHeaderFlag;
+    use crate::network::spp::SequenceFlag;
+
+    fn alg() -> crc::Crc<u16> {
+        crc::Crc::<u16>::new(&crc::CRC_16_KERMIT)
+    }
+
+    fn build_packet<'a>(buf: &'a mut [u8], data_field_len: u16) -> CrcSpacePacket<'a, 'a> {
+        // SAFETY of the lifetime conflation: only used for testing.
+        // The crc::Crc value is borrowed via a 'static reference.
+        let alg_static: &'static crc::Crc<u16> = Box::leak(Box::new(alg()));
+        CrcSpacePacket::new(
+            buf,
+            Apid::new(0x42).unwrap(),
+            PacketType::Telecommand,
+            SequenceCount::from(0),
+            SecondaryHeaderFlag::Absent,
+            SequenceFlag::Unsegmented,
+            data_field_len,
+            alg_static,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn new_validates_immediately() {
+        let mut buf = [0u8; 32];
+        let pkt = build_packet(&mut buf, 8);
+        assert!(pkt.validate().is_ok(), "fresh packet must validate");
+    }
+
+    #[test]
+    fn flipping_a_payload_byte_invalidates_crc() {
+        let mut buf = [0u8; 32];
+        {
+            let _ = build_packet(&mut buf, 8);
+        }
+        buf[10] ^= 0xff;
+        let alg = alg();
+        let pkt = SpacePacket::ref_from_bytes(&buf[..8 + 6]).unwrap();
+        let calc = alg.checksum(pkt.as_bytes());
+        let stored = U16::read_from_bytes(&buf[14..16]).unwrap().get();
+        assert_ne!(calc, stored, "tampered payload must mismatch stored CRC");
+    }
+
+    #[test]
+    fn buffer_too_small_is_reported() {
+        let mut buf = [0u8; 4];
+        let alg = alg();
+        let alg_static: &'static crc::Crc<u16> = Box::leak(Box::new(alg));
+        let result = CrcSpacePacket::new(
+            &mut buf,
+            Apid::new(0x42).unwrap(),
+            PacketType::Telecommand,
+            SequenceCount::from(0),
+            SecondaryHeaderFlag::Absent,
+            SequenceFlag::Unsegmented,
+            8,
+            alg_static,
+        );
+        let err = match result {
+            Ok(_) => panic!("expected error"),
+            Err(e) => e,
+        };
+        match err {
+            CrcError::BufferTooSmall { required, provided } => {
+                assert_eq!(required, 6 + 8 + 2);
+                assert_eq!(provided, 4);
+            }
+            other => panic!("unexpected error: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn data_returns_payload_when_valid() {
+        let mut buf = [0u8; 32];
+        let pkt = build_packet(&mut buf, 8);
+        let data = pkt.data().unwrap();
+        assert_eq!(data.len(), 8);
+    }
+
+    #[test]
+    fn data_errors_when_crc_mismatches() {
+        let mut buf = [0u8; 16];
+        {
+            let _ = build_packet(&mut buf, 8);
+        }
+        // CRC sits in the last two bytes (offsets 14, 15). Flip one.
+        buf[15] ^= 0xff;
+        let alg = alg();
+        let alg_static: &'static crc::Crc<u16> = Box::leak(Box::new(alg));
+        // Re-borrow the buffer into a CrcSpacePacket-shaped slice.
+        let primary_len = size_of::<PrimaryHeader>();
+        let total = primary_len + 8 + 2;
+        let (packet_buf, crc_buf) = buf[..total].split_at_mut(primary_len + 8);
+        let packet = SpacePacket::mut_from_bytes(packet_buf).unwrap();
+        let crc_packet = CrcSpacePacket {
+            packet,
+            crc_bytes: crc_buf,
+            crc_alg: alg_static,
+        };
+        assert!(matches!(
+            crc_packet.validate(),
+            Err(CrcError::ValidationFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn builder_error_display() {
+        let s = format!("{}", BuilderError::BufferTooSmall { required: 10, provided: 4 });
+        assert!(s.contains("required 10"));
+        assert!(s.contains("provided 4"));
+    }
+
+    #[test]
+    fn crc_error_display_covers_all_variants() {
+        let s = format!("{}", CrcError::BufferTooSmall { required: 10, provided: 4 });
+        assert!(s.contains("required 10"));
+
+        let s = format!(
+            "{}",
+            CrcError::ValidationFailed { expected: 0xAA55, calculated: 0x55AA }
+        );
+        assert!(s.contains("AA55"));
+        assert!(s.contains("55AA"));
+
+        let s = format!(
+            "{}",
+            CrcError::Build(BuilderError::BufferTooSmall { required: 1, provided: 0 })
+        );
+        assert!(s.contains("Build error"));
+    }
+
+    #[test]
+    fn from_builder_error() {
+        let e: CrcError =
+            BuilderError::BufferTooSmall { required: 1, provided: 0 }.into();
+        assert!(matches!(e, CrcError::Build(_)));
+    }
+
+    #[test]
+    fn deref_exposes_inner_space_packet_fields() {
+        let mut buf = [0u8; 16];
+        let pkt = build_packet(&mut buf, 8);
+        // Access via Deref: the SpacePacket fields should be readable
+        // through the wrapper.
+        assert_eq!(pkt.apid().value(), 0x42);
+    }
+
+    #[test]
+    fn set_data_round_trips_and_updates_crc() {
+        use zerocopy::FromBytes;
+        use zerocopy::Immutable;
+        use zerocopy::IntoBytes;
+        use zerocopy::KnownLayout;
+        use zerocopy::Unaligned;
+
+        #[repr(C, packed)]
+        #[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Unaligned, Copy, Clone)]
+        struct Payload {
+            magic: [u8; 4],
+            seq: u8,
+        }
+
+        let mut buf = [0u8; 16];
+        let mut pkt = build_packet(&mut buf, core::mem::size_of::<Payload>() as u16);
+        let payload = Payload { magic: *b"PING", seq: 7 };
+        pkt.set_data(&payload).unwrap();
+        // After set_data, CRC must still validate.
+        assert!(pkt.validate().is_ok());
+        // data_as should round-trip the same bytes back.
+        let view = pkt.data_as::<Payload>().unwrap();
+        assert_eq!(view.magic, *b"PING");
+        let seq = view.seq;
+        assert_eq!(seq, 7);
     }
 }
