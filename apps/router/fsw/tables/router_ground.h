@@ -15,9 +15,23 @@ typedef struct {
     float lon_deg;
 } RouterGroundEntry_t;
 
+/* Runtime-configurable constellation + ground-station table.
+ *
+ * Static compile-time defaults live in `router_ground.c`; leo-viz
+ * overrides via `router_ground.bin` in the shared log volume. Both
+ * sides must agree on this struct's byte layout. */
 typedef struct {
-    uint8 count;            /* valid entries are entries[0..count) */
-    uint8 _pad[3];
+    /* Constellation grid */
+    uint8 num_orbs;
+    uint8 num_sats;
+    uint8 _pad0[2];
+    /* Orbital shell parameters used by DistanceMinimizing routing
+     * and the GatewayTable LOS computation. */
+    float altitude_m;
+    float inclination_deg;
+    /* Ground stations: valid entries are entries[0..count). */
+    uint8 count;
+    uint8 _pad1[3];
     RouterGroundEntry_t entries[ROUTER_GROUND_MAX_STATIONS];
 } RouterGroundTable_t;
 

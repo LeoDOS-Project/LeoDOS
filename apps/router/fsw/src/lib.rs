@@ -44,13 +44,13 @@ mod bindings {
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
 
-const NUM_ORBS: u8 = bindings::ROUTER_NUM_ORBS as u8;
-const NUM_SATS: u8 = bindings::ROUTER_NUM_SATS as u8;
-const ALTITUDE_M: f32 = 550_000.0;
-const INCLINATION_DEG: f32 = 87.0;
-
-const TORUS: Torus = Torus::new(NUM_ORBS, NUM_SATS);
-const SHELL: Shell = Shell::new(TORUS, ALTITUDE_M, INCLINATION_DEG);
+/// Compile-time fallback used when the runtime config table is
+/// missing the field (legacy `router_ground.bin` written by an
+/// older leo-viz). Lives only in the build's C header.
+const DEFAULT_NUM_ORBS: u8 = bindings::ROUTER_NUM_ORBS as u8;
+const DEFAULT_NUM_SATS: u8 = bindings::ROUTER_NUM_SATS as u8;
+const DEFAULT_ALTITUDE_M: f32 = 550_000.0;
+const DEFAULT_INCLINATION_DEG: f32 = 87.0;
 
 const LOCALHOST: &str = "127.0.0.1";
 const PORT_BASE: u16 = 6000;
@@ -82,8 +82,13 @@ struct RouterGroundEntry {
 #[repr(C)]
 #[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::KnownLayout, zerocopy::Immutable)]
 struct RouterGroundTable {
+    num_orbs: u8,
+    num_sats: u8,
+    _pad0: [u8; 2],
+    altitude_m: f32,
+    inclination_deg: f32,
     count: u8,
-    _pad: [u8; 3],
+    _pad1: [u8; 3],
     entries: [RouterGroundEntry; ROUTER_GROUND_MAX_STATIONS],
 }
 
@@ -97,8 +102,13 @@ const ROUTER_GROUND_RUNTIME_PATH: &str = "/tmp/leodos/router_ground.bin";
 impl Default for RouterGroundTable {
     fn default() -> Self {
         Self {
+            num_orbs: DEFAULT_NUM_ORBS,
+            num_sats: DEFAULT_NUM_SATS,
+            _pad0: [0; 2],
+            altitude_m: DEFAULT_ALTITUDE_M,
+            inclination_deg: DEFAULT_INCLINATION_DEG,
             count: 0,
-            _pad: [0; 3],
+            _pad1: [0; 3],
             entries: [RouterGroundEntry {
                 station_id: 0,
                 _pad: [0; 3],
@@ -130,10 +140,10 @@ fn read_runtime_ground_table() -> Option<RouterGroundTable> {
 }
 
 /// Append a `sat:<scid>` or `gnd:<station>` token for `addr` to `out`.
-fn write_endpoint<const N: usize>(out: &mut heapless::String<N>, addr: Address) {
+fn write_endpoint<const N: usize>(out: &mut heapless::String<N>, addr: Address, num_sats: u8) {
     match addr {
         Address::Satellite(p) => {
-            let scid = p.orb as u16 * NUM_SATS as u16 + p.sat as u16;
+            let scid = p.orb as u16 * num_sats as u16 + p.sat as u16;
             let _ = write!(out, "sat:{}", scid);
         }
         Address::Ground { station } => {
@@ -145,10 +155,10 @@ fn write_endpoint<const N: usize>(out: &mut heapless::String<N>, addr: Address) 
 /// Fire an EVS event describing one forwarded ISL packet. The
 /// emitting spacecraft is the source (it's the one forwarding); the
 /// EVS event header carries the emitting scid.
-fn emit_forward_event(dst: Address) {
+fn emit_forward_event(dst: Address, num_sats: u8) {
     let mut msg: heapless::String<96> = heapless::String::new();
     let _ = msg.push_str("fwd dst=");
-    write_endpoint(&mut msg, dst);
+    write_endpoint(&mut msg, dst, num_sats);
     let _ = event::info(ROUTER_FORWARD_EID, &msg);
 }
 const PORTS_PER_SAT: u16 = 5;
@@ -214,18 +224,18 @@ fn isl_port_offset(dir: Direction) -> u16 {
 const GROUND_OFFSET: u16 = 4;
 
 /// Unique port base for a satellite, accounting for both orbit and sat index.
-fn sat_port_base(point: Point) -> u16 {
-    PORT_BASE + (point.orb as u16 * NUM_SATS as u16 + point.sat as u16) * PORTS_PER_SAT
+fn sat_port_base(point: Point, num_sats: u8) -> u16 {
+    PORT_BASE + (point.orb as u16 * num_sats as u16 + point.sat as u16) * PORTS_PER_SAT
 }
 
 /// Returns the bidirectional UDP port for an ISL direction.
-fn isl_port(point: Point, dir: Direction) -> u16 {
-    sat_port_base(point) + isl_port_offset(dir)
+fn isl_port(point: Point, dir: Direction, num_sats: u8) -> u16 {
+    sat_port_base(point, num_sats) + isl_port_offset(dir)
 }
 
 /// Returns the bidirectional UDP port for the ground link.
-fn ground_port(point: Point) -> u16 {
-    sat_port_base(point) + GROUND_OFFSET
+fn ground_port(point: Point, num_sats: u8) -> u16 {
+    sat_port_base(point, num_sats) + GROUND_OFFSET
 }
 
 fn udp_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> {
@@ -234,10 +244,10 @@ fn udp_link(local_port: u16, remote_port: u16) -> Result<UdpDatalink, CfsError> 
     UdpDatalink::bind(local, remote)
 }
 
-fn isl_link(point: Point, dir: Direction) -> Result<UdpDatalink, CfsError> {
-    let neighbor = TORUS.neighbor(point, dir);
-    let local = isl_port(point, dir);
-    let remote = isl_port(neighbor, dir.opposite());
+fn isl_link(point: Point, dir: Direction, torus: Torus, num_sats: u8) -> Result<UdpDatalink, CfsError> {
+    let neighbor = torus.neighbor(point, dir);
+    let local = isl_port(point, dir, num_sats);
+    let remote = isl_port(neighbor, dir.opposite(), num_sats);
     udp_link(local, remote)
 }
 
@@ -245,8 +255,8 @@ fn isl_link(point: Point, dir: Direction) -> Result<UdpDatalink, CfsError> {
 /// Shared destination for all satellites' ground-bound traffic.
 const GROUND_STATION_PORT: u16 = 9000;
 
-fn ground_link(point: Point) -> Result<UdpDatalink, CfsError> {
-    let local = ground_port(point);
+fn ground_link(point: Point, num_sats: u8) -> Result<UdpDatalink, CfsError> {
+    let local = ground_port(point, num_sats);
     udp_link(local, GROUND_STATION_PORT)
 }
 
@@ -258,21 +268,29 @@ pub extern "C" fn ROUTER_AppMain() {
         event::register(&[])?;
         log!("Router app starting")?;
 
-        let scid = SpacecraftId::new(system::get_spacecraft_id());
-        let Some(address) = scid.to_address(NUM_ORBS, NUM_SATS) else {
-            log!("Invalid spacecraft ID")?;
-            return Ok::<(), CfsError>(());
-        };
-        let Address::Satellite(point) = address else { unreachable!() };
+        // Map the leo-viz-written runtime config directory into OSAL
+        // so `File::open` can reach it. PSP only maps `/cf` by default.
+        // Idempotent across multiple apps; ignore "already exists".
+        let _ = leodos_libcfs::os::fs::add_fixed_map(
+            "/tmp/leodos",
+            "/tmp/leodos",
+        );
 
-        let mut gateway_table = GatewayTable::<4>::new(5.0);
+        // Load constellation + ground-station config. Prefer the
+        // leo-viz-written runtime file (set per-spawn so the cFS side
+        // matches the UI); fall back to the compiled-in .tbl with
+        // default 3x3 / 550km / 87° values.
         let ground_table =
             Table::<RouterGroundTable>::new("GroundTable", TableOptions::DEFAULT)?;
         let mut loaded_from_runtime = false;
         if let Some(parsed) = read_runtime_ground_table() {
             if ground_table.load_from_slice(&[parsed]).is_ok() {
                 log!(
-                    "Router: ground table loaded from runtime file ({} entries)",
+                    "Router: config loaded from runtime ({}x{}, alt={}m, incl={}°, {} stations)",
+                    parsed.num_orbs,
+                    parsed.num_sats,
+                    parsed.altitude_m as u32,
+                    parsed.inclination_deg as u32,
                     parsed.count
                 )?;
                 loaded_from_runtime = true;
@@ -285,6 +303,31 @@ pub extern "C" fn ROUTER_AppMain() {
                 log!("Router: ground table load failed: {:?}", e)?;
             }
         }
+        let (num_orbs, num_sats, altitude_m, inclination_deg) = match ground_table.get() {
+            Ok(accessor) => (
+                accessor.num_orbs,
+                accessor.num_sats,
+                accessor.altitude_m,
+                accessor.inclination_deg,
+            ),
+            Err(_) => (
+                DEFAULT_NUM_ORBS,
+                DEFAULT_NUM_SATS,
+                DEFAULT_ALTITUDE_M,
+                DEFAULT_INCLINATION_DEG,
+            ),
+        };
+        let torus = Torus::new(num_orbs, num_sats);
+        let shell = Shell::new(torus, altitude_m, inclination_deg);
+
+        let scid = SpacecraftId::new(system::get_spacecraft_id());
+        let Some(address) = scid.to_address(num_orbs, num_sats) else {
+            log!("Invalid spacecraft ID")?;
+            return Ok::<(), CfsError>(());
+        };
+        let Address::Satellite(point) = address else { unreachable!() };
+
+        let mut gateway_table = GatewayTable::<4>::new(5.0);
         if let Ok(accessor) = ground_table.get() {
             let n = (accessor.count as usize).min(ROUTER_GROUND_MAX_STATIONS);
             for entry in accessor.entries[..n].iter() {
@@ -300,13 +343,13 @@ pub extern "C" fn ROUTER_AppMain() {
         let mut router: Router<'_, _, _, _, _, _, 2048> = Router::builder()
             .pool(&pool)
             .mtu(MTU)
-            .north(isl_link(point, Direction::North)?)
-            .south(isl_link(point, Direction::South)?)
-            .east(isl_link(point, Direction::East)?)
-            .west(isl_link(point, Direction::West)?)
-            .ground(ground_link(point)?)
+            .north(isl_link(point, Direction::North, torus, num_sats)?)
+            .south(isl_link(point, Direction::South, torus, num_sats)?)
+            .east(isl_link(point, Direction::East, torus, num_sats)?)
+            .west(isl_link(point, Direction::West, torus, num_sats)?)
+            .ground(ground_link(point, num_sats)?)
             .address(address)
-            .algorithm(DistanceMinimizing::new(SHELL, gateway_table))
+            .algorithm(DistanceMinimizing::new(shell, gateway_table))
             .clock(MetClock::new())
             .build()?;
 
@@ -369,7 +412,7 @@ pub extern "C" fn ROUTER_AppMain() {
                     if packet.target() == address {
                         deliver_local(&routes, payload);
                     } else {
-                        emit_forward_event(packet.target());
+                        emit_forward_event(packet.target(), num_sats);
                         let _ = router.write(payload).await;
                     }
                 }
