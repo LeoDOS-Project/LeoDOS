@@ -29,7 +29,7 @@ use zerocopy::Unaligned;
 pub const BRIDGE_MAGIC: [u8; 4] = *b"LEOS";
 
 /// Wire format version. Bump on any layout change.
-pub const BRIDGE_VERSION: u16 = 2;
+pub const BRIDGE_VERSION: u16 = 3;
 
 /// Default loopback port. Production launches pass an explicit
 /// `host:port` via the `LEODOS_BRIDGE_ADDR` env var; this constant
@@ -436,6 +436,13 @@ pub struct GroundStateFrame {
     pub visible_count: u8,
     /// Padding.
     pub _pad1: [u8; 3],
+    /// Seconds from `sim_time_ms` until the next acquisition of
+    /// signal (AOS) — the soonest predicted time at which *any* sat
+    /// rises above the ground station's elevation mask. `0` when at
+    /// least one sat is visible right now. `u32::MAX` when no AOS is
+    /// predicted within the search horizon (typically one orbital
+    /// period).
+    pub next_aos_secs: U32,
     /// Visible sats, ordered by elevation (highest first). Entries
     /// past `visible_count` are zero.
     pub visible: [VisibleSat; GROUND_STATE_MAX_VISIBLE],
@@ -444,7 +451,13 @@ pub struct GroundStateFrame {
 impl GroundStateFrame {
     /// Construct a ground state frame with current magic + version.
     /// `visible` is truncated to at most [`GROUND_STATE_MAX_VISIBLE`].
-    pub fn new(seq: u32, sim_time_ms: u64, station_id: u32, visible: &[VisibleSat]) -> Self {
+    pub fn new(
+        seq: u32,
+        sim_time_ms: u64,
+        station_id: u32,
+        visible: &[VisibleSat],
+        next_aos_secs: u32,
+    ) -> Self {
         let mut buf = [VisibleSat::default(); GROUND_STATE_MAX_VISIBLE];
         let n = visible.len().min(GROUND_STATE_MAX_VISIBLE);
         buf[..n].copy_from_slice(&visible[..n]);
@@ -457,6 +470,7 @@ impl GroundStateFrame {
             station_id: U32::new(station_id),
             visible_count: n as u8,
             _pad1: [0; 3],
+            next_aos_secs: U32::new(next_aos_secs),
             visible: buf,
         }
     }
@@ -529,7 +543,7 @@ mod tests {
 
     #[test]
     fn ground_state_frame_size_is_stable() {
-        assert_eq!(core::mem::size_of::<GroundStateFrame>(), 92);
+        assert_eq!(core::mem::size_of::<GroundStateFrame>(), 96);
     }
 
     #[test]

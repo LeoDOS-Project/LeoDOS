@@ -121,11 +121,17 @@ async fn main() {
 
     let recv_task = tokio::spawn(async move {
         let mut buf = [0u8; 8192];
-        for _ in 0..5 {
+        let mut got = 0;
+        while got < 5 {
             match receiver.recv(&mut buf).await {
-                Ok(len) => {
+                Ok(Some(len)) => {
                     let msg = String::from_utf8_lossy(&buf[..len]);
                     println!("[Receiver] Got: {}", msg);
+                    got += 1;
+                }
+                Ok(None) => {
+                    println!("[Receiver] EOS");
+                    break;
                 }
                 Err(e) => {
                     eprintln!("[Receiver] Error: {:?}", e);

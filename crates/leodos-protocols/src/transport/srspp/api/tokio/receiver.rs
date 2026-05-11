@@ -10,6 +10,7 @@ use crate::transport::srspp::machine::receiver::ReceiverConfig;
 use crate::transport::srspp::machine::receiver::TimerAction;
 use crate::transport::srspp::packet::SrsppAckPacket;
 use crate::transport::srspp::packet::SrsppDataPacket;
+use crate::transport::srspp::packet::SrsppEosPacket;
 use crate::transport::srspp::packet::SrsppPacket;
 use crate::transport::srspp::packet::SrsppType;
 use tokio::time::Instant;
@@ -17,6 +18,15 @@ use tokio::time::Instant;
 use super::SrsppError;
 use super::sleep_until;
 use super::ticks_to_duration;
+
+/// Distance, masked to the 14-bit SRSPP sequence space, that `seq` is
+/// strictly past `target` going forward.
+fn seq_strictly_past(seq: u16, target: u16) -> bool {
+    let span: u16 = SequenceCount::MAX + 1;
+    let half = span / 2;
+    let delta = seq.wrapping_sub(target) & SequenceCount::MAX;
+    delta > 0 && delta < half
+}
 
 /// Async srspp receiver.
 ///
@@ -45,6 +55,11 @@ pub struct SrsppReceiver<
     progress_timer: Option<Instant>,
     /// Tick rate used to convert timer ticks to durations.
     ticks_per_sec: u32,
+    /// Sequence number of the EOS packet observed at the protocol
+    /// layer. `None` until an EOS arrives.
+    eos_seq: Option<SequenceCount>,
+    /// Whether the caller has already consumed the EOS event via recv.
+    eos_observed: bool,
     /// Buffer for receiving data packets from the link.
     recv_buffer: [u8; MTU],
     /// Buffer for building outgoing ACK packets.
@@ -78,24 +93,54 @@ impl<
             ack_timer: None,
             progress_timer: None,
             ticks_per_sec,
+            eos_seq: None,
+            eos_observed: false,
             recv_buffer: [0u8; MTU],
             ack_buffer: [0u8; 32],
         }
     }
 
-    /// Receive the next complete message.
+    /// Receive the next event from the stream.
     ///
-    /// Blocks until a message is available.
-    pub async fn recv(&mut self, buf: &mut [u8]) -> Result<usize, SrsppError> {
+    /// Returns:
+    /// - `Ok(Some(n))` — a complete message of `n` payload bytes was
+    ///   written into `buf`. `n` can be zero (an empty message is a
+    ///   legitimate event because SRSPP frames its payloads — unlike
+    ///   TCP, where the byte-stream has no concept of "empty
+    ///   message").
+    /// - `Ok(None)` — the peer's end-of-stream marker has been
+    ///   observed at the protocol layer. After this, no further
+    ///   events will arrive from this peer (subsequent `recv()` calls
+    ///   will park forever unless the receiver is recreated).
+    ///   Surfaced exactly once.
+    /// - `Err(...)` — link or protocol error.
+    ///
+    /// `Ok(Some(0))` vs `Ok(None)` is the meaningful distinction the
+    /// wire format makes: `SrsppType::Data` with empty payload is a
+    /// 0-byte message; `SrsppType::Eos` is an end-of-stream marker.
+    /// `recv()` preserves that distinction.
+    pub async fn recv(&mut self, buf: &mut [u8]) -> Result<Option<usize>, SrsppError> {
         loop {
             if let Some(msg) = self.machine.take_message() {
                 let len = msg.len().min(buf.len());
                 buf[..len].copy_from_slice(&msg[..len]);
-                return Ok(len);
+                return Ok(Some(len));
+            }
+
+            if !self.eos_observed && self.eos_reached() {
+                self.eos_observed = true;
+                return Ok(None);
             }
 
             self.poll().await?;
         }
+    }
+
+    /// True once the EOS sequence has been ACKed by the receiver state
+    /// machine — i.e. expected_seq has advanced strictly past eos_seq.
+    fn eos_reached(&self) -> bool {
+        let Some(eos) = self.eos_seq else { return false };
+        seq_strictly_past(self.machine.expected_seq().value(), eos.value())
     }
 
     /// Try to receive a message without blocking.
@@ -170,22 +215,63 @@ impl<
             .srspp_type()
             .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
-        if srspp_type == SrsppType::Data {
-            let data = SrsppDataPacket::parse(packet)
-                .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
+        match srspp_type {
+            SrsppType::Data => {
+                let data = SrsppDataPacket::parse(packet)
+                    .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
 
-            let outcome = self.machine.handle_data(
-                data.primary.sequence_count(),
-                data.primary.sequence_flag(),
-                &data.payload,
-            )?;
+                let outcome = self.machine.handle_data(
+                    data.primary.sequence_count(),
+                    data.primary.sequence_flag(),
+                    &data.payload,
+                )?;
 
-            let result = self.ack_state.on_data(
-                outcome,
-                self.machine.expected_seq(),
-                self.machine.recv_bitmap(),
-            );
-            self.apply_result(result).await?;
+                let result = self.ack_state.on_data(
+                    outcome,
+                    self.machine.expected_seq(),
+                    self.machine.recv_bitmap(),
+                );
+                self.apply_result(result).await?;
+            }
+            SrsppType::Eos => {
+                // EOS arrives as an empty Unsegmented payload at the
+                // EOS seq. Feed it through the same path so the seq is
+                // ACKed; if expected_seq just advanced past the EOS,
+                // drain the synthetic 0-byte message the machine
+                // produces so recv() surfaces the EOS exclusively via
+                // eos_reached and never as a 0-byte Data event.
+                let eos = SrsppEosPacket::parse(packet)
+                    .map_err(|e| SrsppError::PacketError(format!("{:?}", e)))?;
+
+                let seq = eos.primary.sequence_count();
+                if self.eos_seq.is_none() {
+                    self.eos_seq = Some(seq);
+                }
+
+                let before = self.machine.expected_seq().value();
+                let outcome = self.machine.handle_data(
+                    seq,
+                    eos.primary.sequence_flag(),
+                    &[],
+                )?;
+                let after = self.machine.expected_seq().value();
+
+                if let Some(eos_seq) = self.eos_seq {
+                    let was_past = seq_strictly_past(before, eos_seq.value());
+                    let now_past = seq_strictly_past(after, eos_seq.value());
+                    if !was_past && now_past && self.machine.message_len() == Some(0) {
+                        let _ = self.machine.take_message();
+                    }
+                }
+
+                let result = self.ack_state.on_data(
+                    outcome,
+                    self.machine.expected_seq(),
+                    self.machine.recv_bitmap(),
+                );
+                self.apply_result(result).await?;
+            }
+            _ => {}
         }
 
         Ok(())

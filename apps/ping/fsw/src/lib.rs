@@ -48,11 +48,12 @@ mod bindings {
 
 const MTU: usize = 512;
 const SRSPP_BUF_SIZE: usize = 4096;
+const MAX_TX: usize = 4;
 
 /// Backing memory for the ping app's SRSPP buffer pool. Sized for
-/// the sender's send buffer + driver tx + driver recv buffers + cFE
-/// pool overhead.
-const POOL_BYTES: usize = SRSPP_BUF_SIZE + 2 * MTU + 1024;
+/// MAX_TX sender slots × SRSPP_BUF_SIZE plus cFE pool header/per-block
+/// overhead.
+const POOL_BYTES: usize = MAX_TX * SRSPP_BUF_SIZE + 2 * MTU + 4096;
 static POOL_STORAGE: MemPoolStorage<POOL_BYTES> = MemPoolStorage::new();
 
 /// Ping request: identifies the message and records the ground send time.
@@ -77,7 +78,8 @@ pub struct PongPayload {
     pub sent_ms: U64,
 }
 
-#[no_mangle]
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
 pub extern "C" fn PING_AppMain() {
     system::wait_for_startup_sync(Duration::from_millis(10_000));
     Runtime::new().run(async {
@@ -153,7 +155,9 @@ async fn run() -> Result<(), CfsError> {
     let serve = async {
         let mut recv_buf = [0u8; 128];
         loop {
+            let _ = log!("Ping: waiting for next event");
             let (source, kind) = listener.recv(&mut recv_buf).await?;
+            let _ = log!("Ping: listener event from {:?} kind={:?}", source, kind);
             let len = match kind {
                 RecvKind::Data(n) => n,
                 RecvKind::Eos => {
@@ -185,6 +189,10 @@ async fn run() -> Result<(), CfsError> {
             };
             if let Err(e) = tx.send(&pong).await {
                 let _ = log!("Ping: send failed: {}", e);
+                continue;
+            }
+            if let Err(e) = tx.send_eos().await {
+                let _ = log!("Ping: send_eos failed: {}", e);
                 continue;
             }
             if let Err(e) = tx.flush().await {

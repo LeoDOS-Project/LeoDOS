@@ -20,7 +20,8 @@ mod bindings {
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
 
-#[no_mangle]
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
 pub extern "C" fn SB_ECHO_AppMain() {
     system::wait_for_startup_sync(Duration::from_millis(10_000));
     Runtime::new().run(async {

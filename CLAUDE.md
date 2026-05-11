@@ -65,17 +65,15 @@ already exist.
   samples (1 s apart) — accurate enough for routing and
   attitude derivation, can revisit if precision matters.
 
-- [ ] SRSPP receiver: `complete_message_len` is a single
-  slot, not a queue. If two messages reach the receive
-  state machine before the consumer drains the first via
-  `take_message`, the second `deliver_packet` overwrites
-  the first and the data is lost. Manifests in tests
-  where DATA + EOS are queued back-to-back: the EOS
-  produces an empty message that overwrites the unread
-  DATA, then drive_segment drains the empty as the EOS
-  marker, leaving nothing for `listener.recv`. Fix: a
-  small FIFO of pending messages, or backpressure that
-  blocks `handle_data` when an unread message is pending.
+- [x] SRSPP receiver `complete_message_len` clobber on
+  back-to-back DATA + EOS — packed/fast receivers now skip
+  `deliver_packet` when an empty-payload Unsegmented packet
+  arrives while a complete message is pending. The seq is
+  still advanced so the EOS is ACKed and `eos_reached`
+  triggers after the listener drains the DATA. Lite already
+  guarded the slot. A general FIFO of pending messages is
+  still a future improvement for non-EOS multi-message
+  bursts.
 
 - [ ] SRSPP driver: `AtomicWaker` so `tx.send` wakes the
   driver immediately. Today the driver's `select_biased!`

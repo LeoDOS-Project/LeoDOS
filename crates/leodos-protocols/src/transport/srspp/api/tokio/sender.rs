@@ -155,10 +155,11 @@ impl<
 
     /// Executes pending actions: transmits packets and manages timers.
     async fn process_actions(&mut self) -> Result<(), SrsppError> {
-        let actions: heapless::Vec<SenderAction, 32> =
-            self.actions.iter().copied().collect();
-
-        for action in &actions {
+        // Drain the action queue via pop_front. machine.handle() appends
+        // actions and we own draining; without this the deque would
+        // accumulate stale Transmit entries and process_actions would
+        // re-walk them every poll cycle.
+        while let Some(action) = self.actions.pop_front() {
             match action {
                 SenderAction::Transmit { seq, .. } => {
                     let cfg = self.machine.config();
@@ -167,7 +168,7 @@ impl<
                     let function_code = cfg.function_code;
 
                     let packet_len =
-                        if let Some(info) = self.machine.get_payload(*seq) {
+                        if let Some(info) = self.machine.get_payload(seq) {
                             if info.is_eos {
                                 SrsppEosPacket::builder()
                                     .buffer(&mut self.tx_buffer[..])
@@ -175,7 +176,7 @@ impl<
                                     .target(info.target)
                                     .apid(apid)
                                     .function_code(function_code)
-                                    .sequence_count(*seq)
+                                    .sequence_count(seq)
                                     .build()
                                     .map_err(|e| {
                                         SrsppError::PacketError(
@@ -190,7 +191,7 @@ impl<
                                     .target(info.target)
                                     .apid(apid)
                                     .function_code(function_code)
-                                    .sequence_count(*seq)
+                                    .sequence_count(seq)
                                     .sequence_flag(info.flags)
                                     .payload_len(info.payload.len())
                                     .build()
@@ -217,7 +218,7 @@ impl<
                                 SrsppError::Network(e.to_string())
                             })?;
 
-                        self.machine.mark_transmitted(*seq);
+                        self.machine.mark_transmitted(seq);
 
                         let now = Instant::now();
                         let elapsed = now.duration_since(self.start_time);

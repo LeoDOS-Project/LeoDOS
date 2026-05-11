@@ -3,6 +3,7 @@ use clap::Subcommand;
 
 use leodos_ground::bridge_loop;
 use leodos_ground::ping;
+use leodos_ground::ping_via_gateway;
 use leodos_ground::BridgeConfig;
 
 #[derive(Parser)]
@@ -30,6 +31,12 @@ enum Command {
         /// Target sat.
         #[arg(long, default_value_t = 0)]
         sat: u8,
+        /// First-hop gateway orbit. Defaults to target orb.
+        #[arg(long)]
+        gw_orb: Option<u8>,
+        /// First-hop gateway sat. Defaults to target sat.
+        #[arg(long)]
+        gw_sat: Option<u8>,
         /// Overall timeout in seconds.
         #[arg(long, default_value_t = 10)]
         timeout: u64,
@@ -50,8 +57,18 @@ enum Command {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     match args.command {
-        Command::Ping { orb, sat, timeout } => {
-            match ping(orb, sat, args.num_sats, args.rto_ms, timeout).await {
+        Command::Ping { orb, sat, gw_orb, gw_sat, timeout } => {
+            let go = gw_orb.unwrap_or(orb);
+            let gs = gw_sat.unwrap_or(sat);
+            let res = if (go, gs) == (orb, sat) {
+                ping(orb, sat, args.num_sats, args.rto_ms, timeout).await
+            } else {
+                ping_via_gateway(
+                    orb, sat, args.num_sats, args.rto_ms, timeout, go, gs,
+                )
+                .await
+            };
+            match res {
                 Ok(pong) => {
                     println!(
                         "pong: sat({}, {}) scid={} seq={} met={}.{} rtt_ms={}",

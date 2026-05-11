@@ -121,7 +121,8 @@ fn isl_link(
     udp_link(send, recv)
 }
 
-#[no_mangle]
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
 pub extern "C" fn GOSSIP_AppMain() {
     Runtime::new().run(async {
         event::register(&[])?;

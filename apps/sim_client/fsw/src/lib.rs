@@ -138,7 +138,8 @@ fn write_all(stream: &mut TcpStream, buf: &[u8]) -> bool {
     true
 }
 
-#[no_mangle]
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
 pub extern "C" fn SIM_CLIENT_AppMain() {
     system::wait_for_startup_sync(Duration::from_millis(10_000));
     if event::register(&[]).is_err() {

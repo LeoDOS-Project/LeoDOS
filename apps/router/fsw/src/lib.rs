@@ -250,7 +250,8 @@ fn ground_link(point: Point) -> Result<UdpDatalink, CfsError> {
     udp_link(local, GROUND_STATION_PORT)
 }
 
-#[no_mangle]
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
 pub extern "C" fn ROUTER_AppMain() {
     system::wait_for_startup_sync(Duration::from_millis(10_000));
     Runtime::new().run(async {
@@ -335,6 +336,7 @@ pub extern "C" fn ROUTER_AppMain() {
         enum Event {
             Net(usize),
             Sb(usize),
+            Diag,
             Err,
         }
 
@@ -342,11 +344,16 @@ pub extern "C" fn ROUTER_AppMain() {
             let event = {
                 let net_read = router.read(&mut from_net).fuse();
                 let sb_read = pipe.recv(&mut from_sb).fuse();
-                pin_utils::pin_mut!(net_read, sb_read);
+                let diag_tick = leodos_libcfs::runtime::time::sleep(
+                    leodos_libcfs::cfe::duration::Duration::from_millis(1000),
+                )
+                .fuse();
+                pin_utils::pin_mut!(net_read, sb_read, diag_tick);
 
                 futures::select_biased! {
                     r = net_read => r.map(Event::Net).unwrap_or(Event::Err),
                     r = sb_read => r.map(Event::Sb).unwrap_or(Event::Err),
+                    () = diag_tick => Event::Diag,
                 }
             };
 
@@ -364,6 +371,24 @@ pub extern "C" fn ROUTER_AppMain() {
                     } else {
                         emit_forward_event(packet.target());
                         let _ = router.write(payload).await;
+                    }
+                }
+                Event::Diag => {
+                    // Surface only spin-loop-level activity (>10k
+                    // router-loop iterations per second). Normal
+                    // forwarding traffic is <<1k/s.
+                    let d = router.take_diag();
+                    if d.iterations > 10_000 {
+                        let (from_port, target_raw, hop) = d.last_route;
+                        let _ = log!(
+                            "Router: spin? iter={} e_r={} w_w={} last from={} target=0x{:04x} hop={}",
+                            d.iterations,
+                            d.isl_reads[2],
+                            d.isl_writes[3],
+                            from_port,
+                            target_raw,
+                            hop,
+                        );
                     }
                 }
                 Event::Err => {}

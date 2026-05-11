@@ -128,7 +128,7 @@ impl Address {
 impl From<Address> for Point {
     fn from(addr: Address) -> Self {
         match addr {
-            Address::Satellite(Point { orb, sat }) => Point::new(sat, orb),
+            Address::Satellite(p) => p,
             Address::Ground { .. } => Point::new(0, 0),
         }
     }

@@ -1403,6 +1403,7 @@ dependencies = [
  "libm",
  "pin-utils",
  "rand 0.9.4",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "zerocopy",

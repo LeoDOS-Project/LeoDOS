@@ -79,7 +79,16 @@ impl<const WIN: usize, const BUF: usize, const REASM: usize> ReceiverBackend
         let seq_before = self.base.expected_seq_raw();
 
         if distance == 0 {
-            self.deliver_packet(flags, payload)?;
+            // Empty-payload Unsegmented packet (i.e. an EOS marker
+            // routed through this path) must not clobber a pending
+            // unread message. Advance the seq for ACKing but leave
+            // complete_message_len intact.
+            let skip_overwrite = payload.is_empty()
+                && flags == SequenceFlag::Unsegmented
+                && self.complete_message_len.is_some();
+            if !skip_overwrite {
+                self.deliver_packet(flags, payload)?;
+            }
             self.base.advance();
             self.deliver_buffered()?;
         } else if distance < Self::MAX_AHEAD {
@@ -180,7 +189,15 @@ impl<const WIN: usize, const BUF: usize, const REASM: usize> PackedReceiver<WIN,
             let mut temp = [0u8; REASM];
             let len = meta.len.min(REASM);
             temp[..len].copy_from_slice(self.slab.get(meta.offset, meta.len));
-            self.deliver_packet(meta.flags, &temp[..len])?;
+            // Same guard as handle_data: an empty Unsegmented payload
+            // (i.e. an EOS marker) must not clobber an already-pending
+            // complete message that we just delivered above.
+            let skip_overwrite = temp[..len].is_empty()
+                && meta.flags == SequenceFlag::Unsegmented
+                && self.complete_message_len.is_some();
+            if !skip_overwrite {
+                self.deliver_packet(meta.flags, &temp[..len])?;
+            }
             self.base.advance();
         }
         self.slab.clear();

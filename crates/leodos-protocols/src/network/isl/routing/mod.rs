@@ -76,6 +76,28 @@ pub struct Router<'pool, N, G, A, C, P: BufferPool + 'pool, const OUT: usize = 2
     address: Address,
     algorithm: A,
     clock: C,
+    /// Diagnostic counters. Mutated each `read()` iteration; the
+    /// router app can read+clear them periodically to detect spins.
+    diag: core::cell::Cell<RouterDiag>,
+}
+
+/// Per-event counters for the router's `read()` select loop. Reset
+/// each time `take_diag()` is called.
+#[derive(Default, Debug, Clone, Copy)]
+pub struct RouterDiag {
+    /// Total `read()` iterations.
+    pub iterations: u64,
+    /// ISL reads indexed by direction (N, S, E, W).
+    pub isl_reads: [u64; 4],
+    /// ISL writes indexed by direction (N, S, E, W).
+    pub isl_writes: [u64; 4],
+    /// Reads from the ground link.
+    pub ground_read: u64,
+    /// Writes to the ground link.
+    pub ground_write: u64,
+    /// Last-seen routing decision: (port_read_from, target_raw, hop_code).
+    /// hop_code: 0=local, 1=N, 2=S, 3=E, 4=W, 5=Ground. port_read_from: 0=G, 1=N, 2=S, 3=E, 4=W.
+    pub last_route: (u8, u16, u8),
 }
 
 /// Error from a directional link or from ISL parsing.
@@ -141,6 +163,7 @@ where
             east: Port::new(east, pool, mtu)?,
             west: Port::new(west, pool, mtu)?,
             ground: Port::new(ground, pool, mtu)?,
+            diag: core::cell::Cell::new(RouterDiag::default()),
             address,
             algorithm,
             clock,
@@ -150,6 +173,14 @@ where
     /// Returns this router's own address.
     pub fn address(&self) -> Address {
         self.address
+    }
+
+    /// Read and reset the diagnostic counters. Intended to be polled
+    /// at a low rate (e.g. once per second) to surface spin loops.
+    pub fn take_diag(&self) -> RouterDiag {
+        let snap = self.diag.get();
+        self.diag.set(RouterDiag::default());
+        snap
     }
 }
 
@@ -217,7 +248,13 @@ where
                 address,
                 algorithm,
                 clock,
+                diag,
             } = self;
+            {
+                let mut d = diag.get();
+                d.iterations = d.iterations.wrapping_add(1);
+                diag.set(d);
+            }
 
             // Split each link into read/write halves.
             let (mut nr, mut nw) = north.link.split();
@@ -252,16 +289,38 @@ where
             // Route a received packet: return if local,
             // enqueue for forwarding otherwise.
             macro_rules! route_packet {
-                ($buf:expr, $len:expr, $err_variant:ident) => {{
+                ($buf:expr, $len:expr, $err_variant:ident, $from_port:expr) => {{
                     let buf = &$buf[..$len];
                     let Ok(packet) = IslRoutingTelecommand::parse(buf) else {
                         continue;
                     };
+                    let target = packet.isl_header.target();
                     let next = algorithm.route(
                         Point::from(*address),
-                        packet.isl_header.target(),
+                        target,
                         clock.now(),
                     );
+                    {
+                        let mut d = diag.get();
+                        let target_raw: u16 = match target {
+                            crate::network::isl::address::Address::Ground { station } => {
+                                (station as u16) | 0x8000
+                            }
+                            crate::network::isl::address::Address::Satellite(p) => {
+                                ((p.orb as u16) << 8) | (p.sat as u16)
+                            }
+                        };
+                        let hop_code: u8 = match next {
+                            Hop::Local => 0,
+                            Hop::Isl(Direction::North) => 1,
+                            Hop::Isl(Direction::South) => 2,
+                            Hop::Isl(Direction::East) => 3,
+                            Hop::Isl(Direction::West) => 4,
+                            Hop::Ground => 5,
+                        };
+                        d.last_route = ($from_port, target_raw, hop_code);
+                        diag.set(d);
+                    }
 
                     if next == Hop::Local {
                         if buffer.len() < $len {
@@ -328,6 +387,22 @@ where
                 }
             };
 
+            {
+                let mut d = diag.get();
+                match event {
+                    Event::IslWrite(Direction::North) => d.isl_writes[0] = d.isl_writes[0].wrapping_add(1),
+                    Event::IslWrite(Direction::South) => d.isl_writes[1] = d.isl_writes[1].wrapping_add(1),
+                    Event::IslWrite(Direction::East) => d.isl_writes[2] = d.isl_writes[2].wrapping_add(1),
+                    Event::IslWrite(Direction::West) => d.isl_writes[3] = d.isl_writes[3].wrapping_add(1),
+                    Event::GroundWrite => d.ground_write = d.ground_write.wrapping_add(1),
+                    Event::IslRead(_, Direction::North) => d.isl_reads[0] = d.isl_reads[0].wrapping_add(1),
+                    Event::IslRead(_, Direction::South) => d.isl_reads[1] = d.isl_reads[1].wrapping_add(1),
+                    Event::IslRead(_, Direction::East) => d.isl_reads[2] = d.isl_reads[2].wrapping_add(1),
+                    Event::IslRead(_, Direction::West) => d.isl_reads[3] = d.isl_reads[3].wrapping_add(1),
+                    Event::GroundRead(_) => d.ground_read = d.ground_read.wrapping_add(1),
+                }
+                diag.set(d);
+            }
             match event {
                 Event::IslWrite(dir) => match dir {
                     Direction::North => north.out.pop(),
@@ -338,16 +413,16 @@ where
                 Event::GroundWrite => ground.out.pop(),
                 Event::GroundRead(result) => {
                     let len = result.map_err(RouterError::Ground)?;
-                    route_packet!(ground.buf, len, Ground);
+                    route_packet!(ground.buf, len, Ground, 0u8);
                 }
                 Event::IslRead(result, dir) => {
-                    let (buf, len) = match dir {
-                        Direction::North => (&north.buf, result.map_err(RouterError::North)?),
-                        Direction::South => (&south.buf, result.map_err(RouterError::South)?),
-                        Direction::East => (&east.buf, result.map_err(RouterError::East)?),
-                        Direction::West => (&west.buf, result.map_err(RouterError::West)?),
+                    let (buf, len, from_port) = match dir {
+                        Direction::North => (&north.buf, result.map_err(RouterError::North)?, 1u8),
+                        Direction::South => (&south.buf, result.map_err(RouterError::South)?, 2u8),
+                        Direction::East => (&east.buf, result.map_err(RouterError::East)?, 3u8),
+                        Direction::West => (&west.buf, result.map_err(RouterError::West)?, 4u8),
                     };
-                    route_packet!(buf, len, Isl);
+                    route_packet!(buf, len, Isl, from_port);
                 }
             }
         }

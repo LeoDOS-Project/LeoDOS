@@ -71,7 +71,12 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
         let seq_before = self.base.expected_seq_raw();
 
         if distance == 0 {
-            self.deliver_packet(flags, payload)?;
+            let skip_overwrite = payload.is_empty()
+                && flags == SequenceFlag::Unsegmented
+                && self.complete_message_len.is_some();
+            if !skip_overwrite {
+                self.deliver_packet(flags, payload)?;
+            }
             self.base.advance();
             self.deliver_buffered()?;
         } else if distance < Self::MAX_AHEAD {
@@ -167,7 +172,12 @@ impl<const WIN: usize, const MTU: usize, const REASM: usize, const TOTAL: usize>
             self.occupied.clear(idx);
 
             let len = self.slots.read(idx, &mut temp);
-            self.deliver_packet(flags, &temp[..len])?;
+            let skip_overwrite = len == 0
+                && flags == SequenceFlag::Unsegmented
+                && self.complete_message_len.is_some();
+            if !skip_overwrite {
+                self.deliver_packet(flags, &temp[..len])?;
+            }
             self.base.advance();
         }
         Ok(())

@@ -17,7 +17,8 @@ mod bindings {
     include!(concat!(env!("OUT_DIR"), "/config.rs"));
 }
 
-#[no_mangle]
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
 pub extern "C" fn SAMPLE_RUST_AppMain() {
     Runtime::new().run(async {
         let socket = UdpSocket::bind(SocketAddr::new_ipv4("0.0.0.0", 1236)?)?;

@@ -81,6 +81,15 @@ pub trait Reachable {
     /// Returns `true` if `target` is reachable from
     /// `origin` at this moment.
     fn is_reachable(&self, origin: Address, target: Address) -> bool;
+
+    /// Predicted seconds until `target` becomes reachable from
+    /// `origin`. Returns `None` when the oracle has no estimate
+    /// (e.g., unknown future, or already reachable). Used by
+    /// blocking callers to print "waiting ~Xs for contact"
+    /// before they park.
+    fn seconds_until_contact(&self, _origin: Address, _target: Address) -> Option<u32> {
+        None
+    }
 }
 
 // ── Discard ─────────────────────────────────────────────

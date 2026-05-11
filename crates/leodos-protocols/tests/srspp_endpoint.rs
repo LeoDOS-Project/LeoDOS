@@ -338,3 +338,89 @@ fn endpoint_eos_roundtrip() {
         }
     });
 }
+
+/// Emulates the ping/pong demo: ground (A) opens a fresh per-ping
+/// connection (new sender slot, seq starts at 0 again) and tears it
+/// down with EOS; sat (B) replies with pong + EOS. Validates that the
+/// receiver correctly reaps closed streams on DATA-after-EOS so the
+/// second and subsequent cycles are not silently dropped as
+/// duplicates.
+#[tokio::test(flavor = "current_thread")]
+async fn endpoint_multi_cycle_ping_pong() {
+    let pool_ground = HeapBufferPool::new(64 * 1024);
+    let pool_sat = HeapBufferPool::new(64 * 1024);
+    let endpoint_ground: TestEndpoint = SrsppEndpoint::new(
+        &pool_ground,
+        SRSPP_BUF,
+        sender_config(addr_a()),
+        receiver_config(addr_a()),
+        NoStore,
+        AlwaysReachable,
+    )
+    .unwrap();
+    let endpoint_sat: TestEndpoint = SrsppEndpoint::new(
+        &pool_sat,
+        SRSPP_BUF,
+        sender_config(addr_b()),
+        receiver_config(addr_b()),
+        NoStore,
+        AlwaysReachable,
+    )
+    .unwrap();
+
+    let (link_ground, link_sat) = MockLink::pair();
+
+    const CYCLES: usize = 3;
+
+    // Each side fires DATA + EOS back-to-back, matching the real
+    // ground tool / ping app flow. Bug 2 used to clobber DATA when
+    // EOS landed at the receiver before the listener drained.
+    let sat_serve = async {
+        let mut buf = [0u8; 64];
+        for cycle in 0..CYCLES {
+            let mut listener = endpoint_sat.listener().unwrap();
+            let (source, k1) = listener.recv(&mut buf).await.unwrap();
+            assert!(matches!(k1, RecvKind::Data(_)), "cycle {} ping data", cycle);
+            assert_eq!(&buf[..4], b"ping", "cycle {} ping payload", cycle);
+            let (_, k2) = listener.recv(&mut buf).await.unwrap();
+            assert_eq!(k2, RecvKind::Eos, "cycle {} ping eos", cycle);
+            drop(listener);
+            let mut tx = endpoint_sat.sender(source).unwrap();
+            tx.send(b"pong").await.unwrap();
+            tx.send_eos().await.unwrap();
+            tx.flush().await.unwrap();
+            drop(tx);
+        }
+    };
+
+    let ground_loop = async {
+        let mut buf = [0u8; 64];
+        for cycle in 0..CYCLES {
+            let mut tx = endpoint_ground.sender(addr_b()).unwrap();
+            tx.send(b"ping").await.unwrap();
+            tx.send_eos().await.unwrap();
+            tx.flush().await.unwrap();
+            drop(tx);
+            let mut listener = endpoint_ground.listener().unwrap();
+            let (src, k1) = listener.recv(&mut buf).await.unwrap();
+            assert_eq!(src, addr_b(), "cycle {} pong source", cycle);
+            assert!(matches!(k1, RecvKind::Data(_)), "cycle {} pong data", cycle);
+            assert_eq!(&buf[..4], b"pong", "cycle {} pong payload", cycle);
+            let (_, k2) = listener.recv(&mut buf).await.unwrap();
+            assert_eq!(k2, RecvKind::Eos, "cycle {} pong eos", cycle);
+            drop(listener);
+        }
+    };
+
+    let test = async {
+        futures::future::join(ground_loop, sat_serve).await;
+    };
+    let run_g = endpoint_ground.run(link_ground, FixedRto::new(1000), MockClock).fuse();
+    let run_s = endpoint_sat.run(link_sat, FixedRto::new(1000), MockClock).fuse();
+    pin_mut!(test, run_g, run_s);
+    select_biased! {
+        () = test.fuse() => {},
+        r = run_g => panic!("endpoint_ground.run exited: {:?}", r),
+        r = run_s => panic!("endpoint_sat.run exited: {:?}", r),
+    }
+}

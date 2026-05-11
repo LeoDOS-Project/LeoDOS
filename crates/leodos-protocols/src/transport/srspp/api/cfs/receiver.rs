@@ -81,6 +81,28 @@ where
             let source_address = data.srspp_header.source_address();
             let seq = data.primary.sequence_count();
             let flags = data.primary.sequence_flag();
+            // DATA arriving after the previous connection's EOS was
+            // ACKed at the protocol layer = new connection. Reap so the
+            // fresh stream starts at expected_seq=0. We use protocol-
+            // level eos_reached rather than listener-observed
+            // eos_observed because the next ping can arrive before the
+            // listener has drained the EOS event.
+            state.with_mut(|s| {
+                let should_reap = s
+                    .streams
+                    .get(&source_address)
+                    .and_then(|stream| {
+                        let eos = stream.eos_seq?;
+                        Some(seq_strictly_past(
+                            stream.machine.expected_seq().value(),
+                            eos.value(),
+                        ))
+                    })
+                    .unwrap_or(false);
+                if should_reap {
+                    let _ = s.streams.remove(&source_address);
+                }
+            });
             let result =
                 drive_segment(state, source_address, seq, flags, &data.payload)?;
             drive_actions(state, ack_buffer, source_address, result, clock, link).await

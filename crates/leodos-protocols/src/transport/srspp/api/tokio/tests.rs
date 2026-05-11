@@ -123,7 +123,11 @@ async fn srspp_one_way_delivery() {
     };
     let recv = async {
         let mut buf = [0u8; 8192];
-        let len = receiver.recv(&mut buf).await.unwrap();
+        let len = receiver
+            .recv(&mut buf)
+            .await
+            .unwrap()
+            .expect("unexpected EOS");
         buf[..len].to_vec()
     };
 
@@ -194,4 +198,166 @@ async fn srspp_request_reply_roundtrip() {
         elapsed < Duration::from_secs(2),
         "roundtrip took {elapsed:?}",
     );
+}
+
+// ── DTN store-and-forward tests ─────────────────────────────
+
+use super::SrsppDtnSender;
+use crate::transport::srspp::dtn::Reachable;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+
+/// Toggleable reachability oracle so tests can simulate going in
+/// and out of line-of-sight.
+struct ToggleReachable(Arc<AtomicBool>);
+
+impl Reachable for ToggleReachable {
+    fn is_reachable(&self, _origin: Address, _target: Address) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+/// When the target is reachable, DTN-send goes straight to the wire.
+#[tokio::test]
+async fn dtn_reachable_target_sends_immediately() {
+    let (link_a, link_b) = MockLink::pair();
+    let pool_a = pool();
+
+    let inner: SrsppSender<_, _, _, SRSPP_WIN, SRSPP_MTU> = SrsppSender::new(
+        sender_config(SAT_A),
+        link_a,
+        FixedRto::new(RTO_MS),
+        TICKS_PER_SEC,
+        &pool_a,
+        SRSPP_BUF,
+    )
+    .unwrap();
+    let toggle = Arc::new(AtomicBool::new(true));
+    let mut sender =
+        SrsppDtnSender::new(inner, ToggleReachable(toggle.clone()), SAT_A, 16);
+    let mut receiver: SrsppReceiver<
+        _,
+        ReceiverMachine<SRSPP_WIN, SRSPP_BUF, SRSPP_REASM>,
+        SRSPP_MTU,
+    > = SrsppReceiver::new(receiver_config(SAT_B), SAT_A, link_b, TICKS_PER_SEC);
+
+    let send = async {
+        sender.send(SAT_B, &b"hi"[..]).await.unwrap();
+        assert_eq!(sender.pending(SAT_B), 0, "nothing should be buffered");
+        sender.flush().await.unwrap();
+    };
+    let recv = async {
+        let mut buf = [0u8; 64];
+        let len = receiver.recv(&mut buf).await.unwrap();
+        buf[..len].to_vec()
+    };
+    let ((), got) = tokio::join!(send, recv);
+    assert_eq!(got.as_slice(), b"hi");
+}
+
+/// Sends while unreachable accumulate in the per-target store and
+/// nothing reaches the wire.
+#[tokio::test]
+async fn dtn_unreachable_target_buffers() {
+    let (link_a, _link_b) = MockLink::pair();
+    let pool_a = pool();
+
+    let inner: SrsppSender<_, _, _, SRSPP_WIN, SRSPP_MTU> = SrsppSender::new(
+        sender_config(SAT_A),
+        link_a,
+        FixedRto::new(RTO_MS),
+        TICKS_PER_SEC,
+        &pool_a,
+        SRSPP_BUF,
+    )
+    .unwrap();
+    let toggle = Arc::new(AtomicBool::new(false));
+    let mut sender =
+        SrsppDtnSender::new(inner, ToggleReachable(toggle.clone()), SAT_A, 16);
+
+    sender.send(SAT_B, &b"one"[..]).await.unwrap();
+    sender.send(SAT_B, &b"two"[..]).await.unwrap();
+    sender.send(SAT_B, &b"three"[..]).await.unwrap();
+
+    assert_eq!(sender.pending(SAT_B), 3);
+    assert_eq!(sender.pending_total(), 3);
+}
+
+/// When the target transitions from unreachable to reachable, the
+/// next reachable-side send drains the store first.
+#[tokio::test]
+async fn dtn_drains_on_reachability_change() {
+    let (link_a, link_b) = MockLink::pair();
+    let pool_a = pool();
+
+    let inner: SrsppSender<_, _, _, SRSPP_WIN, SRSPP_MTU> = SrsppSender::new(
+        sender_config(SAT_A),
+        link_a,
+        FixedRto::new(RTO_MS),
+        TICKS_PER_SEC,
+        &pool_a,
+        SRSPP_BUF,
+    )
+    .unwrap();
+    let toggle = Arc::new(AtomicBool::new(false));
+    let mut sender =
+        SrsppDtnSender::new(inner, ToggleReachable(toggle.clone()), SAT_A, 16);
+    let mut receiver: SrsppReceiver<
+        _,
+        ReceiverMachine<SRSPP_WIN, SRSPP_BUF, SRSPP_REASM>,
+        SRSPP_MTU,
+    > = SrsppReceiver::new(receiver_config(SAT_B), SAT_A, link_b, TICKS_PER_SEC);
+
+    sender.send(SAT_B, &b"queued-1"[..]).await.unwrap();
+    sender.send(SAT_B, &b"queued-2"[..]).await.unwrap();
+    sender.send(SAT_B, &b"queued-3"[..]).await.unwrap();
+    assert_eq!(sender.pending(SAT_B), 3);
+
+    toggle.store(true, Ordering::SeqCst);
+
+    let send = async {
+        sender.send(SAT_B, &b"final"[..]).await.unwrap();
+        sender.flush().await.unwrap();
+        assert_eq!(sender.pending(SAT_B), 0, "store should be drained");
+    };
+    let recv = async {
+        let mut buf = [0u8; 64];
+        let mut out = Vec::new();
+        for _ in 0..4 {
+            let len = receiver.recv(&mut buf).await.unwrap();
+            out.push(buf[..len].to_vec());
+        }
+        out
+    };
+    let ((), got) = tokio::join!(send, recv);
+    assert_eq!(got[0], b"queued-1");
+    assert_eq!(got[1], b"queued-2");
+    assert_eq!(got[2], b"queued-3");
+    assert_eq!(got[3], b"final");
+}
+
+/// Per-target capacity caps queue length — oldest entries get
+/// evicted when the cap is exceeded.
+#[tokio::test]
+async fn dtn_per_target_capacity_caps_queue() {
+    let (link_a, _link_b) = MockLink::pair();
+    let pool_a = pool();
+
+    let inner: SrsppSender<_, _, _, SRSPP_WIN, SRSPP_MTU> = SrsppSender::new(
+        sender_config(SAT_A),
+        link_a,
+        FixedRto::new(RTO_MS),
+        TICKS_PER_SEC,
+        &pool_a,
+        SRSPP_BUF,
+    )
+    .unwrap();
+    let toggle = Arc::new(AtomicBool::new(false));
+    let mut sender =
+        SrsppDtnSender::new(inner, ToggleReachable(toggle.clone()), SAT_A, 2);
+
+    sender.send(SAT_B, &b"a"[..]).await.unwrap();
+    sender.send(SAT_B, &b"b"[..]).await.unwrap();
+    sender.send(SAT_B, &b"c"[..]).await.unwrap();
+    assert_eq!(sender.pending(SAT_B), 2, "capacity should cap at 2");
 }

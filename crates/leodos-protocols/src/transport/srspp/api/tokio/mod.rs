@@ -30,9 +30,12 @@
 mod receiver;
 /// Async SRSPP sender.
 mod sender;
+/// Delay-tolerant wrapper around `SrsppSender` for ground-side use.
+mod dtn;
 #[cfg(test)]
 mod tests;
 
+pub use dtn::SrsppDtnSender;
 pub use receiver::{DeliveryToken, SrsppReceiver};
 pub use sender::SrsppSender;
 
