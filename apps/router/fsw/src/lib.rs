@@ -51,6 +51,7 @@ const DEFAULT_NUM_ORBS: u8 = bindings::ROUTER_NUM_ORBS as u8;
 const DEFAULT_NUM_SATS: u8 = bindings::ROUTER_NUM_SATS as u8;
 const DEFAULT_ALTITUDE_M: f32 = 550_000.0;
 const DEFAULT_INCLINATION_DEG: f32 = 87.0;
+const DEFAULT_PHASING: f32 = 1.0;
 
 const LOCALHOST: &str = "127.0.0.1";
 const PORT_BASE: u16 = 6000;
@@ -87,6 +88,10 @@ struct RouterGroundTable {
     _pad0: [u8; 2],
     altitude_m: f32,
     inclination_deg: f32,
+    /// Walker phasing parameter F (real-valued; integer in classic
+    /// Walker convention but leo-viz lets it slide). Not consumed
+    /// by the router today — cFS has no orbital propagator.
+    phasing: f32,
     count: u8,
     _pad1: [u8; 3],
     entries: [RouterGroundEntry; ROUTER_GROUND_MAX_STATIONS],
@@ -107,6 +112,7 @@ impl Default for RouterGroundTable {
             _pad0: [0; 2],
             altitude_m: DEFAULT_ALTITUDE_M,
             inclination_deg: DEFAULT_INCLINATION_DEG,
+            phasing: DEFAULT_PHASING,
             count: 0,
             _pad1: [0; 3],
             entries: [RouterGroundEntry {
@@ -286,11 +292,12 @@ pub extern "C" fn ROUTER_AppMain() {
         if let Some(parsed) = read_runtime_ground_table() {
             if ground_table.load_from_slice(&[parsed]).is_ok() {
                 log!(
-                    "Router: config loaded from runtime ({}x{}, alt={}m, incl={}°, {} stations)",
+                    "Router: config loaded from runtime ({}x{}, alt={}m, incl={}°, F={}, {} stations)",
                     parsed.num_orbs,
                     parsed.num_sats,
                     parsed.altitude_m as u32,
                     parsed.inclination_deg as u32,
+                    parsed.phasing as u32,
                     parsed.count
                 )?;
                 loaded_from_runtime = true;

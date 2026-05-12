@@ -29,6 +29,12 @@ typedef struct {
      * and the GatewayTable LOS computation. */
     float altitude_m;
     float inclination_deg;
+    /* Walker phasing parameter F (real-valued; integer in classic
+     * Walker convention but leo-viz lets it slide). Not consumed
+     * by the router today — cFS has no orbital propagator. Kept
+     * in the table so future flight code that wants to propagate
+     * positions natively sees the same value leo-viz used. */
+    float phasing;
     /* Ground stations: valid entries are entries[0..count). */
     uint8 count;
     uint8 _pad1[3];

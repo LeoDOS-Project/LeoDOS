@@ -10,6 +10,7 @@ RouterGroundTable_t RouterGroundTable = {
     ._pad0 = {0, 0},
     .altitude_m = 550000.0f,
     .inclination_deg = 87.0f,
+    .phasing = 1.0f,
     .count = 3,
     ._pad1 = {0, 0, 0},
     .entries = {
