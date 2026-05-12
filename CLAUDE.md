@@ -309,6 +309,75 @@ Prior art to learn from:
   in-the-loop, but the topology engine is what we'd replicate.
 - Celestial / LeoEM — similar research-grade simulators.
 
+### Communication realism
+
+Today leo-viz / cFS model the ground link as a pure geometric
+LOS check: a sat is "reachable" from a station iff it sits at
+least 5° above the station's local horizon. That's the only
+criterion the bridge applies, and `coverage_angle` (the sat-
+side cone in "Show coverage") is purely a visualization knob
+with no functional effect. Real systems layer several more
+constraints on top — none are critical for the current demo
+but each is worth picking up if we want closer-to-flight
+behaviour.
+
+- [ ] Mutual cone check. Today only the station's "above 5°
+  elevation" cone is enforced. A sat with a narrow downlink
+  beam wouldn't actually illuminate every station inside that
+  cone. Wire `coverage_angle` into the bridge so the station
+  is reachable iff (sat in station's zenith cone) AND
+  (station in sat's nadir cone). When the two cones are
+  geometric inverses (sat half-angle ↔ 5° elevation at the
+  current altitude), this collapses to the existing check.
+
+- [ ] Per-station elevation mask. `MIN_ELEVATION_DEG = 5.0`
+  is global. Real sites have site-specific masks (terrain,
+  surrounding buildings, antenna pedestal limits) — typically
+  5°-10°. Add a per-station mask in the ground-table and use
+  it in `app.rs` LOS / next-AOS computation.
+
+- [ ] Antenna pointing. Geometric LOS says "the sat is
+  reachable in principle". Real ground dishes track one sat
+  at a time and have to slew between targets. Useful follow-
+  ups: select a single "active" sat per station per tick
+  (e.g. highest elevation, or one explicitly scheduled), and
+  expose slew-rate / acquisition-time so the link only opens
+  N seconds after the sat crests the mask.
+
+- [ ] Link budget. Even with perfect pointing, the link only
+  closes if received power exceeds noise. We already have the
+  Shannon-Hartley `LinkBudget` for ISL (`src/config.rs`); the
+  same idea applied to the ground link would gate visibility
+  by C_bps ≥ threshold instead of pure geometry. Atmospheric
+  loss grows fast below 10° elevation — that's why operators
+  use 5°-10° masks in practice, not just terrain.
+
+- [ ] Handover. Continuous ground service across a sat that
+  is setting requires the station to switch to a rising sat
+  before the current one drops below the mask. cFS today
+  doesn't model handover state — the GatewayTable just picks
+  a station each tick. A "current active sat per station"
+  with hysteresis (don't switch unless the new sat is N° or
+  N dB better) would mirror what flight ops actually do.
+
+- [ ] Pass scheduling. Pre-compute the next contact window
+  (AOS / max-elevation / LOS) for each sat-station pair from
+  the propagator and surface it as a contact plan. Today
+  `next_aos_secs` is computed online by stepping the
+  propagator 30 s at a time; a contact-plan table would let
+  ground ops command future passes (slew here at T+X, drop
+  at T+Y) and would match how real mission ops works.
+
+- [ ] ISL pointing & link rate. Optical inter-sat links have
+  microradian-narrow beams — in reality the dominant
+  constraint is mutual pointing/tracking between sats moving
+  at km/s, not the geometric cone. We currently model ISL
+  as either always-up (no LOS gating) or all-or-nothing on
+  geometric LOS. Future: enforce a max angular slew rate
+  between consecutive ISL neighbours, and gate by the per-
+  link Shannon capacity from `LinkBudget` (already wired
+  into the ISL tooltip).
+
 ### Missing CCSDS protocols
 
 Protocols from CCSDS 130.0-G-4 not yet implemented:
