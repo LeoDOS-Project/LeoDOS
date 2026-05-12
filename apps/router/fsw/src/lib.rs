@@ -303,39 +303,25 @@ pub extern "C" fn ROUTER_AppMain() {
                 log!("Router: ground table load failed: {:?}", e)?;
             }
         }
-        let (num_orbs, num_sats, altitude_m, inclination_deg) = match ground_table.get() {
-            Ok(accessor) => (
-                accessor.num_orbs,
-                accessor.num_sats,
-                accessor.altitude_m,
-                accessor.inclination_deg,
-            ),
-            Err(_) => (
-                DEFAULT_NUM_ORBS,
-                DEFAULT_NUM_SATS,
-                DEFAULT_ALTITUDE_M,
-                DEFAULT_INCLINATION_DEG,
-            ),
-        };
-        let torus = Torus::new(num_orbs, num_sats);
-        let shell = Shell::new(torus, altitude_m, inclination_deg);
+        let config = ground_table.get_or_default();
+        let torus = Torus::new(config.num_orbs, config.num_sats);
+        let shell = Shell::new(torus, config.altitude_m, config.inclination_deg);
+        let num_sats = config.num_sats;
 
         let scid = SpacecraftId::new(system::get_spacecraft_id());
-        let Some(address) = scid.to_address(num_orbs, num_sats) else {
+        let Some(address) = scid.to_address(config.num_orbs, config.num_sats) else {
             log!("Invalid spacecraft ID")?;
             return Ok::<(), CfsError>(());
         };
         let Address::Satellite(point) = address else { unreachable!() };
 
         let mut gateway_table = GatewayTable::<4>::new(5.0);
-        if let Ok(accessor) = ground_table.get() {
-            let n = (accessor.count as usize).min(ROUTER_GROUND_MAX_STATIONS);
-            for entry in accessor.entries[..n].iter() {
-                gateway_table.add_station(
-                    entry.station_id,
-                    LatLon::new(entry.lat_deg, entry.lon_deg),
-                );
-            }
+        let n = (config.count as usize).min(ROUTER_GROUND_MAX_STATIONS);
+        for entry in config.entries[..n].iter() {
+            gateway_table.add_station(
+                entry.station_id,
+                LatLon::new(entry.lat_deg, entry.lon_deg),
+            );
         }
 
         let pool = MemPool::new(POOL_STORAGE.take()?, false)?;
